@@ -34,10 +34,10 @@ class Base(CloudFormationLintRule):
 
         if "Metadata" in cfn.template.keys():
             if "AWS::CloudFormation::Interface" in cfn.template["Metadata"].keys():
-                if "ParameterLabels" not in cfn.template["Metadata"]["AWS::CloudFormation::Interface"].keys():
+                if "ParameterLabels" in cfn.template["Metadata"]["AWS::CloudFormation::Interface"].keys():
                     for x in cfn.template["Metadata"]["AWS::CloudFormation::Interface"]["ParameterLabels"]:
                         labels.append(str(x))
-
+        print(labels)
         if "Parameters" not in cfn.template.keys():
             return matches
         else:
