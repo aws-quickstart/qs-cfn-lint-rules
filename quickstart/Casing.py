@@ -35,5 +35,5 @@ class Base(CloudFormationLintRule):
                 for i in cfn.template[x]:
                     if i[0] != i[0].upper():
                         message = '{0} names should be PascalCase'
-                        matches.append(RuleMatch([i], message.format(x.rstrip('s'))))
+                        matches.append(RuleMatch([x, i], message.format(x.rstrip('s'))))
         return matches
