@@ -19,24 +19,24 @@ from cfnlint import RuleMatch
 
 
 class Base(CloudFormationLintRule):
-    """Check Parameter Group Entries Exist"""
-    id = 'W9003'
-    shortdesc = 'Each parameter should be in a group'
-    description = 'Each parameter should be in one AWS::CloudFormation::Interface ParameterGroups entry'
-    source_url = 'https://github.com/quickstart/qs-cfn-lint-rules'
+    """Check Parameter Labels Exist"""
+    id = 'W9002'
+    shortdesc = 'Each parameter should have a label'
+    description = 'AWS::CloudFormation::Interface should contain ParameterLabels for each parameter'
+    source_url = 'https://github.com/qs_cfn_lint_rules/qs_cfn_lint_rules'
     tags = ['parameters']
 
     def match(self, cfn):
         """Basic Matching"""
         matches = []
-        message = 'Parameter {0} is not in a ParameterGroup'
+        message = 'Parameter {0} is missing ParameterLabel'
         labels = []
 
         if "Metadata" in cfn.template.keys():
             if "AWS::CloudFormation::Interface" in cfn.template["Metadata"].keys():
-                if "ParameterGroups" in cfn.template["Metadata"]["AWS::CloudFormation::Interface"].keys():
-                    for x in cfn.template["Metadata"]["AWS::CloudFormation::Interface"]["ParameterGroups"]:
-                        labels += x['Parameters']
+                if "ParameterLabels" in cfn.template["Metadata"]["AWS::CloudFormation::Interface"].keys():
+                    for x in cfn.template["Metadata"]["AWS::CloudFormation::Interface"]["ParameterLabels"]:
+                        labels.append(str(x))
 
         if "Parameters" not in cfn.template.keys():
             return matches

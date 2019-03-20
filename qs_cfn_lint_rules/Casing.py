@@ -19,29 +19,21 @@ from cfnlint import RuleMatch
 
 
 class Base(CloudFormationLintRule):
-    """Check Parameter Labels Exist"""
-    id = 'W9002'
-    shortdesc = 'Each parameter should have a label'
-    description = 'AWS::CloudFormation::Interface should contain ParameterLabels for each parameter'
-    source_url = 'https://github.com/quickstart/qs-cfn-lint-rules'
-    tags = ['parameters']
+    """Check Name Casing"""
+    id = 'W9001'
+    shortdesc = 'Name casing should be PascalCase'
+    description = 'Making sure all names are PascalCase'
+    source_url = 'https://github.com/qs_cfn_lint_rules/qs-cfn-python-lint-rules'
+    tags = ['case']
 
     def match(self, cfn):
         """Basic Matching"""
         matches = []
-        message = 'Parameter {0} is missing ParameterLabel'
-        labels = []
 
-        if "Metadata" in cfn.template.keys():
-            if "AWS::CloudFormation::Interface" in cfn.template["Metadata"].keys():
-                if "ParameterLabels" in cfn.template["Metadata"]["AWS::CloudFormation::Interface"].keys():
-                    for x in cfn.template["Metadata"]["AWS::CloudFormation::Interface"]["ParameterLabels"]:
-                        labels.append(str(x))
-
-        if "Parameters" not in cfn.template.keys():
-            return matches
-        else:
-            for x in cfn.template["Parameters"]:
-                if str(x) not in labels:
-                    matches.append(RuleMatch(["Parameters", x], message.format(x)))
+        for x in cfn.template:
+            if x in ["Parameters", "Outputs", "Resources"]:
+                for i in cfn.template[x]:
+                    if i[0] != i[0].upper():
+                        message = '{0} names should be PascalCase'
+                        matches.append(RuleMatch([x, i], message.format(x.rstrip('s'))))
         return matches
