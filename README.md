@@ -6,16 +6,15 @@ guidelines, for more information see the [Contributors Guide](https://aws-quicks
 ## Installation and Usage
 
 ```bash
-# Requires cfn-python-lint
-pip install cfn-python-lint
 cd ~/
 git clone https://github.com/aws-quickstart/qs-cfn-lint-rules.git
+pip install -e .
 ```
 
 To add the rules when running on the command line use the `-a` flag to add the additional rules:
 
 ```bash
-cfn-lint -a ~/qs-cfn-lint-rules/quickstart/ my-cfn-template.yaml
+cfn-lint -a ~/qs-cfn-lint-rules/qs-cfn-lint-rules/ my-cfn-template.yaml
 ```
 
 To use in your IDE install the relevant 
@@ -24,5 +23,5 @@ cfn-lint config file (`~/.cfnlintrc`) as follows:
 
 ```yaml
 append_rules:
-- ~/qs-cfn-lint-rules/quickstart/
+- ~/qs-cfn-lint-rules/qs-cfn-lint-rules/
 ```
