@@ -41,7 +41,10 @@ class Base(CloudFormationLintRule):
     @staticmethod
     def get_errors(description, spell, custom_dict):
         dict_words = set([])
-        title_errors = []
+        title_errors = set([])
+        # Remove items from the custom dict from the string
+        for pn in custom_dict:
+            description = description.replace(pn, "")
         for sentence in description.split("."):
             word_no = 0
             # [OPTIONAL] prefix should not be considered as part of the string, as it is stripped from
@@ -53,10 +56,10 @@ class Base(CloudFormationLintRule):
                 if sentence.startswith(pn):
                     word_no += 1
                 sentence = sentence.replace(pn, "")
-            if sentence.strip():
+            if len(sentence.strip()) > 1:
                 # Check that first letter of first word is UPPER
                 if sentence[0].upper() != sentence[0]:
-                    title_errors.append(sentence.split()[0])
+                    title_errors.add(sentence.split()[0])
                 else:
                     for word in re.split('[^a-zA-Z]', sentence):
                         # ignore 0 length words
@@ -66,10 +69,14 @@ class Base(CloudFormationLintRule):
                                 dict_words.add(word)
                             elif word != word.upper():
                                 dict_words.add(word)
-                                if word.istitle():
-                                    title_errors.append(word)
+                                if word[0].isupper():
+                                    title_errors.add(word)
                             word_no += 1
         spell_errors = spell.unknown(list(dict_words))
+        for s in list(title_errors):
+            if s.lower() in spell_errors:
+                title_errors.remove(s)
+                spell_errors.remove(s.lower())
         return spell_errors, title_errors
 
     def match(self, cfn):
@@ -83,10 +90,10 @@ class Base(CloudFormationLintRule):
         else:
             custom_dict = self.get_custom_dict()
             spell = SpellChecker()
-            if "Metatata" in cfn.template.keys():
-                if "LintSpellExclude" in cfn.template["Metatata"].keys():
+            if "Metadata" in cfn.template.keys():
+                if "LintSpellExclude" in cfn.template["Metadata"].keys():
                     # add any proper nouns defined in template metadata
-                    custom_dict.union(set(cfn.template["Metatata"]["LintSpellExclude"]))
+                    custom_dict = custom_dict.union(set(cfn.template["Metadata"]["LintSpellExclude"]))
             for x in cfn.template["Parameters"]:
                 if "Description" in cfn.template["Parameters"][x].keys():
                     location = ["Parameters", x, "Description"]
