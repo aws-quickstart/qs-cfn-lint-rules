@@ -14,7 +14,7 @@ pip install -e .
 To add the rules when running on the command line use the `-a` flag to add the additional rules:
 
 ```bash
-cfn-lint -a ~/qs-cfn-lint-rules/qs-cfn-lint-rules/ my-cfn-template.yaml
+cfn-lint my-cfn-template.yaml -a ~/qs-cfn-lint-rules/qs-cfn-lint-rules/
 ```
 
 To use in your IDE install the relevant 
