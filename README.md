@@ -23,7 +23,7 @@ cfn-lint config file (`~/.cfnlintrc`) as follows:
 
 ```yaml
 append_rules:
-- ~/qs-cfn-lint-rules/qs-cfn-lint-rules/
+- ~/qs-cfn-lint-rules/qs_cfn_lint_rules/
 ```
 
 ## Vim Specfic Instructions (using vundle and syntastic)
