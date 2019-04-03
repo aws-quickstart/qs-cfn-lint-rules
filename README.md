@@ -27,8 +27,7 @@ append_rules:
 ```
 
 ## Vim Specfic Instructions (using vundle and syntastic)
-![image](https://user-images.githubusercontent.com/5912128/55507806-5c9f0600-560d-11e9-8ccb-f2f669845c3f.png)
-
+![image](https://user-images.githubusercontent.com/5912128/55508631-22366880-560f-11e9-867f-baa516712f63.png)
 ### Install the plugins:
 **Add to `syntastic` and `vim-cfn` your `~/.vimrc`:**
 
