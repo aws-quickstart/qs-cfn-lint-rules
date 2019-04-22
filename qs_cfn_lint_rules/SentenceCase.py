@@ -103,4 +103,50 @@ class Base(CloudFormationLintRule):
                         matches.append(RuleMatch(location, title_message.format(x, title_errors)))
                     if spell_errors:
                         matches.append(RuleMatch(location, spell_message.format(x, spell_errors)))
+            if "Metadata" not in cfn.template.keys():
+                matches.append(RuleMatch(["Parameters"], "Template is missing Parameter labels and groups"))
+            elif "AWS::CloudFormation::Interface" not in cfn.template["Metadata"].keys():
+                matches.append(RuleMatch(["Metadata"], "Template is missing Parameter labels and groups"))
+            elif "ParameterGroups" not in cfn.template["Metadata"]["AWS::CloudFormation::Interface"].keys():
+                matches.append(RuleMatch(["Metadata", "AWS::CloudFormation::Interface"],
+                                         "Template is missing Parameter groups"))
+            elif "ParameterLabels" not in cfn.template["Metadata"]["AWS::CloudFormation::Interface"].keys():
+                matches.append(RuleMatch(["Metadata", "AWS::CloudFormation::Interface"],
+                                         "Template is missing Parameter labels"))
+            else:
+                count = 0
+                for x in cfn.template["Metadata"]["AWS::CloudFormation::Interface"]["ParameterGroups"]:
+                    title_message = 'Parameter Group name "{0}" is not sentence case: {1}'
+                    spell_message = 'Parameter Group name "{0}" contains spelling error(s): {1}'
+                    if "Label" not in x.keys():
+                        matches.append(RuleMatch(["Metadata", "AWS::CloudFormation::Interface", "ParameterGroups", x],
+                                                 "Template is missing Parameter groups"))
+                    elif "default" not in x["Label"].keys():
+                        matches.append(RuleMatch(["Metadata", "AWS::CloudFormation::Interface", "ParameterGroups", x],
+                                                 "Template is missing Parameter groups"))
+                    else:
+                        location = ["Metadata", "AWS::CloudFormation::Interface", "ParameterGroups", count, "Label",
+                                    "default"]
+                        description = x["Label"]["default"]
+                        spell_errors, title_errors = self.get_errors(description, spell, custom_dict)
+                        if title_errors:
+                            matches.append(RuleMatch(location, title_message.format(x["Label"]["default"], title_errors)))
+                        if spell_errors:
+                            matches.append(RuleMatch(location, spell_message.format(x["Label"]["default"], spell_errors)))
+                    count += 1
+                for x in cfn.template["Metadata"]["AWS::CloudFormation::Interface"]["ParameterLabels"]:
+                    title_message = 'Parameter Label is not sentence case: {0}'
+                    spell_message = 'Parameter Label contains spelling error(s): {0}'
+                    if "default" not in cfn.template["Metadata"]["AWS::CloudFormation::Interface"]["ParameterLabels"][x].keys():
+                        matches.append(RuleMatch(["Metadata", "AWS::CloudFormation::Interface", "ParameterLabels", x],
+                                                 "Template is missing Parameter labels"))
+                    else:
+                        location = ["Metadata", "AWS::CloudFormation::Interface", "ParameterLabels", x, "default"]
+                        description = cfn.template["Metadata"]["AWS::CloudFormation::Interface"]["ParameterLabels"][x]["default"]
+                        spell_errors, title_errors = self.get_errors(description, spell, custom_dict)
+                        if title_errors:
+                            matches.append(RuleMatch(location, title_message.format(title_errors)))
+                        if spell_errors:
+                            matches.append(RuleMatch(location, spell_message.format(spell_errors)))
+                    count += 1
         return matches
