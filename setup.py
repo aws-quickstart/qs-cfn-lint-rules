@@ -27,13 +27,13 @@ with open('README.md') as f:
 setup(
     name='qs-cfn-lint-rules',
     version=version,
-    description='checks CloudFormation templates against AWS Quick Start contributors guide rules',
+    description='Checks CloudFormation templates against AWS Quick Start contributors guide rules',
     long_description=readme,
     long_description_content_type="text/markdown",
-    keywords='aws, lint, aws-qs_cfn_lint_rules',
+    keywords='aws, lint, aws, qs-cfn-lint-rules',
     author='AWS Quick Start team',
-    author_email='qs_cfn_lint_rules-eng@amazon.com',
-    url='https://github.com/awslabs/qs-cfn-lint-rules',
+    author_email='qs-cfn-lint-rules-eng@amazon.com',
+    url='https://github.com/aws-quickstart/qs-cfn-lint-rules',
     packages=find_packages(),
     zip_safe=False,
     install_requires=[
