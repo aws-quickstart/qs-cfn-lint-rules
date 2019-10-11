@@ -118,9 +118,6 @@ class MyRule(CloudFormationLintRule):
             template_url=child_template_url
         ))
 
-        print("Child Template URL: {}".format(child_template_url))
-        print("Child Template File: {}".format(template_file))
-
         # Load child stack
         template_parsed = template_parser.my_load_yaml_function(
             template_file=template_file
@@ -141,9 +138,8 @@ class MyRule(CloudFormationLintRule):
 
             # TODO: Add matching of types if known
             # TODO: What about TaskCat parameters
-        print(missing_parameters)
+
         if not len(missing_parameters) == 0:
-            print(str(missing_parameters))
             return str(missing_parameters)
         else:
             return None
