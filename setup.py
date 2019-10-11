@@ -18,7 +18,7 @@ from setuptools import find_packages
 from setuptools import setup
 
 
-version = "0.0.1"
+version = "0.0.2"
 
 
 with open('README.md') as f:
@@ -30,7 +30,7 @@ setup(
     description='Checks CloudFormation templates against AWS Quick Start contributors guide rules',
     long_description=readme,
     long_description_content_type="text/markdown",
-    keywords='aws, lint, aws, qs-cfn-lint-rules',
+    keywords='aws, lint, aws-qs-cfn-lint, qs-cfn-lint-rules',
     author='AWS Quick Start team',
     author_email='qs-cfn-lint-rules-eng@amazon.com',
     url='https://github.com/aws-quickstart/qs-cfn-lint-rules',

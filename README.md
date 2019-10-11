@@ -8,6 +8,7 @@ guidelines, for more information see the [Contributors Guide](https://aws-quicks
 ```bash
 cd ~/
 git clone https://github.com/aws-quickstart/qs-cfn-lint-rules.git
+cd qs-cfn-lint-rules
 pip install -e .
 ```
 
