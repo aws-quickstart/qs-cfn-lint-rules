@@ -18,7 +18,7 @@ from setuptools import find_packages
 from setuptools import setup
 
 
-version = "0.0.1"
+version = "0.0.2"
 
 
 with open('README.md') as f:
@@ -39,6 +39,7 @@ setup(
     install_requires=[
         'cfn-lint>=0.16.0,<1.0.0',
         'pyspellchecker>=0.4.0,<0.5.0'
+        'taskcat>=0.8.47,<1.0.0'
     ],
     python_requires='>=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*',
     license='Apache License 2.0',

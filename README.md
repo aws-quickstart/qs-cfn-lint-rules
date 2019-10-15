@@ -8,13 +8,14 @@ guidelines, for more information see the [Contributors Guide](https://aws-quicks
 ```bash
 cd ~/
 git clone https://github.com/aws-quickstart/qs-cfn-lint-rules.git
+cd qs-cfn-lint-rules
 pip install -e .
 ```
 
 To add the rules when running on the command line use the `-a` flag to add the additional rules:
 
 ```bash
-cfn-lint my-cfn-template.yaml -a ~/qs-cfn-lint-rules/qs-cfn-lint-rules/
+cfn-lint my-cfn-template.yaml -a ~/qs-cfn-lint-rules/qs_cfn_lint_rules/
 ```
 
 To use in your IDE install the relevant 
