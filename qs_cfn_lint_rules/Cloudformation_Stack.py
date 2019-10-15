@@ -24,6 +24,7 @@ from taskcat import utils
 
 
 class MyTemplateParser(object):
+
     def my_load_yaml_function(self, template_file):
         template_data = utils.CFNYAMLHandler.ordered_safe_load(
             open(template_file, 'rU'), object_pairs_hook=OrderedDict)
@@ -131,10 +132,6 @@ class MissingParameter(CloudFormationLintRule):
 
             # TODO: Add matching of types if known
             # TODO: What about TaskCat parameters
-<<<<<<< HEAD
-=======
-
->>>>>>> 00e6d69... Remove debug prints. Use new cfn-lint classes to remove deprecation warnings
         if not len(missing_parameters) == 0:
             return str(missing_parameters)
         else:
