@@ -188,10 +188,10 @@ class MissingParameter(CloudFormationLintRule):
         # Iterate over Child Stack parameters and
         # make sure we have all the ones that are not Defaults
         # TODO: How should we deal with 'Defaults'
-        child_template_parameters = template_parsed["Parameters"]
+        child_template_parameters = template_parsed.get("Parameters")
 
         for parameter in child_template_parameters:
-            properties = child_template_parameters[parameter]
+            properties = child_template_parameters.get(parameter)
             if 'Default' in properties.keys():
                 continue
 
@@ -270,7 +270,7 @@ class DefaultParameterRule(CloudFormationLintRule):
         child_template_parameters = template_parsed.get("Parameters")
 
         for parameter in child_template_parameters:
-            properties = child_template_parameters[parameter]
+            properties = child_template_parameters.get(parameter)
             if ('Default' in properties.keys()) and (parameter not in parameters.keys()):
                 missing_parameters.append(parameter)
 
@@ -347,7 +347,7 @@ class MatchingParameterNotPassed(CloudFormationLintRule):
         # Iterate over Child Stack parameters and
         # make sure we have all the ones that are not Defaults
         # TODO: How should we deal with 'Defaults'
-        child_parameters = template_parsed["Parameters"]
+        child_parameters = template_parsed.get("Parameters")
 
         for parameter in child_parameters:
 
@@ -355,7 +355,7 @@ class MatchingParameterNotPassed(CloudFormationLintRule):
             if parameter in parent_parameters.keys():
                 if parameter in resource_parameters.keys():
                     # The Parents value not being passed to the child
-                    if parameter not in resource_parameters[parameter]:
+                    if parameter not in resource_parameters.get(parameter):
                         missing_parameters.append(parameter)
                 else:
                     # The Parameter not being passed at all but exists in the child(check and signal defaults)
@@ -433,7 +433,7 @@ class ParameterPassedButNotDefinedInChild(CloudFormationLintRule):
 
         # Iterate over template resource parametes and check they exist
         # In the child template
-        child_parameters = template_parsed["Parameters"]
+        child_parameters = template_parsed.get("Parameters")
 
         for parameter in resource_parameters.keys():
 
