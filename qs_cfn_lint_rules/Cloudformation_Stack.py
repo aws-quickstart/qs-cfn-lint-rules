@@ -27,22 +27,7 @@ from collections import OrderedDict
 
 
 class MyTemplateParser(object):
-    """Handles the loading and dumping of CloudFormation YAML templates.
-    Example usage:
-    from taskcat import utils
-    class MyClass(object):
-        def __init__(self):
-            # init MyClass
-            return
-        def my_load_yaml_function(self, template_file):
-            template_data = utils.CFNYAMLHandler.ordered_safe_load(open(template_file, 'rU'), object_pairs_hook=OrderedDict))
-            return template_data
-        def my_dump_yaml_function(self, template_data, output_file):
-            utils.CFNYAMLHandler.validate_output_dir(output_file)
-            with open(output_file, 'wb') as updated_template:
-                updated_template.write(utils.CFNYAMLHandler.ordered_safe_dump(template_data, indent=2, allow_unicode=True, default_flow_style=False, explicit_start=True, explicit_end=True))
-            updated_template.close()
-    """
+    """Handles the loading and dumping of CloudFormation YAML templates."""
 
     def __init__(self, logger=None, loglevel='error', botolevel='error'):
         pass
@@ -122,15 +107,6 @@ class MyTemplateParser(object):
             open(template_file, 'rU'), object_pairs_hook=OrderedDict)
 
         return template_data
-
-    def my_dump_yaml_function(self, template_data, output_file):
-        validate_output_dir(output_file)
-        with open(output_file, 'wb') as updated_template:
-            updated_template.write(utils.CFNYAMLHandler.ordered_safe_dump(
-                template_data, indent=2, allow_unicode=True,
-                default_flow_style=False, explicit_start=True,
-                explicit_end=True))
-        updated_template.close()
 
     def template_url_to_path(self, current_template_path, template_url):
 
@@ -219,7 +195,7 @@ class MissingParameter(CloudFormationLintRule):
             if 'Default' in properties.keys():
                 continue
 
-            if parameter not in parameters.keys():  # YAY we have a math
+            if parameter not in parameters.keys():
                 missing_parameters.append(parameter)
 
             # TODO: Add matching of types if known
@@ -252,9 +228,9 @@ class MissingParameter(CloudFormationLintRule):
             if missing_parameters:
                 path = ['Resources', r_name]
                 message = 'Missing Child Stack parameters. {} {}'.format(
-                    r_name,
-                    missing_parameters
-                )
+                        r_name,
+                        missing_parameters
+                    )
                 matches.append(RuleMatch(path, message))
         return matches
 
@@ -291,7 +267,7 @@ class DefaultParameterRule(CloudFormationLintRule):
         # Iterate over Child Stack parameters and
         # make sure we have all the ones that are not Defaults
         # TODO: How should we deal with 'Defaults'
-        child_template_parameters = template_parsed["Parameters"]
+        child_template_parameters = template_parsed.get("Parameters")
 
         for parameter in child_template_parameters:
             properties = child_template_parameters[parameter]
@@ -328,11 +304,11 @@ class DefaultParameterRule(CloudFormationLintRule):
             if default_parameters:
                 path = ['Resources', r_name]
                 message = 'Default parameters used,' \
-                          ' please be explicit and pass the default value ' \
-                          'if you wish to use that. {} {}'.format(
-                    r_name,
-                    default_parameters
-                )
+                    ' please be explicit and pass the default value ' \
+                    'if you wish to use that. {} {}'.format(
+                        r_name,
+                        default_parameters
+                    )
                 matches.append(RuleMatch(path, message))
         return matches
 
@@ -399,6 +375,8 @@ class MatchingParameterNotPassed(CloudFormationLintRule):
         )
 
         parent_parameters = cfn.get_parameters()
+        if type(parent_parameters) is None:
+            parent_parameters = {}
 
         for r_name, r_values in resources.items():
             properties = r_values.get('Properties')
@@ -416,9 +394,84 @@ class MatchingParameterNotPassed(CloudFormationLintRule):
             if not_passed_to_child:
                 path = ['Resources', r_name]
                 message = 'Parameter defined in Parent with same name as child,' \
-                          ' however this value is never passed to child. {} {}'.format(
-                              r_name,
-                              not_passed_to_child
-                          )
+                    ' however this value is never passed to child. {} {}'.format(
+                        r_name,
+                        not_passed_to_child
+                    )
+                matches.append(RuleMatch(path, message))
+        return matches
+
+class ParameterPassedButNotDefinedInChild(CloudFormationLintRule):
+    """Check Nested Stack Parameters"""
+    id = 'E9196'
+    shortdesc = 'Parameters in passed to stack resource but not defined in child'
+    description = 'A parameter defined in template stack resource but not ' \
+                  'defined in the child template'
+    source_url = 'https://github.com/qs-cfn-lint-rules/qs_cfn_lint_rules'
+    tags = ['case']
+
+    def missing_in_child_check(
+        self,
+        current_template_path,
+        resource_parameters,
+        child_template_url
+    ):
+        missing_parameters = []
+        template_parser = MyTemplateParser()
+
+        # Hack out the QS bits and get the file_name
+        template_file = str(MyTemplateParser.template_url_to_path(
+            template_parser,
+            current_template_path=current_template_path,
+            template_url=child_template_url
+        ))
+
+        # Load child stack
+        template_parsed = template_parser.my_load_yaml_function(
+            template_file=template_file
+        )
+
+        # Iterate over template resource parametes and check they exist
+        # In the child template
+        child_parameters = template_parsed["Parameters"]
+
+        for parameter in resource_parameters.keys():
+
+            # We have a parameter in the parent matching the child
+            if parameter not in child_parameters.keys():
+                missing_parameters.append(parameter)
+
+        if not len(missing_parameters) == 0:
+            return str(missing_parameters)
+        else:
+            return None
+
+    def match(self, cfn):
+        """Basic Matching"""
+        matches = []
+        # try:
+        resources = cfn.get_resources(
+            resource_type=['AWS::CloudFormation::Stack']
+        )
+
+        for r_name, r_values in resources.items():
+            properties = r_values.get('Properties')
+            child_template_url = properties.get('TemplateURL')
+
+            child_template_parameters = properties.get('Parameters')
+
+            not_passed_to_child = self.missing_in_child_check(
+                current_template_path=os.path.abspath(cfn.filename),
+                resource_parameters=child_template_parameters,
+                child_template_url=child_template_url
+            )
+
+            if not_passed_to_child:
+                path = ['Resources', r_name]
+                message = 'Parameter defined in Stack resource not present in' \
+                    ' child template {} {}'.format(
+                        r_name,
+                        not_passed_to_child
+                    )
                 matches.append(RuleMatch(path, message))
         return matches
