@@ -18,12 +18,12 @@ from cfnlint.rules import CloudFormationLintRule  # pylint: disable=E0401
 from cfnlint.rules import RuleMatch
 
 import os
-import json
 import yaml
-import re
+
 
 from pathlib import Path
 from collections import OrderedDict
+
 
 class MyTemplateParser(object):
     """Handles the loading and dumping of CloudFormation YAML templates."""
@@ -156,8 +156,8 @@ class MissingParameter(CloudFormationLintRule):
     source_url = 'https://github.com/qs-cfn-lint-rules/qs_cfn_lint_rules'
     tags = ['case']
 
+    @staticmethod
     def parameter_mismatch(
-        self,
         current_template_path,
         parameters,
         child_template_url
@@ -241,8 +241,8 @@ class DefaultParameterRule(CloudFormationLintRule):
     source_url = 'https://github.com/qs-cfn-lint-rules/qs_cfn_lint_rules'
     tags = ['case']
 
+    @staticmethod
     def default_parameter_check(
-        self,
         current_template_path,
         parameters,
         child_template_url
@@ -323,8 +323,8 @@ class MatchingParameterNotPassed(CloudFormationLintRule):
     source_url = 'https://github.com/qs-cfn-lint-rules/qs_cfn_lint_rules'
     tags = ['case']
 
+    @staticmethod
     def matching_but_not_used_check(
-        self,
         current_template_path,
         parent_parameters,
         resource_parameters,
@@ -400,6 +400,7 @@ class MatchingParameterNotPassed(CloudFormationLintRule):
                 matches.append(RuleMatch(path, message))
         return matches
 
+
 class ParameterPassedButNotDefinedInChild(CloudFormationLintRule):
     """Check Nested Stack Parameters"""
     id = 'E9196'
@@ -409,8 +410,8 @@ class ParameterPassedButNotDefinedInChild(CloudFormationLintRule):
     source_url = 'https://github.com/qs-cfn-lint-rules/qs_cfn_lint_rules'
     tags = ['case']
 
+    @staticmethod
     def missing_in_child_check(
-        self,
         current_template_path,
         resource_parameters,
         child_template_url
