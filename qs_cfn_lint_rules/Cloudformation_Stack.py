@@ -25,6 +25,9 @@ import re
 from pathlib import Path
 from collections import OrderedDict
 
+class TemplatePathParser(object):
+    def __init__(self):
+        pass
 
 class MyTemplateParser(object):
     """Handles the loading and dumping of CloudFormation YAML templates."""
@@ -102,6 +105,7 @@ class MyTemplateParser(object):
             keyword = re.search('\'!.*\':?', yaml_dump)
 
         return yaml_dump
+        
     def my_load_yaml_function(self, template_file):
         template_data = self.ordered_safe_load(
             open(template_file, 'rU'), object_pairs_hook=OrderedDict)
@@ -109,6 +113,8 @@ class MyTemplateParser(object):
         return template_data
 
     def template_url_to_path(self, current_template_path, template_url):
+
+        template_path = ""
 
         # Strip away CFN builtins around this
         if isinstance(template_url, dict):  # URL is a dictionary
@@ -118,15 +124,35 @@ class MyTemplateParser(object):
                 else:
                     template_path = template_url["Fn::Sub"][0].split("}")[-1]
             elif "Fn::Join" in list(template_url.keys())[0]:
+                #
                 template_path = template_url["Fn::Join"][1][-1]
+            elif "Fn::If" in list(template_url.keys())[0]:
+                # TODO: Eval an If ...
+                # Potentially check either or both if it is single level
+                message = "Unable to evaluate Fn::If in TemplateURL: %s"
+                raise Exception(message % (template_url))
+            else:
+                message = "Unable to parse template_path from TemplateURL: %s"
+                raise Exception(message % (template_url))
         elif isinstance(template_url, str):
             template_path = "/".join(template_url.split("/")[-2:])
 
-        # Try current dir
+        # Try current template dir
         project_root = Path(
             os.path.dirname(current_template_path)
         )
 
+        child_template_file = template_path.split("/")[-1]
+        final_template_path = Path(
+            "/".join(
+                [str(project_root), str(child_template_file)]
+            )
+        )
+
+        if final_template_path.exists():
+            return final_template_path
+
+        # Try current template dir + prefix
         final_template_path = Path(
             "/".join(
                 [str(project_root), str(template_path)]
@@ -189,9 +215,14 @@ class MissingParameter(CloudFormationLintRule):
         # make sure we have all the ones that are not Defaults
         # TODO: How should we deal with 'Defaults'
         child_template_parameters = template_parsed.get("Parameters")
+        if child_template_parameters is None:
+            child_template_parameters = {}
 
         for parameter in child_template_parameters:
             properties = child_template_parameters.get(parameter)
+            if properties is None:
+                properties = {}
+
             if 'Default' in properties.keys():
                 continue
 
@@ -218,6 +249,8 @@ class MissingParameter(CloudFormationLintRule):
             child_template_url = properties.get('TemplateURL')
 
             child_template_parameters = properties.get('Parameters')
+            if child_template_parameters is None:
+                child_template_parameters = {}
 
             missing_parameters = self.parameter_mismatch(
                 current_template_path=os.path.abspath(cfn.filename),
@@ -294,6 +327,8 @@ class DefaultParameterRule(CloudFormationLintRule):
             child_template_url = properties.get('TemplateURL')
 
             child_template_parameters = properties.get('Parameters')
+            if child_template_parameters is None:
+                child_template_parameters = {}
 
             default_parameters = self.default_parameter_check(
                 current_template_path=os.path.abspath(cfn.filename),
@@ -344,22 +379,17 @@ class MatchingParameterNotPassed(CloudFormationLintRule):
             template_file=template_file
         )
 
-        # Iterate over Child Stack parameters and
-        # make sure we have all the ones that are not Defaults
-        # TODO: How should we deal with 'Defaults'
         child_parameters = template_parsed.get("Parameters")
 
         for parameter in child_parameters:
-
             # We have a parameter in the parent matching the child
             if parameter in parent_parameters.keys():
                 if parameter in resource_parameters.keys():
                     # The Parents value not being passed to the child
-                    if parameter not in resource_parameters.get(parameter):
-                        missing_parameters.append(parameter)
-                else:
-                    # The Parameter not being passed at all but exists in the child(check and signal defaults)
-                    missing_parameters.append(parameter)
+                    if parameter not in str(resource_parameters.get(parameter)):
+                        # TODO: test for !Ref or the name of the Parameter in the value
+                        print("parameter:{} value: {} ".format(parameter, str(resource_parameters.get(parameter))))
+                        missing_parameters.append("{}\ {{}\}".format(parameter, str(resource_parameters.get(parameter))))
 
         if not len(missing_parameters) == 0:
             return str(missing_parameters)
@@ -383,6 +413,8 @@ class MatchingParameterNotPassed(CloudFormationLintRule):
             child_template_url = properties.get('TemplateURL')
 
             child_template_parameters = properties.get('Parameters')
+            if child_template_parameters is None:
+                child_template_parameters = {}
 
             not_passed_to_child = self.matching_but_not_used_check(
                 current_template_path=os.path.abspath(cfn.filename),
@@ -459,6 +491,8 @@ class ParameterPassedButNotDefinedInChild(CloudFormationLintRule):
             child_template_url = properties.get('TemplateURL')
 
             child_template_parameters = properties.get('Parameters')
+            if child_template_parameters is None:
+                child_template_parameters = {}
 
             not_passed_to_child = self.missing_in_child_check(
                 current_template_path=os.path.abspath(cfn.filename),
