@@ -14,67 +14,18 @@
   OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
   SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 """
+import os
+import cfnlint
 from cfnlint.rules import CloudFormationLintRule  # pylint: disable=E0401
 from cfnlint.rules import RuleMatch
-
-import os
-import yaml
-
-
 from pathlib import Path
-from collections import OrderedDict
 
 
 class MyTemplateParser(object):
     """Handles the loading and dumping of CloudFormation YAML templates."""
 
-    def __init__(self, logger=None, loglevel='error', botolevel='error'):
+    def __init__(self):
         pass
-
-    @staticmethod
-    def ordered_safe_load(stream, object_pairs_hook=OrderedDict):
-        class OrderedSafeLoader(yaml.SafeLoader):
-            pass
-
-        def _construct_int_without_octals(loader, node):
-            value = str(loader.construct_scalar(node)).replace('_', '')
-            try:
-                return int(value, 10)
-            except ValueError:
-                return loader.construct_yaml_int(node)
-
-        def _construct_mapping(loader, node):
-            loader.construct_mapping(node)
-            return object_pairs_hook(loader.construct_pairs(node))
-
-        def _construct_cfn_tag(loader, tag_suffix, node):
-            tag_suffix = u'!{}'.format(tag_suffix)
-            if isinstance(node, yaml.ScalarNode):
-                # Check if block literal. Inject for later use in the YAML dumps.
-                if node.style == '|':
-                    return u'{0} {1} {2}'.format(tag_suffix, '|', node.value)
-                else:
-                    return u'{0} {1}'.format(tag_suffix, node.value)
-            elif isinstance(node, yaml.SequenceNode):
-                constructor = loader.construct_sequence
-            elif isinstance(node, yaml.MappingNode):
-                constructor = loader.construct_mapping
-            else:
-                raise BaseException('[ERROR] Unknown tag_suffix: {}'.format(tag_suffix))
-
-            return OrderedDict([(tag_suffix, constructor(node))])
-
-        OrderedSafeLoader.add_constructor(u'tag:yaml.org,2002:int', _construct_int_without_octals)
-        OrderedSafeLoader.add_constructor(yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, _construct_mapping)
-        OrderedSafeLoader.add_multi_constructor('!', _construct_cfn_tag)
-
-        return yaml.load(stream, OrderedSafeLoader)
-
-    def my_load_yaml_function(self, template_file):
-        template_data = self.ordered_safe_load(
-            open(template_file, 'rU'), object_pairs_hook=OrderedDict)
-
-        return template_data
 
     @staticmethod
     def template_url_to_path(current_template_path, template_url):
@@ -172,9 +123,11 @@ class MissingParameter(CloudFormationLintRule):
         ))
 
         # Load child stack
-        template_parsed = template_parser.my_load_yaml_function(
-            template_file=template_file
-        )
+        # template_parsed = template_parser.my_load_yaml_function(
+        #     template_file=template_file
+        # )
+
+        template_parsed = cfnlint.decode.cfn_yaml.load(template_file)
 
         # Iterate over Child Stack parameters and
         # make sure we have all the ones that are not Defaults
@@ -257,9 +210,10 @@ class DefaultParameterRule(CloudFormationLintRule):
         ))
 
         # Load child stack
-        template_parsed = template_parser.my_load_yaml_function(
-            template_file=template_file
-        )
+        # template_parsed = template_parser.my_load_yaml_function(
+        #     template_file=template_file
+        # )
+        template_parsed = cfnlint.decode.cfn_yaml.load(template_file)
 
         # Iterate over Child Stack parameters and
         # make sure we have all the ones that are not Defaults
@@ -331,7 +285,6 @@ class MatchingParameterNotPassed(CloudFormationLintRule):
         child_template_url
     ):
         missing_parameters = []
-        template_parser = MyTemplateParser()
 
         # Hack out the QS bits and get the file_name
         template_file = str(MyTemplateParser.template_url_to_path(
@@ -339,10 +292,7 @@ class MatchingParameterNotPassed(CloudFormationLintRule):
             template_url=child_template_url
         ))
 
-        # Load child stack
-        template_parsed = template_parser.my_load_yaml_function(
-            template_file=template_file
-        )
+        template_parsed = cfnlint.decode.cfn_yaml.load(template_file)
 
         child_parameters = template_parsed.get("Parameters")
         if child_parameters is None:
@@ -355,8 +305,7 @@ class MatchingParameterNotPassed(CloudFormationLintRule):
                     # The Parents value not being passed to the child
                     if parameter not in str(resource_parameters.get(parameter)):
                         # TODO: test for !Ref or the name of the Parameter in the value
-                        print("parameter:{} value: {} ".format(parameter, str(resource_parameters.get(parameter))))
-                        missing_parameters.append("{}\ {{}\}".format(parameter, str(resource_parameters.get(parameter))))
+                        missing_parameters.append("{} ({})".format(parameter, str(resource_parameters.get(parameter))))
 
         if not len(missing_parameters) == 0:
             return str(missing_parameters)
@@ -426,9 +375,10 @@ class ParameterPassedButNotDefinedInChild(CloudFormationLintRule):
         ))
 
         # Load child stack
-        template_parsed = template_parser.my_load_yaml_function(
-            template_file=template_file
-        )
+        # template_parsed = template_parser.my_load_yaml_function(
+        #     template_file=template_file
+        # )
+        template_parsed = cfnlint.decode.cfn_yaml.load(template_file)
 
         # Iterate over template resource parameters and check they exist
         # In the child template
