@@ -18,18 +18,19 @@ import os
 import cfnlint
 from cfnlint.rules import CloudFormationLintRule  # pylint: disable=E0401
 from cfnlint.rules import RuleMatch
+from qs_cfn_lint_rules.stack.StackHelper import template_url_to_path
 
 
-class DefaultParameter(CloudFormationLintRule):
+class MissingParameter(CloudFormationLintRule):
     """Check Nested Stack Parameters"""
-    id = 'W9198'
+    id = 'E3903'
     shortdesc = 'Parameters missing for nested stack'
     description = 'Check to make sure parameters for nested stack are correct'
     source_url = 'https://github.com/qs-cfn-lint-rules/qs_cfn_lint_rules'
     tags = ['case']
 
     @staticmethod
-    def default_parameter_check(
+    def parameter_mismatch(
         current_template_path,
         parameters,
         child_template_url
@@ -37,16 +38,17 @@ class DefaultParameter(CloudFormationLintRule):
         missing_parameters = []
 
         # Hack out the QS bits and get the file_name
-        template_file = str(StackHelper.template_url_to_path(
+        template_file = str(template_url_to_path(
             current_template_path=current_template_path,
             template_url=child_template_url
         ))
 
         # Load child stack
-        # template_parser = MyTemplateParser()
+        # template_parser = MYTemplateParser()
         # template_parsed = template_parser.my_load_yaml_function(
         #     template_file=template_file
         # )
+
         template_parsed = cfnlint.decode.cfn_yaml.load(template_file)
 
         # Iterate over Child Stack parameters and
@@ -58,7 +60,13 @@ class DefaultParameter(CloudFormationLintRule):
 
         for parameter in child_template_parameters:
             properties = child_template_parameters.get(parameter)
-            if ('Default' in properties.keys()) and (parameter not in parameters.keys()):
+            if properties is None:
+                properties = {}
+
+            if 'Default' in properties.keys():
+                continue
+
+            if parameter not in parameters.keys():
                 missing_parameters.append(parameter)
 
             # TODO: Add matching of types if known
@@ -84,19 +92,17 @@ class DefaultParameter(CloudFormationLintRule):
             if child_template_parameters is None:
                 child_template_parameters = {}
 
-            default_parameters = self.default_parameter_check(
+            missing_parameters = self.parameter_mismatch(
                 current_template_path=os.path.abspath(cfn.filename),
                 parameters=child_template_parameters,
                 child_template_url=child_template_url
             )
 
-            if default_parameters:
+            if missing_parameters:
                 path = ['Resources', r_name]
-                message = 'Default parameters used,' \
-                    ' please be explicit and pass the default value ' \
-                    'if you wish to use that. {} {}'.format(
+                message = 'Missing Child Stack parameters. {} {}'.format(
                         r_name,
-                        default_parameters
+                        missing_parameters
                     )
                 matches.append(RuleMatch(path, message))
         return matches
