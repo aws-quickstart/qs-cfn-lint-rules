@@ -33,14 +33,16 @@ class MissingParameter(CloudFormationLintRule):
     def parameter_mismatch(
         current_template_path,
         parameters,
-        child_template_url
+        child_template_url,
+        mappings
     ):
         missing_parameters = []
 
         # Hack out the QS bits and get the file_name
         template_file = str(template_url_to_path(
             current_template_path=current_template_path,
-            template_url=child_template_url
+            template_url=child_template_url,
+            template_mappings=mappings
         ))
 
         # Load child stack
@@ -95,7 +97,8 @@ class MissingParameter(CloudFormationLintRule):
             missing_parameters = self.parameter_mismatch(
                 current_template_path=os.path.abspath(cfn.filename),
                 parameters=child_template_parameters,
-                child_template_url=child_template_url
+                child_template_url=child_template_url,
+                mappings=cfn.get_mappings()
             )
 
             if missing_parameters:

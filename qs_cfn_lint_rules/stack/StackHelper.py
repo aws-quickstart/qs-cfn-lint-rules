@@ -20,6 +20,15 @@ from pathlib import Path
 import json
 
 MAX_DEPTH = 6  # Handle at most 6 levels of nesting in TemplateURL expressions
+# TODO: Allow user to inject this
+SUBSTITUTION = {
+    "QSS3BucketName": "aws-quickstart",
+    "QSS3KeyPrefix": "QSS3KeyPrefix/",
+    "AWS::Region": "us-east-1",
+    "AWS::AccountId": "888877779999"
+}
+
+mappings = {}
 
 
 def rewrite_vars(string, depth=1):
@@ -27,57 +36,61 @@ def rewrite_vars(string, depth=1):
     parts = string.split("${")
     parts = parts[1].split("}")
 
-    rep_text= "${" + parts[0] + "}"
+    rep_text = "${" + parts[0] + "}"
     rep_with = "##" + parts[0] + "##"
 
-    newtext = string.replace(rep_text, rep_with)
+    result = string.replace(rep_text, rep_with)
 
-    if len(newtext.split("${")) > 1:
-        newtext = rewrite_vars(newtext, depth=(depth+1))
+    if len(result.split("${")) > 1:
+        result = rewrite_vars(result, depth=(depth+1))
 
-    return newtext
+    return result
 
 
 def rewrite_sub_vars(string, depth=1):
     """Replace the '##var##' placeholders with 'var'"""
-    # TODO: Allow user to inject RunTime values for these
     if "##" not in string:
         return string
 
     parts = string.split("##")
     parts = parts[1].split("##")
 
-    rep_text= "##" + parts[0] + "##"
+    rep_text = "##" + parts[0] + "##"
     rep_with = "" + parts[0] + ""
 
-    newtext = string.replace(rep_text, rep_with)
+    result = string.replace(rep_text, rep_with)
 
-    if "##" in newtext:  # Recurse if we have more variables
-        newtext = rewrite_sub_vars(newtext, depth=(depth+1))
+    if "##" in result:  # Recurse if we have more variables
+        result = rewrite_sub_vars(result, depth=(depth+1))
 
-    return newtext
+    return result
 
 
-def rewrite_sub_vars_with_values(temp_expression, values):
+def rewrite_sub_vars_with_values(expression, values):
     """Rewrite sub vars with actual variable values"""
-    result = temp_expression
-    values_dict = []
+    result = expression
 
-    print("rewrite Values: {}".format(values))
+    # replace each key we have a value for
+    for key in values:
+        rep_text = "##" + key + "##"
+        rep_with = "" + values[key] + ""
+
+        result = result.replace(rep_text, rep_with)
+
+    return result
+
+
+def values_to_dict(values):
+    """Rewrite sub vars with actual variable values"""
+    # print("rewrite Values: {}".format(values))
     # Create dictionary of values
     values_dict_string = values.replace("(", "{")
     values_dict_string = values_dict_string.replace(")", "}")
     values_dict_string = values_dict_string.replace("'", '"')
-    print("rewrite Values: {}".format(values_dict_string))
+    # print("rewrite Values: {}".format(values_dict_string))
     values_dict = json.loads(values_dict_string)
 
-    # TODO: Allow user to inject RunTime values for these
-    # replace each key we have a value for
-    for key in values_dict:
-        rep_text = "##" + key + "##"
-        rep_with = "" + values_dict[key] + ""
-
-        result = result.replace(rep_text, rep_with)
+    return values_dict
 
 
 def evaluate_fn_sub(expression):
@@ -86,23 +99,20 @@ def evaluate_fn_sub(expression):
 
     # print("Fn::Sub: '{}'".format(expression))
 
+    # Builtins - Fudge some defaults here since we don't have runtime info
+    # ${AWS::Region} ${AWS::AccountId}
+    expression = rewrite_sub_vars_with_values(expression, SUBSTITUTION)
+
     # Handle Sub of form [ StringToSub, { "key" : "value", "key": "value" }]
     if "[" in expression:
         temp_expression = expression.split("[")[1].split(",")[0]
-        # TODO: Fix this for more than one provided sub value
-        values = expression.split("[")[1].split(",")[1].strip("]")
-        rewrite_sub_vars_with_values(temp_expression, values)
+        # print("Fn::Sub: (expression) {}".format(temp_expression))
+        values = expression.split("[")[1].split("(")[1].split(")")[0]
+        # print("Fn::Sub: (values) {}".format(values))
+        values = values_to_dict("(" + values + ")")
+        temp_expression = rewrite_sub_vars_with_values(temp_expression, values)
     else:
         temp_expression = expression.split("': '")[1].split("'")[0]
-
-
-    # We have made all of the expressions to be replaced ##VARIABLE##
-
-    # Builtins - Fudge some defaults here since we don't have runtime info
-
-    # ${AWS::Region} ${AWS::AccountId}
-
-    # okay so now we look at the list at the end if there is one
 
     # if we still have them we just use their values (ie: Parameters)
     result = rewrite_sub_vars(temp_expression)
@@ -119,7 +129,7 @@ def evaluate_fn_join(expression):
     new_values_list = []
 
     temp = expression.split("[")[1]
-    delimeter = temp.split(",")[0].strip("'")
+    delimiter = temp.split(",")[0].strip("'")
 
     values = expression.split("[")[2]
     values = values.split("]]")[0]
@@ -128,7 +138,7 @@ def evaluate_fn_join(expression):
     for value in values_list:
         new_values_list.append(value.strip("'"))
 
-    result = delimeter.join(new_values_list)
+    result = delimiter.join(new_values_list)
     results.append(result)
 
     return results
@@ -142,7 +152,6 @@ def evaluate_fn_if(expression):
     value_false = expression.split(",")[2].strip("]")
     results.append(value_true)
     results.append(value_false)
-    # print("Fn::If: {} {}".format(value_true, value_false))
 
     return results
 
@@ -153,22 +162,42 @@ def evaluate_fn_ref(expression):
     results = []
 
     temp = expression.split(": ")[1]
-    # print("Ref: {}".format(temp))
+    if temp.strip("'") in SUBSTITUTION.keys():
+        temp = SUBSTITUTION[temp.strip("'")]
+        temp = "'" + temp + "'"
+
     results.append(temp)
 
     return results
 
 
+def find_in_map_lookup(mappings_map, first_key, final_key):
+    global mappings
+
+    step1 = mappings[mappings_map.strip("'")]
+    step2 = step1[first_key.strip("'")]
+    result = step2[final_key.strip("'")]
+    return result
+
+
 def evaluate_fn_findinmap(expression):
-    raise Exception("Fn::FindInMap: not supported")
+    result = []
+
+    mappings_map = expression.split("[")[1].split("]")[0].split(",")[0].strip()
+    first_key = expression.split("[")[1].split("]")[0].split(",")[1].strip()
+    final_key = expression.split("[")[1].split("]")[0].split(",")[2].strip()
+
+    result.append(find_in_map_lookup(mappings_map, first_key, final_key))
+
+    return result
 
 
 def evaluate_fn_getatt(expression):
-    raise Exception("Fn::FindInMap: not supported")
+    raise Exception("Fn::GetAtt: not supported")
 
 
 def evaluate_fn_split(expression):
-    raise Exception("Fn::FindInMap: not supported")
+    raise Exception("Fn::Split: not supported")
 
 
 def evaluate_expression_controller(expression):
@@ -261,13 +290,20 @@ def _flatten_template_controller(template_url):
 def flatten_template_url(template_url):
     """Flatten template_url and return all permutations"""
     path_list = []
-    url_list = _flatten_template_controller(template_url)
+    url_list = []
+    # print("TemplateURL: {}".format(template_url))
+    try:
+        url_list = _flatten_template_controller(template_url)
+    except Exception as e:
+        print("Error extracting TemplateURL: {}".format(template_url))
+        print(str(e))
 
-    print(url_list)
+    # print(url_list)
     # Extract the path portion from the URL
     for url in url_list:
-        print("url: {}".format(str(url)))
-        o = urlparse(str(url))
+        # print("url: {}".format(str(url)))
+        # TODO: figure where the ' is coming from
+        o = urlparse(str(url.strip("'")))
         path_list.append(o.path)
 
     return path_list
@@ -320,7 +356,10 @@ def find_local_child_template(parent_template_path, child_template_path):
     raise Exception(message % child_template_path)
 
 
-def template_url_to_pathv2(current_template_path, template_url):
+def template_url_to_path(current_template_path, template_url, template_mappings=None):
+    global mappings
+    if template_mappings:
+        mappings = template_mappings
     child_local_paths = []
     child_template_paths = flatten_template_url(template_url)
 
@@ -328,78 +367,3 @@ def template_url_to_pathv2(current_template_path, template_url):
         child_local_paths.append(find_local_child_template(current_template_path, child_template_path))
 
     return child_local_paths
-
-#
-# Replace this stuff
-#
-
-
-def template_url_to_path(current_template_path, template_url):
-    """extract a file path from a CFN Stack Resource TemplateURL property"""
-    template_path = ""
-
-    # Strip away CFN builtins around this
-    if isinstance(template_url, dict):  # URL is a dictionary
-        if "Fn::Sub" in template_url.keys():  # There is a !Sub
-            # TODO: Explain what we are doing and why
-            if isinstance(template_url["Fn::Sub"], str):
-                template_path = template_url["Fn::Sub"].split("}")[-1]
-            else:
-                template_path = template_url["Fn::Sub"][0].split("}")[-1]
-        elif "Fn::Join" in list(template_url.keys())[0]:
-            # TODO: Explain what we are doing/why
-            template_path = template_url["Fn::Join"][1][-1]
-        elif "Fn::If" in list(template_url.keys())[0]:
-            # TODO: Eval an If ...
-            # Potentially check either or both if it is single level
-            message = "Unable to evaluate Fn::If in TemplateURL: %s"
-            raise Exception(message % (template_url))
-        else:
-            message = "Unable to parse template_path from TemplateURL: %s"
-            raise Exception(message % (template_url))
-    elif isinstance(template_url, str):
-        template_path = "/".join(template_url.split("/")[-2:])
-
-    # Try current template dir
-    project_root = Path(
-        os.path.dirname(current_template_path)
-    )
-
-    child_template_file = template_path.split("/")[-1]
-    final_template_path = Path(
-        "/".join(
-            [str(project_root), str(child_template_file)]
-        )
-    )
-
-    if final_template_path.exists() and final_template_path.is_file():
-        return final_template_path
-
-    # Try current template dir + prefix
-    final_template_path = Path(
-        "/".join(
-            [str(project_root), str(template_path)]
-        )
-    )
-
-    if final_template_path.exists() and final_template_path.is_file():
-        return final_template_path
-
-    # Try one directory up
-    project_root = Path(
-        os.path.normpath(
-            os.path.dirname(current_template_path) + "/../"
-        )
-    )
-
-    final_template_path = Path(
-        "/".join(
-            [str(project_root), str(template_path)]
-        )
-    )
-
-    if final_template_path.exists() and final_template_path.is_file():
-        return final_template_path
-
-    message = "Failed to discover path for %s, path %s does not exist"
-    raise Exception(message % (template_url, template_path))

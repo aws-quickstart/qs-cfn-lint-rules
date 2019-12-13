@@ -35,14 +35,16 @@ class MatchingParameterNotPassed(CloudFormationLintRule):
         current_template_path,
         parent_parameters,
         resource_parameters,
-        child_template_url
+        child_template_url,
+        mappings
     ):
         missing_parameters = []
 
         # Hack out the QS bits and get the file_name
         template_file = str(template_url_to_path(
             current_template_path=current_template_path,
-            template_url=child_template_url
+            template_url=child_template_url,
+            template_mappings=mappings
         ))
 
         template_parsed = cfnlint.decode.cfn_yaml.load(template_file)
@@ -89,7 +91,8 @@ class MatchingParameterNotPassed(CloudFormationLintRule):
                 current_template_path=os.path.abspath(cfn.filename),
                 parent_parameters=parent_parameters,
                 resource_parameters=child_template_parameters,
-                child_template_url=child_template_url
+                child_template_url=child_template_url,
+                mappings = cfn.get_mappings()
             )
 
             if not_passed_to_child:
