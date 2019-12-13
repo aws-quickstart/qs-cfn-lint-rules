@@ -24,6 +24,7 @@ MAX_DEPTH = 6  # Handle at most 6 levels of nesting in TemplateURL expressions
 SUBSTITUTION = {
     "QSS3BucketName": "aws-quickstart",
     "QSS3KeyPrefix": "QSS3KeyPrefix/",
+    "qss3KeyPrefix": "qss3KeyPrefix/",
     "AWS::Region": "us-east-1",
     "AWS::AccountId": "888877779999"
 }
@@ -309,48 +310,55 @@ def flatten_template_url(template_url):
     return path_list
 
 
+def remove_one_level(pathstring):
+    result = pathstring
+
+    result = result.find("/", 0)
+    result = pathstring[result+1:len(pathstring)]
+
+    return result
+
+
 def find_local_child_template(parent_template_path, child_template_path):
+    final_template_path = ""
+
     # Start where the Parent template is
     project_root = Path(
         os.path.dirname(parent_template_path)
     )
 
-    # Try current template dir
-    child_template_file = child_template_path.split("/")[-1]
-    final_template_path = Path(
-        "/".join(
-            [str(project_root), str(child_template_file)]
+    # Get rid of any "//"
+    child_template_path_tmp = os.path.normpath(child_template_path)
+
+    # Take the path piece by piece and try in current folder
+    while "/" in str(child_template_path_tmp):
+        child_template_path_tmp = remove_one_level(child_template_path_tmp)
+        final_template_path = Path(
+            "/".join(
+                [str(project_root), str(child_template_path_tmp)]
+            )
         )
-    )
+        if final_template_path.exists() and final_template_path.is_file():
+            return final_template_path
 
-    if final_template_path.exists() and final_template_path.is_file():
-        return final_template_path
-
-    # Try current template dir + prefix
-    final_template_path = Path(
-        "/".join(
-            [str(project_root), str(child_template_path)]
-        )
-    )
-
-    if final_template_path.exists() and final_template_path.is_file():
-        return final_template_path
-
-    # Try one directory up
+    # Take the path piece by piece and try in one folder up folder
     project_root = Path(
         os.path.normpath(
             os.path.dirname(parent_template_path) + "/../"
         )
     )
+    # Get rid of any "//"
+    child_template_path_tmp = os.path.normpath(child_template_path)
 
-    final_template_path = Path(
-        "/".join(
-            [str(project_root), str(child_template_path)]
+    while "/" in str(child_template_path_tmp):
+        child_template_path_tmp = remove_one_level(child_template_path_tmp)
+        final_template_path = Path(
+            "/".join(
+                [str(project_root), str(child_template_path_tmp)]
+            )
         )
-    )
-
-    if final_template_path.exists() and final_template_path.is_file():
-        return final_template_path
+        if final_template_path.exists() and final_template_path.is_file():
+            return final_template_path
 
     message = "Failed to discover local path for %s."
     raise Exception(message % child_template_path)
