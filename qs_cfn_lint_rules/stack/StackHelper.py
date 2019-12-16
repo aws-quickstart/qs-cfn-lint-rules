@@ -149,11 +149,12 @@ def evaluate_fn_if(expression):
     """ Return both possible parts of the expression """
     results = []
 
-    value_true = expression.split(",")[1]
-    value_false = expression.split(",")[2].strip("]")
-    results.append(value_true)
-    results.append(value_false)
-
+    value_true = expression.split(",")[1].strip()
+    value_false = expression.split(",")[2].strip().strip("]")
+    # if we don't have '' this can break things
+    results.append("'" + value_true.strip("'") + "'")
+    results.append("'" + value_false.strip("'") + "'")
+    # print(results)
     return results
 
 
@@ -163,9 +164,12 @@ def evaluate_fn_ref(expression):
     results = []
 
     temp = expression.split(": ")[1]
+    # print("Ref: {}".format(temp))
     if temp.strip("'") in SUBSTITUTION.keys():
+        # print("Ref: (found) {}".format(temp))
         temp = SUBSTITUTION[temp.strip("'")]
         temp = "'" + temp + "'"
+        # print("Ref: (found) {}".format(temp))
 
     results.append(temp)
 
@@ -188,7 +192,7 @@ def evaluate_fn_findinmap(expression):
     first_key = expression.split("[")[1].split("]")[0].split(",")[1].strip()
     final_key = expression.split("[")[1].split("]")[0].split(",")[2].strip()
 
-    result.append(find_in_map_lookup(mappings_map, first_key, final_key))
+    result.append("'" + find_in_map_lookup(mappings_map, first_key, final_key) + "'")
 
     return result
 

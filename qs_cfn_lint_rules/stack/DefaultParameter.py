@@ -23,7 +23,7 @@ from qs_cfn_lint_rules.stack.StackHelper import template_url_to_path
 
 class DefaultParameter(CloudFormationLintRule):
     """Check Nested Stack Parameters"""
-    id = 'W3901'
+    id = 'W9901'
     shortdesc = 'Parameters missing for nested stack'
     description = 'Check to make sure parameters for nested stack are correct'
     source_url = 'https://github.com/qs-cfn-lint-rules/qs_cfn_lint_rules'

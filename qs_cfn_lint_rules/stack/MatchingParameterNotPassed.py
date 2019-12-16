@@ -23,7 +23,7 @@ from qs_cfn_lint_rules.stack.StackHelper import template_url_to_path
 
 class MatchingParameterNotPassed(CloudFormationLintRule):
     """Check Nested Stack Parameters"""
-    id = 'E3902'
+    id = 'E9902'
     shortdesc = 'Parameters in master not passed to child'
     description = 'A parameter with the same name exists in master ' \
                   'and child. It is not passed to the child'
