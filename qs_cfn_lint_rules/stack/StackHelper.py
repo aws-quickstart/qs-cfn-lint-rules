@@ -178,7 +178,7 @@ def evaluate_fn_ref(expression):
 
 def find_in_map_lookup(mappings_map, first_key, final_key):
     global mappings
-
+    print(mappings)
     step1 = mappings[mappings_map.strip("'")]
     step2 = step1[first_key.strip("'")]
     result = step2[final_key.strip("'")]
@@ -311,6 +311,7 @@ def flatten_template_url(template_url):
         o = urlparse(str(url.strip("'")))
         path_list.append(o.path)
 
+    path_list = list(dict.fromkeys(path_list))
     return path_list
 
 
@@ -343,7 +344,7 @@ def find_local_child_template(parent_template_path, child_template_path):
             )
         )
         if final_template_path.exists() and final_template_path.is_file():
-            return final_template_path
+            return str(final_template_path)
 
     # Take the path piece by piece and try in one folder up folder
     project_root = Path(
@@ -362,7 +363,7 @@ def find_local_child_template(parent_template_path, child_template_path):
             )
         )
         if final_template_path.exists() and final_template_path.is_file():
-            return final_template_path
+            return str(final_template_path)
 
     message = "Failed to discover local path for %s."
     raise Exception(message % child_template_path)
