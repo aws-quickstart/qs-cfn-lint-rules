@@ -1,0 +1,144 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description" : "Creates an RDS Postgres instance",
+    "Metadata" : {
+        "AWS::CloudFormation::Interface" : {
+            "ParameterGroups" : [{
+                "Label" : {"default" : "Repository database configuration"},
+                "Parameters" : ["RDSMultiAz","RDSDbSize","RDSUser","RDSPassword"]
+            }]
+        }
+    },
+    "Parameters" : {
+        "RDSDbSize": {
+            "Description" : "Must be one of the following valid RDS instance types (db.m3.medium | db.m3.large | db.m3.xlarge).",
+            "Type" : "String",
+            "Default" : "db.t2.medium",
+            "AllowedValues" : [ "db.t2.small","db.t2.medium","db.t2.large","db.m4.large","db.m4.xlarge","db.m4.2xlarge"],
+            "ConstraintDescription" : "Must be one of the following valid RDS instance types ( db.t2.small | db.t2.medium | db.t2.large | db.m4.large | db.m4.xlarge | db.m4.2xlarge)."
+        },
+        "RDSUser" : {
+            "Description" : "Master User Name for RDS database",
+            "Type" : "String",
+            "MinLength": "1",
+            "MaxLength": "64",
+            "AllowedPattern" : "[-_a-zA-Z0-9]*",
+            "ConstraintDescription" : "It can contain only alphanumeric characters and underscores."
+        },
+        "RDSPassword" : {
+            "Description" : "Master password for RDS database",
+            "Type" : "String",
+            "MinLength": "1",
+            "MaxLength": "64",
+            "NoEcho" : "true",
+            "AllowedPattern" : "[-_a-zA-Z0-9]*",
+            "ConstraintDescription" : "It can contain only alphanumeric characters and underscores."
+        },
+        "RDSMultiAz" : {
+            "Type" : "String",
+            "Description": "Should RDS database be created in MultiAZ configuration",
+            "Default": "true",
+            "AllowedValues" : ["true","false"],
+            "ConstraintDescription": "Value must be true or false"
+        },
+        "VPCID" : {
+            "Type" : "AWS::EC2::VPC::Id",
+            "Description" : "VpcId of your existing Virtual Private Cloud (VPC)",
+            "MinLength": "1",
+            "MaxLength": "64"
+        },
+        "PrivateSubnet1ID": {
+            "Description": "ID of private subnet 1 in Availability Zone 1 for the Workload (e.g., subnet-a0246dcd)",
+            "Type": "AWS::EC2::Subnet::Id"
+        },
+        "PrivateSubnet2ID": {
+            "Description": "ID of private subnet 2 in Availability Zone 2 for the Workload (e.g., subnet-b1f432cd)",
+            "Type": "AWS::EC2::Subnet::Id"
+        },
+        "AvailabilityZones": {
+            "Description": "List of Availability Zones to use for the subnets in the VPC. Only two Availability Zones are used for this deployment, and the logical order of your selections is preserved.",
+            "Type": "List<AWS::EC2::AvailabilityZone::Name>"
+        },
+        "VPCCIDR": {
+            "AllowedPattern": "^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\\/(1[6-9]|2[0-8]))$",
+            "ConstraintDescription": "CIDR block parameter must be in the form x.x.x.x/16-28",
+            "Default": "10.0.0.0/16",
+            "Description": "CIDR block for accessing RDS",
+            "Type": "String"
+        }
+    },
+    "Conditions" : {
+        "RDSMultiAzDeployment" : {"Fn::Equals" : [{"Ref" : "RDSMultiAz"}, "true"] }
+    },
+    "Resources": {
+        "RDSSubnetGroup" : {
+        "Type" : "AWS::RDS::DBSubnetGroup",
+            "Properties" : {
+                "DBSubnetGroupDescription" : "TIBCO JasperReports DB-Subnet Group",
+                "SubnetIds" : [ { "Ref": "PrivateSubnet1ID" },{ "Ref": "PrivateSubnet2ID" } ]
+            }
+        },
+        "VPCDBSecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "VpcId" : { "Ref" : "VPCID" },
+                "SecurityGroupIngress": [
+                    { "IpProtocol": "tcp",
+                        "FromPort": "5432",
+                        "ToPort": "5432",
+                        "CidrIp": {
+                            "Ref": "VPCCIDR"
+                        }
+                    }
+                ],
+                "GroupDescription": "Frontend Access"
+            }
+        },
+        "RDSDb" : {
+            "Type" : "AWS::RDS::DBInstance",
+            "Properties" : {
+                "MultiAZ" : {"Fn::If" : ["RDSMultiAzDeployment","true",{"Ref": "AWS::NoValue"}]},
+                "AvailabilityZone" : {"Fn::If" : ["RDSMultiAzDeployment",{"Ref": "AWS::NoValue"},{"Fn::Select" : ["0",{"Ref" : "AvailabilityZones"}]}]},
+                "VPCSecurityGroups": [{ "Ref": "VPCDBSecurityGroup" }],
+                "DBSubnetGroupName" : { "Ref": "RDSSubnetGroup" },
+                "AllocatedStorage" : "5",
+                "DBInstanceClass" : { "Ref" : "RDSDbSize" },
+                "Engine" : "postgres",
+                "MasterUsername" : { "Ref" : "RDSUser" },
+                "MasterUserPassword" : { "Ref" : "RDSPassword" }
+            },
+            "DeletionPolicy" : "Snapshot"
+        }
+    },
+    "Outputs" : {
+        "Address": {
+            "Description": "RDS Database address",
+            "Value":  { "Fn::GetAtt" : [ "RDSDb", "Endpoint.Address" ]},
+            "Export": {
+                "Name": {
+                    "Fn::Sub": "${AWS::StackName}-Address"
+                }
+            }
+        },
+        "Port": {
+            "Description": "RDS Database port",
+            "Value":  { "Fn::GetAtt" : [ "RDSDb", "Endpoint.Port" ]},
+            "Export": {
+                "Name": {
+                    "Fn::Sub": "${AWS::StackName}-Port"
+                }
+            }
+        },
+        "Identifier": {
+            "Description": "RDS Database identifier",
+            "Value":  { "Ref": "RDSDb" },
+            "Export": {
+                "Name": {
+                    "Fn::Sub": "${AWS::StackName}-Identifier"
+                }
+            }
+        }
+
+
+    }
+}

@@ -1,0 +1,235 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Boomi Atom Installation Script. This creates a VPC, Public Subnets and Private Subnets, and stages a Dell Boomi Atom.
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      -
+        Label:
+          default: "Network configuration"
+        Parameters:
+         - AvailabilityZones
+         - VPCCIDR
+         - PublicSubnet1CIDR
+         - PublicSubnet2CIDR
+         - PrivateSubnet1CIDR
+         - PrivateSubnet2CIDR
+         - RemoteAccessCIDR
+      -
+        Label:
+          default: "Amazon EC2 configuration"
+        Parameters:
+          - InstanceType
+          - KeyPairName
+          - BoomiInstanceVolumeSize
+      -
+        Label:
+          default: "Dell Boomi Atom configuration"
+        Parameters:
+         - AtomName
+         - BoomiAccountID
+         - BoomiUsername
+         - BoomiPassword
+         - BoomiInstallDir
+      -
+       Label:
+         default: "AWS Quick Start configuration"
+       Parameters:
+         - QSS3KeyPrefix
+         - QSS3BucketName
+    ParameterLabels:
+        AvailabilityZones:
+          default: Availability Zones
+        KeyPairName:
+          default: SSH key name
+        PrivateSubnet1CIDR:
+          default: Private subnet 1 CIDR
+        PrivateSubnet2CIDR:
+          default: Private subnet 2 CIDR
+        PublicSubnet1CIDR:
+          default: Public subnet 1 CIDR
+        PublicSubnet2CIDR:
+          default: Public subnet 2 CIDR
+        QSS3BucketName:
+          default: Quick Start S3 bucket name
+        QSS3KeyPrefix:
+          default: Quick Start S3 key prefix
+        RemoteAccessCIDR:
+          default: Allowed external access CIDR (OCP UI)
+        VPCID:
+          default: VPC ID
+        VPCCIDR:
+          default: VPC CIDR
+        InstanceType:
+          default: Boomi Atom instance type
+        BoomiInstanceVolumeSize:
+          default: Volume size for Boomi instances
+        AtomName:
+          default: Atom name
+        BoomiAccountID:
+          default: Boomi account ID
+        BoomiUsername:
+          default: Boomi user name
+        BoomiPassword:
+          default: Boomi password
+        BoomiInstallDir:
+          default: Boomi install directory
+Parameters:
+  KeyPairName:
+    Description: A public/private key pair, which allows you to connect securely to your instance after it launches.
+    Type: AWS::EC2::KeyPair::KeyName
+    ConstraintDescription: Must be the name of an existing Keyname
+  InstanceType:
+    Description: The instance type of the Boomi host. You can choose a different instance type from the drop-down list of instances that meet the requirements for running a Dell Boomi Atom server.
+    Type: String
+    Default: m5.xlarge
+    AllowedValues:
+      - m4.xlarge
+      - m5.xlarge
+      - r4.xlarge
+      - r5.xlarge
+      - c5.xlarge
+  BoomiInstanceVolumeSize:
+     Description: The size of the Amazon EBS volume attached to the Atom instance. Size range is 1 GiB - 16 TiB.
+     Type: Number
+     Default: 100
+  VPCCIDR:
+    AllowedPattern: ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/(1[6-9]|2[0-8]))$
+    ConstraintDescription: CIDR block parameter must be in the form x.x.x.x/16-28
+    Default: 10.0.0.0/16
+    Description: The CIDR block for the VPC.
+    Type: String
+  PublicSubnet1CIDR:
+    AllowedPattern: ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/(1[6-9]|2[0-8]))$
+    ConstraintDescription: CIDR block parameter must be in the form x.x.x.x/16-28
+    Default: 10.0.32.0/24
+    Description: The CIDR block used for the public subnet located in Availability Zone 1.
+    Type: String
+  PublicSubnet2CIDR:
+    AllowedPattern: ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/(1[6-9]|2[0-8]))$
+    ConstraintDescription: CIDR block parameter must be in the form x.x.x.x/16-28
+    Default: 10.0.64.0/24
+    Description: The CIDR block used for the public subnet located in Availability Zone 2.
+    Type: String
+  PrivateSubnet1CIDR:
+    AllowedPattern: ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/(1[6-9]|2[0-8]))$
+    ConstraintDescription: CIDR block parameter must be in the form x.x.x.x/16-28
+    Default: 10.0.128.0/24
+    Description: The CIDR block used for the private subnet located in Availability Zone 1.
+    Type: String
+  PrivateSubnet2CIDR:
+    AllowedPattern: ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/(1[6-9]|2[0-8]))$
+    ConstraintDescription: CIDR block parameter must be in the form x.x.x.x/16-28
+    Default: 10.0.192.0/24
+    Description: The CIDR block used for the private subnet located in Availability Zone 2.
+    Type: String
+  AvailabilityZones:
+    Description: List of Availability Zones to use for the subnets in the VPC. This deployment uses two
+      Availability Zones, and the logical order of your
+      selections is preserved.
+    Type: List<AWS::EC2::AvailabilityZone::Name>
+  BoomiUsername:
+    Description: The email account associated with the Dell Boomi account.
+    Type: String
+  BoomiPassword:
+     Description: The password associated with the Dell Boomi account.
+     Type: String
+     NoEcho: true
+  BoomiAccountID:
+     Description: The Dell Boomi account ID that you want to associate the new Atom with.
+     Type: String
+  BoomiInstallDir:
+     Description: The installation directory for Dell Boomi.
+     Type: String
+     Default: /opt/boomi/
+  AtomName:
+     Description: The name given to the Boomi Atom instance.
+     Type: String
+     Default: atom1
+  QSS3BucketName:
+    AllowedPattern: ^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$
+    ConstraintDescription: Quick Start bucket name can include numbers, lowercase
+      letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen
+      (-).
+    Default: aws-quickstart
+    Description: S3 bucket name for the Quick Start assets. This string can include
+      numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start
+      or end with a hyphen (-).
+    Type: String
+  QSS3KeyPrefix:
+    AllowedPattern: ^[0-9a-zA-Z-/]*$
+    ConstraintDescription: Quick Start key prefix can include numbers, lowercase letters,
+      uppercase letters, hyphens (-), and forward slash (/).
+    Default: quickstart-boomi-atom/
+    Description: S3 key prefix for the Quick Start assets. Quick Start key prefix
+      can include numbers, lowercase letters, uppercase letters, hyphens (-), and
+      forward slash (/).
+    Type: String
+  RemoteAccessCIDR:
+    AllowedPattern: ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/([0-9]|[1-2][0-9]|3[0-2]))$
+    ConstraintDescription: CIDR block parameter must be in the form x.x.x.x/x
+    Description: The CIDR IP range that is permitted to access the instances. We recommend
+      that you set this value to a trusted IP range.
+    Type: String
+Resources:
+  VPCStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub 'https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}submodules/quickstart-aws-vpc/templates/aws-vpc.template'
+      Parameters:
+        AvailabilityZones: !Join [ ',', !Ref 'AvailabilityZones' ]
+        NumberOfAZs: '2'
+        VPCCIDR: !Ref VPCCIDR
+        PrivateSubnet1ACIDR: !Ref PrivateSubnet1CIDR
+        PrivateSubnet2ACIDR: !Ref PrivateSubnet2CIDR
+        PublicSubnet1CIDR: !Ref PublicSubnet1CIDR
+        PublicSubnet2CIDR: !Ref PublicSubnet2CIDR
+  BastionStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}submodules/quickstart-linux-bastion/templates/linux-bastion.template"
+      Parameters:
+        BastionAMIOS: 'Amazon-Linux-HVM'
+        KeyPairName: !Ref 'KeyPairName'
+        PublicSubnet1ID: !GetAtt
+          - VPCStack
+          - Outputs.PublicSubnet1ID
+        PublicSubnet2ID: !GetAtt
+          - VPCStack
+          - Outputs.PublicSubnet2ID
+        QSS3BucketName: !Ref QSS3BucketName
+        QSS3KeyPrefix: !Sub "${QSS3KeyPrefix}submodules/quickstart-linux-bastion/"
+        RemoteAccessCIDR: !Ref RemoteAccessCIDR
+        VPCID: !GetAtt
+          - VPCStack
+          - Outputs.VPCID
+  BoomiAtomStack:
+      Type: AWS::CloudFormation::Stack
+      Properties:
+        TemplateURL: !Sub 'https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}templates/boomi-atom.template.yaml'
+        Parameters:
+          PublicSubnet1ID: !GetAtt
+            - VPCStack
+            - Outputs.PublicSubnet1ID
+          PublicSubnet2ID: !GetAtt
+            - VPCStack
+            - Outputs.PublicSubnet1ID
+          PrivateSubnet1ID: !GetAtt
+            - VPCStack
+            - Outputs.PublicSubnet1ID
+          PrivateSubnet2ID: !GetAtt
+            - VPCStack
+            - Outputs.PublicSubnet1ID
+          BoomiUsername: !Ref 'BoomiUsername'
+          BoomiPassword: !Ref 'BoomiPassword'
+          BoomiAccountID: !Ref 'BoomiAccountID'
+          BoomiInstallDir: !Ref 'BoomiInstallDir'
+          AtomName: !Ref 'AtomName'
+          BastionSecurityGroupID: !GetAtt
+            - BastionStack
+            - Outputs.BastionSecurityGroupID
+          InstanceType: !Ref InstanceType
+          BoomiInstanceVolumeSize: !Ref BoomiInstanceVolumeSize
+          VPCID: !GetAtt
+            - VPCStack
+            - Outputs.VPCID
+          KeyPairName: !Ref 'KeyPairName'

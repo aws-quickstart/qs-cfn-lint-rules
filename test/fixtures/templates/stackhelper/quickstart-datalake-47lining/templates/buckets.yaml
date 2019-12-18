@@ -1,0 +1,214 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: AWS CloudFormation templates to create S3 buckets. **WARNING** You will
+  be billed for data stored in AWS S3 buckets if you create a stack from this template.
+  (qs-1nlkhq1nj)
+Resources:
+  SubmissionsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Join
+        - '-'
+        - - datalake
+          - submissions
+          - !Ref 'AWS::AccountId'
+          - !Ref 'AWS::Region'
+      NotificationConfiguration:
+        TopicConfigurations:
+          - Event: s3:ObjectCreated:*
+            Topic: !Ref 'SubmissionsTopic'
+    DependsOn:
+      - SubmissionsTopicPolicy
+  CuratedDatasets:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Join
+        - '-'
+        - - datalake
+          - curated
+          - datasets
+          - !Ref 'AWS::AccountId'
+          - !Ref 'AWS::Region'
+      NotificationConfiguration:
+        TopicConfigurations:
+          - Event: s3:ObjectCreated:*
+            Topic: !Ref 'CuratedTopic'
+    DependsOn:
+      - CuratedTopicPolicy
+  CuratedTopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      PolicyDocument:
+        Id: TopicPolicy
+        Version: '2012-10-17'
+        Statement:
+          - Sid: StatementId
+            Effect: Allow
+            Principal:
+              AWS: '*'
+            Action: sns:Publish
+            Resource: !Ref 'CuratedTopic'
+            Condition:
+              ArnLike:
+                AWS:SourceArn: !Sub
+                  - arn:aws:s3:::${BucketName}
+                  - BucketName: !Join
+                      - '-'
+                      - - datalake
+                        - curated
+                        - datasets
+                        - !Ref 'AWS::AccountId'
+                        - !Ref 'AWS::Region'
+      Topics:
+        - !Ref 'CuratedTopic'
+  PublishedTopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      PolicyDocument:
+        Id: TopicPolicy
+        Version: '2012-10-17'
+        Statement:
+          - Sid: StatementId
+            Effect: Allow
+            Principal:
+              AWS: '*'
+            Action: sns:Publish
+            Resource: !Ref 'PublishedTopic'
+            Condition:
+              ArnLike:
+                AWS:SourceArn: !Sub
+                  - arn:aws:s3:::${BucketName}
+                  - BucketName: !Join
+                      - '-'
+                      - - datalake
+                        - published
+                        - data
+                        - !Ref 'AWS::AccountId'
+                        - !Ref 'AWS::Region'
+      Topics:
+        - !Ref 'PublishedTopic'
+  PublishedTopic:
+    Type: AWS::SNS::Topic
+    Properties: {}
+  CuratedTopic:
+    Type: AWS::SNS::Topic
+    Properties: {}
+  PublishedData:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Join
+        - '-'
+        - - datalake
+          - published
+          - data
+          - !Ref 'AWS::AccountId'
+          - !Ref 'AWS::Region'
+      NotificationConfiguration:
+        TopicConfigurations:
+          - Event: s3:ObjectCreated:*
+            Topic: !Ref 'PublishedTopic'
+    DependsOn:
+      - PublishedTopicPolicy
+  SubmissionsTopic:
+    Type: AWS::SNS::Topic
+    Properties: {}
+  SubmissionsTopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      PolicyDocument:
+        Id: TopicPolicy
+        Version: '2012-10-17'
+        Statement:
+          - Sid: StatementId
+            Effect: Allow
+            Principal:
+              AWS: '*'
+            Action: sns:Publish
+            Resource: !Ref 'SubmissionsTopic'
+            Condition:
+              ArnLike:
+                AWS:SourceArn: !Sub
+                  - arn:aws:s3:::${BucketName}
+                  - BucketName: !Join
+                      - '-'
+                      - - datalake
+                        - submissions
+                        - !Ref 'AWS::AccountId'
+                        - !Ref 'AWS::Region'
+      Topics:
+        - !Ref 'SubmissionsTopic'
+  RegionalLambdaBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Join
+        - '-'
+        - - regional
+          - lambda
+          - bucket
+          - !Ref 'AWS::AccountId'
+          - !Ref 'AWS::Region'
+  AthenaQueryResultsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Join
+        - '-'
+        - - datalake
+          - athena
+          - query
+          - results
+          - !Ref 'AWS::AccountId'
+          - !Ref 'AWS::Region'
+Outputs:
+  SubmissionsBucketARN:
+    Value: !Join
+      - ''
+      - - 'arn:aws:s3:::'
+        - !Ref 'SubmissionsBucket'
+    Description: SubmissionsBucket bucket ARN
+  SubmissionsBucketName:
+    Value: !Ref 'SubmissionsBucket'
+    Description: SubmissionsBucket bucket ARN
+  CuratedDatasetsARN:
+    Value: !Join
+      - ''
+      - - 'arn:aws:s3:::'
+        - !Ref 'CuratedDatasets'
+    Description: CuratedDatasets bucket ARN
+  CuratedBucketName:
+    Value: !Ref 'CuratedDatasets'
+    Description: Curated datasets bucket ARN
+  PublishedDataARN:
+    Value: !Join
+      - ''
+      - - 'arn:aws:s3:::'
+        - !Ref 'PublishedData'
+    Description: PublishedData bucket ARN
+  PublishedBucketName:
+    Value: !Ref 'PublishedData'
+    Description: Bucket name for published results
+  RegionalLambdaBucketARN:
+    Value: !Join
+      - ''
+      - - 'arn:aws:s3:::'
+        - !Ref 'RegionalLambdaBucket'
+    Description: RegionalLambdaBucket bucket ARN
+  RegionalLambdaBucketName:
+    Value: !Ref 'RegionalLambdaBucket'
+    Description: RegionalLambdaBucket bucket name
+  AthenaQueryResultsBucketARN:
+    Value: !Join
+      - ''
+      - - 'arn:aws:s3:::'
+        - !Ref 'AthenaQueryResultsBucket'
+    Description: AthenaQueryResultsBucket bucket ARN
+  AthenaQueryResultsBucketName:
+    Value: !Ref 'AthenaQueryResultsBucket'
+    Description: AthenaQueryResultsBucket bucket name
+  SubmissionsTopicARN:
+    Value: !Ref 'SubmissionsTopic'
+    Description: SubmissionsTopic ARN
+  CuratedTopicARN:
+    Value: !Ref 'CuratedTopic'
+    Description: CuratedTopic ARN
+  PublishedTopicARN:
+    Value: !Ref 'PublishedTopic'
+    Description: PublishedTopic ARN

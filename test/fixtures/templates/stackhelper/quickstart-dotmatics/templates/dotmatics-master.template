@@ -1,0 +1,435 @@
+---
+AWSTemplateFormatVersion: 2010-09-09
+Description: Launches a Dotmaics application server and database into a new VPC.
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+    - Label:
+        default: Dotmatics Configuration
+      Parameters:
+      - pDNSName
+    - Label:
+        default: Network Configuration
+      Parameters:
+      - pAvailabilityZones
+      - pVPCCIDR
+      - pPublicSubnet1CIDR
+      - pPublicSubnet2CIDR
+      - pPrivateSubnet1CIDR
+      - pPrivateSubnet2CIDR
+      - pDnsHostedZoneID
+      - pDnsHostedZoneApexDomain
+      - pLoadBalancerType
+      - pSecurityGroupForWebAccess
+      - pWebAccessCIDR
+    - Label:
+        default: Amazon EC2 Configuration
+      Parameters:
+      - pEC2KeyPair
+      - pAppServerInstanceType
+    - Label:
+        default: AWS Quick Start Configuration
+      Parameters:
+      - QSS3BucketName
+      - QSS3KeyPrefix
+    - Label:
+        default: Oracle Configuration - Oracle specific
+      Parameters:
+      - pDatabaseName
+      - pDatabasePass
+      - pAsmPass
+      - pDataGuardConfig
+      - pInstallBucketName
+      - pInstallBucketPrefix
+      - pOracleInstanceType
+      - pPrimaryIPAddress
+      - pStandbyIPAddress
+    - Label:
+        default: Oracle Secure Backup Cloud Module (Optional)
+      Parameters:
+      - pOSBInstall
+      - pOSBOTN
+      - pOSBPass
+      - pOSBBucketName
+      - pOSBKey
+      - pOSBSecret
+    ParameterLabels:
+      pAppServerInstanceType:
+        default: App Server Instance Type
+      pAvailabilityZones:
+        default: Availability Zones
+      pDBMultiAZ:
+        default: Multi-AZ Amazon RDS
+      pDBName:
+        default: Database Name
+      pDatabasePass:
+        default: Database Password for Dotmatics
+      pAsmPass:
+        default: Database Password Oracle ASM
+      pDBUsername:
+        default: Database User/Owner
+      pDnsHostedZoneApexDomain:
+        default: Internal DNS Apex Domain
+      pDnsHostedZoneID:
+        default: Internal DNS hosted zone ID
+      pDNSName: 
+        default: Dotmatics Server DNS Name
+      pEC2KeyPair:
+        default: Key Pair for Servers
+      pLoadBalancerType:
+        default: Load Balancer Type
+      pPrivateSubnet1CIDR:
+        default: Private Subnet 1 CIDR
+      pPrivateSubnet2CIDR:
+        default: Private Subnet 2 CIDR
+      pPublicSubnet1CIDR:
+        default: Public Subnet 1 CIDR
+      pPublicSubnet2CIDR:
+        default: Public Subnet 2 CIDR
+      pSecurityGroupForWebAccess:
+        default: Web Access Security Group
+      pVPCCIDR:
+        default: VPC CIDR  
+      pWebAccessCIDR:
+        default: Web Access CIDR (No SG)
+      QSS3KeyPrefix:
+        default: Quick Start S3 Key Prefix
+      QSS3BucketName:
+        default: Quick Start S3 Bucket Name
+      pInstallBucketName:
+        default: Binaries Bucket Name
+      pInstallBucketPrefix:
+        default: Binaries Bucket Key Prefix
+      pStandbyIPAddress:
+        default: Standby Database Private IP (only required if using Oracle DataGuard)
+      pPrimaryIPAddress:
+        default: Primary Database Private IP
+      pOracleInstanceType:
+        default: Database Instance Type
+      pOSBBucketName:
+        default: S3 Bucket for Backups
+      pOSBInstall:
+        default: Install Oracle Secure Backup
+      pOSBKey:
+        default: AWS Access Key ID
+      pOSBOTN:
+        default: OTN Account Email/Login
+      pOSBPass:
+        default: OTN Account Password
+      pOSBSecret:
+        default: AWS Secret Access Key
+      pDatabaseName:
+        default: Primary Database Name
+Parameters:
+  pAppServerInstanceType:
+    Description: Dotmaics app server EC2 instance type
+    Type: String
+    Default: t2.large
+    AllowedValues: 
+      - t2.medium
+      - t2.large
+      - t2.xlarge
+      - m5.large
+      - m5.xlarge
+      - m5.2xlarge
+      - m4.large
+      - m4.xlarge
+      - m4.2xlarge
+  pAvailabilityZones:
+    Description: List of Availability Zones to use for the subnets in the VPC. Only
+      two Availability Zones are used for this deployment, and the logical order of
+      your selections is preserved.
+    Type: List<AWS::EC2::AvailabilityZone::Name>
+  pDnsHostedZoneApexDomain:
+    Description: (Optional) Internal DNS Apex Domain
+    Type: String
+    Default: ""
+  pDnsHostedZoneID:
+    Description: (Optional) Internal DNS hosted zone ID.
+    Type: String
+    Default: ""
+  pDNSName:
+    Description: (Optional) The internal DNS CNAME to be used for the Dotmatics server. Leave the default if you are unsure of what this does.
+    Type: String
+    Default: dotmatics
+  pEC2KeyPair:
+    Description: Key Name for server.
+    Type: AWS::EC2::KeyPair::KeyName 
+  pLoadBalancerType:
+    Default: internet-facing
+    Type: String
+    AllowedValues: 
+      - internet-facing
+      - internal
+  pPrivateSubnet1CIDR:
+    AllowedPattern: ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/(1[6-9]|2[0-8]))$
+    ConstraintDescription: CIDR block parameter must be in the form x.x.x.x/16-28
+    Default: 10.80.0.0/19
+    Description: CIDR block for private subnet 1 located in Availability Zone 1
+    Type: String
+  pPrivateSubnet2CIDR:
+    AllowedPattern: ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/(1[6-9]|2[0-8]))$
+    ConstraintDescription: CIDR block parameter must be in the form x.x.x.x/16-28
+    Default: 10.80.32.0/19
+    Description: CIDR block for private subnet 2 located in Availability Zone 2
+    Type: String
+  pPublicSubnet1CIDR:
+    AllowedPattern: ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/(1[6-9]|2[0-8]))$
+    ConstraintDescription: CIDR block parameter must be in the form x.x.x.x/16-28
+    Default: 10.80.128.0/20
+    Description: CIDR block for the public (DMZ) subnet 1 located in Availability
+      Zone 1
+    Type: String
+  pPublicSubnet2CIDR:
+    AllowedPattern: ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/(1[6-9]|2[0-8]))$
+    ConstraintDescription: CIDR block parameter must be in the form x.x.x.x/16-28
+    Default: 10.80.144.0/20
+    Description: CIDR block for the public (DMZ) subnet 2 located in Availability
+      Zone 2
+    Type: String
+  pSecurityGroupForWebAccess:
+    Description: Security group id for web access. If you leave this empty, you need to specify a CIDR range for the WebAccessCIDR parameter.
+    Type: String
+    Default: ""
+  pWebAccessCIDR:
+    Description: Will only be used if Web Access Security Group is not specified. Enter 0.0.0.0/0 if you want to open it to the world.
+    Type: String
+    Default: "10.80.0.0/16"
+  pVPCCIDR:
+    AllowedPattern: ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/(1[6-9]|2[0-8]))$
+    ConstraintDescription: CIDR block parameter must be in the form x.x.x.x/16-28
+    Default: 10.80.0.0/16
+    Description: CIDR block for the VPC
+    Type: String
+  QSS3BucketName:
+    AllowedPattern: ^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$
+    ConstraintDescription: Quick Start bucket name can include numbers, lowercase
+      letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen
+      (-).
+    Default: aws-quickstart
+    Description: S3 bucket name for the Quick Start assets. Quick Start bucket name
+      can include numbers, lowercase letters, uppercase letters, and hyphens (-).
+      It cannot start or end with a hyphen (-).
+    Type: String
+  QSS3KeyPrefix:
+    AllowedPattern: ^[0-9a-zA-Z-/]*$
+    ConstraintDescription: Quick Start key prefix can include numbers, lowercase letters,
+      uppercase letters, hyphens (-), and a forward slash (/) at the end of the prefix.
+    Description: S3 key prefix for the Quick Start assets. Quick Start key prefix
+      can include numbers, lowercase letters, uppercase letters, hyphens (-), and
+      forward slash (/).
+    Default: quickstart-dotmatics/
+    Type: String
+  pDatabasePass:
+    AllowedPattern: "([A-Za-z0-9_#$]{3,30})"
+    ConstraintDescription: Input your database Password, Min 3, Maximum of 30 characters.
+    Description: Enter your Database Password, Min 3, maximum of 30 characters. This
+      password is used for the SYS, SYSTEM, and DBSNMP users of Oracle Database.
+    NoEcho: 'true'
+    Type: String
+    MinLength: 3
+    MaxLength: 30
+  pAsmPass:
+    AllowedPattern: "([A-Za-z0-9_#$]{3,30})"
+    ConstraintDescription: Input your ASM Password, Min 3, Maximum of 30 characters.
+    Description: Enter your ASM Password, Min 3, maximum of 30 characters. This password
+      is used for the SYSASM, ASM Monitor, and ASM EM admin users of Oracle ASM.
+    NoEcho: 'true'
+    Type: String
+    MinLength: 3
+    MaxLength: 30
+  pDataGuardConfig:
+    AllowedValues:
+    - Data Guard
+    - Single
+    ConstraintDescription: Single - One instance only,  Data Guard - Two instances
+      (Primary + Standby)
+    Default: Data Guard
+    Description: 'Configuration: Single - One instance only,  Data Guard - Two instances
+      (Primary + Standby)'
+    Type: String
+  pInstallBucketName:
+    AllowedPattern: "^[0-9a-zA-Z-]+([0-9a-zA-Z-]+)*$"
+    ConstraintDescription: Bucket name can include numbers, lowercase letters, uppercase
+      letters, hyphens (-).
+    Description: Name of your S3 bucket with your Oracle Binaries and Dotmatics Pinpoint license key (e.g., bucket-name) 
+    Type: String
+  pInstallBucketPrefix:
+    AllowedPattern: "^[0-9a-zA-Z-]+(/[0-9a-zA-Z-]+)*$"
+    ConstraintDescription: Key prefix can include numbers, lowercase letters, uppercase
+      letters, hyphens (-), and forward slash (/). It cannot start or end with forward
+      slash (/) because they are automatically appended.
+    Description: Name of your S3 prefix with your Oracle Binaries and Dotmatics Pinpoint license key (e.g., key/prefix)
+    Type: String
+    Default: titiandb/assets
+  pOracleInstanceType:
+    AllowedValues:
+    - t2.medium
+    - t2.large
+    - m3.medium
+    - m3.large
+    - m3.xlarge
+    - m3.2xlarge
+    - m4.large
+    - m4.xlarge
+    - m4.2xlarge
+    - m4.4xlarge
+    - m4.10xlarge
+    - m4.16xlarge
+    - r3.large
+    - r3.xlarge
+    - r3.2xlarge
+    - r3.4xlarge
+    - r3.8xlarge
+    - r4.large
+    - r4.xlarge
+    - r4.2xlarge
+    - r4.4xlarge
+    - r4.8xlarge
+    - r4.16xlarge
+    - x1.16xlarge
+    - x1.32xlarge
+    ConstraintDescription: Must be a valid EC2 instance type.
+    Default: r4.2xlarge
+    Description: Choose your Oracle Database instance type.
+    Type: String
+  pStandbyIPAddress:
+    AllowedPattern: "^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])$"
+    ConstraintDescription: IP address parameter must be in the form x.x.x.x. Only required if you are using Oracle DataGuard.
+    Description: This must be a valid IP address for private subnet 2.
+    Type: String
+  pPrimaryIPAddress:
+    AllowedPattern: "^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])$"
+    ConstraintDescription: IP address parameter must be in the form x.x.x.x
+    Description: This must be a valid IP address for private subnet 1.
+    Type: String
+  pOSBBucketName:
+    ConstraintDescription: Enter your bucket name, must be an existing bucket.
+    Description: Name of your S3 bucket to store your Oracle backups.
+    Default: "override"
+    Type: String
+  pOSBInstall:
+    AllowedValues:
+    - 'true'
+    - 'false'
+    Default: 'false'
+    Description: Install (true) or don't install (false) optional Oracle Secure Backup.
+    Type: String
+  pOSBKey:
+    Description: The AWS Access Key to access your backup bucket, something like AKIAIV3KL4XXIT7DXXYY.
+    Type: String
+    Default: "override"
+  pOSBOTN:
+    Description: Your OTN (Oracle Technology Network) account login.
+    Type: String
+    Default: "override"
+  pOSBPass:
+    Description: Password of your OTN (Oracle Technology Network) account.
+    NoEcho: 'true'
+    Default: "override"
+    Type: String
+  pOSBSecret:
+    Description: The AWS Secret Key to access your backup bucket, something like c/ZeLyzixxx3HfxPVLX9IOKMXEdSbqks3Acz7QHj.
+    NoEcho: 'true'
+    Default: "override"
+    Type: String
+  pDatabaseName:
+    AllowedPattern: "([A-Za-z0-9-]{3,8})"
+    ConstraintDescription: No special chars, Min 3, Maximum of 8 characters.
+    Default: dotmtsdb
+    Description: Enter your Database Name, Min 3, Maximum of 8 characters (limited
+      by DB_NAME). Primary instance will have the same name of this.
+    Type: String
+    
+Conditions:
+  cDNSRecord: !Not [ !Or [ !Equals [!Ref pDnsHostedZoneID, ""] , !Equals [!Ref pDnsHostedZoneApexDomain, ""] ] ]
+  pOSBInstall: !Equals [!Ref pOSBInstall, "true"]
+Resources:
+  # Deploys a VPC in two availability zones with public and private subnets
+  rVPCStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL:
+        Fn::Sub: https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}submodules/quickstart-aws-vpc/templates/aws-vpc.template
+      Parameters:
+        AvailabilityZones: !Join [ "," , !Ref pAvailabilityZones ]
+        KeyPairName: !Ref pEC2KeyPair
+        NumberOfAZs: "2"
+        PrivateSubnet1ACIDR: !Ref pPrivateSubnet1CIDR
+        PrivateSubnet2ACIDR: !Ref pPrivateSubnet2CIDR
+        PublicSubnet1CIDR: !Ref pPublicSubnet1CIDR
+        PublicSubnet2CIDR: !Ref pPublicSubnet2CIDR
+        VPCCIDR: !Ref pVPCCIDR
+
+  # Deploys Dotmics into the VPC that was just created
+  rDotmatics:
+    Type: AWS::CloudFormation::Stack
+    DependsOn:
+    - rVPCStack
+    Properties:
+      TemplateURL: !Sub https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}templates/dotmatics.template
+      Parameters:
+        pStandbyIPAddress: !Ref pStandbyIPAddress
+        pPrimaryIPAddress: !Ref pPrimaryIPAddress
+        pOSBInstall: !Ref pOSBInstall
+        pOSBKey: 
+          Fn::If:
+            - pOSBInstall
+            - !Ref pOSBKey
+            - !Ref AWS::NoValue
+        pOSBOTN:
+          Fn::If:
+            - pOSBInstall
+            - !Ref pOSBOTN
+            - !Ref AWS::NoValue        
+        pOSBPass:
+          Fn::If:
+            - pOSBInstall
+            - !Ref pOSBPass
+            - !Ref AWS::NoValue
+        pOSBSecret: 
+          Fn::If:
+            - pOSBInstall
+            - !Ref pOSBSecret
+            - !Ref AWS::NoValue
+        pOSBBucketName:
+          Fn::If:
+            - pOSBInstall
+            - !Ref pOSBBucketName
+            - !Ref AWS::NoValue
+        pOracleInstanceType: !Ref pOracleInstanceType
+        pInstallBucketName: !Ref pInstallBucketName
+        pInstallBucketPrefix: !Ref pInstallBucketPrefix
+        pDatabaseName: !Ref pDatabaseName
+        pDataGuardConfig: !Ref pDataGuardConfig
+        pAsmPass: !Ref pAsmPass
+        pDNSName: !Ref pDNSName
+        pAppServerInstanceType: !Ref pAppServerInstanceType
+        pAppSubnetA: !GetAtt rVPCStack.Outputs.PublicSubnet1ID
+        pAppSubnetB: !GetAtt rVPCStack.Outputs.PublicSubnet2ID
+        pDatabasePass: !Ref pDatabasePass
+        pDBSubnetA: !GetAtt rVPCStack.Outputs.PrivateSubnet1AID
+        pDBSubnetB: !GetAtt rVPCStack.Outputs.PrivateSubnet2AID
+        pDmzSubnetA: !GetAtt rVPCStack.Outputs.PublicSubnet1ID
+        pDmzSubnetB: !GetAtt rVPCStack.Outputs.PublicSubnet2ID
+        pDnsHostedZoneApexDomain: !Ref pDnsHostedZoneApexDomain
+        pDnsHostedZoneID: !Ref pDnsHostedZoneID
+        pEC2KeyPair: !Ref pEC2KeyPair
+        pLoadBalancerType: !Ref pLoadBalancerType
+        pSecurityGroupForWebAccess: !Ref pSecurityGroupForWebAccess
+        pVpcId: !GetAtt rVPCStack.Outputs.VPCID
+        pWebAccessCIDR: !Ref pWebAccessCIDR
+        QSS3BucketName: !Ref QSS3BucketName
+        QSS3KeyPrefix: !Ref QSS3KeyPrefix
+
+Outputs:
+  oLoadBalancerDNS:
+    Description: DNS of Load Balancer to access Dotmatics
+    Value: !GetAtt rDotmatics.Outputs.oLoadBalancerDNS
+  oDNSUrl:
+    Condition: cDNSRecord
+    Description: URL to Load Balancer to access Domatics
+    Value: !GetAtt rDotmatics.Outputs.oDNSUrl
+  oWebAccessCidrSG:
+    Description: Security Group of WebAccessCidr
+    Value: !GetAtt rDotmatics.Outputs.oWebAccessCidrSG

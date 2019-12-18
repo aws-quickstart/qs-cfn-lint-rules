@@ -1,0 +1,358 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: >-
+  This template deploys a pair of TIBCO EMS Servers and optionally an auto-scaled group
+  of TIBCO EMS client instances into an existing VPC.
+  **WARNING**
+  This template creates EC2 instances and related resources. You will be billed
+  for the AWS resources used if you create a stack from this template. (qs-1o3ifmu44)
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Network Configuration
+        Parameters:
+          - VPCID
+          - VPCCIDR
+          - PublicSubnet1ID
+          - PublicSubnet2ID
+          - PrivateSubnet1ID
+          - PrivateSubnet2ID
+      - Label:
+          default: Bastion Access Configuration
+        Parameters:
+            - BastionSecurityGroupID
+      - Label:
+          default: TIBCO EMS Server Configuration
+        Parameters:
+          - KeyPairName
+          - EMSInstallerName
+          - EMSS3BucketName
+          - EMSServerAMIType
+          - EMSServerInstanceType
+          - EMSServerPort
+      - Label:
+          default: TIBCO EMS Client Configuration
+        Parameters:
+          - DeployEMSClientStack
+          - EMSClientInstanceType
+          - EMSClientAMIType
+      - Label:
+          default: AWS Quick Start Configuration
+        Parameters:
+          - QSS3BucketName
+          - QSS3KeyPrefix
+    ParameterLabels:
+      BastionSecurityGroupID:
+        default: Bastion Security Group ID
+      DeployEMSClientStack:
+        default: Deploy optional EMS client stack
+      EMSS3BucketName:
+        default: EMS S3 Bucket Name
+      EMSClientAMIType:
+        default: EMS Client AMI Type
+      EMSClientInstanceType:
+        default: EMS Client Instance Type
+      EMSInstallerName:
+        default: EMS Installer Package Name
+      EMSServerAMIType:
+        default: EMS Server AMI Type
+      EMSServerInstanceType:
+        default: EMS Server Instance Type
+      EMSServerPort:
+        default: EMS Server Port Number
+      KeyPairName:
+        default: SSH Key Name
+      PrivateSubnet1ID:
+        default: Private subnet 1 ID in Availability Zone 1
+      PrivateSubnet2ID:
+        default: Private subnet 2 ID in Availability Zone 2
+      PublicSubnet1ID:
+        default: Public subnet 1 ID in Availability Zone 1
+      PublicSubnet2ID:
+        default: Public subnet 2 ID in Availability Zone 2
+      QSS3BucketName:
+        default: Quick Start S3 Bucket Name
+      QSS3KeyPrefix:
+        default: Quick Start S3 Key Prefix
+      VPCCIDR:
+        default: VPC CIDR
+      VPCID:
+        default: VPC ID
+Parameters:
+  BastionSecurityGroupID:
+    Description: >
+      ID of the bastion host security group to enable SSH connections (e.g.,
+      sg-7f16e910)
+    Type: 'AWS::EC2::SecurityGroup::Id'
+  DeployEMSClientStack:
+    Type: String
+    Description: Deploy the TIBCO EMS client stack
+    AllowedValues:
+        - 'true'
+        - 'false'
+    Default: 'true'
+  EMSClientAMIType:
+    AllowedValues:
+      - Amazon-Linux2-HVM
+      - RHEL-7.5_HVM_GA
+    Default: Amazon-Linux2-HVM
+    Description: Client Operating System to use - Amazon Linux2 or Red Hat
+    Type: String
+  EMSClientInstanceType:
+    AllowedValues:
+      - t2.micro
+      - t2.small
+      - t2.medium
+      - t2.large
+      - t2.xlarge
+      - m5.large
+      - m5.xlarge
+      - m5.2xlarge
+      - m5.4xlarge
+      - m4.large
+      - m4.xlarge
+      - m4.2xlarge
+      - m4.4xlarge
+      - m3.medium
+      - m3.large
+      - m3.xlarge
+      - m3.2xlarge
+      - c5.large
+      - c5.xlarge
+      - c5.2xlarge
+      - c5.4xlarge
+      - c4.large
+      - c4.xlarge
+      - c4.2xlarge
+      - c4.4xlarge
+      - c3.large
+      - c3.xlarge
+      - c3.2xlarge
+      - c3.4xlarge
+      - c3.8xlarge
+    ConstraintDescription: Must contain valid instance type
+    Default: t2.medium
+    Description: Type of EC2 instance for the EMS Client instances
+    Type: String
+  EMSInstallerName:
+    Type: String
+    Description: >-
+      Name of the TIBCO EMS Installation archive downloaded from TIBCO eDelivery
+      site
+    Default: TIB_ems_8.4.0_linux_x86_64.zip
+  EMSServerAMIType:
+    AllowedValues:
+      - Amazon-Linux2-HVM
+      - RHEL-7.5_HVM_GA
+    Default: Amazon-Linux2-HVM
+    Description: Server Operating System to use - Amazon Linux2 or Red Hat
+    Type: String
+  EMSS3BucketName:
+    AllowedPattern: '^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$'
+    Description: >-
+      Name of the S3 bucket for retrieving EMS installer zip.
+    Type: String
+  EMSServerInstanceType:
+    AllowedValues:
+      - t2.micro
+      - t2.small
+      - t2.medium
+      - t2.large
+      - t2.xlarge
+      - m5.large
+      - m5.xlarge
+      - m5.2xlarge
+      - m5.4xlarge
+      - m4.large
+      - m4.xlarge
+      - m4.2xlarge
+      - m4.4xlarge
+      - m3.medium
+      - m3.large
+      - m3.xlarge
+      - m3.2xlarge
+      - c5.large
+      - c5.xlarge
+      - c5.2xlarge
+      - c5.4xlarge
+      - c4.large
+      - c4.xlarge
+      - c4.2xlarge
+      - c4.4xlarge
+      - c3.large
+      - c3.xlarge
+      - c3.2xlarge
+      - c3.4xlarge
+      - c3.8xlarge
+    ConstraintDescription: Must contain valid instance type
+    Default: t2.large
+    Description: Type of EC2 instance for the EMS Server instances
+    Type: String
+  EMSServerPort:
+    AllowedPattern: '^[0-9]*$'
+    Description: Will be used for both EMS server instances
+    Type: String
+    MinLength: '4'
+    MaxLength: '5'
+    Default: 7222
+  KeyPairName:
+    Description: >-
+      The name of an existing public/private key pair, which allows you to
+      securely connect to your instance after it launches
+    Type: 'AWS::EC2::KeyPair::KeyName'
+  PublicSubnet1ID:
+    Description: 'ID of Subnet 1 in Availability Zone 1 (e.g., subnet-a0246dcd)'
+    Type: 'AWS::EC2::Subnet::Id'
+  PublicSubnet2ID:
+    Description: 'ID of Subnet 2 in Availability Zone 2 (e.g., subnet-b1f432cd)'
+    Type: 'AWS::EC2::Subnet::Id'
+  PrivateSubnet1ID:
+    Description: 'ID of Subnet 1 in Availability Zone 1 (e.g., subnet-a0246dcd)'
+    Type: 'AWS::EC2::Subnet::Id'
+  PrivateSubnet2ID:
+    Description: 'ID of Subnet 2 in Availability Zone 2 (e.g., subnet-b1f432cd)'
+    Type: 'AWS::EC2::Subnet::Id'
+  QSS3BucketName:
+    AllowedPattern: '^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$'
+    ConstraintDescription: >-
+      Quick Start bucket name can include numbers, lowercase letters, uppercase
+      letters, and hyphens (-). It cannot start or end with a hyphen (-).
+    Default: aws-quickstart
+    Description: >-
+      S3 bucket name for the Quick Start assets. This string can include
+      numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot
+      start or end with a hyphen (-).
+    Type: String
+  QSS3KeyPrefix:
+    AllowedPattern: '^[0-9a-zA-Z-/]*$'
+    ConstraintDescription: >-
+      Quick Start key prefix can include numbers, lowercase letters, uppercase
+      letters, hyphens (-), and forward slash (/).
+    Default: quickstart-tibco-ems/
+    Description: >-
+      S3 key prefix for the Quick Start assets. Quick Start key prefix can
+      include numbers, lowercase letters, uppercase letters, hyphens (-), and
+      forward slash (/).
+    Type: String
+  VPCCIDR:
+    AllowedPattern: >-
+      ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/(1[6-9]|2[0-8]))$
+    ConstraintDescription: CIDR block parameter must be in the form x.x.x.x/16-28
+    Default: 10.0.0.0/16
+    Description: CIDR block for the VPC
+    Type: String
+  VPCID:
+    Description: ID of your existing VPC for deployment
+    Type: 'AWS::EC2::VPC::Id'
+Rules:
+  KeyPairsNotEmpty:
+    Assertions:
+      - Assert: !Not
+          - Fn::EachMemberEquals:
+              - Fn::RefAll: AWS::EC2::KeyPair::KeyName
+              - ''
+        AssertDescription: All key pair parameters must not be empty
+  SubnetsInVPC:
+    Assertions:
+      - Assert:
+          Fn::EachMemberIn:
+            - Fn::ValueOfAll:
+                - AWS::EC2::Subnet::Id
+                - VpcId
+            - Fn::RefAll: AWS::EC2::VPC::Id
+        AssertDescription: All subnets must in the VPC
+  EFSSupportedRegionRule:
+    Assertions:
+      - Assert:
+          Fn::Contains:
+          - - us-east-1
+            - us-east-2
+            - us-west-2
+            - us-west-1
+            - eu-west-1
+            - ap-southeast-2
+            - ap-northeast-1
+            - ap-northeast-2
+            - eu-central-1
+          - !Ref AWS::Region
+        AssertDescription: This Quick Start utilizes Amazon EFS which is only available
+          in the us-east-1 (N. Virginia), us-east-2 (Ohio), us-west-1 (N. California), us-west-2 (Oregon), eu-west-1 (Ireland),
+          eu-central-1 (Frankfurt), ap-northeast-1 (Tokyo), ap-northeast-2 (Seoul), and ap-southeast-2 (Sydney) regions. Please launch the stack in
+          one of these regions
+Conditions:
+  IncludeEMSClientStack:
+    !Equals
+    - !Ref DeployEMSClientStack
+    - 'true'
+Resources:
+  EMSServerClientAccessSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: Control EMS client access to the EMS Server instances
+      VpcId: !Ref VPCID
+  EMSServerStack:
+    DependsOn:
+      - EMSServerClientAccessSecurityGroup
+    Type: 'AWS::CloudFormation::Stack'
+    Properties:
+      TemplateURL: !Sub >-
+        https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}templates/tibco-ems-server.template
+      Parameters:
+        BastionSecurityGroupID: !Ref BastionSecurityGroupID
+        EMSServerClientAccessSecurityGroupID: !Ref EMSServerClientAccessSecurityGroup
+        EMSServerInstanceType: !Ref EMSServerInstanceType
+        EMSInstallerName: !Ref EMSInstallerName
+        EMSAMIType: !Ref EMSServerAMIType
+        EMSServerPort: !Ref EMSServerPort
+        EMSS3BucketName: !Ref EMSS3BucketName
+        KeyPairName: !Ref KeyPairName
+        QSS3BucketName: !Ref QSS3BucketName
+        QSS3KeyPrefix: !Ref QSS3KeyPrefix
+        Subnet1ID: !Ref PrivateSubnet1ID
+        Subnet2ID: !Ref PrivateSubnet2ID
+        VPCID: !Ref VPCID
+        VPCCIDR: !Ref VPCCIDR
+  EMSClientStack:
+    Condition: IncludeEMSClientStack
+    DependsOn:
+      - EMSServerStack
+    Type: 'AWS::CloudFormation::Stack'
+    Properties:
+      TemplateURL: !Sub >-
+        https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}templates/tibco-ems-client.template
+      Parameters:
+        BastionSecurityGroupID: !Ref BastionSecurityGroupID
+        EMSAMIType: !Ref EMSClientAMIType
+        EMSClientInstanceType: !Ref EMSClientInstanceType
+        EMSInstallerName: !Ref EMSInstallerName
+        EMSClientCount: 2
+        EMSS3BucketName: !Ref EMSS3BucketName
+        EMSServerClientAccessSecurityGroupID: !Ref EMSServerClientAccessSecurityGroup
+        EMSEFSID: !GetAtt EMSServerStack.Outputs.EMSEFSID
+        EMSServer1CP: !GetAtt EMSServerStack.Outputs.EMSServer1CP
+        EMSServer2CP: !GetAtt EMSServerStack.Outputs.EMSServer2CP
+        KeyPairName: !Ref KeyPairName
+        QSS3BucketName: !Ref QSS3BucketName
+        QSS3KeyPrefix: !Ref QSS3KeyPrefix
+        PublicSubnet1ID: !Ref PublicSubnet1ID
+        PublicSubnet2ID: !Ref PublicSubnet2ID
+        PrivateSubnet1ID: !Ref PrivateSubnet1ID
+        PrivateSubnet2ID: !Ref PrivateSubnet2ID
+        VPCID: !Ref VPCID
+Outputs:
+  EMSEFSID:
+    Description: EMS EFS ID (For Backup Purposes)
+    Value: !GetAtt EMSServerStack.Outputs.EMSEFSID
+  EMSServer1CP:
+    Description: EMS Server 1 Connection Point
+    Value: !GetAtt EMSServerStack.Outputs.EMSServer1CP
+  EMSServer1SSH:
+    Description: SSH command for accessing EMS Server 1 (assumes via the Bastion host with SSH agent forwarding enabled)
+    Value: !GetAtt EMSServerStack.Outputs.EMSServer1SSH
+  EMSServer2CP:
+    Description: EMS Server 2 Connection Point
+    Value: !GetAtt EMSServerStack.Outputs.EMSServer2CP
+  EMSServer2SSH:
+    Description: SSH command for accessing EMS Server 2 (assumes via the Bastion host with SSH agent forwarding enabled)
+    Value: !GetAtt EMSServerStack.Outputs.EMSServer2SSH
+

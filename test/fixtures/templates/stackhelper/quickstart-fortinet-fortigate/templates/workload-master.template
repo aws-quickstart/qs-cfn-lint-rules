@@ -1,0 +1,536 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "FortiGate Autoscale Solution (New VPC). This template deploys Fortinet FortiGate cluster into a new VPC with a Multi-AZ Autoscale group with Lambda and LifecycleHook. Please see the Quick Start documentation for more details. **WARNING** You will be billed for the FortiGate On-Demand instances and related AWS resources if you create a stack from this template. (qs-1p3pr46rl)",
+    "Parameters": {
+        "CustomIdentifier": {
+            "Type": "String",
+            "Default": "fgtASG",
+            "MaxLength": "10",
+            "AllowedPattern": "[A-Za-z0-9]+",
+            "ConstraintDescription": "must only contain uppercase and lowercase letters and numbers",
+            "Description": "A custom identifier as resource name prefix. Must be at most 10 characters long and only contain uppercase, lowercase letters, and numbers. Max length is 10."
+        },
+        "QSS3BucketName": {
+            "Type": "String",
+            "AllowedPattern": "^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$",
+            "ConstraintDescription": "Quick Start bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-).",
+            "Default": "aws-quickstart",
+            "Description": "S3 bucket name for the Quick Start assets. Quick Start bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-)."
+        },
+        "QSS3KeyPrefix": {
+            "Type": "String",
+            "AllowedPattern": "^[0-9a-zA-Z-/]*$",
+            "ConstraintDescription": "Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).",
+            "Default": "quickstart-fortinet-fortigate/",
+            "Description": "S3 key prefix for the Quick Start assets. Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/)."
+        },
+        "AvailabilityZones": {
+            "Description": "The list of Availability Zones to use for the subnets in the VPC. The Quick Start uses two Availability Zones from your list and preserves the logical order you specify.",
+            "Type": "List<AWS::EC2::AvailabilityZone::Name>"
+        },
+        "VPCCIDR": {
+            "Type": "String",
+            "Default": "10.0.0.0/16",
+            "AllowedPattern": "^(([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5]){1}(\\/([0-9]|[1-2][0-9]|3[0-2]))?$",
+            "ConstraintDescription": "must be a valid CIDR block format.",
+            "Description": "The CIDR block for the VPC."
+        },
+        "PublicSubnet1CIDR": {
+            "Type": "String",
+            "Default": "10.0.0.0/24",
+            "AllowedPattern": "^(([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5]){1}(\\/([0-9]|[1-2][0-9]|3[0-2]))?$",
+            "ConstraintDescription": "must be a valid CIDR block format.",
+            "Description": "The CIDR block for the public (DMZ) subnet located in Availability Zone 1."
+        },
+        "PublicSubnet2CIDR": {
+            "Type": "String",
+            "Default": "10.0.2.0/24",
+            "AllowedPattern": "^(([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5]){1}(\\/([0-9]|[1-2][0-9]|3[0-2]))?$",
+            "ConstraintDescription": "must be a valid CIDR block format.",
+            "Description": "The CIDR block for the public (DMZ) subnet located in Availability Zone 2."
+        },
+        "PrivateSubnet1CIDR": {
+            "Type": "String",
+            "Default": "10.0.1.0/24",
+            "AllowedPattern": "^(([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5]){1}(\\/([0-9]|[1-2][0-9]|3[0-2]))?$",
+            "ConstraintDescription": "must be a valid CIDR block format.",
+            "Description": "The CIDR block for the private subnet located in Availability Zone 1."
+        },
+        "PrivateSubnet2CIDR": {
+            "Type": "String",
+            "Default": "10.0.3.0/24",
+            "AllowedPattern": "^(([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5]){1}(\\/([0-9]|[1-2][0-9]|3[0-2]))?$",
+            "ConstraintDescription": "must be a valid CIDR block format.",
+            "Description": "The CIDR block for the private subnet located in Availability Zone 2."
+        },
+        "FortiGateInstanceType": {
+            "Type": "String",
+            "Default": "c5.large",
+            "AllowedValues": [
+                "t2.small",
+                "c5.large",
+                "c5.xlarge",
+                "c5.2xlarge",
+                "c5.4xlarge",
+                "c5.9xlarge"
+            ],
+            "ConstraintDescription": "must be a valid EC2 instance type.",
+            "Description": "Instance type to launch as FortiGate On-Demand instances. There are t2.small and compute-optimized instances such as c4 and c5 available with different vCPU sizes and bandwidths. For more information about instance types, see https://aws.amazon.com/ec2/instance-types/"
+        },
+        "ExpireLifecycleEntry": {
+            "Type": "Number",
+            "Default": 300,
+            "MinValue": 60,
+            "MaxValue": 3600,
+            "ConstraintDescription": "must be a valid number between 60 and 3600.",
+            "Description": "FortiGate instance lifecycle expiry entry (in seconds). Minimum is 60. Maximum is 3600."
+        },
+        "FortiGateAsgCooldown": {
+            "Type": "Number",
+            "Default": 300,
+            "MinValue": 60,
+            "MaxValue": 3600,
+            "ConstraintDescription": "must be a valid number between 60 and 3600.",
+            "Description": "Auto-Scaling group waits for the cooldown period (in seconds) to complete before resuming scaling activities. Minimum is 60. Maximum is 3600."
+        },
+        "FortiGateAsgDesiredCapacity": {
+            "Type": "Number",
+            "Default": 2,
+            "MinValue": 2,
+            "ConstraintDescription": "must be a valid number not less than 2.",
+            "Description": "The number of FortiGate instances the group should have at any time, also called desired capacity. Must keep at least 2 FortiGates in the group for High Availability. Minimum is 2."
+        },
+        "FortiGateAsgMinSize": {
+            "Type": "Number",
+            "Default": 2,
+            "MinValue": 2,
+            "ConstraintDescription": "must be a valid number not less than 2.",
+            "Description": "Minimum number of FortiGate instances in the Auto-Scaling Group. Minimum is 2."
+        },
+        "FortiGateAsgMaxSize": {
+            "Type": "Number",
+            "Default": 4,
+            "MinValue": 2,
+            "ConstraintDescription": "must be a valid number not less than 2.",
+            "Description": "Maximum number of FortiGate instances in the Auto-Scaling Group. Minimum is 2."
+        },
+        "FortiGateAsgHealthCheckGracePeriod": {
+            "Type": "Number",
+            "Default": 300,
+            "MinValue": 60,
+            "ConstraintDescription": "must be a valid number not less than 60.",
+            "Description": "The length of time (in seconds) that Auto-Scaling waits before checking an instance's health status. Minimum is 60."
+        },
+        "FortiGateAsgScaleInThreshold": {
+            "Type": "Number",
+            "Default": 25,
+            "MinValue": 1,
+            "MaxValue": 100,
+            "ConstraintDescription": "must be a valid number between 1 and 100.",
+            "Description": "The threshold (in percentage) for the FortiGate Auto-Scaling group to scale-in (remove) 1 instance. Minimum is 1. Maximum is 100."
+        },
+        "FortiGateAsgScaleOutThreshold": {
+            "Type": "Number",
+            "Default": 80,
+            "MinValue": 1,
+            "MaxValue": 100,
+            "ConstraintDescription": "must be a valid number between 1 and 100.",
+            "Description": "The threshold (in percentage) for the FortiGate Auto-Scaling group to scale-out (add) 1 instance. Minimum is 1. Maximum is 100."
+        },
+        "FortiGateElbTgHealthyThreshold": {
+            "Type": "Number",
+            "Default": 3,
+            "MinValue": 3,
+            "ConstraintDescription": "must be a valid number not less than 3.",
+            "Description": "The number of consecutive health check failures required before considering a FortiGate instance unhealthy. Minimum is 3."
+        },
+        "BalanceWebTrafficOverPort": {
+            "Type": "Number",
+            "Default": 443,
+            "MinValue": 1,
+            "MaxValue": 65535,
+            "ConstraintDescription": "must be a valid port number between 1 and 65535.",
+            "Description": "Balance web service traffic over this port if the internal web-service load balancer is enabled. Minimum is 1. Maximum is 65535."
+        },
+        "InternalLoadBalancingOptions": {
+            "Type": "String",
+            "Default": "add a new internal load balancer",
+            "AllowedValues": [
+                "add a new internal load balancer",
+                "use a load balancer specified below",
+                "do not need one"
+            ],
+            "ConstraintDescription": "must choose from the provided options.",
+            "Description": "Options for add an optional pre-defined load balancer to route traffic to web service in the private subnets. You can optionally use your own one or decide to not need one."
+        },
+        "InternalLoadBalancerDnsName": {
+            "Type": "String",
+            "Description": "(Optional)DNS Name of the Elastic Load Balancer which is used in the private subnets. Specify if only you use your own one."
+        },
+        "FortiGatePskSecret": {
+            "Type": "String",
+            "NoEcho": true,
+            "MaxLength": "128",
+            "Description": "A secret key for the FortiGate instances to securely communicate with each other. It can be of your choice of a string, such as numbers or letters or the combination of them. Max length 128."
+        },
+        "FortiGateAdminPort": {
+            "Type": "Number",
+            "Default": 8443,
+            "MinValue": 1,
+            "MaxValue": 65535,
+            "ConstraintDescription": "must be a valid port number between 1 and 65535.",
+            "Description": "A port number for FortiGate administration. Minimum is 1. Maximum is 65535. Do not use: 443, 541, 514, 703 because these are FortiGate reserved ports."
+        },
+        "FortiGateAdminCidr": {
+            "Type": "String",
+            "AllowedPattern": "^(([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5]){1}(\\/([0-9]|[1-2][0-9]|3[0-2]))?$",
+            "ConstraintDescription": "must be a valid CIDR block format and 0.0.0.0/0 is highly not recommended.",
+            "Description": "CIDR block for external admin management access. **WARNING!** 0.0.0.0/0 accepts connections from any IP address. We recommend that you use a constrained CIDR range to reduce the potential of inbound attacks from unknown IP addresses."
+        },
+        "KeyPairName": {
+            "Type": "AWS::EC2::KeyPair::KeyName",
+            "ConstraintDescription": "must specify an admin access key pair for FortiGate instances.",
+            "Description": "Amazon EC2 Key Pair for admin access."
+        }
+    },
+    "Conditions": {
+        "GovCloudCondition": {
+            "Fn::Equals": [
+                {
+                    "Ref": "AWS::Region"
+                },
+                "us-gov-west-1"
+            ]
+        }
+    },
+    "Resources": {
+        "StackCreateNewVPC": {
+            "Type": "AWS::CloudFormation::Stack",
+            "Properties": {
+                "Parameters": {
+                    "QSS3BucketName": {
+                        "Ref": "QSS3BucketName"
+                    },
+                    "QSS3KeyPrefix": {
+                        "Ref": "QSS3KeyPrefix"
+                    },
+                    "AvailabilityZones": {
+                        "Fn::Join": [
+                            ",",
+                            {
+                                "Ref": "AvailabilityZones"
+                            }
+                        ]
+                    },
+                    "VPCCIDR": {
+                        "Ref": "VPCCIDR"
+                    },
+                    "PublicSubnet1CIDR": {
+                        "Ref": "PublicSubnet1CIDR"
+                    },
+                    "PublicSubnet2CIDR": {
+                        "Ref": "PublicSubnet2CIDR"
+                    },
+                    "PrivateSubnet1CIDR": {
+                        "Ref": "PrivateSubnet1CIDR"
+                    },
+                    "PrivateSubnet2CIDR": {
+                        "Ref": "PrivateSubnet2CIDR"
+                    }
+                },
+                "TemplateURL": {
+                    "Fn::Sub": [
+                        "https://${QSS3BucketName}.${QSS3Region}.amazonaws.com/${QSS3KeyPrefix}templates/create-new-vpc.template",
+                        {
+                            "QSS3Region": {
+                                "Fn::If": [
+                                    "GovCloudCondition",
+                                    "s3-us-gov-west-1",
+                                    "s3"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                "TimeoutInMinutes": "5"
+            }
+        },
+        "StackDeployFgtAsgSolution": {
+            "Type": "AWS::CloudFormation::Stack",
+            "Properties": {
+                "Parameters": {
+                    "QSS3BucketName": {
+                        "Ref": "QSS3BucketName"
+                    },
+                    "QSS3KeyPrefix": {
+                        "Ref": "QSS3KeyPrefix"
+                    },
+                    "CustomIdentifier": {
+                        "Ref": "CustomIdentifier"
+                    },
+                    "VpcId": {
+                        "Fn::GetAtt": [
+                            "StackCreateNewVPC",
+                            "Outputs.FtgAsgVpc"
+                        ]
+                    },
+                    "VPCCIDR": {
+                        "Ref": "VPCCIDR"
+                    },
+                    "PublicSubnet1": {
+                        "Fn::GetAtt": [
+                            "StackCreateNewVPC",
+                            "Outputs.PublicSubnet1"
+                        ]
+                    },
+                    "PublicSubnet2": {
+                        "Fn::GetAtt": [
+                            "StackCreateNewVPC",
+                            "Outputs.PublicSubnet2"
+                        ]
+                    },
+                    "PrivateSubnet1": {
+                        "Fn::GetAtt": [
+                            "StackCreateNewVPC",
+                            "Outputs.PrivateSubnet1"
+                        ]
+                    },
+                    "PrivateSubnet2": {
+                        "Fn::GetAtt": [
+                            "StackCreateNewVPC",
+                            "Outputs.PrivateSubnet2"
+                        ]
+                    },
+                    "PrivateSubnet1RouteTable": {
+                        "Fn::GetAtt": [
+                            "StackCreateNewVPC",
+                            "Outputs.FgtPrivateSubnet1RouteTable"
+                        ]
+                    },
+                    "PrivateSubnet2RouteTable": {
+                        "Fn::GetAtt": [
+                            "StackCreateNewVPC",
+                            "Outputs.FgtPrivateSubnet2RouteTable"
+                        ]
+                    },
+                    "FortiGateInstanceType": {
+                        "Ref": "FortiGateInstanceType"
+                    },
+                    "ExpireLifecycleEntry": {
+                        "Ref": "ExpireLifecycleEntry"
+                    },
+                    "FortiGateAsgCooldown": {
+                        "Ref": "FortiGateAsgCooldown"
+                    },
+                    "FortiGateAsgDesiredCapacity": {
+                        "Ref": "FortiGateAsgDesiredCapacity"
+                    },
+                    "FortiGateAsgMinSize": {
+                        "Ref": "FortiGateAsgMinSize"
+                    },
+                    "FortiGateAsgMaxSize": {
+                        "Ref": "FortiGateAsgMaxSize"
+                    },
+                    "FortiGateAsgHealthCheckGracePeriod": {
+                        "Ref": "FortiGateAsgHealthCheckGracePeriod"
+                    },
+                    "FortiGateAsgScaleInThreshold": {
+                        "Ref": "FortiGateAsgScaleInThreshold"
+                    },
+                    "FortiGateAsgScaleOutThreshold": {
+                        "Ref": "FortiGateAsgScaleOutThreshold"
+                    },
+                    "FortiGateElbTgHealthyThreshold": {
+                        "Ref": "FortiGateElbTgHealthyThreshold"
+                    },
+                    "BalanceWebTrafficOverPort": {
+                        "Ref": "BalanceWebTrafficOverPort"
+                    },
+                    "InternalLoadBalancingOptions": {
+                        "Ref": "InternalLoadBalancingOptions"
+                    },
+                    "InternalLoadBalancerDnsName": {
+                        "Ref": "InternalLoadBalancerDnsName"
+                    },
+                    "FortiGatePskSecret": {
+                        "Ref": "FortiGatePskSecret"
+                    },
+                    "FortiGateAdminPort": {
+                        "Ref": "FortiGateAdminPort"
+                    },
+                    "FortiGateAdminCidr": {
+                        "Ref": "FortiGateAdminCidr"
+                    },
+                    "KeyPairName": {
+                        "Ref": "KeyPairName"
+                    }
+                },
+                "TemplateURL": {
+                    "Fn::Sub": [
+                        "https://${QSS3BucketName}.${QSS3Region}.amazonaws.com/${QSS3KeyPrefix}templates/workload.template",
+                        {
+                            "QSS3Region": {
+                                "Fn::If": [
+                                    "GovCloudCondition",
+                                    "s3-us-gov-west-1",
+                                    "s3"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                "TimeoutInMinutes": "30"
+            }
+        }
+    },
+    "Metadata": {
+        "AWS::CloudFormation::Interface": {
+            "ParameterGroups": [
+                {
+                    "Label": {
+                        "default": "Network configuration"
+                    },
+                    "Parameters": [
+                        "AvailabilityZones",
+                        "VPCCIDR",
+                        "PublicSubnet1CIDR",
+                        "PublicSubnet2CIDR",
+                        "PrivateSubnet1CIDR",
+                        "PrivateSubnet2CIDR"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "FortiGate configuration"
+                    },
+                    "Parameters": [
+                        "CustomIdentifier",
+                        "FortiGateInstanceType",
+                        "FortiGatePskSecret",
+                        "FortiGateAdminPort",
+                        "FortiGateAdminCidr",
+                        "KeyPairName"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "FortiGate auto-scaling group configuration"
+                    },
+                    "Parameters": [
+                        "ExpireLifecycleEntry",
+                        "FortiGateAsgDesiredCapacity",
+                        "FortiGateAsgMinSize",
+                        "FortiGateAsgMaxSize",
+                        "FortiGateAsgHealthCheckGracePeriod",
+                        "FortiGateAsgCooldown",
+                        "FortiGateAsgScaleOutThreshold",
+                        "FortiGateAsgScaleInThreshold",
+                        "FortiGateElbTgHealthyThreshold"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "Load balancing configuration"
+                    },
+                    "Parameters": [
+                        "InternalLoadBalancingOptions",
+                        "InternalLoadBalancerDnsName",
+                        "BalanceWebTrafficOverPort"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "AWS Quick Start configuration"
+                    },
+                    "Parameters": [
+                        "QSS3BucketName",
+                        "QSS3KeyPrefix"
+                    ]
+                }
+            ],
+            "ParameterLabels": {
+                "CustomIdentifier": {
+                    "default": "Resource name prefix"
+                },
+                "AvailabilityZones": {
+                    "default": "Availability Zones"
+                },
+                "VPCCIDR": {
+                    "default": "VPC CIDR"
+                },
+                "PublicSubnet1CIDR": {
+                    "default": "Public subnet 1 CIDR"
+                },
+                "PublicSubnet2CIDR": {
+                    "default": "Public subnet 2 CIDR"
+                },
+                "PrivateSubnet1CIDR": {
+                    "default": "Private subnet 1 CIDR"
+                },
+                "PrivateSubnet2CIDR": {
+                    "default": "Private subnet 2 CIDR"
+                },
+                "FortiGateInstanceType": {
+                    "default": "Instance type"
+                },
+                "LambdaDeploymentMethod": {
+                    "default": "Deployment method"
+                },
+                "QSS3BucketName": {
+                    "default": "Quick Start S3 bucket name"
+                },
+                "QSS3KeyPrefix": {
+                    "default": "Quick Start S3 key prefix"
+                },
+                "ExpireLifecycleEntry": {
+                    "default": "Instance lifecycle expiry"
+                },
+                "FortiGateAsgCooldown": {
+                    "default": "Scaling cooldown period"
+                },
+                "FortiGateAsgDesiredCapacity": {
+                    "default": "Desired capacity"
+                },
+                "FortiGateAsgMinSize": {
+                    "default": "Minimum group size"
+                },
+                "FortiGateAsgMaxSize": {
+                    "default": "Maximum group size"
+                },
+                "FortiGateAsgHealthCheckGracePeriod": {
+                    "default": "Health check grace period"
+                },
+                "FortiGateAsgScaleInThreshold": {
+                    "default": "Scale-in threshold"
+                },
+                "FortiGateAsgScaleOutThreshold": {
+                    "default": "Scale-out threshold"
+                },
+                "FortiGateElbTgHealthyThreshold": {
+                    "default": "Healthy threshold"
+                },
+                "BalanceWebTrafficOverPort": {
+                    "default": "Web service traffic port"
+                },
+                "InternalLoadBalancingOptions": {
+                    "default": "Internal ELB options"
+                },
+                "InternalLoadBalancerDnsName": {
+                    "default": "Internal ELB DNS name"
+                },
+                "FortiGateAdminPort": {
+                    "default": "Admin port"
+                },
+                "FortiGateAdminCidr": {
+                    "default": "Admin CIDR block"
+                },
+                "KeyPairName": {
+                    "default": "Key pair name"
+                },
+                "FortiGatePskSecret": {
+                    "default": "FortiGate PSK secret"
+                }
+            }
+        }
+    }
+}

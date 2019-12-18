@@ -1,0 +1,1037 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "Creates the resources needed to train and get predictions from SageMaker Models.  Lambda functions are used to create training jobs and prediction endpoints based on changes in S3 data. (qs-1onlac5tg)",
+    "Parameters": {
+        "StackSuffix": {
+            "Type": "String",
+            "Description": "The suffix of the stack"
+        },
+        "LambdaCodeS3Bucket": {
+            "Type": "String",
+            "Description": "S3 Bucket where lambda code exists"
+        },
+        "LambdaCodeS3KeyPrefix": {
+            "Type": "String",
+            "Description": "S3 Bucket where lambda code exists"
+        },
+        "SageMakerDataPrepLambdaCodeLocation": {
+            "Type": "String",
+            "Description": "S3 Path where SageMaker Data Prep Lambda code exists"
+        },
+        "SageMakerTrainingKickoffLambdaCodeLocation": {
+            "Type": "String",
+            "Description": "S3 Path where SageMaker Training Kickoff Lambda code exists"
+        },
+        "SageMakerEndpointUpdateLambdaCodeLocation": {
+             "Type": "String",
+            "Description": "S3 Path where SageMaker Endpoint Update Lambda code exists"
+        },
+        "DataLakeS3BucketName": {
+            "Type": "String",
+            "Description": "S3 Bucket where data lake lives"
+        },
+        "SageMakerAlgorithm": {
+            "Type": "String",
+            "AllowedPattern": "^KMeans|PCA|LDA|FactorizationMachines|LinearLearner|NeuralTopicModel|RandomCutForest|Seq2Seq|XGBoost|ObjectDetection|ImageClassification|DeepARForecasting|BlazingText|KNearestNeighbor$",
+            "ConstraintDescription": "SageMaker Algorithm must be one of KMeans, PCA, LDA, FactorizationMachines, LinearLearner, NeuralTopicModel, RandomCutForest, Seq2Seq, XGBoost, ObjectDetection, ImageClassification, DeepARForecasting, BlazingText, KNearestNeighbor",
+            "Default": "DeepARForecasting",
+            "Description": "Name of the SageMaker algorithm that will be trained"
+        },
+        "SageMakerEndpointName": {
+            "Type": "String",
+            "Description": "Name of the SageMaker endpoint that will be executed to generate predictions"
+        },
+        "SageMakerInputS3BucketName": {
+            "Type": "String",
+            "Description": "S3 Bucket where sage maker input data lives"
+        },
+        "SageMakerModelS3BucketName": {
+            "Type": "String",
+            "Description": "S3 Bucket where sage maker models lives"
+        },
+        "HyperParameters": {
+            "Type": "String",
+            "Description": "The hyperparameters that will be passed to the SageMaker training algorithm, in JSON format.  See the HyperParameters section under the algorithm you are using from https://docs.aws.amazon.com/sagemaker/latest/dg/algos.html"
+        },
+        "TrainingInstanceCount": {
+            "Type": "String",
+            "Description": "The number of instances to train the SageMaker model with"
+        },
+        "TrainingInstanceType": {
+            "Type": "String",
+            "Description": "The instance type to train the SageMaker model with"
+        },
+        "TrainingInstanceVolumeSize": {
+            "Type": "String",
+            "Description": "The EBS volume size (in GB) to attach to each instance training the SageMaker model"
+        },
+        "TrainingMaxRuntimeSeconds": {
+            "Type": "String",
+            "Description": "The maximum number of seconds to allow a SageMaker training job to execute"
+        },
+        "InitialEndpointInstanceCount": {
+            "Type": "String",
+            "Description": "The number of instances the SageMaker endpoint autoscaling group begins with"
+        },
+        "EndpointInstanceType": {
+            "Type": "String",
+            "Description": "The instance type to run the SageMaker endpoint on"
+        },
+        "SageMakerInputDataPrefix": {
+            "Type": "String",
+            "Description": "S3 Prefix where SageMaker training/testing data lives"
+        },
+        "SageMakerOutputModelPrefix": {
+            "Type": "String",
+            "Description": "S3 Prefix where SageMaker model lives"
+        }
+    },
+    "Mappings": {
+        "AlgoMap": {
+            "KMeans": { "image": "kmeans:latest" },
+            "PCA": { "image": "pca:latest" },
+            "LDA": { "image": "lda:latest" },
+            "FactorizationMachines": { "image": "factorizationmachines:latest" },
+            "LinearLearner": { "image": "linearlearner:latest" },
+            "NeuralTopicModel": { "image": "ntm:latest" },
+            "RandomCutForest": { "image": "randomcutforest:latest" },
+            "Seq2Seq": { "image": "seq2seq:latest" },
+            "XGBoost": { "image": "xgboost:latest" },
+            "ObjectDetection": { "image": "objectdetection:latest" },
+            "ImageClassification": { "image": "imageclassification:latest" },
+            "DeepARForecasting": { "image": "forecasting-deepar:latest" },
+            "BlazingText": { "image": "blazingtext:latest" },
+            "KNearestNeighbor": { "image": "knn:latest" }
+        },
+        "RegionMap": {
+            "us-east-1": {
+                "DeepARForecasting": "522234722520.dkr.ecr.us-east-1.amazonaws.com",
+                "KMeans": "382416733822.dkr.ecr.us-east-1.amazonaws.com",
+                "PCA": "382416733822.dkr.ecr.us-east-1.amazonaws.com",
+                "FactorizationMachines": "382416733822.dkr.ecr.us-east-1.amazonaws.com",
+                "LinearLearner": "382416733822.dkr.ecr.us-east-1.amazonaws.com",
+                "NeuralTopicModel": "382416733822.dkr.ecr.us-east-1.amazonaws.com",
+                "KNearestNeighbor": "382416733822.dkr.ecr.us-east-1.amazonaws.com",
+                "RandomCutForest": "382416733822.dkr.ecr.us-east-1.amazonaws.com",
+                "XGBoost": "811284229777.dkr.ecr.us-east-1.amazonaws.com",
+                "ImageClassification": "811284229777.dkr.ecr.us-east-1.amazonaws.com",
+                "Seq2Seq": "811284229777.dkr.ecr.us-east-1.amazonaws.com",
+                "BlazingText": "811284229777.dkr.ecr.us-east-1.amazonaws.com",
+                "ObjectDetection": "811284229777.dkr.ecr.us-east-1.amazonaws.com"   
+            },
+            "us-east-2": {
+                "DeepARForecasting": "566113047672.dkr.ecr.us-east-2.amazonaws.com",
+                "KMeans": "404615174143.dkr.ecr.us-east-2.amazonaws.com",
+                "PCA": "404615174143.dkr.ecr.us-east-2.amazonaws.com",
+                "FactorizationMachines": "404615174143.dkr.ecr.us-east-2.amazonaws.com",
+                "LinearLearner": "404615174143.dkr.ecr.us-east-2.amazonaws.com",
+                "NeuralTopicModel": "404615174143.dkr.ecr.us-east-2.amazonaws.com",
+                "KNearestNeighbor": "404615174143.dkr.ecr.us-east-2.amazonaws.com",
+                "RandomCutForest": "404615174143.dkr.ecr.us-east-2.amazonaws.com",
+                "XGBoost": "825641698319.dkr.ecr.us-east-2.amazonaws.com",
+                "ImageClassification": "825641698319.dkr.ecr.us-east-2.amazonaws.com",
+                "Seq2Seq": "825641698319.dkr.ecr.us-east-2.amazonaws.com",
+                "BlazingText": "825641698319.dkr.ecr.us-east-2.amazonaws.com",
+                "ObjectDetection": "825641698319.dkr.ecr.us-east-2.amazonaws.com"
+            },
+            "us-west-2": {
+                "DeepARForecasting": "156387875391.dkr.ecr.us-west-2.amazonaws.com",
+                "KMeans": "174872318107.dkr.ecr.us-west-2.amazonaws.com",
+                "PCA": "174872318107.dkr.ecr.us-west-2.amazonaws.com",
+                "FactorizationMachines": "174872318107.dkr.ecr.us-west-2.amazonaws.com",
+                "LinearLearner": "174872318107.dkr.ecr.us-west-2.amazonaws.com",
+                "NeuralTopicModel": "174872318107.dkr.ecr.us-west-2.amazonaws.com",
+                "KNearestNeighbor": "174872318107.dkr.ecr.us-west-2.amazonaws.com",
+                "RandomCutForest": "174872318107.dkr.ecr.us-west-2.amazonaws.com",    
+                "LDA": "266724342769.dkr.ecr.us-west-2.amazonaws.com",
+                "XGBoost": "433757028032.dkr.ecr.us-west-2.amazonaws.com",
+                "ImageClassification": "433757028032.dkr.ecr.us-west-2.amazonaws.com",
+                "Seq2Seq": "433757028032.dkr.ecr.us-west-2.amazonaws.com",
+                "BlazingText": "433757028032.dkr.ecr.us-west-2.amazonaws.com",
+                "ObjectDetection": "433757028032.dkr.ecr.us-west-2.amazonaws.com"   
+            },
+            "ap-northeast-1": {
+                "DeepARForecasting": "633353088612.dkr.ecr.ap-northeast-1.amazonaws.com",
+                "KMeans": "351501993468.dkr.ecr.ap-northeast-1.amazonaws.com",
+                "PCA": "351501993468.dkr.ecr.ap-northeast-1.amazonaws.com",
+                "FactorizationMachines": "351501993468.dkr.ecr.ap-northeast-1.amazonaws.com",
+                "LinearLearner": "351501993468.dkr.ecr.ap-northeast-1.amazonaws.com",
+                "NeuralTopicModel": "351501993468.dkr.ecr.ap-northeast-1.amazonaws.com",
+                "KNearestNeighbor": "351501993468.dkr.ecr.ap-northeast-1.amazonaws.com",
+                "RandomCutForest": "351501993468.dkr.ecr.ap-northeast-1.amazonaws.com",
+                "XGBoost": "501404015308.dkr.ecr.ap-northeast-1.amazonaws.com",
+                "ImageClassification": "501404015308.dkr.ecr.ap-northeast-1.amazonaws.com",
+                "Seq2Seq": "501404015308.dkr.ecr.ap-northeast-1.amazonaws.com",
+                "BlazingText": "501404015308.dkr.ecr.ap-northeast-1.amazonaws.com",
+                "ObjectDetection": "501404015308.dkr.ecr.ap-northeast-1.amazonaws.com"
+            },
+            "ap-northeast-2": {
+                "DeepARForecasting": "204372634319.dkr.ecr.ap-northeast-2.amazonaws.com",
+                "KMeans": "835164637446.dkr.ecr.ap-northeast-2.amazonaws.com",
+                "PCA": "835164637446.dkr.ecr.ap-northeast-2.amazonaws.com",
+                "FactorizationMachines": "835164637446.dkr.ecr.ap-northeast-2.amazonaws.com",
+                "LinearLearner": "835164637446.dkr.ecr.ap-northeast-2.amazonaws.com",
+                "NeuralTopicModel": "835164637446.dkr.ecr.ap-northeast-2.amazonaws.com",
+                "KNearestNeighbor": "835164637446.dkr.ecr.ap-northeast-2.amazonaws.com",
+                "RandomCutForest": "835164637446.dkr.ecr.ap-northeast-2.amazonaws.com",
+                "XGBoost": "306986355934.dkr.ecr.ap-northeast-2.amazonaws.com",
+                "ImageClassification": "306986355934.dkr.ecr.ap-northeast-2.amazonaws.com",
+                "Seq2Seq": "306986355934.dkr.ecr.ap-northeast-2.amazonaws.com",
+                "BlazingText": "306986355934.dkr.ecr.ap-northeast-2.amazonaws.com",
+                "ObjectDetection": "306986355934.dkr.ecr.ap-northeast-2.amazonaws.com"
+            },
+            "ap-southeast-2": {
+                "DeepARForecasting": "514117268639.dkr.ecr.ap-southeast-2.amazonaws.com",
+                "KMeans": "712309505854.dkr.ecr.ap-southeast-2.amazonaws.com",
+                "PCA": "712309505854.dkr.ecr.ap-southeast-2.amazonaws.com",
+                "FactorizationMachines": "712309505854.dkr.ecr.ap-southeast-2.amazonaws.com",
+                "LinearLearner": "712309505854.dkr.ecr.ap-southeast-2.amazonaws.com",
+                "NeuralTopicModel": "712309505854.dkr.ecr.ap-southeast-2.amazonaws.com",
+                "KNearestNeighbor": "712309505854.dkr.ecr.ap-southeast-2.amazonaws.com",
+                "RandomCutForest": "712309505854.dkr.ecr.ap-southeast-2.amazonaws.com",
+                "XGBoost": "544295431143.dkr.ecr.ap-southeast-2.amazonaws.com",
+                "ImageClassification": "544295431143.dkr.ecr.ap-southeast-2.amazonaws.com",
+                "Seq2Seq": "544295431143.dkr.ecr.ap-southeast-2.amazonaws.com",
+                "BlazingText": "544295431143.dkr.ecr.ap-southeast-2.amazonaws.com",
+                "ObjectDetection": "544295431143.dkr.ecr.ap-southeast-2.amazonaws.com"
+            },
+            "eu-central-1": {
+                "DeepARForecasting": "495149712605.dkr.ecr.eu-central-1.amazonaws.com",
+                "KMeans": "664544806723.dkr.ecr.eu-central-1.amazonaws.com",
+                "PCA": "664544806723.dkr.ecr.eu-central-1.amazonaws.com",
+                "FactorizationMachines": "664544806723.dkr.ecr.eu-central-1.amazonaws.com",
+                "LinearLearner": "664544806723.dkr.ecr.eu-central-1.amazonaws.com",
+                "NeuralTopicModel": "664544806723.dkr.ecr.eu-central-1.amazonaws.com",
+                "KNearestNeighbor": "664544806723.dkr.ecr.eu-central-1.amazonaws.com",
+                "RandomCutForest": "664544806723.dkr.ecr.eu-central-1.amazonaws.com",
+                "XGBoost": "813361260812.dkr.ecr.eu-central-1.amazonaws.com",
+                "ImageClassification": "813361260812.dkr.ecr.eu-central-1.amazonaws.com",
+                "Seq2Seq": "813361260812.dkr.ecr.eu-central-1.amazonaws.com",
+                "BlazingText": "813361260812.dkr.ecr.eu-central-1.amazonaws.com",
+                "ObjectDetection": "813361260812.dkr.ecr.eu-central-1.amazonaws.com"
+            },
+            "eu-west-1": {
+                "DeepARForecasting": "224300973850.dkr.ecr.eu-west-1.amazonaws.com",
+                "KMeans": "438346466558.dkr.ecr.eu-west-1.amazonaws.com",
+                "PCA": "438346466558.dkr.ecr.eu-west-1.amazonaws.com",
+                "FactorizationMachines": "438346466558.dkr.ecr.eu-west-1.amazonaws.com",
+                "LinearLearner": "438346466558.dkr.ecr.eu-west-1.amazonaws.com",
+                "NeuralTopicModel": "438346466558.dkr.ecr.eu-west-1.amazonaws.com",
+                "KNearestNeighbor": "438346466558.dkr.ecr.eu-west-1.amazonaws.com",
+                "RandomCutForest": "438346466558.dkr.ecr.eu-west-1.amazonaws.com",
+                "XGBoost": "685385470294.dkr.ecr.eu-west-1.amazonaws.com",
+                "ImageClassification": "685385470294.dkr.ecr.eu-west-1.amazonaws.com",
+                "Seq2Seq": "685385470294.dkr.ecr.eu-west-1.amazonaws.com",
+                "BlazingText": "685385470294.dkr.ecr.eu-west-1.amazonaws.com",
+                "ObjectDetection": "685385470294.dkr.ecr.eu-west-1.amazonaws.com"
+            }
+        }
+    },
+    "Conditions": {
+        "CreateSageMakerInputS3Bucket": {
+            "Fn::Not": [
+                {
+                    "Fn::Equals": [
+                        {
+                            "Ref": "DataLakeS3BucketName"
+                        },
+                        {
+                            "Ref": "SageMakerInputS3BucketName"
+                        }
+                    ]
+                }
+            ]
+        },
+        "CreateSageMakerModelS3Bucket": {
+            "Fn::Not": [
+                {
+                    "Fn::Or": [{
+                        "Fn::Equals": [
+                            {
+                                "Ref": "SageMakerModelS3BucketName"
+                            },
+                            {
+                                "Ref": "SageMakerInputS3BucketName"
+                            }
+                        ]},
+                        {"Fn::Equals": [
+                            {
+                                "Ref": "DataLakeS3BucketName"
+                            },
+                            {
+                                "Ref": "SageMakerModelS3BucketName"
+                            }
+                        ]}
+                    ]
+                }
+            ]
+        }
+    },
+    "Resources": {
+        "SageMakerInputS3Bucket": {
+            "DependsOn": ["S3BucketInvokeTrainingKickoffLambdaPerm"],
+            "Type": "AWS::S3::Bucket",
+            "DeletionPolicy": "Retain",
+            "Condition": "CreateSageMakerInputS3Bucket",
+            "Properties": {
+                "BucketName": {
+                    "Fn::Sub": "${SageMakerInputS3BucketName}-${StackSuffix}"
+                },
+                "BucketEncryption": {
+                    "ServerSideEncryptionConfiguration": [
+                        {
+                            "ServerSideEncryptionByDefault": {
+                                "SSEAlgorithm": "AES256"
+                            }
+                        }
+                    ]
+                },
+                "AccessControl": "BucketOwnerFullControl",
+                "NotificationConfiguration": {
+                    "LambdaConfigurations": [{
+                        "Event": "s3:ObjectCreated:*",
+                        "Function": {
+                            "Fn::GetAtt": ["SageMakerTrainingKickoffLambda", "Arn"]
+                        },
+                        "Filter": {
+                            "S3Key": {
+                                "Rules": [
+                                    {
+                                        "Name": "prefix",
+                                        "Value": {
+                                            "Ref": "SageMakerInputDataPrefix"
+                                        }
+                                    },
+                                    {
+                                        "Name": "suffix",
+                                        "Value": "train.json"
+                                    }
+                                ]
+                            }
+                        }
+                    }]
+                }
+            }
+        },
+        "SageMakerModelS3Bucket": {
+            "Type": "AWS::S3::Bucket",
+            "DeletionPolicy": "Retain",
+            "DependsOn": ["S3BucketInvokeEndpointUpdateLambdaPerm"],
+            "Condition": "CreateSageMakerModelS3Bucket",
+            "Properties": {
+                "BucketName": {
+                    "Fn::Sub": "${SageMakerModelS3BucketName}-${StackSuffix}"
+                },
+                "BucketEncryption": {
+                    "ServerSideEncryptionConfiguration": [
+                        {
+                            "ServerSideEncryptionByDefault": {
+                                "SSEAlgorithm": "AES256"
+                            }
+                        }
+                    ]
+                },
+                "AccessControl": "BucketOwnerFullControl",
+                "NotificationConfiguration": {
+                    "LambdaConfigurations": [{
+                        "Event": "s3:ObjectCreated:*",
+                        "Function": {
+                            "Fn::GetAtt": ["SageMakerEndpointUpdateLambda", "Arn"]
+                        },
+                        "Filter": {
+                            "S3Key": {
+                                "Rules": [
+                                    {
+                                        "Name": "prefix",
+                                        "Value": {
+                                            "Ref": "SageMakerOutputModelPrefix"
+                                        }
+                                    }
+                                ]
+                            }
+                        }
+                    }]
+                }
+            }
+        },
+        "SageMakerDataPrepLambdaRole": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "AssumeRolePolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [{
+                        "Effect": "Allow",
+                        "Principal": {
+                            "Service": ["lambda.amazonaws.com"]
+                        },
+                        "Action": ["sts:AssumeRole"]
+                    }]
+                },
+                "Path": "/",
+                "Policies": [{
+                    "PolicyName": {
+                        "Fn::Sub": "SageMakerDataPrepLambdaPolicy-${StackSuffix}"
+                    },
+                    "PolicyDocument": {
+                        "Version": "2012-10-17",
+                        "Statement": [{
+                                "Effect": "Allow",
+                                "Action": [
+                                    "logs:CreateLogGroup",
+                                    "logs:CreateLogStream",
+                                    "logs:PutLogEvents"
+                                ],
+                                "Resource": "*"
+                            },
+                            {
+                                "Effect": "Allow",
+                                "Action": [
+                                    "s3:GetObject"
+                                ],
+                                "Resource": {
+                                     "Fn::Sub": "arn:aws:s3:::${DataLakeS3BucketName}-${StackSuffix}/transform/*" 
+                                }
+                            },
+                            {
+                                "Effect": "Allow",
+                                "Action": [
+                                    "s3:ListBucket"
+                                ],
+                                "Resource": {
+                                     "Fn::Sub": "arn:aws:s3:::${DataLakeS3BucketName}-${StackSuffix}" 
+                                }
+                            },
+                            {
+                                "Effect": "Allow",
+                                "Action": [
+                                    "s3:Put*"
+                                ],
+                                "Resource": [
+                                    {
+                                        "Fn::Join": [
+                                            "/",
+                                            [
+                                                {
+                                                    "Fn::GetAtt": [
+                                                        "SageMakerInputS3Bucket",
+                                                        "Arn"
+                                                    ]
+                                                },
+                                                {
+                                                    "Ref": "SageMakerInputDataPrefix"
+                                                },
+                                                "*"
+                                            ]
+                                        ]
+                                    },
+                                    {
+                                        "Fn::Sub": "arn:aws:s3:::${DataLakeS3BucketName}-${StackSuffix}/transform/*"
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                }],
+                "RoleName": {
+                    "Fn::Sub": "SageMakerDataPrepLambdaRole-${StackSuffix}"
+                }
+            }
+        },
+        "SageMakerTrainingKickoffLambdaRole": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "AssumeRolePolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [{
+                        "Effect": "Allow",
+                        "Principal": {
+                            "Service": ["lambda.amazonaws.com"]
+                        },
+                        "Action": ["sts:AssumeRole"]
+                    }]
+                },
+                "Path": "/",
+                "Policies": [{
+                    "PolicyName": {
+                        "Fn::Sub": "SageMakerTrainingKickoffLambdaPolicy-${StackSuffix}"
+                    },
+                    "PolicyDocument": {
+                        "Version": "2012-10-17",
+                        "Statement": [{
+                                "Effect": "Allow",
+                                "Action": [
+                                    "logs:CreateLogGroup",
+                                    "logs:CreateLogStream",
+                                    "logs:PutLogEvents"
+                                ],
+                                "Resource": "*"
+                            },
+                            {
+                                "Effect": "Allow",
+                                "Action": [
+                                    "s3:GetObject"
+                                ],
+                                "Resource": {
+                                    "Fn::Sub": "arn:aws:s3:::${SageMakerInputS3BucketName}-${StackSuffix}/${SageMakerInputDataPrefix}/*"
+                                }
+                            },
+                            {
+                                "Effect": "Allow",
+                                "Action": [
+                                    "s3:ListBucket"
+                                ],
+                                "Resource": {
+                                    "Fn::Sub": "arn:aws:s3:::${SageMakerInputS3BucketName}-${StackSuffix}"
+                                }
+                            },
+                            {
+                                "Effect": "Allow",
+                                "Action": [
+                                    "sagemaker:CreateTrainingJob"
+                                ],
+                                "Resource": {
+                                    "Fn::Sub": "arn:aws:sagemaker:${AWS::Region}:${AWS::AccountId}:training-job/*training-*"
+                                }
+                            },
+                            {
+                                "Effect": "Allow",
+                                "Action": [
+                                    "iam:PassRole"
+                                ],
+                                "Resource": {
+                                    "Fn::GetAtt": ["SageMakerTrainingExecutionRole", "Arn"]
+                                },
+                                "Condition": {
+                                    "StringEquals": {
+                                        "iam:PassedToService": "sagemaker.amazonaws.com"
+                                    }
+                                }
+                            }
+                        ]
+                    }
+                }],
+                "RoleName": {
+                    "Fn::Sub": "SageMakerTrainingKickoffLambdaRole-${StackSuffix}"
+                }
+            }
+        },
+        "SageMakerEndpointUpdateLambdaRole": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "AssumeRolePolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [{
+                        "Effect": "Allow",
+                        "Principal": {
+                            "Service": ["lambda.amazonaws.com"]
+                        },
+                        "Action": ["sts:AssumeRole"]
+                    }]
+                },
+                "Path": "/",
+                "Policies": [{
+                    "PolicyName": {
+                        "Fn::Sub": "SageMakerEndpointUpdateLambdaPolicy-${StackSuffix}"
+                    },
+                    "PolicyDocument": {
+                        "Version": "2012-10-17",
+                        "Statement": [
+                            {
+                                "Effect": "Allow",
+                                "Action": [
+                                    "logs:CreateLogGroup",
+                                    "logs:CreateLogStream",
+                                    "logs:PutLogEvents"
+                                ],
+                                "Resource": "*"
+                            },
+                            {
+                                "Effect": "Allow",
+                                "Action": [
+                                    "sagemaker:CreateModel"
+                                ],
+                                "Resource": {
+                                    "Fn::Sub": "arn:aws:sagemaker:${AWS::Region}:${AWS::AccountId}:model/*model-*"
+                                }
+                            },
+                            {
+                                "Effect": "Allow",
+                                "Action": [
+                                    "sagemaker:CreateEndpointConfig"
+                                ],
+                                "Resource": {
+                                    "Fn::Sub": "arn:aws:sagemaker:${AWS::Region}:${AWS::AccountId}:endpoint-config/*endpoint-config-*"
+                                }
+                            },
+                            {
+                                "Effect": "Allow",
+                                "Action": [
+                                    "sagemaker:DescribeEndpoint"
+                                ],
+                                "Resource": {
+                                    "Fn::Sub": "arn:aws:sagemaker:${AWS::Region}:${AWS::AccountId}:endpoint/*endpoint-*"
+                                }
+                            },
+                            {
+                                "Effect": "Allow",
+                                "Action": [
+                                    "sagemaker:CreateEndpoint",
+                                    "sagemaker:UpdateEndpoint"
+                                ],
+                                "Resource": [
+                                    {
+                                        "Fn::Sub": "arn:aws:sagemaker:${AWS::Region}:${AWS::AccountId}:endpoint/*endpoint-*"
+                                    },
+                                    {
+                                        "Fn::Sub": "arn:aws:sagemaker:${AWS::Region}:${AWS::AccountId}:endpoint-config/*config-*"
+                                    }
+                                ]
+                            },
+                            {
+                                "Effect": "Allow",
+                                "Action": [
+                                    "iam:PassRole"
+                                ],
+                                "Resource": {
+                                    "Fn::GetAtt": ["SageMakerEndpointRole", "Arn"]
+                                },
+                                "Condition": {
+                                    "StringEquals": {
+                                        "iam:PassedToService": "sagemaker.amazonaws.com"
+                                    }
+                                }
+                            }
+                        ]
+                    }
+                }],
+                "RoleName": {
+                    "Fn::Sub": "SageMakerEndpointUpdateLambdaRole-${StackSuffix}"
+                }
+            }
+        },
+        "SageMakerTrainingExecutionRole": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "AssumeRolePolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [{
+                        "Effect": "Allow",
+                        "Principal": {
+                            "Service": ["sagemaker.amazonaws.com"]
+                        },
+                        "Action": ["sts:AssumeRole"]
+                    }]
+                },
+                "Path": "/",
+                "Policies": [{
+                    "PolicyName": {
+                        "Fn::Sub": "SageMakerTrainingExecutionPolicy-${StackSuffix}"
+                    },
+                    "PolicyDocument": {
+                        "Version": "2012-10-17",
+                        "Statement": [{
+                                "Effect": "Allow",
+                                "Action": "ec2:Describe*",
+                                "Resource": "*"
+                            },
+                            {
+                                "Effect": "Allow",
+                                "Action": "elasticloadbalancing:Describe*",
+                                "Resource": "*"
+                            },
+                            {
+                                "Effect": "Allow",
+                                "Action": [
+                                    "cloudwatch:ListMetrics",
+                                    "cloudwatch:GetMetricStatistics",
+                                    "cloudwatch:Describe*"
+                                ],
+                                "Resource": "*"
+                            },
+                            {
+                                "Effect": "Allow",
+                                "Action": "autoscaling:Describe*",
+                                "Resource": "*"
+                            },
+                            {
+                                "Effect": "Allow",
+                                "Action": [
+                                    "sagemaker:*"
+                                ],
+                                "Resource": "*"
+                            },
+                            {
+                                "Effect": "Allow",
+                                "Action": [
+                                    "ecr:GetAuthorizationToken",
+                                    "ecr:GetDownloadUrlForLayer",
+                                    "ecr:BatchGetImage",
+                                    "ecr:BatchCheckLayerAvailability",
+                                    "cloudwatch:PutMetricData",
+                                    "cloudwatch:PutMetricAlarm",
+                                    "cloudwatch:DescribeAlarms",
+                                    "cloudwatch:DeleteAlarms",
+                                    "application-autoscaling:DeleteScalingPolicy",
+                                    "application-autoscaling:DeleteScheduledAction",
+                                    "application-autoscaling:DeregisterScalableTarget",
+                                    "application-autoscaling:DescribeScalableTargets",
+                                    "application-autoscaling:DescribeScalingActivities",
+                                    "application-autoscaling:DescribeScalingPolicies",
+                                    "application-autoscaling:DescribeScheduledActions",
+                                    "application-autoscaling:PutScalingPolicy",
+                                    "application-autoscaling:PutScheduledAction",
+                                    "application-autoscaling:RegisterScalableTarget",
+                                    "logs:CreateLogGroup",
+                                    "logs:CreateLogStream",
+                                    "logs:DescribeLogStreams",
+                                    "logs:GetLogEvents",
+                                    "logs:PutLogEvents"
+                                ],
+                                "Resource": "*"
+                            },
+                            {
+                                "Effect": "Allow",
+                                "Action": [
+                                    "s3:GetObject"
+                                ],
+                                "Resource": {
+                                    "Fn::Sub": "arn:aws:s3:::${SageMakerInputS3BucketName}-${StackSuffix}/${SageMakerInputDataPrefix}/*"
+                                }
+                            },
+                            {
+                                "Effect": "Allow",
+                                "Action": [
+                                    "s3:ListBucket"
+                                ],
+                                "Resource": {
+                                    "Fn::Sub": "arn:aws:s3:::${SageMakerInputS3BucketName}-${StackSuffix}"
+                                }
+                            },
+                            {
+                                "Effect": "Allow",
+                                "Action": [
+                                    "s3:Put*"
+                                ],
+                                "Resource": {
+                                    "Fn::Sub": "arn:aws:s3:::${SageMakerModelS3BucketName}-${StackSuffix}/${SageMakerOutputModelPrefix}/*"
+                                }
+                            }
+                        ]
+                    }
+                }],
+                "RoleName": {
+                    "Fn::Sub": "SageMakerTrainingExecutionRole-${StackSuffix}"
+                }
+            }
+        },
+        "SageMakerEndpointRole": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "AssumeRolePolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [{
+                        "Effect": "Allow",
+                        "Principal": {
+                            "Service": ["sagemaker.amazonaws.com"]
+                        },
+                        "Action": ["sts:AssumeRole"]
+                    }]
+                },
+                "Path": "/",
+                "Policies": [{
+                    "PolicyName": {
+                        "Fn::Sub": "SageMakerEndpointRole-${StackSuffix}"
+                    },
+                    "PolicyDocument": {
+                        "Version": "2012-10-17",
+                        "Statement": [{
+                                "Effect": "Allow",
+                                "Action": "ec2:Describe*",
+                                "Resource": "*"
+                            },
+                            {
+                                "Effect": "Allow",
+                                "Action": "elasticloadbalancing:Describe*",
+                                "Resource": "*"
+                            },
+                            {
+                                "Effect": "Allow",
+                                "Action": [
+                                    "cloudwatch:ListMetrics",
+                                    "cloudwatch:GetMetricStatistics",
+                                    "cloudwatch:Describe*"
+                                ],
+                                "Resource": "*"
+                            },
+                            {
+                                "Effect": "Allow",
+                                "Action": "autoscaling:Describe*",
+                                "Resource": "*"
+                            },
+                            {
+                                "Effect": "Allow",
+                                "Action": [
+                                    "sagemaker:*"
+                                ],
+                                "Resource": "*"
+                            },
+                            {
+                                "Effect": "Allow",
+                                "Action": [
+                                    "ecr:GetAuthorizationToken",
+                                    "ecr:GetDownloadUrlForLayer",
+                                    "ecr:BatchGetImage",
+                                    "ecr:BatchCheckLayerAvailability",
+                                    "cloudwatch:PutMetricData",
+                                    "cloudwatch:PutMetricAlarm",
+                                    "cloudwatch:DescribeAlarms",
+                                    "cloudwatch:DeleteAlarms",
+                                    "application-autoscaling:DeleteScalingPolicy",
+                                    "application-autoscaling:DeleteScheduledAction",
+                                    "application-autoscaling:DeregisterScalableTarget",
+                                    "application-autoscaling:DescribeScalableTargets",
+                                    "application-autoscaling:DescribeScalingActivities",
+                                    "application-autoscaling:DescribeScalingPolicies",
+                                    "application-autoscaling:DescribeScheduledActions",
+                                    "application-autoscaling:PutScalingPolicy",
+                                    "application-autoscaling:PutScheduledAction",
+                                    "application-autoscaling:RegisterScalableTarget",
+                                    "logs:CreateLogGroup",
+                                    "logs:CreateLogStream",
+                                    "logs:DescribeLogStreams",
+                                    "logs:GetLogEvents",
+                                    "logs:PutLogEvents"
+                                ],
+                                "Resource": "*"
+                            },
+                            {
+                                "Effect": "Allow",
+                                "Action": [
+                                    "s3:GetObject"
+                                ],
+                                "Resource": {
+                                    "Fn::Sub": "arn:aws:s3:::${SageMakerModelS3BucketName}-${StackSuffix}/${SageMakerOutputModelPrefix}/*"
+                                }
+                            }
+                        ]
+                    }
+                }],
+                "RoleName": {
+                    "Fn::Sub": "SageMakerEndpointRole-${StackSuffix}"
+                }
+            }
+        },
+        "SageMakerDataPrepTriggerRule": {
+            "Type": "AWS::Events::Rule",
+            "Properties": {
+                "Name": {
+                    "Fn::Sub": "SageMakerDataPrepTriggerRule-${StackSuffix}"
+                },
+                "ScheduleExpression": "cron(0 0 * * ? *)",
+                "Targets": [{
+                    "Id": "SageMakerDataPrepTriggerScheduler",
+                    "Arn": {
+                        "Fn::GetAtt": ["SageMakerDataPrepLambda", "Arn"]
+                    }
+                }]
+            }
+        },
+        "CloudwatchEventInvokeSageMakerDataPrepLambdaPermission": {
+            "Type": "AWS::Lambda::Permission",
+            "Properties": {
+                "FunctionName": {
+                    "Fn::GetAtt": ["SageMakerDataPrepLambda", "Arn"]
+                },
+                "Action": "lambda:InvokeFunction",
+                "Principal": "events.amazonaws.com",
+                "SourceArn": {
+                    "Fn::GetAtt": ["SageMakerDataPrepTriggerRule", "Arn"]
+                }
+            }
+        },
+        "S3BucketInvokeTrainingKickoffLambdaPerm": {
+            "Type": "AWS::Lambda::Permission",
+            "Properties": {
+                "Action": "lambda:InvokeFunction",
+                "FunctionName": {
+                    "Ref": "SageMakerTrainingKickoffLambda"
+                },
+                "Principal": "s3.amazonaws.com",
+                "SourceAccount": {
+                    "Ref": "AWS::AccountId"
+                },
+                "SourceArn": {
+                    "Fn::Sub": "arn:aws:s3:::${SageMakerInputS3BucketName}-${StackSuffix}"
+                }
+
+            }
+        },
+        "S3BucketInvokeEndpointUpdateLambdaPerm": {
+            "Type": "AWS::Lambda::Permission",
+            "Properties": {
+                "Action": "lambda:InvokeFunction",
+                "FunctionName": {
+                    "Ref": "SageMakerEndpointUpdateLambda"
+                },
+                "Principal": "s3.amazonaws.com",
+                "SourceAccount": {
+                    "Ref": "AWS::AccountId"
+                },
+                "SourceArn": {
+                    "Fn::Sub": "arn:aws:s3:::${SageMakerModelS3BucketName}-${StackSuffix}"
+                }
+
+            }
+        },
+        "SageMakerDataPrepLambda": {
+            "Type": "AWS::Lambda::Function",
+            "Properties": {
+                "FunctionName": {
+                    "Fn::Sub": "SageMakerDataPrepLambda-${StackSuffix}"
+                },
+                "Handler": "index.handler",
+                "Role": {
+                    "Fn::GetAtt": ["SageMakerDataPrepLambdaRole", "Arn"]
+                },
+                "Code": {
+                    "S3Bucket": {
+                        "Ref": "LambdaCodeS3Bucket"
+                    },
+                    "S3Key": {
+                        "Fn::Sub": "${LambdaCodeS3KeyPrefix}${SageMakerDataPrepLambdaCodeLocation}"
+                    }
+                },
+                "Runtime": "nodejs8.10",
+                "Timeout": 300,
+                "MemorySize": 1024,
+                "Environment": {
+                    "Variables": {
+                        "InputBucketName": {
+                            "Fn::Sub": "${DataLakeS3BucketName}-${StackSuffix}"
+                        },
+                        "InputPrefix": "transform",
+                        "OutputBucketName": {
+                            "Fn::Sub": "${SageMakerInputS3BucketName}-${StackSuffix}"
+                        },
+                        "HyperParameters": {
+                            "Ref": "HyperParameters"
+                        },
+                        "SageMakerInputDataPrefix": {
+                            "Ref": "SageMakerInputDataPrefix"
+                        }
+                    }
+                }
+            }
+        },
+        "SageMakerTrainingKickoffLambda": {
+            "Type": "AWS::Lambda::Function",
+            "Properties": {
+                "FunctionName": {
+                    "Fn::Sub": "SageMakerTrainingKickoffLambda-${StackSuffix}"
+                },
+                "Handler": "index.handler",
+                "Role": {
+                    "Fn::GetAtt": ["SageMakerTrainingKickoffLambdaRole", "Arn"]
+                },
+                "Code": {
+                    "S3Bucket": {
+                        "Ref": "LambdaCodeS3Bucket"
+                    },
+                    "S3Key": {
+                        "Fn::Sub": "${LambdaCodeS3KeyPrefix}${SageMakerTrainingKickoffLambdaCodeLocation}"
+                    }
+                },
+                "Runtime": "nodejs8.10",
+                "Timeout": 300,
+                "Environment": {
+                    "Variables": {
+                        "OutputBucketName": {
+                            "Fn::Sub": "${SageMakerModelS3BucketName}-${StackSuffix}"
+                        },
+                        "SageMakerOutputModelPrefix": {
+                            "Ref": "SageMakerOutputModelPrefix"
+                        },
+                        "HyperParameters": {
+                            "Ref": "HyperParameters"
+                        },
+                        "TrainingInstanceCount": {
+                            "Ref": "TrainingInstanceCount"
+                        },
+                        "TrainingInstanceType": {
+                            "Ref": "TrainingInstanceType"
+                        },
+                        "TrainingInstanceVolumeSize": {
+                            "Ref": "TrainingInstanceVolumeSize"
+                        },
+                        "TrainingMaxRuntimeSeconds": {
+                            "Ref": "TrainingMaxRuntimeSeconds"
+                        },
+                        "TrainingImage": {
+                            "Fn::Join": ["/", [
+                                {"Fn::FindInMap": ["RegionMap", {"Ref": "AWS::Region"}, { "Ref": "SageMakerAlgorithm" }]},
+                                {"Fn::FindInMap": ["AlgoMap", { "Ref": "SageMakerAlgorithm" }, "image"]}
+                            ]]
+                        },
+                        "TrainingRoleArn": {
+                            "Fn::GetAtt": ["SageMakerTrainingExecutionRole", "Arn"]
+                        }
+                    }
+                }
+            }
+        },
+        "SageMakerEndpointUpdateLambda": {
+            "Type": "AWS::Lambda::Function",
+            "Properties": {
+                "FunctionName": {
+                    "Fn::Sub": "SageMakerEndpointUpdateLambda-${StackSuffix}"
+                },
+                "Handler": "index.handler",
+                "Role": {
+                    "Fn::GetAtt": ["SageMakerEndpointUpdateLambdaRole", "Arn"]
+                },
+                "Code": {
+                    "S3Bucket": {
+                        "Ref": "LambdaCodeS3Bucket"
+                    },
+                    "S3Key": {
+                        "Fn::Sub": "${LambdaCodeS3KeyPrefix}${SageMakerEndpointUpdateLambdaCodeLocation}"
+                    }
+                },
+                "Runtime": "nodejs8.10",
+                "Timeout": 300,
+                "Environment": {
+                    "Variables": {
+                        "TrainingImage": {
+                            "Fn::Join": ["/", [
+                                {"Fn::FindInMap": ["RegionMap", {"Ref": "AWS::Region"}, { "Ref": "SageMakerAlgorithm" }]},
+                                {"Fn::FindInMap": ["AlgoMap", { "Ref": "SageMakerAlgorithm" }, "image"]}
+                            ]]
+                        },
+                        "ModelRoleArn": {
+                            "Fn::GetAtt": ["SageMakerEndpointRole", "Arn"]
+                        },
+                        "InitialEndpointInstanceCount": {
+                            "Ref": "InitialEndpointInstanceCount"
+                        },
+                        "EndpointInstanceType": {
+                            "Ref": "EndpointInstanceType"
+                        },
+                        "SageMakerEndpointName": {
+                            "Fn::Sub": "${SageMakerEndpointName}-${StackSuffix}"
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "Outputs" : {
+        "TrainingFeaturesS3Bucket" : {
+            "Description": "ML Model Training Features S3 Bucket Full Name",  
+            "Value" : { "Ref": "SageMakerInputS3Bucket" }
+        },
+        "ModelArtifactS3Bucket" : {
+            "Description": "Serialized Model Artifact S3 Bucket Full Name",  
+            "Value" : { "Ref": "SageMakerModelS3Bucket" }
+        }
+    }
+}

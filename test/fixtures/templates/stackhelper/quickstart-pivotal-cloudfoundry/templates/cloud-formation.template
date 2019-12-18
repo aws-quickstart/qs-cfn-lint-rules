@@ -1,0 +1,2955 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "CloudFormation template for configuring Pivotal Cloud Foundry on AWS QS(qs-1ngltrcp5)",
+  "Mappings": {
+    "NATRegionToAmiMap": {
+      "us-east-1": {
+        "id": "ami-303b1458"
+      },
+      "us-west-1": {
+        "id": "ami-7da94839"
+      },
+      "us-west-2": {
+        "id": "ami-69ae8259"
+      },
+      "eu-west-1": {
+        "id": "ami-6975eb1e"
+      },
+      "eu-central-1": {
+        "id": "ami-46073a5b"
+      },
+      "ap-southeast-1": {
+        "id": "ami-b49dace6"
+      },
+      "ap-northeast-1": {
+        "id": "ami-03cf3903"
+      },
+      "ap-southeast-2": {
+        "id": "ami-e7ee9edd"
+      },
+      "sa-east-1": {
+        "id": "ami-fbfa41e6"
+      }
+    }
+  },
+  "Parameters": {
+    "EnvironmentID": {
+      "Type": "String",
+      "Default": "pcf-env-id",
+      "Description": "Default: pcf-env-id"
+    },
+    "AvailabilityZone1": {
+      "Type": "String",
+      "Description": "Example: us-west-2a"
+    },
+    "AvailabilityZone2": {
+      "Type": "String",
+      "Description": "Example: us-west-2b"
+    },
+    "AvailabilityZone3": {
+      "Type": "String",
+      "Description": "Example: us-west-2c"
+    },
+    "OpsManAMI": {
+      "Type": "String",
+      "Description": "Exampe: ami-6e799016"
+    },
+    "OpsManIngressCidr": {
+      "Type": "String",
+      "Default": "0.0.0.0/0",
+      "Description": "Allow ingress traffic to the Ops Manager VM from this CIDR range"
+    },
+    "OpsManSSHKeyPairName": {
+      "Type": "AWS::EC2::KeyPair::KeyName",
+      "Description": "Select the SSH keypair to use for the Ops Manager VM"
+    },
+    "ERTCertificateARN": {
+      "Type": "String",
+      "Description": "ARN for pre-uploaded certificate for the ERT"
+    }
+  },
+  "Resources": {
+    "BrokerTable": {
+        "Type": "AWS::DynamoDB::Table",
+        "Properties": {
+            "AttributeDefinitions": [
+                {
+                    "AttributeName": "id",
+                    "AttributeType": "S"
+                },
+                {
+                    "AttributeName": "userid",
+                    "AttributeType": "S"
+                },
+                {
+                    "AttributeName": "type",
+                    "AttributeType": "S"
+                }
+            ],
+            "KeySchema": [
+                {
+                    "AttributeName": "id",
+                    "KeyType": "HASH"
+                },
+                {
+                    "AttributeName": "userid",
+                    "KeyType": "RANGE"
+                }
+            ],
+            "ProvisionedThroughput": {
+                "ReadCapacityUnits": 5,
+                "WriteCapacityUnits": 5
+            },
+            "TableName": "awssb",
+            "GlobalSecondaryIndexes": [
+                {
+                    "IndexName": "type-userid-index",
+                    "KeySchema": [
+                        {
+                            "AttributeName": "type",
+                            "KeyType": "HASH"
+                        },
+                        {
+                            "AttributeName": "userid",
+                            "KeyType": "RANGE"
+                        }
+                    ],
+                    "Projection": {
+                        "ProjectionType": "INCLUDE",
+                        "NonKeyAttributes": [
+                            "id",
+                            "userid",
+                            "type",
+                            "locked"
+                        ]
+                    },
+                    "ProvisionedThroughput": {
+                        "ReadCapacityUnits": 5,
+                        "WriteCapacityUnits": 5
+                    }
+                }
+            ]
+        }
+    },
+    "BrokerUser": {
+        "Type": "AWS::IAM::User",
+        "Properties": {
+            "Policies": [
+                {
+                    "PolicyName": "AwsServiceBrokerPolicy",
+                    "PolicyDocument": {
+                        "Version": "2012-10-17",
+                        "Statement": [
+                            {
+                                "Action": [
+                                    "s3:GetObject",
+                                    "s3:ListBucket"
+                                ],
+                                "Resource": [
+                                    "arn:aws:s3:::awsservicebroker/templates/*",
+                                    "arn:aws:s3:::awsservicebroker"
+                                ],
+                                "Effect": "Allow"
+                            },
+                            {
+                                "Action": [
+                                    "dynamodb:PutItem",
+                                    "dynamodb:GetItem",
+                                    "dynamodb:DeleteItem"
+                                ],
+                                "Resource": {
+                                    "Fn::Sub": "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${BrokerTable}"
+                                },
+                                "Effect": "Allow"
+                            },
+                            {
+                                "Action": [
+                                    "ssm:GetParameter",
+                                    "ssm:GetParameters"
+                                ],
+                                "Resource": [
+                                    {
+                                        "Fn::Sub": "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/asb-*"
+                                    },
+                                    {
+                                        "Fn::Sub": "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/Asb*"
+                                    }
+                                ],
+                                "Effect": "Allow"
+                            }
+                        ]
+                    }
+                },
+                {
+                    "PolicyName": "AwsServiceBrokerProvisioningPolicy",
+                    "PolicyDocument": {
+                        "Version": "2012-10-17",
+                        "Statement": [
+                            {
+                                "Action": [
+                                    "ssm:PutParameter",
+                                    "ssm:GetParameter",
+                                    "ssm:GetParameters"
+                                ],
+                                "Resource": [
+                                    {
+                                        "Fn::Sub": "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/asb-*"
+                                    },
+                                    {
+                                        "Fn::Sub": "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/Asb*"
+                                    }
+                                ],
+                                "Effect": "Allow"
+                            },
+                            {
+                                "Action": "s3:GetObject",
+                                "Resource": "arn:aws:s3:::awsservicebroker/templates/*",
+                                "Effect": "Allow"
+                            },
+                            {
+                                "Action": [
+                                    "cloudformation:CreateStack",
+                                    "cloudformation:DeleteStack",
+                                    "cloudformation:DescribeStacks",
+                                    "cloudformation:UpdateStack",
+                                    "cloudformation:CancelUpdateStack"
+                                ],
+                                "Resource": {
+                                    "Fn::Sub": "arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/aws-service-broker-*/*"
+                                },
+                                "Effect": "Allow"
+                            },
+                            {
+                                "Action": [
+                                    "athena:*",
+                                    "dynamodb:*",
+                                    "kms:*",
+                                    "elasticache:*",
+                                    "elasticmapreduce:*",
+                                    "kinesis:*",
+                                    "rds:*",
+                                    "redshift:*",
+                                    "route53:*",
+                                    "s3:*",
+                                    "sns:*",
+                                    "sns:*",
+                                    "sqs:*",
+                                    "ec2:*",
+                                    "iam:*",
+                                    "lambda:*"
+                                ],
+                                "Resource": "*",
+                                "Effect": "Allow"
+                            }
+                        ]
+                    }
+                }
+            ]
+        }
+    },
+    "PcfVPC": {
+      "Type": "AWS::EC2::VPC",
+      "Properties": {
+        "CidrBlock": "10.0.0.0/16",
+        "InstanceTenancy": "default",
+        "EnableDnsSupport": "true",
+        "EnableDnsHostnames": "true",
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Join": [
+                "",
+                [
+                  {
+                    "Ref": "EnvironmentID"
+                  },
+                  "-vpc"
+                ]
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "PcfPublicSubnetAZ1": {
+      "Type": "AWS::EC2::Subnet",
+      "Properties": {
+        "CidrBlock": "10.0.0.0/24",
+        "AvailabilityZone": {
+          "Ref": "AvailabilityZone1"
+        },
+        "VpcId": {
+          "Ref": "PcfVPC"
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Join": [
+                "",
+                [
+                  {
+                    "Ref": "EnvironmentID"
+                  },
+                  "-public-subnet-az1"
+                ]
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "PcfPublicSubnetAZ2": {
+      "Type": "AWS::EC2::Subnet",
+      "Properties": {
+        "CidrBlock": "10.0.1.0/24",
+        "AvailabilityZone": {
+          "Ref": "AvailabilityZone2"
+        },
+        "VpcId": {
+          "Ref": "PcfVPC"
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Join": [
+                "",
+                [
+                  {
+                    "Ref": "EnvironmentID"
+                  },
+                  "-public-subnet-az2"
+                ]
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "PcfPublicSubnetAZ3": {
+      "Type": "AWS::EC2::Subnet",
+      "Properties": {
+        "CidrBlock": "10.0.2.0/24",
+        "AvailabilityZone": {
+          "Ref": "AvailabilityZone3"
+        },
+        "VpcId": {
+          "Ref": "PcfVPC"
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Join": [
+                "",
+                [
+                  {
+                    "Ref": "EnvironmentID"
+                  },
+                  "-public-subnet-az3"
+                ]
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "PcfERTSubnetAZ1": {
+      "Type": "AWS::EC2::Subnet",
+      "Properties": {
+        "CidrBlock": "10.0.4.0/24",
+        "AvailabilityZone": {
+          "Ref": "AvailabilityZone1"
+        },
+        "VpcId": {
+          "Ref": "PcfVPC"
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Join": [
+                "",
+                [
+                  {
+                    "Ref": "EnvironmentID"
+                  },
+                  "-ert-subnet-az1"
+                ]
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "PcfERTSubnetAZ2": {
+      "Type": "AWS::EC2::Subnet",
+      "Properties": {
+        "CidrBlock": "10.0.5.0/24",
+        "AvailabilityZone": {
+          "Ref": "AvailabilityZone2"
+        },
+        "VpcId": {
+          "Ref": "PcfVPC"
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Join": [
+                "",
+                [
+                  {
+                    "Ref": "EnvironmentID"
+                  },
+                  "-ert-subnet-az2"
+                ]
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "PcfERTSubnetAZ3": {
+      "Type": "AWS::EC2::Subnet",
+      "Properties": {
+        "CidrBlock": "10.0.6.0/24",
+        "AvailabilityZone": {
+          "Ref": "AvailabilityZone3"
+        },
+        "VpcId": {
+          "Ref": "PcfVPC"
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Join": [
+                "",
+                [
+                  {
+                    "Ref": "EnvironmentID"
+                  },
+                  "-ert-subnet-az3"
+                ]
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "PcfManagementSubnetAZ1": {
+      "Type": "AWS::EC2::Subnet",
+      "Properties": {
+        "CidrBlock": "10.0.16.0/28",
+        "AvailabilityZone": {
+          "Ref": "AvailabilityZone1"
+        },
+        "VpcId": {
+          "Ref": "PcfVPC"
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Join": [
+                "",
+                [
+                  {
+                    "Ref": "EnvironmentID"
+                  },
+                  "-management-subnet-az1"
+                ]
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "PcfManagementSubnetAZ2": {
+      "Type": "AWS::EC2::Subnet",
+      "Properties": {
+        "CidrBlock": "10.0.16.16/28",
+        "AvailabilityZone": {
+          "Ref": "AvailabilityZone2"
+        },
+        "VpcId": {
+          "Ref": "PcfVPC"
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Join": [
+                "",
+                [
+                  {
+                    "Ref": "EnvironmentID"
+                  },
+                  "-management-subnet-az2"
+                ]
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "PcfManagementSubnetAZ3": {
+      "Type": "AWS::EC2::Subnet",
+      "Properties": {
+        "CidrBlock": "10.0.16.32/28",
+        "AvailabilityZone": {
+          "Ref": "AvailabilityZone3"
+        },
+        "VpcId": {
+          "Ref": "PcfVPC"
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Join": [
+                "",
+                [
+                  {
+                    "Ref": "EnvironmentID"
+                  },
+                  "-management-subnet-az3"
+                ]
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "PcfServicesSubnetAZ1": {
+      "Type": "AWS::EC2::Subnet",
+      "Properties": {
+        "CidrBlock": "10.0.8.0/24",
+        "AvailabilityZone": {
+          "Ref": "AvailabilityZone1"
+        },
+        "VpcId": {
+          "Ref": "PcfVPC"
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Join": [
+                "",
+                [
+                  {
+                    "Ref": "EnvironmentID"
+                  },
+                  "-services-subnet-az1"
+                ]
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "PcfServicesSubnetAZ2": {
+      "Type": "AWS::EC2::Subnet",
+      "Properties": {
+        "CidrBlock": "10.0.9.0/24",
+        "AvailabilityZone": {
+          "Ref": "AvailabilityZone2"
+        },
+        "VpcId": {
+          "Ref": "PcfVPC"
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Join": [
+                "",
+                [
+                  {
+                    "Ref": "EnvironmentID"
+                  },
+                  "-services-subnet-az2"
+                ]
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "PcfServicesSubnetAZ3": {
+      "Type": "AWS::EC2::Subnet",
+      "Properties": {
+        "CidrBlock": "10.0.10.0/24",
+        "AvailabilityZone": {
+          "Ref": "AvailabilityZone3"
+        },
+        "VpcId": {
+          "Ref": "PcfVPC"
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Join": [
+                "",
+                [
+                  {
+                    "Ref": "EnvironmentID"
+                  },
+                  "-services-subnet-az3"
+                ]
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "PcfInternetGateway": {
+      "Type": "AWS::EC2::InternetGateway",
+      "Properties": {}
+    },
+    "PcfDHCPOptions": {
+      "Type": "AWS::EC2::DHCPOptions",
+      "Properties": {
+        "DomainName": {
+          "Fn::Join": [
+            "",
+            [
+              {
+                "Ref": "AWS::Region"
+              },
+              ".compute.internal"
+            ]
+          ]
+        },
+        "DomainNameServers": [
+          "AmazonProvidedDNS"
+        ]
+      }
+    },
+    "PcfNetworkAcl": {
+      "Type": "AWS::EC2::NetworkAcl",
+      "Properties": {
+        "VpcId": {
+          "Ref": "PcfVPC"
+        }
+      }
+    },
+    "PcfNatRouteTableAZ1": {
+      "Type": "AWS::EC2::RouteTable",
+      "Properties": {
+        "VpcId": {
+          "Ref": "PcfVPC"
+        }
+      }
+    },
+    "PcfInternetGatewayRouteTable": {
+      "Type": "AWS::EC2::RouteTable",
+      "Properties": {
+        "VpcId": {
+          "Ref": "PcfVPC"
+        }
+      }
+    },
+    "PcfNatRouteTableAZ2": {
+      "Type": "AWS::EC2::RouteTable",
+      "Properties": {
+        "VpcId": {
+          "Ref": "PcfVPC"
+        }
+      }
+    },
+    "PcfNatRouteTableAZ3": {
+      "Type": "AWS::EC2::RouteTable",
+      "Properties": {
+        "VpcId": {
+          "Ref": "PcfVPC"
+        }
+      }
+    },
+    "PcfElbSsh": {
+      "Type": "AWS::ElasticLoadBalancing::LoadBalancer",
+      "Properties": {
+        "Subnets": [
+          {
+            "Ref": "PcfPublicSubnetAZ1"
+          },
+          {
+            "Ref": "PcfPublicSubnetAZ2"
+          },
+          {
+            "Ref": "PcfPublicSubnetAZ3"
+          }
+        ],
+        "HealthCheck": {
+          "HealthyThreshold": "6",
+          "Interval": "5",
+          "Target": "TCP:2222",
+          "Timeout": "3",
+          "UnhealthyThreshold": "3"
+        },
+        "ConnectionDrainingPolicy": {
+          "Enabled": "false",
+          "Timeout": "300"
+        },
+        "ConnectionSettings": {
+          "IdleTimeout": "3600"
+        },
+        "CrossZone": "true",
+        "SecurityGroups": [
+          {
+            "Ref": "PcfSshElbSecurityGroup"
+          }
+        ],
+        "Listeners": [
+          {
+            "InstancePort": "2222",
+            "LoadBalancerPort": "2222",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          }
+        ]
+      }
+    },
+    "PcfElbTcp": {
+      "Type": "AWS::ElasticLoadBalancing::LoadBalancer",
+      "Properties": {
+        "Subnets": [
+          {
+            "Ref": "PcfPublicSubnetAZ1"
+          },
+          {
+            "Ref": "PcfPublicSubnetAZ2"
+          },
+          {
+            "Ref": "PcfPublicSubnetAZ3"
+          }
+        ],
+        "HealthCheck": {
+          "HealthyThreshold": "6",
+          "Interval": "5",
+          "Target": "TCP:80",
+          "Timeout": "3",
+          "UnhealthyThreshold": "3"
+        },
+        "ConnectionDrainingPolicy": {
+          "Enabled": "false",
+          "Timeout": "300"
+        },
+        "ConnectionSettings": {
+          "IdleTimeout": "3600"
+        },
+        "CrossZone": "true",
+        "SecurityGroups": [
+          {
+            "Ref": "PcfTcpElbSecurityGroup"
+          }
+        ],
+        "Listeners": [
+          {
+            "InstancePort": "1106",
+            "LoadBalancerPort": "1106",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          },
+          {
+            "InstancePort": "1051",
+            "LoadBalancerPort": "1051",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          },
+          {
+            "InstancePort": "1048",
+            "LoadBalancerPort": "1048",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          },
+          {
+            "InstancePort": "1024",
+            "LoadBalancerPort": "1024",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          },
+          {
+            "InstancePort": "1118",
+            "LoadBalancerPort": "1118",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          },
+          {
+            "InstancePort": "1109",
+            "LoadBalancerPort": "1109",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          },
+          {
+            "InstancePort": "1110",
+            "LoadBalancerPort": "1110",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          },
+          {
+            "InstancePort": "1050",
+            "LoadBalancerPort": "1050",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          },
+          {
+            "InstancePort": "1049",
+            "LoadBalancerPort": "1049",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          },
+          {
+            "InstancePort": "1025",
+            "LoadBalancerPort": "1025",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          },
+          {
+            "InstancePort": "1108",
+            "LoadBalancerPort": "1108",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          },
+          {
+            "InstancePort": "1111",
+            "LoadBalancerPort": "1111",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          },
+          {
+            "InstancePort": "1053",
+            "LoadBalancerPort": "1053",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          },
+          {
+            "InstancePort": "1026",
+            "LoadBalancerPort": "1026",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          },
+          {
+            "InstancePort": "1034",
+            "LoadBalancerPort": "1034",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          },
+          {
+            "InstancePort": "1112",
+            "LoadBalancerPort": "1112",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          },
+          {
+            "InstancePort": "1052",
+            "LoadBalancerPort": "1052",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          },
+          {
+            "InstancePort": "1027",
+            "LoadBalancerPort": "1027",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          },
+          {
+            "InstancePort": "1113",
+            "LoadBalancerPort": "1113",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          },
+          {
+            "InstancePort": "1039",
+            "LoadBalancerPort": "1039",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          },
+          {
+            "InstancePort": "1055",
+            "LoadBalancerPort": "1055",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          },
+          {
+            "InstancePort": "1058",
+            "LoadBalancerPort": "1058",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          },
+          {
+            "InstancePort": "1114",
+            "LoadBalancerPort": "1114",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          },
+          {
+            "InstancePort": "1041",
+            "LoadBalancerPort": "1041",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          },
+          {
+            "InstancePort": "1038",
+            "LoadBalancerPort": "1038",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          },
+          {
+            "InstancePort": "1054",
+            "LoadBalancerPort": "1054",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          },
+          {
+            "InstancePort": "1115",
+            "LoadBalancerPort": "1115",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          },
+          {
+            "InstancePort": "1057",
+            "LoadBalancerPort": "1057",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          },
+          {
+            "InstancePort": "1116",
+            "LoadBalancerPort": "1116",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          },
+          {
+            "InstancePort": "1056",
+            "LoadBalancerPort": "1056",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          },
+          {
+            "InstancePort": "1117",
+            "LoadBalancerPort": "1117",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          },
+          {
+            "InstancePort": "1088",
+            "LoadBalancerPort": "1088",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          },
+          {
+            "InstancePort": "1123",
+            "LoadBalancerPort": "1123",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          },
+          {
+            "InstancePort": "1100",
+            "LoadBalancerPort": "1100",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          },
+          {
+            "InstancePort": "1091",
+            "LoadBalancerPort": "1091",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          },
+          {
+            "InstancePort": "1062",
+            "LoadBalancerPort": "1062",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          },
+          {
+            "InstancePort": "1089",
+            "LoadBalancerPort": "1089",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          },
+          {
+            "InstancePort": "1122",
+            "LoadBalancerPort": "1122",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          },
+          {
+            "InstancePort": "1090",
+            "LoadBalancerPort": "1090",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          },
+          {
+            "InstancePort": "1063",
+            "LoadBalancerPort": "1063",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          },
+          {
+            "InstancePort": "1121",
+            "LoadBalancerPort": "1121",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          },
+          {
+            "InstancePort": "1093",
+            "LoadBalancerPort": "1093",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          },
+          {
+            "InstancePort": "1119",
+            "LoadBalancerPort": "1119",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          },
+          {
+            "InstancePort": "1060",
+            "LoadBalancerPort": "1060",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          },
+          {
+            "InstancePort": "1079",
+            "LoadBalancerPort": "1079",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          },
+          {
+            "InstancePort": "1120",
+            "LoadBalancerPort": "1120",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          },
+          {
+            "InstancePort": "1092",
+            "LoadBalancerPort": "1092",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          },
+          {
+            "InstancePort": "1061",
+            "LoadBalancerPort": "1061",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          },
+          {
+            "InstancePort": "1078",
+            "LoadBalancerPort": "1078",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          },
+          {
+            "InstancePort": "1037",
+            "LoadBalancerPort": "1037",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          },
+          {
+            "InstancePort": "1095",
+            "LoadBalancerPort": "1095",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          },
+          {
+            "InstancePort": "1066",
+            "LoadBalancerPort": "1066",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          },
+          {
+            "InstancePort": "1059",
+            "LoadBalancerPort": "1059",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          },
+          {
+            "InstancePort": "1094",
+            "LoadBalancerPort": "1094",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          },
+          {
+            "InstancePort": "1067",
+            "LoadBalancerPort": "1067",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          },
+          {
+            "InstancePort": "1097",
+            "LoadBalancerPort": "1097",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          },
+          {
+            "InstancePort": "1064",
+            "LoadBalancerPort": "1064",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          },
+          {
+            "InstancePort": "1042",
+            "LoadBalancerPort": "1042",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          },
+          {
+            "InstancePort": "1096",
+            "LoadBalancerPort": "1096",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          },
+          {
+            "InstancePort": "1065",
+            "LoadBalancerPort": "1065",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          },
+          {
+            "InstancePort": "1080",
+            "LoadBalancerPort": "1080",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          },
+          {
+            "InstancePort": "1099",
+            "LoadBalancerPort": "1099",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          },
+          {
+            "InstancePort": "1073",
+            "LoadBalancerPort": "1073",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          },
+          {
+            "InstancePort": "1081",
+            "LoadBalancerPort": "1081",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          },
+          {
+            "InstancePort": "1098",
+            "LoadBalancerPort": "1098",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          },
+          {
+            "InstancePort": "1072",
+            "LoadBalancerPort": "1072",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          },
+          {
+            "InstancePort": "1082",
+            "LoadBalancerPort": "1082",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          },
+          {
+            "InstancePort": "1103",
+            "LoadBalancerPort": "1103",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          },
+          {
+            "InstancePort": "1068",
+            "LoadBalancerPort": "1068",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          },
+          {
+            "InstancePort": "1071",
+            "LoadBalancerPort": "1071",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          },
+          {
+            "InstancePort": "1083",
+            "LoadBalancerPort": "1083",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          },
+          {
+            "InstancePort": "1069",
+            "LoadBalancerPort": "1069",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          },
+          {
+            "InstancePort": "1070",
+            "LoadBalancerPort": "1070",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          },
+          {
+            "InstancePort": "1084",
+            "LoadBalancerPort": "1084",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          },
+          {
+            "InstancePort": "1040",
+            "LoadBalancerPort": "1040",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          },
+          {
+            "InstancePort": "1077",
+            "LoadBalancerPort": "1077",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          },
+          {
+            "InstancePort": "1085",
+            "LoadBalancerPort": "1085",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          },
+          {
+            "InstancePort": "1076",
+            "LoadBalancerPort": "1076",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          },
+          {
+            "InstancePort": "1086",
+            "LoadBalancerPort": "1086",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          },
+          {
+            "InstancePort": "1036",
+            "LoadBalancerPort": "1036",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          },
+          {
+            "InstancePort": "1075",
+            "LoadBalancerPort": "1075",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          },
+          {
+            "InstancePort": "1087",
+            "LoadBalancerPort": "1087",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          },
+          {
+            "InstancePort": "1074",
+            "LoadBalancerPort": "1074",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          },
+          {
+            "InstancePort": "1043",
+            "LoadBalancerPort": "1043",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          },
+          {
+            "InstancePort": "1102",
+            "LoadBalancerPort": "1102",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          },
+          {
+            "InstancePort": "1031",
+            "LoadBalancerPort": "1031",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          },
+          {
+            "InstancePort": "1044",
+            "LoadBalancerPort": "1044",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          },
+          {
+            "InstancePort": "1028",
+            "LoadBalancerPort": "1028",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          },
+          {
+            "InstancePort": "1105",
+            "LoadBalancerPort": "1105",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          },
+          {
+            "InstancePort": "1030",
+            "LoadBalancerPort": "1030",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          },
+          {
+            "InstancePort": "1045",
+            "LoadBalancerPort": "1045",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          },
+          {
+            "InstancePort": "1029",
+            "LoadBalancerPort": "1029",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          },
+          {
+            "InstancePort": "1104",
+            "LoadBalancerPort": "1104",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          },
+          {
+            "InstancePort": "1033",
+            "LoadBalancerPort": "1033",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          },
+          {
+            "InstancePort": "1035",
+            "LoadBalancerPort": "1035",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          },
+          {
+            "InstancePort": "1046",
+            "LoadBalancerPort": "1046",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          },
+          {
+            "InstancePort": "1101",
+            "LoadBalancerPort": "1101",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          },
+          {
+            "InstancePort": "1107",
+            "LoadBalancerPort": "1107",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          },
+          {
+            "InstancePort": "1032",
+            "LoadBalancerPort": "1032",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          },
+          {
+            "InstancePort": "1047",
+            "LoadBalancerPort": "1047",
+            "Protocol": "TCP",
+            "InstanceProtocol": "TCP"
+          }
+        ]
+      }
+    },
+    "PcfElbWeb": {
+      "Type": "AWS::ElasticLoadBalancing::LoadBalancer",
+      "Properties": {
+        "Subnets": [
+          {
+            "Ref": "PcfPublicSubnetAZ1"
+          },
+          {
+            "Ref": "PcfPublicSubnetAZ2"
+          },
+          {
+            "Ref": "PcfPublicSubnetAZ3"
+          }
+        ],
+        "HealthCheck": {
+          "HealthyThreshold": "6",
+          "Interval": "5",
+          "Target": "HTTP:8080/health",
+          "Timeout": "3",
+          "UnhealthyThreshold": "3"
+        },
+        "ConnectionDrainingPolicy": {
+          "Enabled": "false",
+          "Timeout": "300"
+        },
+        "ConnectionSettings": {
+          "IdleTimeout": "3600"
+        },
+        "CrossZone": "true",
+        "SecurityGroups": [
+          {
+            "Ref": "PcfElbSecurityGroup"
+          }
+        ],
+        "Listeners": [
+          {
+            "InstancePort": "80",
+            "LoadBalancerPort": "4443",
+            "Protocol": "SSL",
+            "InstanceProtocol": "TCP",
+            "SSLCertificateId": {
+              "Ref": "ERTCertificateARN"
+            },
+            "PolicyNames": [
+              "ELBSecurityPolicy-2016-08"
+            ]
+          },
+          {
+            "InstancePort": "80",
+            "LoadBalancerPort": "443",
+            "Protocol": "HTTPS",
+            "InstanceProtocol": "HTTP",
+            "SSLCertificateId": {
+              "Ref": "ERTCertificateARN"
+            },
+            "PolicyNames": [
+              "ELBSecurityPolicy-2016-08"
+            ]
+          },
+          {
+            "InstancePort": "80",
+            "LoadBalancerPort": "80",
+            "Protocol": "HTTP",
+            "InstanceProtocol": "HTTP"
+          }
+        ]
+      }
+    },
+    "PcfEipOpsMan": {
+      "Type": "AWS::EC2::EIP",
+      "DependsOn": [
+        "PcfVpcGatewayAttachment1"
+      ],
+      "Properties": {
+        "Domain": "vpc"
+      }
+    },
+    "PcfEip2": {
+      "Type": "AWS::EC2::EIP",
+      "DependsOn": [
+        "PcfVpcGatewayAttachment1"
+      ],
+      "Properties": {
+        "Domain": "vpc"
+      }
+    },
+    "PcfNatInstance": {
+      "Type": "AWS::EC2::Instance",
+      "Properties": {
+        "DisableApiTermination": "false",
+        "InstanceInitiatedShutdownBehavior": "stop",
+        "ImageId": {
+          "Fn::FindInMap": [
+            "NATRegionToAmiMap",
+            {
+              "Ref": "AWS::Region"
+            },
+            "id"
+          ]
+        },
+        "InstanceType": "t2.medium",
+        "Monitoring": "false",
+        "SourceDestCheck": "false",
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Join": [
+                "",
+                [
+                  {
+                    "Ref": "EnvironmentID"
+                  },
+                  "-nat"
+                ]
+              ]
+            }
+          }
+        ],
+        "NetworkInterfaces": [
+          {
+            "DeleteOnTermination": "true",
+            "DeviceIndex": 0,
+            "SubnetId": {
+              "Ref": "PcfPublicSubnetAZ1"
+            },
+            "PrivateIpAddresses": [
+              {
+                "PrivateIpAddress": "10.0.0.74",
+                "Primary": "true"
+              }
+            ],
+            "GroupSet": [
+              {
+                "Ref": "PcfNatSecurityGroup"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "PcfOpsManInstance": {
+      "Type": "AWS::EC2::Instance",
+      "Properties": {
+        "DisableApiTermination": "false",
+        "InstanceInitiatedShutdownBehavior": "stop",
+        "ImageId": {
+          "Ref": "OpsManAMI"
+        },
+        "InstanceType": "m4.large",
+        "KeyName": {
+          "Ref": "OpsManSSHKeyPairName"
+        },
+        "BlockDeviceMappings": [
+          {
+            "DeviceName": "/dev/xvda",
+            "Ebs": {
+              "VolumeType": "gp2",
+              "VolumeSize": "150"
+            }
+          }
+        ],
+        "Monitoring": "false",
+        "SourceDestCheck": "false",
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Join": [
+                "",
+                [
+                  {
+                    "Ref": "EnvironmentID"
+                  },
+                  "-ops-manager"
+                ]
+              ]
+            }
+          }
+        ],
+        "NetworkInterfaces": [
+          {
+            "DeleteOnTermination": "true",
+            "DeviceIndex": 0,
+            "SubnetId": {
+              "Ref": "PcfPublicSubnetAZ1"
+            },
+            "PrivateIpAddresses": [
+              {
+                "PrivateIpAddress": "10.0.0.241",
+                "Primary": "true"
+              }
+            ],
+            "GroupSet": [
+              {
+                "Ref": "PcfOpsManSecurityGroup"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "PcfBuildpacksBucket": {
+      "Type": "AWS::S3::Bucket",
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "AccessControl": "Private",
+        "VersioningConfiguration": {
+          "Status": "Suspended"
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": "Elastic Runtime S3 Buildpacks Bucket"
+          }
+        ]
+      }
+    },
+    "PcfDropletsBucket": {
+      "Type": "AWS::S3::Bucket",
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "AccessControl": "Private",
+        "VersioningConfiguration": {
+          "Status": "Suspended"
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": "Elastic Runtime S3 Droplets Bucket"
+          }
+        ]
+      }
+    },
+    "PcfOpsManBucket": {
+      "Type": "AWS::S3::Bucket",
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "AccessControl": "Private",
+        "VersioningConfiguration": {
+          "Status": "Suspended"
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": "Ops Manager S3 Bucket"
+          }
+        ]
+      }
+    },
+    "PcfPackagesBucket": {
+      "Type": "AWS::S3::Bucket",
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "AccessControl": "Private",
+        "VersioningConfiguration": {
+          "Status": "Suspended"
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": "Elastic Runtime S3 Packages Bucket"
+          }
+        ]
+      }
+    },
+    "PcfResourcesBucket": {
+      "Type": "AWS::S3::Bucket",
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "AccessControl": "Private",
+        "VersioningConfiguration": {
+          "Status": "Suspended"
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": "Elastic Runtime S3 Resources Bucket"
+          }
+        ]
+      }
+    },
+    "PcfVmsSecurityGroup": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "GroupDescription": "VMs Security Group",
+        "VpcId": {
+          "Ref": "PcfVPC"
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Join": [
+                "",
+                [
+                  {
+                    "Ref": "EnvironmentID"
+                  },
+                  "-vms-security-group"
+                ]
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "PcfOpsManSecurityGroup": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "GroupDescription": "Ops Manager Security Group",
+        "VpcId": {
+          "Ref": "PcfVPC"
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Join": [
+                "",
+                [
+                  {
+                    "Ref": "EnvironmentID"
+                  },
+                  "-ops-manager-security-group"
+                ]
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "PcfElbSecurityGroup": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "GroupDescription": "ELB Security Group",
+        "VpcId": {
+          "Ref": "PcfVPC"
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Join": [
+                "",
+                [
+                  {
+                    "Ref": "EnvironmentID"
+                  },
+                  "-elb-security-group"
+                ]
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "PcfNatSecurityGroup": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "GroupDescription": "NAT Security Group",
+        "VpcId": {
+          "Ref": "PcfVPC"
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Join": [
+                "",
+                [
+                  {
+                    "Ref": "EnvironmentID"
+                  },
+                  "-nat-security-group"
+                ]
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "PcfSshElbSecurityGroup": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "GroupDescription": "SSH ELB Security Group",
+        "VpcId": {
+          "Ref": "PcfVPC"
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Join": [
+                "",
+                [
+                  {
+                    "Ref": "EnvironmentID"
+                  },
+                  "-ssh-elb-security-group"
+                ]
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "PcfTcpElbSecurityGroup": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "GroupDescription": "TCP ELB Security Group",
+        "VpcId": {
+          "Ref": "PcfVPC"
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Join": [
+                "",
+                [
+                  {
+                    "Ref": "EnvironmentID"
+                  },
+                  "-tcp-elb-security-group"
+                ]
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "PcfAclEntry1": {
+      "Type": "AWS::EC2::NetworkAclEntry",
+      "Properties": {
+        "CidrBlock": "0.0.0.0/0",
+        "Egress": "true",
+        "Protocol": "-1",
+        "RuleAction": "allow",
+        "RuleNumber": "100",
+        "NetworkAclId": {
+          "Ref": "PcfNetworkAcl"
+        }
+      }
+    },
+    "PcfAclEntry2": {
+      "Type": "AWS::EC2::NetworkAclEntry",
+      "Properties": {
+        "CidrBlock": "0.0.0.0/0",
+        "Protocol": "-1",
+        "RuleAction": "allow",
+        "RuleNumber": "100",
+        "NetworkAclId": {
+          "Ref": "PcfNetworkAcl"
+        }
+      }
+    },
+    "PcfPublicSubnetAclAZ1": {
+      "Type": "AWS::EC2::SubnetNetworkAclAssociation",
+      "Properties": {
+        "NetworkAclId": {
+          "Ref": "PcfNetworkAcl"
+        },
+        "SubnetId": {
+          "Ref": "PcfPublicSubnetAZ1"
+        }
+      }
+    },
+    "PcfPublicSubnetAclAZ2": {
+      "Type": "AWS::EC2::SubnetNetworkAclAssociation",
+      "Properties": {
+        "NetworkAclId": {
+          "Ref": "PcfNetworkAcl"
+        },
+        "SubnetId": {
+          "Ref": "PcfPublicSubnetAZ2"
+        }
+      }
+    },
+    "PcfPublicSubnetAclAZ3": {
+      "Type": "AWS::EC2::SubnetNetworkAclAssociation",
+      "Properties": {
+        "NetworkAclId": {
+          "Ref": "PcfNetworkAcl"
+        },
+        "SubnetId": {
+          "Ref": "PcfPublicSubnetAZ3"
+        }
+      }
+    },
+    "PcfERTSubnetAclAZ1": {
+      "Type": "AWS::EC2::SubnetNetworkAclAssociation",
+      "Properties": {
+        "NetworkAclId": {
+          "Ref": "PcfNetworkAcl"
+        },
+        "SubnetId": {
+          "Ref": "PcfERTSubnetAZ1"
+        }
+      }
+    },
+    "PcfERTSubnetAclAZ2": {
+      "Type": "AWS::EC2::SubnetNetworkAclAssociation",
+      "Properties": {
+        "NetworkAclId": {
+          "Ref": "PcfNetworkAcl"
+        },
+        "SubnetId": {
+          "Ref": "PcfERTSubnetAZ2"
+        }
+      }
+    },
+    "PcfERTSubnetAclAZ3": {
+      "Type": "AWS::EC2::SubnetNetworkAclAssociation",
+      "Properties": {
+        "NetworkAclId": {
+          "Ref": "PcfNetworkAcl"
+        },
+        "SubnetId": {
+          "Ref": "PcfERTSubnetAZ3"
+        }
+      }
+    },
+    "PcfManagementSubnetAclAZ1": {
+      "Type": "AWS::EC2::SubnetNetworkAclAssociation",
+      "Properties": {
+        "NetworkAclId": {
+          "Ref": "PcfNetworkAcl"
+        },
+        "SubnetId": {
+          "Ref": "PcfManagementSubnetAZ1"
+        }
+      }
+    },
+    "PcfManagementSubnetAclAZ2": {
+      "Type": "AWS::EC2::SubnetNetworkAclAssociation",
+      "Properties": {
+        "NetworkAclId": {
+          "Ref": "PcfNetworkAcl"
+        },
+        "SubnetId": {
+          "Ref": "PcfManagementSubnetAZ2"
+        }
+      }
+    },
+    "PcfManagementSubnetAclAZ3": {
+      "Type": "AWS::EC2::SubnetNetworkAclAssociation",
+      "Properties": {
+        "NetworkAclId": {
+          "Ref": "PcfNetworkAcl"
+        },
+        "SubnetId": {
+          "Ref": "PcfManagementSubnetAZ3"
+        }
+      }
+    },
+    "PcfServicesSubnetAclAZ1": {
+      "Type": "AWS::EC2::SubnetNetworkAclAssociation",
+      "Properties": {
+        "NetworkAclId": {
+          "Ref": "PcfNetworkAcl"
+        },
+        "SubnetId": {
+          "Ref": "PcfServicesSubnetAZ1"
+        }
+      }
+    },
+    "PcfServicesSubnetAclAZ2": {
+      "Type": "AWS::EC2::SubnetNetworkAclAssociation",
+      "Properties": {
+        "NetworkAclId": {
+          "Ref": "PcfNetworkAcl"
+        },
+        "SubnetId": {
+          "Ref": "PcfServicesSubnetAZ2"
+        }
+      }
+    },
+    "PcfServicesSubnetAclAZ3": {
+      "Type": "AWS::EC2::SubnetNetworkAclAssociation",
+      "Properties": {
+        "NetworkAclId": {
+          "Ref": "PcfNetworkAcl"
+        },
+        "SubnetId": {
+          "Ref": "PcfServicesSubnetAZ3"
+        }
+      }
+    },
+    "PcfVpcGatewayAttachment1": {
+      "Type": "AWS::EC2::VPCGatewayAttachment",
+      "Properties": {
+        "VpcId": {
+          "Ref": "PcfVPC"
+        },
+        "InternetGatewayId": {
+          "Ref": "PcfInternetGateway"
+        }
+      }
+    },
+    "PcfPublicSubnetRouteTableAZ1": {
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+      "Properties": {
+        "RouteTableId": {
+          "Ref": "PcfInternetGatewayRouteTable"
+        },
+        "SubnetId": {
+          "Ref": "PcfPublicSubnetAZ1"
+        }
+      }
+    },
+    "PcfPublicSubnetRouteTableAZ2": {
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+      "Properties": {
+        "RouteTableId": {
+          "Ref": "PcfInternetGatewayRouteTable"
+        },
+        "SubnetId": {
+          "Ref": "PcfPublicSubnetAZ2"
+        }
+      }
+    },
+    "PcfPublicSubnetRouteTableAZ3": {
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+      "Properties": {
+        "RouteTableId": {
+          "Ref": "PcfInternetGatewayRouteTable"
+        },
+        "SubnetId": {
+          "Ref": "PcfPublicSubnetAZ3"
+        }
+      }
+    },
+    "PcfERTSubnetRouteTableAZ1": {
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+      "Properties": {
+        "RouteTableId": {
+          "Ref": "PcfNatRouteTableAZ1"
+        },
+        "SubnetId": {
+          "Ref": "PcfERTSubnetAZ1"
+        }
+      }
+    },
+    "PcfERTSubnetRouteTableAZ2": {
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+      "Properties": {
+        "RouteTableId": {
+          "Ref": "PcfNatRouteTableAZ2"
+        },
+        "SubnetId": {
+          "Ref": "PcfERTSubnetAZ2"
+        }
+      }
+    },
+    "PcfERTSubnetRouteTableAZ3": {
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+      "Properties": {
+        "RouteTableId": {
+          "Ref": "PcfNatRouteTableAZ3"
+        },
+        "SubnetId": {
+          "Ref": "PcfERTSubnetAZ3"
+        }
+      }
+    },
+    "PcfManagementSubnetRouteTableAZ1": {
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+      "Properties": {
+        "RouteTableId": {
+          "Ref": "PcfNatRouteTableAZ1"
+        },
+        "SubnetId": {
+          "Ref": "PcfManagementSubnetAZ1"
+        }
+      }
+    },
+    "PcfManagementSubnetRouteTableAZ2": {
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+      "Properties": {
+        "RouteTableId": {
+          "Ref": "PcfNatRouteTableAZ2"
+        },
+        "SubnetId": {
+          "Ref": "PcfManagementSubnetAZ2"
+        }
+      }
+    },
+    "PcfManagementSubnetRouteTableAZ3": {
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+      "Properties": {
+        "RouteTableId": {
+          "Ref": "PcfNatRouteTableAZ3"
+        },
+        "SubnetId": {
+          "Ref": "PcfManagementSubnetAZ3"
+        }
+      }
+    },
+    "PcfServicesSubnetRouteTableAZ1": {
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+      "Properties": {
+        "RouteTableId": {
+          "Ref": "PcfNatRouteTableAZ1"
+        },
+        "SubnetId": {
+          "Ref": "PcfServicesSubnetAZ1"
+        }
+      }
+    },
+    "PcfServicesSubnetRouteTableAZ2": {
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+      "Properties": {
+        "RouteTableId": {
+          "Ref": "PcfNatRouteTableAZ2"
+        },
+        "SubnetId": {
+          "Ref": "PcfServicesSubnetAZ2"
+        }
+      }
+    },
+    "PcfServicesSubnetRouteTableAZ3": {
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+      "Properties": {
+        "RouteTableId": {
+          "Ref": "PcfNatRouteTableAZ3"
+        },
+        "SubnetId": {
+          "Ref": "PcfServicesSubnetAZ3"
+        }
+      }
+    },
+    "PcfNatRouteAZ1": {
+      "Type": "AWS::EC2::Route",
+      "Properties": {
+        "DestinationCidrBlock": "0.0.0.0/0",
+        "RouteTableId": {
+          "Ref": "PcfNatRouteTableAZ1"
+        },
+        "InstanceId": {
+          "Ref": "PcfNatInstance"
+        }
+      }
+    },
+    "PcfInternetGatewayRoute": {
+      "Type": "AWS::EC2::Route",
+      "Properties": {
+        "DestinationCidrBlock": "0.0.0.0/0",
+        "RouteTableId": {
+          "Ref": "PcfInternetGatewayRouteTable"
+        },
+        "GatewayId": {
+          "Ref": "PcfInternetGateway"
+        }
+      },
+      "DependsOn": "PcfVpcGatewayAttachment1"
+    },
+    "PcfNatRouteAZ2": {
+      "Type": "AWS::EC2::Route",
+      "Properties": {
+        "DestinationCidrBlock": "0.0.0.0/0",
+        "RouteTableId": {
+          "Ref": "PcfNatRouteTableAZ2"
+        },
+        "InstanceId": {
+          "Ref": "PcfNatInstance"
+        }
+      }
+    },
+    "PcfNatRouteAZ3": {
+      "Type": "AWS::EC2::Route",
+      "Properties": {
+        "DestinationCidrBlock": "0.0.0.0/0",
+        "RouteTableId": {
+          "Ref": "PcfNatRouteTableAZ3"
+        },
+        "InstanceId": {
+          "Ref": "PcfNatInstance"
+        }
+      }
+    },
+    "PcfDhcpAssoc1": {
+      "Type": "AWS::EC2::VPCDHCPOptionsAssociation",
+      "Properties": {
+        "VpcId": {
+          "Ref": "PcfVPC"
+        },
+        "DhcpOptionsId": {
+          "Ref": "PcfDHCPOptions"
+        }
+      }
+    },
+    "PcfEipAssoc1": {
+      "Type": "AWS::EC2::EIPAssociation",
+      "Properties": {
+        "AllocationId": {
+          "Fn::GetAtt": [
+            "PcfEip2",
+            "AllocationId"
+          ]
+        },
+        "InstanceId": {
+          "Ref": "PcfNatInstance"
+        }
+      }
+    },
+    "PcfEipAssoc2": {
+      "Type": "AWS::EC2::EIPAssociation",
+      "Properties": {
+        "AllocationId": {
+          "Fn::GetAtt": [
+            "PcfEipOpsMan",
+            "AllocationId"
+          ]
+        },
+        "InstanceId": {
+          "Ref": "PcfOpsManInstance"
+        }
+      }
+    },
+    "PcfIngressRuleVms1": {
+      "Type": "AWS::EC2::SecurityGroupIngress",
+      "Properties": {
+        "GroupId": {
+          "Ref": "PcfVmsSecurityGroup"
+        },
+        "IpProtocol": "-1",
+        "CidrIp": "10.0.0.0/16"
+      }
+    },
+    "PcfIngressRuleOpsMan1": {
+      "Type": "AWS::EC2::SecurityGroupIngress",
+      "Properties": {
+        "GroupId": {
+          "Ref": "PcfOpsManSecurityGroup"
+        },
+        "IpProtocol": "tcp",
+        "FromPort": "80",
+        "ToPort": "80",
+        "CidrIp": {
+          "Ref": "OpsManIngressCidr"
+        }
+      }
+    },
+    "PcfIngressRuleOpsMan2": {
+      "Type": "AWS::EC2::SecurityGroupIngress",
+      "Properties": {
+        "GroupId": {
+          "Ref": "PcfOpsManSecurityGroup"
+        },
+        "IpProtocol": "tcp",
+        "FromPort": "22",
+        "ToPort": "22",
+        "CidrIp": {
+          "Ref": "OpsManIngressCidr"
+        }
+      }
+    },
+    "PcfIngressRuleOpsMan3": {
+      "Type": "AWS::EC2::SecurityGroupIngress",
+      "Properties": {
+        "GroupId": {
+          "Ref": "PcfOpsManSecurityGroup"
+        },
+        "IpProtocol": "tcp",
+        "FromPort": "443",
+        "ToPort": "443",
+        "CidrIp": {
+          "Ref": "OpsManIngressCidr"
+        }
+      }
+    },
+    "PcfIngressRuleOpsMan4": {
+      "Type": "AWS::EC2::SecurityGroupIngress",
+      "Properties": {
+        "GroupId": {
+          "Ref": "PcfOpsManSecurityGroup"
+        },
+        "IpProtocol": "tcp",
+        "FromPort": "22",
+        "ToPort": "22",
+        "SourceSecurityGroupId": {
+          "Ref": "PcfOpsManSecurityGroup"
+        }
+      }
+    },
+    "PcfIngressRuleOpsMan5": {
+      "Type": "AWS::EC2::SecurityGroupIngress",
+      "Properties": {
+        "GroupId": {
+          "Ref": "PcfOpsManSecurityGroup"
+        },
+        "IpProtocol": "tcp",
+        "FromPort": "443",
+        "ToPort": "443",
+        "SourceSecurityGroupId": {
+          "Ref": "PcfOpsManSecurityGroup"
+        }
+      }
+    },
+    "PcfIngressRuleElb1": {
+      "Type": "AWS::EC2::SecurityGroupIngress",
+      "Properties": {
+        "GroupId": {
+          "Ref": "PcfElbSecurityGroup"
+        },
+        "IpProtocol": "tcp",
+        "FromPort": "80",
+        "ToPort": "80",
+        "CidrIp": "0.0.0.0/0"
+      }
+    },
+    "PcfIngressRuleElb2": {
+      "Type": "AWS::EC2::SecurityGroupIngress",
+      "Properties": {
+        "GroupId": {
+          "Ref": "PcfElbSecurityGroup"
+        },
+        "IpProtocol": "tcp",
+        "FromPort": "4443",
+        "ToPort": "4443",
+        "CidrIp": "0.0.0.0/0"
+      }
+    },
+    "PcfIngressRuleElb3": {
+      "Type": "AWS::EC2::SecurityGroupIngress",
+      "Properties": {
+        "GroupId": {
+          "Ref": "PcfElbSecurityGroup"
+        },
+        "IpProtocol": "tcp",
+        "FromPort": "443",
+        "ToPort": "443",
+        "CidrIp": "0.0.0.0/0"
+      }
+    },
+    "PcfIngressRuleNat1": {
+      "Type": "AWS::EC2::SecurityGroupIngress",
+      "Properties": {
+        "GroupId": {
+          "Ref": "PcfNatSecurityGroup"
+        },
+        "IpProtocol": "-1",
+        "CidrIp": "10.0.0.0/16"
+      }
+    },
+    "PcfIngressRuleSshElb1": {
+      "Type": "AWS::EC2::SecurityGroupIngress",
+      "Properties": {
+        "GroupId": {
+          "Ref": "PcfSshElbSecurityGroup"
+        },
+        "IpProtocol": "tcp",
+        "FromPort": "2222",
+        "ToPort": "2222",
+        "CidrIp": "0.0.0.0/0"
+      }
+    },
+    "PcfIngressRuleTcpElb1": {
+      "Type": "AWS::EC2::SecurityGroupIngress",
+      "Properties": {
+        "GroupId": {
+          "Ref": "PcfTcpElbSecurityGroup"
+        },
+        "IpProtocol": "tcp",
+        "FromPort": "1024",
+        "ToPort": "1123",
+        "CidrIp": "0.0.0.0/0"
+      }
+    },
+    "PcfEgressRuleVms1": {
+      "Type": "AWS::EC2::SecurityGroupEgress",
+      "Properties": {
+        "GroupId": {
+          "Ref": "PcfVmsSecurityGroup"
+        },
+        "IpProtocol": "-1",
+        "CidrIp": "0.0.0.0/0"
+      }
+    },
+    "PcfEgressRuleOpsMan1": {
+      "Type": "AWS::EC2::SecurityGroupEgress",
+      "Properties": {
+        "GroupId": {
+          "Ref": "PcfOpsManSecurityGroup"
+        },
+        "IpProtocol": "-1",
+        "CidrIp": "0.0.0.0/0"
+      }
+    },
+    "PcfEgressRuleElb1": {
+      "Type": "AWS::EC2::SecurityGroupEgress",
+      "Properties": {
+        "GroupId": {
+          "Ref": "PcfElbSecurityGroup"
+        },
+        "IpProtocol": "-1",
+        "CidrIp": "0.0.0.0/0"
+      }
+    },
+    "PcfEgressRuleNat1": {
+      "Type": "AWS::EC2::SecurityGroupEgress",
+      "Properties": {
+        "GroupId": {
+          "Ref": "PcfNatSecurityGroup"
+        },
+        "IpProtocol": "-1",
+        "CidrIp": "0.0.0.0/0"
+      }
+    },
+    "PcfEgressRuleSshElb1": {
+      "Type": "AWS::EC2::SecurityGroupEgress",
+      "Properties": {
+        "GroupId": {
+          "Ref": "PcfSshElbSecurityGroup"
+        },
+        "IpProtocol": "-1",
+        "CidrIp": "0.0.0.0/0"
+      }
+    },
+    "PcfEgressRuleTcpElb1": {
+      "Type": "AWS::EC2::SecurityGroupEgress",
+      "Properties": {
+        "GroupId": {
+          "Ref": "PcfTcpElbSecurityGroup"
+        },
+        "IpProtocol": "-1",
+        "CidrIp": "0.0.0.0/0"
+      }
+    },
+    "PcfIamInstanceProfile": {
+      "Type": "AWS::IAM::InstanceProfile",
+      "Properties": {
+        "Path": "/",
+        "Roles": [
+          {
+            "Ref": "PcfIamRole"
+          }
+        ]
+      }
+    },
+    "PcfIamRole": {
+      "Type": "AWS::IAM::Role",
+      "DependsOn": [
+        "PcfVPC",
+        "PcfOpsManBucket"
+      ],
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": [
+                  "ec2.amazonaws.com"
+                ]
+              },
+              "Action": [
+                "sts:AssumeRole"
+              ]
+            }
+          ]
+        },
+        "Policies": []
+      }
+    },
+    "PcfIamPolicy": {
+      "Type": "AWS::IAM::ManagedPolicy",
+      "Properties": {
+        "PolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Deny",
+              "Action": [
+                "iam:Add*",
+                "iam:Attach*",
+                "iam:ChangePassword",
+                "iam:Create*",
+                "iam:DeactivateMFADevice",
+                "iam:Delete*",
+                "iam:Detach*",
+                "iam:EnableMFADevice",
+                "iam:GenerateCredentialReport",
+                "iam:GenerateServiceLastAccessedDetails",
+                "iam:GetAccessKeyLastUsed",
+                "iam:GetAccountAuthorizationDetails",
+                "iam:GetAccountPasswordPolicy",
+                "iam:GetAccountSummary",
+                "iam:GetContextKeysForCustomPolicy",
+                "iam:GetContextKeysForPrincipalPolicy",
+                "iam:GetCredentialReport",
+                "iam:GetGroup",
+                "iam:GetGroupPolicy",
+                "iam:GetLoginProfile",
+                "iam:GetOpenIDConnectProvider",
+                "iam:GetPolicy",
+                "iam:GetPolicyVersion",
+                "iam:GetRole",
+                "iam:GetRolePolicy",
+                "iam:GetSAMLProvider",
+                "iam:GetSSHPublicKey",
+                "iam:GetServerCertificate",
+                "iam:GetServiceLastAccessedDetails",
+                "iam:GetUser",
+                "iam:GetUserPolicy",
+                "iam:List*",
+                "iam:Put*",
+                "iam:RemoveClientIDFromOpenIDConnectProvider",
+                "iam:RemoveRoleFromInstanceProfile",
+                "iam:RemoveUserFromGroup",
+                "iam:ResyncMFADevice",
+                "iam:SetDefaultPolicyVersion",
+                "iam:SimulateCustomPolicy",
+                "iam:SimulatePrincipalPolicy",
+                "iam:Update*"
+              ],
+              "Resource": [
+                "*"
+              ]
+            },
+            {
+              "Sid": "AllowToGetInfoAboutCurrentInstanceProfile",
+              "Effect": "Allow",
+              "Action": [
+                "iam:GetInstanceProfile"
+              ],
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "PcfIamInstanceProfile",
+                    "Arn"
+                  ]
+                }
+              ]
+            },
+            {
+              "Sid": "AllowToCreateInstanceWithCurrentInstanceProfile",
+              "Effect": "Allow",
+              "Action": [
+                "iam:PassRole"
+              ],
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "PcfIamRole",
+                    "Arn"
+                  ]
+                }
+              ]
+            },
+            {
+              "Sid": "OpsManagerS3Permissions",
+              "Effect": "Allow",
+              "Action": [
+                "s3:*"
+              ],
+              "Resource": [
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:aws:s3:::",
+                      {
+                        "Ref": "PcfOpsManBucket"
+                      }
+                    ]
+                  ]
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:aws:s3:::",
+                      {
+                        "Ref": "PcfOpsManBucket"
+                      },
+                      "/*"
+                    ]
+                  ]
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:aws:s3:::",
+                      {
+                        "Ref": "PcfPackagesBucket"
+                      }
+                    ]
+                  ]
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:aws:s3:::",
+                      {
+                        "Ref": "PcfPackagesBucket"
+                      },
+                      "/*"
+                    ]
+                  ]
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:aws:s3:::",
+                      {
+                        "Ref": "PcfDropletsBucket"
+                      }
+                    ]
+                  ]
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:aws:s3:::",
+                      {
+                        "Ref": "PcfDropletsBucket"
+                      },
+                      "/*"
+                    ]
+                  ]
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:aws:s3:::",
+                      {
+                        "Ref": "PcfResourcesBucket"
+                      }
+                    ]
+                  ]
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:aws:s3:::",
+                      {
+                        "Ref": "PcfResourcesBucket"
+                      },
+                      "/*"
+                    ]
+                  ]
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:aws:s3:::",
+                      {
+                        "Ref": "PcfBuildpacksBucket"
+                      }
+                    ]
+                  ]
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:aws:s3:::",
+                      {
+                        "Ref": "PcfBuildpacksBucket"
+                      },
+                      "/*"
+                    ]
+                  ]
+                }
+              ]
+            },
+            {
+              "Sid": "OpsManagerEc2Permissions",
+              "Effect": "Allow",
+              "Action": [
+                "ec2:DescribeAccountAttributes",
+                "ec2:DescribeAddresses",
+                "ec2:AssociateAddress",
+                "ec2:DisassociateAddress",
+                "ec2:DescribeAvailabilityZones",
+                "ec2:DescribeImages",
+                "ec2:DescribeInstances",
+                "ec2:RunInstances",
+                "ec2:RebootInstances",
+                "ec2:TerminateInstances",
+                "ec2:DescribeKeypairs",
+                "ec2:CreateKeyPair",
+                "ec2:DeleteKeyPair",
+                "ec2:ImportKeyPair",
+                "ec2:DescribeRegions",
+                "ec2:DescribeSnapshots",
+                "ec2:CreateSnapshot",
+                "ec2:DeleteSnapshot",
+                "ec2:DescribeSecurityGroups",
+                "ec2:DescribeSubnets",
+                "ec2:DescribeVpcs",
+                "ec2:CreateTags",
+                "ec2:DescribeVolumes",
+                "ec2:CreateVolume",
+                "ec2:AttachVolume",
+                "ec2:DeleteVolume",
+                "ec2:DetachVolume"
+              ],
+              "Resource": [
+                "*"
+              ]
+            },
+            {
+              "Sid": "OpsManagerElbPermissions",
+              "Effect": "Allow",
+              "Action": [
+                "elasticloadbalancing:DescribeLoadBalancers",
+                "elasticloadbalancing:DeregisterInstancesFromLoadBalancer",
+                "elasticloadbalancing:RegisterInstancesWithLoadBalancer"
+              ],
+              "Resource": [
+                "*"
+              ]
+            }
+          ]
+        },
+        "Description": {
+          "Fn::Join": [
+            "",
+            [
+              "Managed policy for OpsManager and BOSH director in ",
+              {
+                "Ref": "AWS::StackName"
+              }
+            ]
+          ]
+        },
+        "Roles": [
+          {
+            "Ref": "PcfIamRole"
+          }
+        ],
+        "Users": [
+          {
+            "Ref": "PcfIamUser"
+          }
+        ]
+      }
+    },
+    "PcfIamUser": {
+      "Type": "AWS::IAM::User",
+      "DependsOn": [
+        "PcfVPC",
+        "PcfOpsManBucket"
+      ],
+      "Properties": {
+        "Policies": []
+      }
+    }
+  },
+  "Outputs": {
+    "BrokerIAMUserName": {
+        "Value": {
+            "Ref": "BrokerUser"
+        }
+    },
+    "PcfVpc": {
+      "Value": {
+        "Ref": "PcfVPC"
+      }
+    },
+    "PcfIamInstanceProfile": {
+      "Value": {
+        "Ref": "PcfIamInstanceProfile"
+      }
+    },
+    "PcfOpsManagerS3Bucket": {
+      "Value": {
+        "Ref": "PcfOpsManBucket"
+      }
+    },
+    "PcfElasticRuntimeS3BuildpacksBucket": {
+      "Value": {
+        "Ref": "PcfBuildpacksBucket"
+      }
+    },
+    "PcfElasticRuntimeS3DropletsBucket": {
+      "Value": {
+        "Ref": "PcfDropletsBucket"
+      }
+    },
+    "PcfElasticRuntimeS3PackagesBucket": {
+      "Value": {
+        "Ref": "PcfPackagesBucket"
+      }
+    },
+    "PcfElasticRuntimeS3ResourcesBucket": {
+      "Value": {
+        "Ref": "PcfResourcesBucket"
+      }
+    },
+    "PcfERTSubnetAZ1": {
+      "Value": {
+        "Ref": "PcfERTSubnetAZ1"
+      }
+    },
+    "PcfERTSubnetAZ2": {
+      "Value": {
+        "Ref": "PcfERTSubnetAZ2"
+      }
+    },
+    "PcfERTSubnetAZ3": {
+      "Value": {
+        "Ref": "PcfERTSubnetAZ3"
+      }
+    },
+    "PcfERTSubnetAZ1AvailabilityZone": {
+      "Value": {
+        "Fn::GetAtt": [
+          "PcfERTSubnetAZ1",
+          "AvailabilityZone"
+        ]
+      }
+    },
+    "PcfERTSubnetAZ2AvailabilityZone": {
+      "Value": {
+        "Fn::GetAtt": [
+          "PcfERTSubnetAZ2",
+          "AvailabilityZone"
+        ]
+      }
+    },
+    "PcfERTSubnetAZ3AvailabilityZone": {
+      "Value": {
+        "Fn::GetAtt": [
+          "PcfERTSubnetAZ3",
+          "AvailabilityZone"
+        ]
+      }
+    },
+    "PcfManagementSubnetAZ1": {
+      "Value": {
+        "Ref": "PcfManagementSubnetAZ1"
+      }
+    },
+    "PcfManagementSubnetAZ2": {
+      "Value": {
+        "Ref": "PcfManagementSubnetAZ2"
+      }
+    },
+    "PcfManagementSubnetAZ3": {
+      "Value": {
+        "Ref": "PcfManagementSubnetAZ3"
+      }
+    },
+    "PcfManagementSubnetAZ1AvailabilityZone": {
+      "Value": {
+        "Fn::GetAtt": [
+          "PcfManagementSubnetAZ1",
+          "AvailabilityZone"
+        ]
+      }
+    },
+    "PcfManagementSubnetAZ2AvailabilityZone": {
+      "Value": {
+        "Fn::GetAtt": [
+          "PcfManagementSubnetAZ2",
+          "AvailabilityZone"
+        ]
+      }
+    },
+    "PcfManagementSubnetAZ3AvailabilityZone": {
+      "Value": {
+        "Fn::GetAtt": [
+          "PcfManagementSubnetAZ3",
+          "AvailabilityZone"
+        ]
+      }
+    },
+    "PcfServicesSubnetAZ1": {
+      "Value": {
+        "Ref": "PcfServicesSubnetAZ1"
+      }
+    },
+    "PcfServicesSubnetAZ2": {
+      "Value": {
+        "Ref": "PcfServicesSubnetAZ2"
+      }
+    },
+    "PcfServicesSubnetAZ3": {
+      "Value": {
+        "Ref": "PcfServicesSubnetAZ3"
+      }
+    },
+    "PcfServicesSubnetAZ1AvailabilityZone": {
+      "Value": {
+        "Fn::GetAtt": [
+          "PcfServicesSubnetAZ1",
+          "AvailabilityZone"
+        ]
+      }
+    },
+    "PcfServicesSubnetAZ2AvailabilityZone": {
+      "Value": {
+        "Fn::GetAtt": [
+          "PcfServicesSubnetAZ2",
+          "AvailabilityZone"
+        ]
+      }
+    },
+    "PcfServicesSubnetAZ3AvailabilityZone": {
+      "Value": {
+        "Fn::GetAtt": [
+          "PcfServicesSubnetAZ3",
+          "AvailabilityZone"
+        ]
+      }
+    },
+    "PcfVmsSecurityGroup": {
+      "Value": {
+        "Ref": "PcfVmsSecurityGroup"
+      }
+    },
+    "PcfElbWebName": {
+      "Value": {
+        "Ref": "PcfElbWeb"
+      }
+    },
+    "PcfElbWebDnsName": {
+      "Value": {
+        "Fn::GetAtt": [
+          "PcfElbWeb",
+          "DNSName"
+        ]
+      }
+    },
+    "PcfElbSshName": {
+      "Value": {
+        "Ref": "PcfElbSsh"
+      }
+    },
+    "PcfElbSshDnsName": {
+      "Value": {
+        "Fn::GetAtt": [
+          "PcfElbSsh",
+          "DNSName"
+        ]
+      }
+    },
+    "PcfElbTcpName": {
+      "Value": {
+        "Ref": "PcfElbTcp"
+      }
+    },
+    "PcfElbTcpDnsName": {
+      "Value": {
+        "Fn::GetAtt": [
+          "PcfElbTcp",
+          "DNSName"
+        ]
+      }
+    },
+    "PcfOpsManIPAddress": {
+      "Value": {
+        "Fn::GetAtt": [
+          "PcfOpsManInstance",
+          "PublicIp"
+        ]
+      }
+    },
+    "PcfOpsManPrivateIPAddress": {
+      "Value": {
+        "Fn::GetAtt": [
+          "PcfOpsManInstance",
+          "PrivateIp"
+        ]
+      }
+    },
+    "PcfIamUserName": {
+      "Value": {
+        "Ref": "PcfIamUser"
+      }
+    },
+    "PcfIamRole": {
+      "Value": {
+        "Ref": "PcfIamRole"
+      }
+    },
+    "PcfOpsManSecurityGroup": {
+      "Value": {
+        "Ref": "PcfOpsManSecurityGroup"
+      }
+    },
+    "PcfPublicSubnetAZ1": {
+      "Value": {
+        "Ref": "PcfPublicSubnetAZ1"
+      }
+    }
+  }
+}

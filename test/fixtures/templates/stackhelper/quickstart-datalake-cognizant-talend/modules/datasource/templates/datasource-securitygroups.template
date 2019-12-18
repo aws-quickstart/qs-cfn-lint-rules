@@ -1,0 +1,100 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "Create EMR and Redshift Security Groups",
+    "Parameters": {
+        "VpcId": {
+            "Description": "VPC to which security groups belong",
+            "Type": "AWS::EC2::VPC::Id"
+        },
+        "RedshiftPort": {
+            "Description": "RedShift Port",
+            "Type": "String",
+            "Default": "5439"
+        },
+        "RemoteAccessCIDR": {
+            "Description": "The IP address range that can be used to access the DataSources.",
+            "Type": "String",
+            "MinLength": "9",
+            "MaxLength": "18",
+            "AllowedPattern": "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})",
+            "ConstraintDescription": "must be a valid IP CIDR range of the form x.x.x.x/x."
+        },
+        "CreateRedshift": {
+            "Description": "Create Redshift.",
+            "Type": "String",
+            "Default": "false",
+            "AllowedValues": [
+                "true",
+                "false"
+            ]
+        },
+        "CreateEmr": {
+            "Description": "Create EMR.",
+            "Type": "String",
+            "Default": "false",
+            "AllowedValues": [
+                "true",
+                "false"
+            ]
+        }
+    },
+    "Mappings": {
+    },
+    "Conditions": {
+    },
+    "Resources": {
+        "RedshiftSecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "VpcId": { "Ref": "VpcId" },
+                "GroupDescription": "Allow access to Redshift from Studio, Bastion, and external CIDR on RedshiftPort (5439).",
+                "SecurityGroupIngress": [
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": { "Ref": "RedshiftPort" },
+                        "ToPort": { "Ref": "RedshiftPort" },
+                        "CidrIp": {
+                            "Ref": "RemoteAccessCIDR"
+                        }
+                    }
+                ]
+            }
+        },
+        "RemoteAccessEmrSecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "GroupDescription": "Enable EMR remote access",
+                "VpcId": { "Ref": "VpcId" },
+                "SecurityGroupIngress": [
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "0",
+                        "ToPort": "65535",
+                        "CidrIp": { "Ref": "RemoteAccessCIDR" }
+                    }
+                ]
+            }
+        },
+        "EmrSecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "GroupDescription": "Enable EMR access from Bastion servers, Jobservers, and Studio.",
+                "VpcId": { "Ref": "VpcId" }
+            }
+        }
+    },
+    "Outputs": {
+        "RedshiftSecurityGroupID": {
+            "Value": { "Fn::GetAtt": [ "RedshiftSecurityGroup", "GroupId" ] },
+            "Export": { "Name": { "Fn::Sub": "${AWS::StackName}:RedshiftSecurityGroupID" } }
+        },
+        "EmrSecurityGroupID": {
+            "Value": { "Fn::GetAtt": [ "EmrSecurityGroup", "GroupId" ] },
+            "Export": { "Name": { "Fn::Sub": "${AWS::StackName}:EmrSecurityGroupID" } }
+        },
+        "RemoteAccessEmrSecurityGroupID": {
+            "Value": { "Fn::GetAtt": [ "RemoteAccessEmrSecurityGroup", "GroupId" ] },
+            "Export": { "Name": { "Fn::Sub": "${AWS::StackName}:RemoteAccessEmrSecurityGroupID" } }
+        }
+    }
+}

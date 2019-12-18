@@ -1,0 +1,91 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "Lambdas for performing generic periodic actions. **WARNING** This template creates an Amazon Lambda. You will be billed for the AWS resources used if you create a stack from this template.",
+    "Parameters": {
+        "CopyLambdaDeploymentRoleARN": {
+            "Type": "String"
+        },
+        "QSS3BucketName": {
+            "Default": "aws-quickstart",
+            "Type": "String"
+        },
+        "QSS3KeyPrefix": {
+            "Default": "osisoft/47lining/latest/",
+            "Type": "String"
+        },
+        "RegionalLambdaBucketName": {
+            "Type": "String"
+        }
+    },
+    "Resources": {
+        "CopyLambdaDeployment": {
+            "Properties": {
+                "QSS3BucketName": {
+                    "Ref": "QSS3BucketName"
+                },
+                "QSS3KeyPrefix": {
+                    "Ref": "QSS3KeyPrefix"
+                },
+                "RegionalLambdaBucket": {
+                    "Ref": "RegionalLambdaBucketName"
+                },
+                "ServiceToken": {
+                    "Fn::GetAtt": [
+                        "CopyLambdaDeploymentFunction",
+                        "Arn"
+                    ]
+                }
+            },
+            "Type": "Custom::CopyLambdaDeployment"
+        },
+        "CopyLambdaDeploymentFunction": {
+            "Properties": {
+                "Code": {
+                    "ZipFile": {
+                        "Fn::Join": [
+                            "\n",
+                            [
+                                "import json",
+                                "import cfnresponse",
+                                "import boto3",
+                                "from botocore.exceptions import ClientError",
+                                "",
+                                "s3 = boto3.client('s3')",
+                                "",
+                                "",
+                                "def handler(event, context):",
+                                "    target_bucket = event['ResourceProperties']['RegionalLambdaBucket']",
+                                "    target_key = 'lambda_deployment_package.zip'",
+                                "    source_bucket = event['ResourceProperties']['QSS3BucketName']",
+                                "    source_key = '{0}assets/lambdas/lambda_deployment_package.zip'.format(event['ResourceProperties']['QSS3KeyPrefix'])",
+                                "",
+                                "    if event['RequestType'] == 'Delete':",
+                                "        try:",
+                                "            s3.delete_object(Bucket=target_bucket, Key=target_key)",
+                                "            return cfnresponse.send(event, context, cfnresponse.SUCCESS, {})",
+                                "        except ClientError as e:",
+                                "            print(e)",
+                                "            return cfnresponse.send(event, context, cfnresponse.FAILED, {})",
+                                "    try:",
+                                "        copy_source = {'Bucket': source_bucket, 'Key': source_key}",
+                                "        s3.copy_object(Bucket=target_bucket, Key=target_key, CopySource=copy_source)",
+                                "        return cfnresponse.send(event, context, cfnresponse.SUCCESS, {})",
+                                "    except ClientError as e:",
+                                "        print(e)",
+                                "        return cfnresponse.send(event, context, cfnresponse.FAILED, {})"
+                            ]
+                        ]
+                    }
+                },
+                "Description": "Copy deployment package to the regional bucket",
+                "Handler": "index.handler",
+                "Role": {
+                    "Ref": "CopyLambdaDeploymentRoleARN"
+                },
+                "Runtime": "python3.6",
+                "Timeout": 30
+            },
+            "Type": "AWS::Lambda::Function"
+        }
+    }
+}

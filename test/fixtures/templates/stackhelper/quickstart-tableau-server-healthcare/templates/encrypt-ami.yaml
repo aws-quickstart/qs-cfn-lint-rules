@@ -1,0 +1,943 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Encrypts an AMI from source
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterLabels:
+      AmiId:
+        default: AMI ID to encrypt
+      AmiRegion:
+        default: AMI Region
+      SubnetId:
+        default: Subnet Id
+
+Parameters:
+  AmiId:
+    Type: AWS::EC2::Image::Id
+    Description: AMI ID to encrypt
+  AmiRegion:
+    Type: String
+    Description: Region that contains the source AMI
+  SubnetId:
+    Type: AWS::EC2::Subnet::Id
+    Description: Subnet to launch EC2 instance if the base AMI is a Marketplace or Windows AMI.
+  QSTagKey:
+    Type: String
+    Description: Tag key to identify resources from this Quick Start
+  QSTagValue:
+    Type: String
+    Description: Tag value to identify resources from this Quick Start
+
+Resources:
+  # Set up State Machine
+  EncryptAmi:
+    Type: Custom::EncryptAmi
+    DependsOn:
+    - EncryptAmiStateMachine
+    Properties:
+      ServiceToken: !GetAtt EncryptAmiStateMachineLambda.Arn
+      Region: !Ref AmiRegion
+      AmiId: !Ref AmiId
+      WaitHandle: !Ref EncryptWaitHandle
+      QSTagKey: !Ref QSTagKey
+      QSTagValue: !Ref QSTagValue
+  EncryptAmiStateMachineLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Description: Invokes Lambda that kicks off encrypt AMI state machine
+      Handler: index.handler
+      Runtime: python3.6
+      Role: !GetAtt EncryptAmiStateMachineLambdaRole.Arn
+      Timeout: 300
+      Code:
+        ZipFile: !Sub | 
+          import boto3
+          import json
+          import logging
+          import threading
+          import cfnresponse
+          sfn = boto3.client('stepfunctions')
+          def timeout(event, context):
+            logging.error('Execution is about to time out, sending failure response to CloudFormation')
+            cfnresponse.send(event, context, cfnresponse.FAILED, {}, None)
+          def handler(event, context):
+            timer = threading.Timer((context.get_remaining_time_in_millis() / 1000.00) - 0.5, timeout, args=[event, context])
+            timer.start()
+            print('Received event: %s' % json.dumps(event))
+            status = cfnresponse.SUCCESS
+            responseData = {}
+            try:
+              if event['RequestType'] == 'Create':
+                response = sfn.start_execution(
+                  stateMachineArn='${EncryptAmiStateMachine}',
+                  input=json.dumps(event)
+                )
+                responseData = {'executionArn': response['executionArn']}
+              else:
+                print('Nothing to do')
+            except Exception as e:
+              logging.error('Exception: %s' % e, exc_info=True)
+              status = cfnresponse.FAILED
+            finally:
+              timer.cancel()
+              cfnresponse.send(event, context, status, responseData)
+  EncryptAmiStateMachineLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Path: "/"
+      Policies:
+      - PolicyName: root
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action: 
+            - states:StartExecution
+            Resource: "*"
+  EncryptAmiStateMachine:
+    Type: AWS::StepFunctions::StateMachine
+    DependsOn:
+    - EncryptAmiLambda
+    - DescribeImageLambda
+    - CallbackLambda
+    - TerminateInstanceLambda
+    - DescribeInstanceLambda
+    - LaunchInstanceLambda
+    - StopInstanceLambda
+    - CreateAmiFromInstanceLambda
+    Properties:
+      RoleArn: !GetAtt StatesExecutionRole.Arn
+      DefinitionString: !Sub |-
+        {
+          "Comment": "A state machine that encrypts an AMI.",
+          "StartAt": "Check Marketplace Or Windows",
+          "States": {
+            "Check Marketplace Or Windows": {
+              "Type": "Task",
+              "Resource": "${MarketplaceOrWindowsImageLambda.Arn}",
+              "InputPath": "$",
+              "ResultPath": "$.MarketplaceOrWindows",
+              "Next": "Is Marketplace or Window AMI?"
+            },
+            "Is Marketplace or Window AMI?": {
+              "Type": "Choice",
+              "Choices": [
+                {
+                  "Variable": "$.MarketplaceOrWindows",
+                  "BooleanEquals": true,
+                  "Next": "Launch Instance"
+                },
+                {
+                  "Variable": "$.MarketplaceOrWindows",
+                  "BooleanEquals": false,
+                  "Next": "Encrypt AMI"
+                }
+              ],
+              "Default": "Launch Instance"
+            },
+            "Launch Instance": {
+              "Type": "Task",
+              "Resource": "${LaunchInstanceLambda.Arn}",
+              "InputPath": "$",
+              "ResultPath": "$.BaseInstanceId",
+              "Next": "Wait 30 Seconds Instance Create"
+            },
+            "Wait 30 Seconds Instance Create": {
+              "Type": "Wait",
+              "Seconds": 30,
+              "Next": "Describe Instance Create"
+            },
+            "Describe Instance Create": {
+              "Type": "Task",
+              "Resource": "${DescribeInstanceLambda.Arn}",
+              "InputPath": "$",
+              "ResultPath": "$.BaseInstanceState",
+              "Next": "Create Instance Complete?"
+            },
+            "Create Instance Complete?": {
+              "Type": "Choice",
+              "Choices": [
+                {
+                  "Variable": "$.BaseInstanceState",
+                  "StringEquals": "pending",
+                  "Next": "Wait 30 Seconds Instance Create"
+                },
+                {
+                  "Variable": "$.BaseInstanceState",
+                  "StringEquals": "running",
+                  "Next": "Stop Instance"
+                }
+              ],
+              "Default": "Wait 30 Seconds Instance Create"
+            },
+            "Stop Instance": {
+              "Type": "Task",
+              "Resource": "${StopInstanceLambda.Arn}",
+              "InputPath": "$",
+              "ResultPath": "$.BaseInstanceState",
+              "Next": "Wait 30 Seconds Instance Stop"
+            },
+            "Wait 30 Seconds Instance Stop": {
+              "Type": "Wait",
+              "Seconds": 30,
+              "Next": "Describe Instance Stop"
+            },
+            "Describe Instance Stop": {
+              "Type": "Task",
+              "Resource": "${DescribeInstanceLambda.Arn}",
+              "InputPath": "$",
+              "ResultPath": "$.BaseInstanceState",
+              "Next": "Stop Instance Complete?"
+            },
+            "Stop Instance Complete?": {
+              "Type": "Choice",
+              "Choices": [
+                {
+                  "Variable": "$.BaseInstanceState",
+                  "StringEquals": "stopping",
+                  "Next": "Wait 30 Seconds Instance Stop"
+                },
+                {
+                  "Variable": "$.BaseInstanceState",
+                  "StringEquals": "stopped",
+                  "Next": "Create Intermediate AMI"
+                }
+              ],
+              "Default": "Wait 30 Seconds Instance Stop"
+            },
+            "Create Intermediate AMI": {
+              "Type": "Task",
+              "Resource": "${CreateAmiFromInstanceLambda.Arn}",
+              "InputPath": "$",
+              "ResultPath": "$.ResourceProperties.AmiId",
+              "Next": "Wait 30 Seconds Create Intermediate Image"
+            },
+            "Wait 30 Seconds Create Intermediate Image": {
+              "Type": "Wait",
+              "Seconds": 30,
+              "Next": "Get Intermediate Image Status"
+            },
+            "Get Intermediate Image Status": {
+              "Type": "Task",
+              "Resource": "${DescribeImageLambda.Arn}",
+              "Next": "Create Intermediate Image Complete?",
+              "InputPath": "$",
+              "ResultPath": "$.IntermediateImageState"
+            },
+            "Create Intermediate Image Complete?": {
+              "Type": "Choice",
+              "Choices": [
+                {
+                  "Variable": "$.IntermediateImageState",
+                  "StringEquals": "pending",
+                  "Next": "Wait 30 Seconds Create Intermediate Image"
+                },
+                {
+                  "Variable": "$.IntermediateImageState",
+                  "StringEquals": "available",
+                  "Next": "Terminate Instance"
+                }
+              ],
+              "Default": "Terminate Instance"
+            },
+            "Terminate Instance": {
+              "Type": "Task",
+              "Resource": "${TerminateInstanceLambda.Arn}",
+              "InputPath": "$",
+              "ResultPath": "$.BaseInstanceState",
+              "Next": "Encrypt AMI"
+            },
+            "Encrypt AMI": {
+              "Type": "Task",
+              "Resource": "${EncryptAmiLambda.Arn}",
+              "InputPath": "$",
+              "ResultPath": "$.ResourceProperties.AmiId",
+              "Next": "Wait 30 Seconds Encrypted Image"
+            },
+            "Wait 30 Seconds Encrypted Image": {
+              "Type": "Wait",
+              "Seconds": 30,
+              "Next": "Get Copy Status"
+            },
+            "Get Copy Status": {
+              "Type": "Task",
+              "Resource": "${DescribeImageLambda.Arn}",
+              "Next": "Copy Image Complete?",
+              "InputPath": "$",
+              "ResultPath": "$.EncryptedImageState"
+            },
+            "Copy Image Complete?": {
+              "Type": "Choice",
+              "Choices": [
+                {
+                  "Variable": "$.EncryptedImageState",
+                  "StringEquals": "pending",
+                  "Next": "Wait 30 Seconds Encrypted Image"
+                },
+                {
+                  "Variable": "$.EncryptedImageState",
+                  "StringEquals": "available",
+                  "Next": "Send Cfn Response"
+                }
+              ],
+              "Default": "Send Cfn Response"
+            },
+            "Send Cfn Response": {
+              "Type": "Task",
+              "Resource": "${CallbackLambda.Arn}",
+              "InputPath": "$",
+              "End": true,
+              "Retry": [
+                {
+                  "ErrorEquals": [
+                    "States.ALL"
+                  ],
+                  "IntervalSeconds": 1,
+                  "MaxAttempts": 3,
+                  "BackoffRate": 2
+                }
+              ]
+            }
+          }
+        }
+  StatesExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: 
+                - !Sub states.${AWS::Region}.amazonaws.com
+            Action:
+              - "sts:AssumeRole"
+  StatesExecutionPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: StatesExecutionPolicy
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action: "lambda:InvokeFunction"
+            Resource: "*"
+      Roles:
+        - !Ref StatesExecutionRole
+
+  # Set up Wait Condition for State Machine
+  EncryptWaitHandle:
+    Type: AWS::CloudFormation::WaitConditionHandle
+  EncryptWaitCondition:
+    Type: AWS::CloudFormation::WaitCondition
+    DependsOn: EncryptAmi
+    Properties:
+      Count: 1
+      Handle: !Ref EncryptWaitHandle
+      Timeout: 7200
+
+  # Lambda - Encrypts an image you own
+  EncryptAmiLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Timeout: 300
+      Code:
+        ZipFile: !Sub | 
+          import boto3
+          import json
+          import logging
+          import threading
+          from botocore.vendored import requests
+          import sys
+          ec2 = boto3.client('ec2')
+          def timeout(event, context):
+            logging.error('Execution is about to time out, sending failure response to CloudFormation')
+            requests_data=json.dumps(data=dict(Status='FAILURE',Reason='Lambda timeout',UniqueId='TableauServerStates',Data='failed due to timeout')).encode('utf-8')
+            response = requests.put(event['ResourceProperties']['WaitHandle'], data=requests_data, headers={'Content-Type':''})
+            sys.exit(1)
+          def handler(event, context):
+            timer = threading.Timer((context.get_remaining_time_in_millis() / 1000.00) - 2, timeout, args=[event, context])
+            timer.start()
+            print('Received event: %s' % json.dumps(event))
+            try:
+              response = ec2.copy_image(
+                Description='Encrypted base AMI for Tableau Server',
+                Encrypted=True,
+                Name='Tableau Server Encrypted AMI from %s' % event['ResourceProperties']['AmiId'],
+                SourceImageId=event['ResourceProperties']['AmiId'],
+                SourceRegion=event['ResourceProperties']['Region']
+              )
+              print (response)
+              encrypted_ami_id = response['ImageId']
+              return encrypted_ami_id
+            except Exception as e:
+              logging.error('Exception: %s' % e, exc_info=True)
+              requests_data=json.dumps(dict(Status='FAILURE',Reason='Exception: %s' % e,UniqueId='TableauServerStates',Data=event['ResourceProperties']['AmiId'])).encode('utf-8')
+              response = requests.put(event['ResourceProperties']['WaitHandle'], data=requests_data, headers={'Content-Type':''})
+              print (response)
+              timer.cancel()
+      Handler: index.handler
+      Role: !GetAtt EncryptAmiLambdaExecutionRole.Arn
+      Runtime: python3.6
+  EncryptAmiLambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Path: "/"
+      Policies:
+      - PolicyName: root
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action: ec2:CopyImage
+            Resource: "*"
+  
+  # Lambda - Describes Image. Used for getting point in the AMI creation process
+  DescribeImageLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        ZipFile: !Sub | 
+          import boto3
+          import json
+          import logging
+          import threading
+          from botocore.vendored import requests
+          ec2 = boto3.client('ec2')
+          def timeout(event, context):
+            logging.error('Execution is about to time out, sending failure response to CloudFormation')
+            requests_data=json.dumps(data=dict(Status='FAILURE',Reason='Lambda timeout',UniqueId='TableauServerStates',Data='failed due to timeout')).encode('utf-8')
+            response = requests.put(event['ResourceProperties']['WaitHandle'], data=requests_data, headers={'Content-Type':''})
+            sys.exit(1)
+          def handler(event, context):
+            timer = threading.Timer((context.get_remaining_time_in_millis() / 1000.00) - 2, timeout, args=[event, context])
+            try:
+              response = ec2.describe_images(
+                ImageIds=[event['ResourceProperties']['AmiId']]
+              )
+              image_state=response['Images'][0]['State']
+              return image_state
+            except Exception as e:
+              logging.error('Exception: %s' % e, exc_info=True)
+              requests_data=json.dumps(dict(Status='FAILURE',Reason='Exception: %s' % e,UniqueId='TableauServerStates',Data=event['ResourceProperties']['AmiId'])).encode('utf-8')
+              response = requests.put(event['ResourceProperties']['WaitHandle'], data=requests_data, headers={'Content-Type':''})
+              print (response)
+              timer.cancel()
+      Handler: index.handler
+      Role: !GetAtt DescribeImageLambdaExecutionRole.Arn
+      Runtime: python3.6
+      Timeout: 300
+  DescribeImageLambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Path: "/"
+      Policies:
+      - PolicyName: root
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action: ec2:DescribeImages
+            Resource: "*"
+
+  # Lambda - Sends Callback to the CloudFormation Wait Condition, signaling whether the AMI was created successfully
+  CallbackLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Description: Sends callback to CloudFormation to continue
+      Code:
+        ZipFile: |
+          import boto3
+          import json
+          import logging
+          import threading
+          from botocore.vendored import requests
+          import sys
+          ec2 = boto3.client('ec2')
+          def timeout(event, context):
+            logging.error('Execution is about to time out, sending failure response to CloudFormation')
+            requests_data=json.dumps(data=dict(Status='FAILURE',Reason='Lambda timeout',UniqueId='TableauServerStates',Data='failed due to timeout')).encode('utf-8')
+            response = requests.put(event['ResourceProperties']['WaitHandle'], data=requests_data, headers={'Content-Type':''})
+            sys.exit(1)
+          def handler(event, context):
+            timer = threading.Timer((context.get_remaining_time_in_millis() / 1000.00) - 2, timeout, args=[event, context])
+            timer.start()
+            print('Received event: %s' % json.dumps(event))
+            print(event['ResourceProperties']['WaitHandle'])
+            try:
+              if event['EncryptedImageState'] == 'available':
+                requests_data=json.dumps(dict(Status='SUCCESS',Reason='Encrypted AMI successful',UniqueId='TableauServerStates',Data=event['ResourceProperties']['AmiId'])).encode('utf-8')
+              else:
+                requests_data=json.dumps(dict(Status='FAILURE',Reason='Invalid AMI Status',UniqueId='TableauServerStates',Data=event['ResourceProperties']['AmiId'])).encode('utf-8')
+
+              response = requests.put(event['ResourceProperties']['WaitHandle'], data=requests_data, headers={'Content-Type':''})
+
+              print (response)
+              timer.cancel()
+            except Exception as e:
+              logging.error('Exception: %s' % e, exc_info=True)
+              requests_data=json.dumps(dict(Status='FAILURE',Reason='Exception: %s' % e,UniqueId='TableauServerStates',Data=event['ResourceProperties']['AmiId'])).encode('utf-8')
+              response = requests.put(event['ResourceProperties']['WaitHandle'], data=requests_data, headers={'Content-Type':''})
+              print (response)
+              timer.cancel()
+      Handler: index.handler
+      Runtime: python3.6
+      Role: !GetAtt CallbackRole.Arn
+      Timeout: 300
+  CallbackRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Path: "/"
+  
+  # Lambda - Launches an EC2 instance
+  LaunchInstanceLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Timeout: 300
+      Code:
+        ZipFile: !Sub | 
+          import boto3
+          import json
+          import logging
+          import threading
+          from botocore.vendored import requests
+          import sys
+          ec2 = boto3.client('ec2')
+          def timeout(event, context):
+            logging.error('Execution is about to time out, sending failure response to CloudFormation')
+            requests_data=json.dumps(data=dict(Status='FAILURE',Reason='Lambda timeout',UniqueId='TableauServerStates',Data='failed due to timeout')).encode('utf-8')
+            response = requests.put(event['ResourceProperties']['WaitHandle'], data=requests_data, headers={'Content-Type':''})
+            sys.exit(1)
+          def handler(event, context):
+            timer = threading.Timer((context.get_remaining_time_in_millis() / 1000.00) - 2, timeout, args=[event, context])
+            timer.start()
+            print('Received event: %s' % json.dumps(event))
+            try:
+              response = ec2.run_instances(
+                ImageId=event['ResourceProperties']['AmiId'],
+                InstanceType='t2.nano',
+                MaxCount=1,
+                MinCount=1,
+                SubnetId='${SubnetId}'
+              )
+              instance_id = response['Instances'][0]['InstanceId']
+              return instance_id
+            except Exception as e:
+              logging.error('Exception: %s' % e, exc_info=True)
+              requests_data=json.dumps(dict(Status='FAILURE',Reason='Exception: %s' % e,UniqueId='TableauServerStates',Data=event['ResourceProperties']['AmiId'])).encode('utf-8')
+              response = requests.put(event['ResourceProperties']['WaitHandle'], data=requests_data, headers={'Content-Type':''})
+              print (response)
+              timer.cancel()
+      Handler: index.handler
+      Role: !GetAtt LaunchInstanceLambdaExecutionRole.Arn
+      Runtime: python3.6
+  LaunchInstanceLambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Path: "/"
+      Policies:
+      - PolicyName: root
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action: ec2:RunInstances
+            Resource: "*"
+
+  # Lambda - Describes instance status. In this case, used for starting and stopping instances
+  DescribeInstanceLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Timeout: 300
+      Code:
+        ZipFile: !Sub | 
+          import boto3
+          import json
+          import logging
+          import threading
+          from botocore.vendored import requests
+          import sys
+          ec2 = boto3.client('ec2')
+          def timeout(event, context):
+            logging.error('Execution is about to time out, sending failure response to CloudFormation')
+            requests_data=json.dumps(data=dict(Status='FAILURE',Reason='Lambda timeout',UniqueId='TableauServerStates',Data='failed due to timeout')).encode('utf-8')
+            response = requests.put(event['ResourceProperties']['WaitHandle'], data=requests_data, headers={'Content-Type':''})
+            sys.exit(1)
+          def handler(event, context):
+            timer = threading.Timer((context.get_remaining_time_in_millis() / 1000.00) - 2, timeout, args=[event, context])
+            timer.start()
+            print('Received event: %s' % json.dumps(event))
+            try:
+              response = ec2.describe_instances(
+                InstanceIds=[event['BaseInstanceId']]
+              )
+              instance_state = response['Reservations'][0]['Instances'][0]['State']['Name']
+              return instance_state
+            except Exception as e:
+              logging.error('Exception: %s' % e, exc_info=True)
+              requests_data=json.dumps(dict(Status='FAILURE',Reason='Exception: %s' % e,UniqueId='TableauServerStates',Data=event['ResourceProperties']['AmiId'])).encode('utf-8')
+              response = requests.put(event['ResourceProperties']['WaitHandle'], data=requests_data, headers={'Content-Type':''})
+              print (response)
+              timer.cancel()
+      Handler: index.handler
+      Role: !GetAtt DescribeInstanceLambdaExecutionRole.Arn
+      Runtime: python3.6
+  DescribeInstanceLambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Path: "/"
+      Policies:
+      - PolicyName: root
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action: ec2:DescribeInstances
+            Resource: "*"
+
+  # Lambda - Stops an EC2 instance
+  StopInstanceLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Timeout: 300
+      Code:
+        ZipFile: !Sub | 
+          import boto3
+          import json
+          import logging
+          import threading
+          from botocore.vendored import requests
+          import sys
+          ec2 = boto3.client('ec2')
+          def timeout(event, context):
+            logging.error('Execution is about to time out, sending failure response to CloudFormation')
+            requests_data=json.dumps(data=dict(Status='FAILURE',Reason='Lambda timeout',UniqueId='TableauServerStates',Data='failed due to timeout')).encode('utf-8')
+            response = requests.put(event['ResourceProperties']['WaitHandle'], data=requests_data, headers={'Content-Type':''})
+            sys.exit(1)
+          def handler(event, context):
+            timer = threading.Timer((context.get_remaining_time_in_millis() / 1000.00) - 2, timeout, args=[event, context])
+            timer.start()
+            print('Received event: %s' % json.dumps(event))
+            try:
+              response = ec2.stop_instances(
+                InstanceIds=[event['BaseInstanceId']]
+              )
+              instance_state = response['StoppingInstances'][0]['CurrentState']['Name']
+              return instance_state
+            except Exception as e:
+              logging.error('Exception: %s' % e, exc_info=True)
+              requests_data=json.dumps(dict(Status='FAILURE',Reason='Exception: %s' % e,UniqueId='TableauServerStates',Data=event['ResourceProperties']['AmiId'])).encode('utf-8')
+              response = requests.put(event['ResourceProperties']['WaitHandle'], data=requests_data, headers={'Content-Type':''})
+              print (response)
+              timer.cancel()
+      Handler: index.handler
+      Role: !GetAtt StopInstanceLambdaExecutionRole.Arn
+      Runtime: python3.6
+  StopInstanceLambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Path: "/"
+      Policies:
+      - PolicyName: root
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action: ec2:StopInstances
+            Resource: "*"
+
+  # Lambda - Creates an AMI from an EC2 instance
+  CreateAmiFromInstanceLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Timeout: 300
+      Code:
+        ZipFile: !Sub | 
+          import boto3
+          import json
+          import logging
+          import threading
+          from botocore.vendored import requests
+          import sys
+          import uuid
+          ec2 = boto3.client('ec2')
+          def timeout(event, context):
+            logging.error('Execution is about to time out, sending failure response to CloudFormation')
+            requests_data=json.dumps(data=dict(Status='FAILURE',Reason='Lambda timeout',UniqueId='TableauServerStates',Data='failed due to timeout')).encode('utf-8')
+            response = requests.put(event['ResourceProperties']['WaitHandle'], data=requests_data, headers={'Content-Type':''})
+            sys.exit(1)
+          def handler(event, context):
+            timer = threading.Timer((context.get_remaining_time_in_millis() / 1000.00) - 2, timeout, args=[event, context])
+            timer.start()
+            print('Received event: %s' % json.dumps(event))
+            try:
+              response = ec2.create_image(
+                InstanceId=event['BaseInstanceId'],
+                Name='%s CopyAMI %s' % (uuid.uuid4(), event['ResourceProperties']['AmiId'])
+              )
+              image_id = response['ImageId']
+              return image_id
+            except Exception as e:
+              logging.error('Exception: %s' % e, exc_info=True)
+              requests_data=json.dumps(dict(Status='FAILURE',Reason='Exception: %s' % e,UniqueId='TableauServerStates',Data=event['ResourceProperties']['AmiId'])).encode('utf-8')
+              response = requests.put(event['ResourceProperties']['WaitHandle'], data=requests_data, headers={'Content-Type':''})
+              print (response)
+              timer.cancel()
+      Handler: index.handler
+      Role: !GetAtt CreateAmiFromInstanceLambdaExecutionRole.Arn
+      Runtime: python3.6
+  CreateAmiFromInstanceLambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Path: "/"
+      Policies:
+      - PolicyName: root
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action: ec2:CreateImage
+            Resource: "*"
+
+  # Lambda - Termiantes an EC2 Instance
+  TerminateInstanceLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Timeout: 300
+      Code:
+        ZipFile: !Sub | 
+          import boto3
+          import json
+          import logging
+          import threading
+          from botocore.vendored import requests
+          import sys
+          ec2 = boto3.client('ec2')
+          def timeout(event, context):
+            logging.error('Execution is about to time out, sending failure response to CloudFormation')
+            requests_data=json.dumps(data=dict(Status='FAILURE',Reason='Lambda timeout',UniqueId='TableauServerStates',Data='failed due to timeout')).encode('utf-8')
+            response = requests.put(event['ResourceProperties']['WaitHandle'], data=requests_data, headers={'Content-Type':''})
+            sys.exit(1)
+          def handler(event, context):
+            timer = threading.Timer((context.get_remaining_time_in_millis() / 1000.00) - 2, timeout, args=[event, context])
+            timer.start()
+            print('Received event: %s' % json.dumps(event))
+            try:
+              response = ec2.terminate_instances(
+                InstanceIds=[event['BaseInstanceId']]
+              )
+              instance_state = response['TerminatingInstances'][0]['CurrentState']['Name']
+              return instance_state
+            except Exception as e:
+              logging.error('Exception: %s' % e, exc_info=True)
+              requests_data=json.dumps(dict(Status='FAILURE',Reason='Exception: %s' % e,UniqueId='TableauServerStates',Data=event['ResourceProperties']['AmiId'])).encode('utf-8')
+              response = requests.put(event['ResourceProperties']['WaitHandle'], data=requests_data, headers={'Content-Type':''})
+              print (response)
+              timer.cancel()
+      Handler: index.handler
+      Role: !GetAtt TerminateInstanceLambdaExecutionRole.Arn
+      Runtime: python3.6
+  TerminateInstanceLambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Path: "/"
+      Policies:
+      - PolicyName: root
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action: ec2:TerminateInstances
+            Resource: "*"
+
+  # Lambda - Determines if AMI is from AWS Marketplace or a Windows AMI. If so, need to create an image owned by the account
+  MarketplaceOrWindowsImageLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Timeout: 300
+      Code:
+        ZipFile: !Sub | 
+          import boto3
+          import json
+          import logging
+          import threading
+          from botocore.vendored import requests
+          import sys
+          ec2 = boto3.client('ec2')
+          def timeout(event, context):
+            logging.error('Execution is about to time out, sending failure response to CloudFormation')
+            requests_data=json.dumps(data=dict(Status='FAILURE',Reason='Lambda timeout',UniqueId='TableauServerStates',Data='failed due to timeout')).encode('utf-8')
+            response = requests.put(event['ResourceProperties']['WaitHandle'], data=requests_data, headers={'Content-Type':''})
+            sys.exit(1)
+          def handler(event, context):
+            timer = threading.Timer((context.get_remaining_time_in_millis() / 1000.00) - 2, timeout, args=[event, context])
+            timer.start()
+            print('Received event: %s' % json.dumps(event))
+            try:
+              response = ec2.describe_images(
+                ImageIds=[event['ResourceProperties']['AmiId']]
+              )
+              image_info = response['Images'][0]
+              return ('Platform' in image_info or 'ProductCodes' in image_info)
+            except Exception as e:
+              logging.error('Exception: %s' % e, exc_info=True)
+              requests_data=json.dumps(dict(Status='FAILURE',Reason='Exception: %s' % e,UniqueId='TableauServerStates',Data=event['ResourceProperties']['AmiId'])).encode('utf-8')
+              response = requests.put(event['ResourceProperties']['WaitHandle'], data=requests_data, headers={'Content-Type':''})
+              print (response)
+              timer.cancel()
+      Handler: index.handler
+      Role: !GetAtt DescribeImageLambdaExecutionRole.Arn
+      Runtime: python3.6
+
+  ExtractAmiFromCfn:
+    Type: Custom::ExtractAmiFromCfn
+    DependsOn:
+    - EncryptWaitCondition
+    Properties:
+      ServiceToken: !GetAtt ExtractAmiFromCfnLambda.Arn
+      CfnResponseData: !GetAtt EncryptWaitCondition.Data
+  ExtractAmiFromCfnLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Description: Extracts AMI from Cfn response
+      Handler: index.handler
+      Runtime: python3.6
+      Role: !GetAtt ExtractAmiFromCfnLambdaRole.Arn
+      Timeout: 30
+      Code:
+        ZipFile: !Sub | 
+          import json
+          import logging
+          import threading
+          import cfnresponse
+          def timeout(event, context):
+            logging.error('Execution is about to time out, sending failure response to CloudFormation')
+            cfnresponse.send(event, context, cfnresponse.FAILED, {}, None)
+          def handler(event, context):
+            timer = threading.Timer((context.get_remaining_time_in_millis() / 1000.00) - 0.5, timeout, args=[event, context])
+            timer.start()
+            print('Received event: %s' % json.dumps(event))
+            try:
+              data = json.loads(event['ResourceProperties']['CfnResponseData'])
+              cfnresponse.send(event, context, cfnresponse.SUCCESS, dict(AmiId=list(data.values())[0]))
+            except Exception as e:
+              logging.error('Exception: %s' % e, exc_info=True)
+              cfnresponse.send(event, context, cfnresponse.FAILED, {}, None)
+
+  ExtractAmiFromCfnLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Path: "/"  
+
+Outputs:
+  EncryptedAmiId:
+    Value: !GetAtt ExtractAmiFromCfn.AmiId

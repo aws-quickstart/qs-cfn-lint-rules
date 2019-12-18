@@ -1,0 +1,219 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: AWS CloudFormation templates to create AWS Elasticsearch Service domain.
+  **WARNING** This template creates an Amazon Elasticsearch domain. You will be billed
+  for the AWS resources used if you create a stack from this template. (qs-1nlkhq1o8)
+Parameters:
+  CopyLambdaDeploymentRoleARN:
+    Description: CopyLambdaDeploymentRole ARN
+    Type: String
+  ElasticsearchAccessIP:
+    Description: IP address allowed to access Kibana and Elasticsearch
+    Type: String
+  LambdaRoleARN:
+    Description: LambdaRole ARN
+    Type: String
+  CuratedDatasetsARN:
+    Description: CuratedDatasets bucket ARN
+    Type: String
+  CuratedTopicARN:
+    Description: CuratedTopic ARN
+    Type: String
+  NAT1ElasticIP:
+    Description: NAT1 elastic IP
+    Type: String
+  NAT2ElasticIP:
+    Description: NAT2 elastic IP
+    Type: String
+  NodeCount:
+    Default: '1'
+    Description: The number of nodes in the Elasticsearch cluster. For guidance, see
+      the Amazon ES documentation.
+    Type: Number
+  NodeType:
+    AllowedValues:
+      - t2.small.elasticsearch
+      - m4.large.elasticsearch
+      - m4.xlarge.elasticsearch
+      - c4.large.elasticsearch
+      - c4.xlarge.elasticsearch
+      - r4.large.elasticsearch
+      - r4.xlarge.elasticsearch
+    ConstraintDescription: must be a valid Elasticsearch node type.
+    Default: t2.small.elasticsearch
+    Description: EC2 instance type for the Elasticsearch cluster.
+    Type: String
+  PublishedDataARN:
+    Description: PublishedData bucket ARN
+    Type: String
+  PublishedTopicARN:
+    Description: PublishedTopic ARN
+    Type: String
+  QSS3BucketName:
+    Description: Quick Start S3 bucket name
+    Type: String
+  QSS3KeyPrefix:
+    Description: Quick Start S3 key prefix
+    Type: String
+  RegionalLambdaBucketName:
+    Description: RegionalLambdaBucket bucket name
+    Type: String
+  SubmissionsBucketARN:
+    Description: SubmissionsBucket bucket ARN
+    Type: String
+  SubmissionsTopicARN:
+    Description: SubmissionsTopic ARN
+    Type: String
+Resources:
+  CopyLambdaDeployment:
+    Properties:
+      QSS3BucketName: !Ref 'QSS3BucketName'
+      QSS3KeyPrefix: !Ref 'QSS3KeyPrefix'
+      RegionalLambdaBucket: !Ref 'RegionalLambdaBucketName'
+      ServiceToken: !GetAtt 'CopyLambdaDeploymentFunction.Arn'
+    Type: Custom::CopyLambdaDeployment
+  CopyLambdaDeploymentFunction:
+    Properties:
+      Code:
+        ZipFile: !Join
+          - "\n"
+          - - import json
+            - import cfnresponse
+            - import boto3
+            - from botocore.exceptions import ClientError
+            - ''
+            - s3 = boto3.client('s3')
+            - ''
+            - ''
+            - 'def handler(event, context):'
+            - '    target_bucket = event[''ResourceProperties''][''RegionalLambdaBucket'']'
+            - '    target_key = ''lambdas.zip'''
+            - '    source_bucket = event[''ResourceProperties''][''QSS3BucketName'']'
+            - '    source_key = ''{0}assets/lambdas/lambdas.zip''.format(event[''ResourceProperties''][''QSS3KeyPrefix''])'
+            - ''
+            - '    if event[''RequestType''] == ''Delete'':'
+            - '        try:'
+            - '            s3.delete_object(Bucket=target_bucket, Key=target_key)'
+            - '            return cfnresponse.send(event, context, cfnresponse.SUCCESS,
+              {})'
+            - '        except ClientError as e:'
+            - '            print(e)'
+            - '            return cfnresponse.send(event, context, cfnresponse.FAILED,
+              {})'
+            - '    try:'
+            - '        copy_source = {''Bucket'': source_bucket, ''Key'': source_key}'
+            - '        s3.copy_object(Bucket=target_bucket, Key=target_key, CopySource=copy_source)'
+            - '        return cfnresponse.send(event, context, cfnresponse.SUCCESS,
+              {})'
+            - '    except ClientError as e:'
+            - '        print(e)'
+            - '        return cfnresponse.send(event, context, cfnresponse.FAILED,
+              {})'
+      Description: Copy deployment package to the regional bucket
+      Handler: index.handler
+      Role: !Ref 'CopyLambdaDeploymentRoleARN'
+      Runtime: python3.6
+      Timeout: 30
+    Type: AWS::Lambda::Function
+  ElasticsearchDomain:
+    Properties:
+      AccessPolicies:
+        Statement:
+          - Action:
+              - es:ESHttpGet
+              - es:ESHttpPut
+              - es:ESHttpPost
+              - es:ESHttpHead
+            Condition:
+              IpAddress:
+                aws:SourceIp:
+                  - !Ref 'ElasticsearchAccessIP'
+                  - !Ref 'NAT1ElasticIP'
+                  - !Ref 'NAT2ElasticIP'
+            Effect: Allow
+            Principal: '*'
+        Version: '2012-10-17'
+      AdvancedOptions:
+        rest.action.multi.allow_explicit_index: 'true'
+      DomainName: datalake-quickstart
+      EBSOptions:
+        EBSEnabled: true
+        Iops: 0
+        VolumeSize: 10
+        VolumeType: gp2
+      ElasticsearchClusterConfig:
+        DedicatedMasterEnabled: 'false'
+        InstanceCount: !Ref 'NodeCount'
+        InstanceType: !Ref 'NodeType'
+        ZoneAwarenessEnabled: 'false'
+      ElasticsearchVersion: '5.1'
+      SnapshotOptions:
+        AutomatedSnapshotStartHour: '0'
+    Type: AWS::Elasticsearch::Domain
+  CuratedDatasetLambdaPermissions:
+    Properties:
+      Action: lambda:invokeFunction
+      FunctionName: !Ref 'ObjectCreatedFunction'
+      Principal: sns.amazonaws.com
+      SourceArn: !Ref 'CuratedTopicARN'
+    Type: AWS::Lambda::Permission
+  CuratedSubscription:
+    DependsOn: []
+    Properties:
+      Endpoint: !GetAtt 'ObjectCreatedFunction.Arn'
+      Protocol: lambda
+      TopicArn: !Ref 'CuratedTopicARN'
+    Type: AWS::SNS::Subscription
+  ObjectCreatedFunction:
+    DependsOn:
+      - CopyLambdaDeployment
+    Properties:
+      Code:
+        S3Bucket: !Ref 'RegionalLambdaBucketName'
+        S3Key: lambdas.zip
+      Environment:
+        Variables:
+          ELASTICSEARCH_ENDPOINT: !GetAtt 'ElasticsearchDomain.DomainEndpoint'
+      Handler: lambdas.handle_bucket_event
+      Role: !Ref 'LambdaRoleARN'
+      Runtime: python3.6
+      Timeout: 30
+    Type: AWS::Lambda::Function
+  PublishedDatasetLambdaPermissions:
+    Properties:
+      Action: lambda:invokeFunction
+      FunctionName: !Ref 'ObjectCreatedFunction'
+      Principal: sns.amazonaws.com
+      SourceArn: !Ref 'PublishedTopicARN'
+    Type: AWS::Lambda::Permission
+  PublishedSubscription:
+    Properties:
+      Endpoint: !GetAtt 'ObjectCreatedFunction.Arn'
+      Protocol: lambda
+      TopicArn: !Ref 'PublishedTopicARN'
+    Type: AWS::SNS::Subscription
+  SubmissionsLambdaPermission:
+    Properties:
+      Action: lambda:invokeFunction
+      FunctionName: !Ref 'ObjectCreatedFunction'
+      Principal: sns.amazonaws.com
+      SourceArn: !Ref 'SubmissionsTopicARN'
+    Type: AWS::Lambda::Permission
+  SubmissionsSubscription:
+    Properties:
+      Endpoint: !GetAtt 'ObjectCreatedFunction.Arn'
+      Protocol: lambda
+      TopicArn: !Ref 'SubmissionsTopicARN'
+    Type: AWS::SNS::Subscription
+Outputs:
+  KibanaURL:
+    Description: Kibana URL
+    Value: !Join
+      - ''
+      - - !GetAtt 'ElasticsearchDomain.DomainEndpoint'
+        - /_plugin/kibana/
+  ElasticsearchEndpoint:
+    Description: Elasticsearch domain endpoint
+    Value: !GetAtt 'ElasticsearchDomain.DomainEndpoint'
+  ElasticsearchDomainARN:
+    Description: Elasticsearch domain ARN
+    Value: !GetAtt 'ElasticsearchDomain.DomainArn'

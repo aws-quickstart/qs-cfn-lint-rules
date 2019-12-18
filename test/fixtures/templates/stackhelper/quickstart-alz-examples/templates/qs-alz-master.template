@@ -1,0 +1,311 @@
+---
+AWSTemplateFormatVersion: 2010-09-09
+Description: Deploys state machine and all other resources to create Add On for ALZ
+Resources:
+  # Deploys state machine
+  StateMachine:
+    DependsOn:
+      - CreateInputFileLambdaFunction
+      - CreateZipFileLambdaFunction
+      - CreateSCTemplateLambdaFunction
+      - StateMachineRole
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      DefinitionString: !Sub |
+        {
+          "Comment": "A state machine to create AWS Landing Zone AddOn from AWS Quick Start",
+          "StartAt": "CreateInputFiles",
+          "States": {
+            "CreateInputFiles": {
+              "Type": "Task",
+              "Resource": "${CreateInputFileLambdaFunction.Arn}",
+              "ResultPath": "$.CreateInputFilesTaskResult",
+              "Next": "CreateAddOnZipFile"
+            },
+            
+            "CreateAddOnZipFile": {
+              "Type": "Task",
+              "Resource": "${CreateZipFileLambdaFunction.Arn}",
+              "ResultPath": "$.CreateAddOnZipFileTaskResult",
+              "Next": "CreateSCTemplate"
+            },
+            
+            "CreateSCTemplate": {
+              "Type": "Task",
+              "Resource": "${CreateSCTemplateLambdaFunction.Arn}",
+              "End": true
+            }
+          }
+        }
+      RoleArn: !GetAtt 'StateMachineRole.Arn'
+  
+  # Lambda function to create Input files for AddOn
+  CreateInputFileLambdaFunction:
+    DependsOn: CopyZips
+    Type: AWS::Lambda::Function
+    Properties:
+      Description: Lambda function to create Input files for AddOn
+      Code:
+        S3Bucket: !Ref TempS3Bucket
+        S3Key: quickstart-alz-examples/lambda/package/function.zip
+      Handler: create_input_files.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Runtime: python3.7
+      Timeout: 10
+  
+  # Lambda function to create zip file for AddOn
+  CreateZipFileLambdaFunction:
+    DependsOn: CopyZips
+    Type: AWS::Lambda::Function
+    Properties:
+      Description: Lambda function to create zip file for AddOn
+      Code:
+        S3Bucket: !Ref TempS3Bucket
+        S3Key: !Sub quickstart-alz-examples/lambda/package/function.zip
+      Handler: create_add_on_zip.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Runtime: python3.7
+      Timeout: 10
+  
+  # Lambda function to create SC template for AddOn
+  CreateSCTemplateLambdaFunction:
+    DependsOn: CopyZips
+    Type: AWS::Lambda::Function
+    Properties:
+      Description: Lambda function to create SC template for AddOn
+      Code:
+        S3Bucket: !Ref TempS3Bucket
+        S3Key: !Sub quickstart-alz-examples/lambda/package/function.zip
+      Handler: create_sc_template.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Runtime: python3.7
+      Timeout: 10
+  
+  # S3 bucket to host addon zip file and SC template
+  TempS3Bucket:
+    Type: AWS::S3::Bucket
+  
+  # IAM Role for Lambda functions
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service: lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Path: /
+      Policies:
+      - PolicyDocument:
+          Statement:
+          - Effect: Allow
+            Action:
+            - logs:CreateLogGroup
+            - logs:CreateLogStream
+            - logs:PutLogEvents
+            - logs:DescribeLogStreams
+            Resource: !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:${MainLogGroup}:*
+          - Effect: Allow
+            Action: '*'
+            Resource: '*'
+        PolicyName: LambdaFunction-Limited-Role
+  
+  # Create IAM Role for StateMachine
+  StateMachineRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - !Sub 'states.${AWS::Region}.amazonaws.com'
+          Action:
+          - sts:AssumeRole
+      Path: /
+      Policies:
+      - PolicyDocument:
+          Statement:
+          - Effect: Allow
+            Action:
+            - logs:CreateLogGroup
+            - logs:CreateLogStream
+            - logs:PutLogEvents
+            - logs:DescribeLogStreams
+            Resource: !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:${MainLogGroup}:*
+          - Effect: Allow
+            Action: '*'
+            Resource: '*'
+        PolicyName: StepFunction-Limited-Role
+
+  # Cloud watch log group
+  MainLogGroup:
+    Type: AWS::Logs::LogGroup
+  
+  # Copy zip files from source bucket
+  CopyZips:
+    Type: Custom::CopyZips
+    Properties:
+      ServiceToken: !GetAtt 'CopyZipsFunction.Arn'
+      DestBucket: !Ref 'TempS3Bucket'
+      SourceBucket: aws-quickstart
+      Prefix: "quickstart-alz-examples/"
+      Objects:
+        - lambda/package/function.zip
+      AddonBucket: !Ref 'AddOnS3Bucket'
+      AddonArtifacts:
+        - !Sub alz-qs-${ProductName}.zip
+        - !Sub sc-${ProductName}.template
+  
+  # Copy zip files from source bucket
+  CopyZipsFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Description: Copies objects from a source S3 bucket to a destination
+      Handler: index.handler
+      Runtime: python2.7
+      Role: !GetAtt 'CopyZipsRole.Arn'
+      Timeout: 240
+      Code:
+        ZipFile: |
+          import json
+          import logging
+          import threading
+          import boto3
+          import cfnresponse
+          def copy_objects(source_bucket, dest_bucket, prefix, objects):
+              s3 = boto3.client('s3')
+              for o in objects:
+                  key = prefix + o
+                  copy_source = {
+                      'Bucket': source_bucket,
+                      'Key': key
+                  }
+                  print('copy_source: %s' % copy_source)
+                  print('dest_bucket = %s'%dest_bucket)
+                  print('key = %s' %key)
+                  s3.copy_object(CopySource=copy_source, Bucket=dest_bucket,
+                        Key=key)
+          def delete_objects(bucket, prefix, objects):
+              s3 = boto3.client('s3')
+              objects = {'Objects': [{'Key': prefix + o} for o in objects]}
+              s3.delete_objects(Bucket=bucket, Delete=objects)
+          def timeout(event, context):
+              logging.error('Execution is about to time out, sending failure response to CloudFormation')
+              cfnresponse.send(event, context, cfnresponse.FAILED, {}, None)
+          def handler(event, context):
+              # make sure we send a failure to CloudFormation if the function
+              # is going to timeout
+              timer = threading.Timer((context.get_remaining_time_in_millis()
+                        / 1000.00) - 0.5, timeout, args=[event, context])
+              timer.start()
+              print('Received event: %s' % json.dumps(event))
+              status = cfnresponse.SUCCESS
+              try:
+                  source_bucket = event['ResourceProperties']['SourceBucket']
+                  dest_bucket = event['ResourceProperties']['DestBucket']
+                  prefix = event['ResourceProperties']['Prefix']
+                  objects = event['ResourceProperties']['Objects']
+                  addon_bucket = event['ResourceProperties']['AddonBucket']
+                  addon_artifacts = event['ResourceProperties']['AddonArtifacts']
+                  if event['RequestType'] == 'Delete':
+                      delete_objects(dest_bucket, prefix, objects)
+                      delete_objects(addon_bucket, "", addon_artifacts)
+                  else:
+                      copy_objects(source_bucket, dest_bucket, prefix, objects)
+              except Exception as e:
+                  logging.error('Exception: %s' % e, exc_info=True)
+                  status = cfnresponse.FAILED
+              finally:
+                  timer.cancel()
+                  cfnresponse.send(event, context, status, {}, None)
+
+  # Copy Zips function IAM role
+  CopyZipsRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Path: /
+      Policies:
+        - PolicyName: lambda-copier
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                Resource:
+                  - !Sub 'arn:aws:s3:::aws-quickstart/quickstart-alz-examples/*'
+                  - !Sub 'arn:aws:s3:::${AddOnS3Bucket}*'
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:DeleteObject
+                Resource:
+                  - !Sub 'arn:aws:s3:::${TempS3Bucket}/quickstart-alz-examples/*'
+                  - !Sub 'arn:aws:s3:::${AddOnS3Bucket}*'
+  
+  InvokeStateMachineStack:
+    Type: 'AWS::CloudFormation::Stack'
+    Properties:
+      TemplateURL: !Sub 'https://aws-quickstart.s3.amazonaws.com/quickstart-alz-examples/templates/invoke-sm.template'
+      Parameters:
+        ProductName: !Ref ProductName
+        StateMachineArn: !Ref StateMachine
+        AddOnS3Bucket: !Ref AddOnS3Bucket
+        ProductS3Url: !Ref ProductS3Url
+        TempS3Bucket: !Ref TempS3Bucket
+        SourceS3KeyPrefix: "quickstart-alz-examples/"
+
+Mappings:
+  ParameterMap:
+    Values:
+      SourceS3KeyPrefix: "quickstart-alz-examples/"
+      
+Outputs:
+  oStateMachine:
+    Description: State Machine
+    Value: !Ref StateMachine
+  
+  oCreateInputFileLambda:
+    Description: Lambda function to create AddOn input files
+    Value: !Ref CreateInputFileLambdaFunction
+  
+  oCreateZipFileLambda:
+    Description: Lambda function to create AddOn zip file
+    Value: !Ref CreateZipFileLambdaFunction
+  
+  oCreateSCTemplateLambda:
+    Description: Lambda function to create AddOn SC template file
+    Value: !Ref CreateSCTemplateLambdaFunction
+
+Parameters:
+  ProductName:
+    Type: String
+    Description: Product name for which you are creating the AddOn.
+    AllowedPattern: ^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$
+    ConstraintDescription: Product name can include numbers, lowercase
+      letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen
+      (-).
+
+  ProductS3Url:
+    Type: String
+    Description: S3 URL of the Product CloudFormation template
+    
+  AddOnS3Bucket:
+    Type: String
+    Description: Name of the S3 bucket where addon zip file and SC template is created.
+    AllowedPattern: ^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$
+    ConstraintDescription: Quick Start bucket name can include numbers, lowercase
+      letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen
+      (-).

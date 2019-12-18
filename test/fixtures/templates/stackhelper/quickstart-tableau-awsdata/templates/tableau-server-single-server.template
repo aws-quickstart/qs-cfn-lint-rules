@@ -1,0 +1,1003 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "AWS QuickStart Template for Tableau Server instance running on Windows. Installs and configures Tableu Server, substitutes provisioned resources into datasources, and publishes Datasources and Workbook associated with the Sample Dataset to Tableau Server. (qs-1ndudd5ar)",
+    "Parameters": {
+        "ContentAdminPassword": {
+            "Description": "The password for the initial Admin user for Tableau server",
+            "MinLength": "1",
+            "NoEcho": "true",
+            "Type": "String"
+        },
+        "ContentAdminUser": {
+            "Default": "admin",
+            "Description": "The name of the initial Admin user for Tableau server",
+            "MinLength": "1",
+            "Type": "String"
+        },
+        "DatasetS3BucketName": {
+            "AllowedPattern": "^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$",
+            "ConstraintDescription": "Dataset bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-).",
+            "Default": "aws-quickstart-datasets",
+            "Description": "Dataset bucket name for the Quick Start dataset. Dataset bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-).",
+            "Type": "String"
+        },
+        "DatasetS3KeyPrefix": {
+            "AllowedPattern": "^[0-9a-zA-Z-/]*$",
+            "ConstraintDescription": "Dataset key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).",
+            "Default": "tableau-awsdata/synthetic-store-sales/v1/",
+            "Description": "S3 key prefix for the Quick Start dataset. Dataset key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).",
+            "Type": "String"
+        },
+        "IAMRoleEc2Worker": {
+            "Description": "IAM role to allows EC2 access to S3",
+            "Type": "String"
+        },
+        "IamInstanceProfile": {
+            "Description": "IAM Instance profile to allow EC2 access to S3",
+            "Type": "String"
+        },
+        "KeyPairName": {
+            "ConstraintDescription": "must be the name of an existing EC2 KeyPair.",
+            "Description": "Name of an existing EC2 KeyPair used to get the Administrator password for the instance",
+            "Type": "AWS::EC2::KeyPair::KeyName"
+        },
+        "LatestWSAmiId": {
+            "Type": "AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>",
+            "Default": "/aws/service/ami-windows-latest/Windows_Server-2012-R2_RTM-English-64Bit-Base",
+            "Description": "Do not change. Fetch latest Windows Server image id.",
+            "AllowedValues": [
+                "/aws/service/ami-windows-latest/Windows_Server-2012-R2_RTM-English-64Bit-Base"
+            ]
+        },        
+        "LoadDataset": {
+            "AllowedValues": [
+                "true",
+                "false"
+            ],
+            "Default": "true",
+            "Description": "To load and configure the dataset in Amazon Redshift, Amazon RDS PostgresSQL, and Tableau Server using the dataset S3 bucket name and key prefix, set this parameter to true.",
+            "Type": "String"
+        },
+        "QSS3BucketName": {
+            "AllowedPattern": "^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$",
+            "ConstraintDescription": "Quick Start bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-).",
+            "Default": "aws-quickstart",
+            "Description": "S3 bucket name for the Quick Start assets. Quick Start bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-).",
+            "Type": "String"
+        },
+        "QSS3KeyPrefix": {
+            "AllowedPattern": "^[0-9a-zA-Z-/]*$",
+            "ConstraintDescription": "Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).",
+            "Default": "quickstart-tableau-awsdata/",
+            "Description": "S3 key prefix for the Quick Start assets. Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).",
+            "Type": "String"
+        },
+        "RDSDatabaseName": {
+            "Description": "RDS Database Name",
+            "Type": "String"
+        },
+        "RDSDatabasePort": {
+            "Description": "RDS Database Port",
+            "Type": "String"
+        },
+        "RDSHost": {
+            "Description": "RDS Host CNAME",
+            "Type": "String"
+        },
+        "RDSPassword": {
+            "Description": "RDS Password",
+            "NoEcho": "true",
+            "Type": "String"
+        },
+        "RDSUsername": {
+            "Description": "RDS Username",
+            "Type": "String"
+        },
+        "RedshiftDatabaseName": {
+            "Description": "Redshift Database Name",
+            "Type": "String"
+        },
+        "RedshiftDatabasePort": {
+            "Description": "Redshift Database Port",
+            "Type": "String"
+        },
+        "RedshiftHost": {
+            "Description": "Redshift Host CNAME",
+            "Type": "String"
+        },
+        "RedshiftPassword": {
+            "Description": "Redshift Password",
+            "NoEcho": "true",
+            "Type": "String"
+        },
+        "RedshiftUsername": {
+            "Description": "Redshift Username",
+            "Type": "String"
+        },
+        "RegCity": {
+            "Description": "City",
+            "Type": "String"
+        },
+        "RegCompany": {
+            "Description": "Company",
+            "Type": "String"
+        },
+        "RegCountry": {
+            "Description": "Country",
+            "Type": "String"
+        },
+        "RegDepartment": {
+            "Description": "Department",
+            "Type": "String"
+        },
+        "RegEmail": {
+            "Description": "Email",
+            "MinLength": "1",
+            "Type": "String"
+        },
+        "RegFirstName": {
+            "Description": "First Name",
+            "MinLength": "1",
+            "Type": "String"
+        },
+        "RegIndustry": {
+            "Description": "Industry",
+            "Type": "String"
+        },
+        "RegLastName": {
+            "Description": "Last Name",
+            "MinLength": "1",
+            "Type": "String"
+        },
+        "RegPhone": {
+            "Description": "Phone",
+            "Type": "String"
+        },
+        "RegState": {
+            "Description": "State",
+            "Type": "String"
+        },
+        "RegTitle": {
+            "Description": "Title",
+            "Type": "String"
+        },
+        "RegZip": {
+            "Description": "ZIP/Postal Code",
+            "Type": "String"
+        },
+        "SourceCidr": {
+            "AllowedPattern": "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})",
+            "ConstraintDescription": "Must be a valid IP CIDR range of the form x.x.x.x/x.",
+            "Description": "CIDR from which you may connect to web interface or bastion host (e.g., 1.1.1.1/32)",
+            "MaxLength": "18",
+            "MinLength": "9",
+            "Type": "String"
+        },
+        "SubnetID": {
+            "Description": "Subnet Id",
+            "Type": "String"
+        },
+        "TableauServerLicenseKey": {
+            "Default": "",
+            "Description": "License Key (leave blank for trial)",
+            "Type": "String"
+        },
+        "VpcId": {
+            "Description": "ID of the Cage's Virtual Private Cloud",
+            "Type": "String"
+        }
+    },
+    "Mappings": {
+        "DefaultConfiguration": {
+            "TableauServerConfig": {
+                "GatewayPort": "80",
+                "BackgrounderProcs": "2",
+                "CacheServerProcs": "2",
+                "DataEngineProcs": "1",
+                "DataServerProcs": "2",
+                "VizPortalProcs": "1",
+                "VizqlServerProcs": "1"
+            },
+            "InstallationConfig": {
+                "InstallationBucket": "tableau-quickstart",
+                "InstallationExecutable": "Setup-Server-x64.exe"
+            },
+            "MachineConfiguration": {
+                "InstanceType": "m4.4xlarge",
+                "VolumeSize": 100
+            }
+        }
+    },
+    "Conditions": {
+        "IsTrial": {
+            "Fn::Equals": [
+                "",
+                {
+                    "Ref": "TableauServerLicenseKey"
+                }
+            ]
+        },
+        "LoadDatasetCondition": {
+            "Fn::Equals": [
+                {
+                    "Ref": "LoadDataset"
+                },
+                "true"
+            ]
+        },
+        "GovCloudCondition": {
+            "Fn::Equals": [
+                {
+                    "Ref": "AWS::Region"
+                },
+                "us-gov-west-1"
+            ]
+        }
+    },
+    "Resources": {
+        "InstanceSecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "GroupDescription": "Enable RDP",
+                "SecurityGroupIngress": [
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "3389",
+                        "ToPort": "3389",
+                        "CidrIp": {
+                            "Ref": "SourceCidr"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": {
+                            "Fn::FindInMap": [
+                                "DefaultConfiguration",
+                                "TableauServerConfig",
+                                "GatewayPort"
+                            ]
+                        },
+                        "ToPort": {
+                            "Fn::FindInMap": [
+                                "DefaultConfiguration",
+                                "TableauServerConfig",
+                                "GatewayPort"
+                            ]
+                        },
+                        "CidrIp": {
+                            "Ref": "SourceCidr"
+                        }
+                    }
+                ],
+                "VpcId": {
+                    "Ref": "VpcId"
+                }
+            }
+        },
+        "TableauServerWaitHandle": {
+            "Type": "AWS::CloudFormation::WaitConditionHandle"
+        },
+        "TableauServerWaitCondition": {
+            "Type": "AWS::CloudFormation::WaitCondition",
+            "Properties": {
+                "Handle": {
+                    "Ref": "TableauServerWaitHandle"
+                },
+                "Timeout": "3600"
+            }
+        },
+        "TableauWindowsServer": {
+            "Type": "AWS::EC2::Instance",
+            "DependsOn": "InstanceSecurityGroup",
+            "Metadata": {
+                "AWS::CloudFormation::Authentication": {
+                    "S3Access": {
+                        "type": "S3",
+                        "roleName": {
+                            "Ref": "IAMRoleEc2Worker"
+                        }
+                    }
+                },
+                "AWS::CloudFormation::Init": {
+                    "configSets": {
+                        "config": {
+                            "Fn::If": [
+                                "LoadDatasetCondition",
+                                [
+                                    "install_configure",
+                                    "load_dataset",
+                                    "finalize"
+                                ],
+                                [
+                                    "install_configure",
+                                    "finalize"
+                                ]
+                            ]
+                        }
+                    },
+                    "install_configure": {
+                        "files": {
+                            "c:\\tabsetup\\json2yml.py": {
+                                "content": {
+                                    "Fn::Join": [
+                                        "\n",
+                                        [
+                                            "import sys",
+                                            "import yaml",
+                                            "import json",
+                                            "config_data = json.load(sys.stdin)",
+                                            "for k,v in config_data.items():",
+                                            "    if v.startswith('INTEGER:'):",
+                                            "        newvalue = v[len('INTEGER:'):]",
+                                            "        config_data[k] = int(newvalue)",
+                                            "    elif v.startswith('FLOAT:'):",
+                                            "        newvalue = v[len('FLOAT:'):]",
+                                            "        config_data[k] = float(newvalue)",
+                                            "yaml.safe_dump(config_data, sys.stdout, default_flow_style=False)",
+                                            ""
+                                        ]
+                                    ]
+                                }
+                            },
+                            "c:\\tabsetup\\secrets.json": {
+                                "content": {
+                                    "content_admin_user": {
+                                        "Ref": "ContentAdminUser"
+                                    },
+                                    "content_admin_pass": {
+                                        "Ref": "ContentAdminPassword"
+                                    }
+                                }
+                            },
+                            "c:\\tabsetup\\registration.json": {
+                                "content": {
+                                    "first_name": {
+                                        "Ref": "RegFirstName"
+                                    },
+                                    "last_name": {
+                                        "Ref": "RegLastName"
+                                    },
+                                    "email": {
+                                        "Ref": "RegEmail"
+                                    },
+                                    "company": {
+                                        "Fn::Join": [
+                                            ";",
+                                            [
+                                                {
+                                                    "Ref": "RegCompany"
+                                                },
+                                                "AWSDataQuickStart"
+                                            ]
+                                        ]
+                                    },
+                                    "title": {
+                                        "Ref": "RegTitle"
+                                    },
+                                    "department": {
+                                        "Ref": "RegDepartment"
+                                    },
+                                    "industry": {
+                                        "Ref": "RegIndustry"
+                                    },
+                                    "phone": {
+                                        "Ref": "RegPhone"
+                                    },
+                                    "city": {
+                                        "Ref": "RegCity"
+                                    },
+                                    "state": {
+                                        "Ref": "RegState"
+                                    },
+                                    "zip": {
+                                        "Ref": "RegZip"
+                                    },
+                                    "country": {
+                                        "Ref": "RegCountry"
+                                    }
+                                }
+                            },
+                            "c:\\tabsetup\\config.json": {
+                                "content": {
+                                    "config.version": "16",
+                                    "worker0.gateway.port": {
+                                        "Fn::Join": [
+                                            "",
+                                            [
+                                                "INTEGER:",
+                                                {
+                                                    "Fn::FindInMap": [
+                                                        "DefaultConfiguration",
+                                                        "TableauServerConfig",
+                                                        "GatewayPort"
+                                                    ]
+                                                }
+                                            ]
+                                        ]
+                                    },
+                                    "worker0.backgrounder.procs": {
+                                        "Fn::Join": [
+                                            "",
+                                            [
+                                                "INTEGER:",
+                                                {
+                                                    "Fn::FindInMap": [
+                                                        "DefaultConfiguration",
+                                                        "TableauServerConfig",
+                                                        "BackgrounderProcs"
+                                                    ]
+                                                }
+                                            ]
+                                        ]
+                                    },
+                                    "worker0.cacheserver.procs": {
+                                        "Fn::Join": [
+                                            "",
+                                            [
+                                                "INTEGER:",
+                                                {
+                                                    "Fn::FindInMap": [
+                                                        "DefaultConfiguration",
+                                                        "TableauServerConfig",
+                                                        "CacheServerProcs"
+                                                    ]
+                                                }
+                                            ]
+                                        ]
+                                    },
+                                    "worker0.dataengine.procs": {
+                                        "Fn::Join": [
+                                            "",
+                                            [
+                                                "INTEGER:",
+                                                {
+                                                    "Fn::FindInMap": [
+                                                        "DefaultConfiguration",
+                                                        "TableauServerConfig",
+                                                        "DataEngineProcs"
+                                                    ]
+                                                }
+                                            ]
+                                        ]
+                                    },
+                                    "worker0.dataserver.procs": {
+                                        "Fn::Join": [
+                                            "",
+                                            [
+                                                "INTEGER:",
+                                                {
+                                                    "Fn::FindInMap": [
+                                                        "DefaultConfiguration",
+                                                        "TableauServerConfig",
+                                                        "DataServerProcs"
+                                                    ]
+                                                }
+                                            ]
+                                        ]
+                                    },
+                                    "worker0.vizportal.procs": {
+                                        "Fn::Join": [
+                                            "",
+                                            [
+                                                "INTEGER:",
+                                                {
+                                                    "Fn::FindInMap": [
+                                                        "DefaultConfiguration",
+                                                        "TableauServerConfig",
+                                                        "VizPortalProcs"
+                                                    ]
+                                                }
+                                            ]
+                                        ]
+                                    },
+                                    "worker0.vizqlserver.procs": {
+                                        "Fn::Join": [
+                                            "",
+                                            [
+                                                "INTEGER:",
+                                                {
+                                                    "Fn::FindInMap": [
+                                                        "DefaultConfiguration",
+                                                        "TableauServerConfig",
+                                                        "VizqlServerProcs"
+                                                    ]
+                                                }
+                                            ]
+                                        ]
+                                    }
+                                }
+                            },
+                            "c:\\tabsetup\\ScriptedInstaller.py": {
+                                "source": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "https://",
+                                            {
+                                                "Fn::FindInMap": [
+                                                    "DefaultConfiguration",
+                                                    "InstallationConfig",
+                                                    "InstallationBucket"
+                                                ]
+                                            },
+                                            ".s3.amazonaws.com/ScriptedInstaller.py"
+                                        ]
+                                    ]
+                                }
+                            },
+                            "c:\\tabsetup\\python-2.7.12.msi": {
+                                "source": "https://www.python.org/ftp/python/2.7.12/python-2.7.12.msi"
+                            },
+                            "c:\\tabsetup\\tableau-server-installer.exe": {
+                                "source": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "https://",
+                                            {
+                                                "Fn::FindInMap": [
+                                                    "DefaultConfiguration",
+                                                    "InstallationConfig",
+                                                    "InstallationBucket"
+                                                ]
+                                            },
+                                            ".s3.amazonaws.com/",
+                                            {
+                                                "Fn::FindInMap": [
+                                                    "DefaultConfiguration",
+                                                    "InstallationConfig",
+                                                    "InstallationExecutable"
+                                                ]
+                                            }
+                                        ]
+                                    ]
+                                }
+                            }
+                        },
+                        "commands": {
+                            "01-install-python": {
+                                "command": "c:\\tabsetup\\python-2.7.12.msi /quiet /qn",
+                                "cwd": "c:\\tabsetup",
+                                "waitAfterCompletion": "0"
+                            },
+                            "02a-pip-install-document-api": {
+                                "command": "c:\\Python27\\Scripts\\pip.exe install tableaudocumentapi",
+                                "cwd": "c:\\Python27\\Scripts",
+                                "waitAfterCompletion": "0"
+                            },
+                            "02b-pip-install-yaml": {
+                                "command": "c:\\Python27\\Scripts\\pip.exe install pyyaml",
+                                "cwd": "c:\\Python27\\Scripts",
+                                "waitAfterCompletion": "0"
+                            },
+                            "03-convert-config": {
+                                "cwd": "c:\\tabsetup",
+                                "command": "type config.json | c:\\Python27\\python json2yml.py > config.yml",
+                                "waitAfterCompletion": "0"
+                            },
+                            "04-run-installer": {
+                                "cwd": "c:\\tabsetup",
+                                "command": {
+                                    "Fn::Join": [
+                                        " ",
+                                        [
+                                            "c:\\Python27\\python.exe",
+                                            "ScriptedInstaller.py",
+                                            "install",
+                                            "--installerLog",
+                                            "C:\\tabsetup\\tabinstall.txt",
+                                            "--installDir C:\\TableauServer",
+                                            "--enablePublicFwRule",
+                                            "--secretsFile c:\\tabsetup\\secrets.json",
+                                            "--configFile c:\\tabsetup\\config.yml",
+                                            "--registrationFile c:\\tabsetup\\registration.json",
+                                            {
+                                                "Fn::If": [
+                                                    "IsTrial",
+                                                    "--trialLicense",
+                                                    {
+                                                        "Fn::Sub": "--licenseKey ${TableauServerLicenseKey}"
+                                                    }
+                                                ]
+                                            },
+                                            "c:\\tabsetup\\tableau-server-installer.exe",
+                                            " > c:\\tabsetup\\installer-output.txt 2>&1"
+                                        ]
+                                    ]
+                                },
+                                "waitAfterCompletion": "0"
+                            },
+                            "05-cleanup-secrets": {
+                                "cwd": "c:\\tabsetup",
+                                "command": "del c:\\tabsetup\\secrets.json",
+                                "waitAfterCompletion": "0"
+                            }
+                        }
+                    },
+                    "load_dataset": {
+                        "files": {
+                            "c:\\tabsetup\\update-datasource.py": {
+                                "source": {
+                                    "Fn::Sub": [
+                                        "https://${QSS3BucketName}.${QSS3Region}.amazonaws.com/${QSS3KeyPrefix}scripts/update-datasource.py",
+                                        {
+                                            "QSS3Region": {
+                                                "Fn::If": [
+                                                    "GovCloudCondition",
+                                                    "s3-us-gov-west-1",
+                                                    "s3"
+                                                ]
+                                            }
+                                        }
+                                    ]
+                                },
+                                "authentication": "S3Access"
+                            },
+                            "c:\\tabsetup\\redshift.tds": {
+                                "source": {
+                                    "Fn::Sub": [
+                                        "https://${DatasetS3BucketName}.${QSS3Region}.amazonaws.com/${DatasetS3KeyPrefix}dashboard/redshift.tds",
+                                        {
+                                            "QSS3Region": {
+                                                "Fn::If": [
+                                                    "GovCloudCondition",
+                                                    "s3-us-gov-west-1",
+                                                    "s3"
+                                                ]
+                                            }
+                                        }
+                                    ]
+                                },
+                                "authentication": "S3Access"
+                            },
+                            "c:\\tabsetup\\postgres.tds": {
+                                "source": {
+                                    "Fn::Sub": [
+                                        "https://${DatasetS3BucketName}.${QSS3Region}.amazonaws.com/${DatasetS3KeyPrefix}dashboard/postgres.tds",
+                                        {
+                                            "QSS3Region": {
+                                                "Fn::If": [
+                                                    "GovCloudCondition",
+                                                    "s3-us-gov-west-1",
+                                                    "s3"
+                                                ]
+                                            }
+                                        }
+                                    ]
+                                },
+                                "authentication": "S3Access"
+                            },
+                            "c:\\tabsetup\\quickstart.twb": {
+                                "source": {
+                                    "Fn::Sub": [
+                                        "https://${DatasetS3BucketName}.${QSS3Region}.amazonaws.com/${DatasetS3KeyPrefix}dashboard/quickstart.twb",
+                                        {
+                                            "QSS3Region": {
+                                                "Fn::If": [
+                                                    "GovCloudCondition",
+                                                    "s3-us-gov-west-1",
+                                                    "s3"
+                                                ]
+                                            }
+                                        }
+                                    ]
+                                },
+                                "authentication": "S3Access"
+                            }
+                        },
+                        "commands": {
+                            "06-update-datasource-redshift": {
+                                "cwd": "c:\\tabsetup",
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "c:\\Python27\\python update-datasource.py ",
+                                            "--filename c:/tabsetup/redshift.tds ",
+                                            "--server ",
+                                            {
+                                                "Ref": "RedshiftHost"
+                                            },
+                                            " ",
+                                            "--port ",
+                                            {
+                                                "Ref": "RedshiftDatabasePort"
+                                            },
+                                            " ",
+                                            "--dbname ",
+                                            {
+                                                "Ref": "RedshiftDatabaseName"
+                                            },
+                                            " ",
+                                            "--username ",
+                                            {
+                                                "Ref": "RedshiftUsername"
+                                            },
+                                            " ",
+                                            "> c:\\tabsetup\\update-datasource-redshift-output.txt 2>&1"
+                                        ]
+                                    ]
+                                },
+                                "waitAfterCompletion": "0"
+                            },
+                            "07-update-datasource-postgres": {
+                                "cwd": "c:\\tabsetup",
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "c:\\Python27\\python update-datasource.py ",
+                                            "--filename c:/tabsetup/postgres.tds ",
+                                            "--server ",
+                                            {
+                                                "Ref": "RDSHost"
+                                            },
+                                            " ",
+                                            "--port ",
+                                            {
+                                                "Ref": "RDSDatabasePort"
+                                            },
+                                            " ",
+                                            "--dbname ",
+                                            {
+                                                "Ref": "RDSDatabaseName"
+                                            },
+                                            " ",
+                                            "--username ",
+                                            {
+                                                "Ref": "RDSUsername"
+                                            },
+                                            " ",
+                                            "> c:\\tabsetup\\update-datasource-postgres-output.txt 2>&1"
+                                        ]
+                                    ]
+                                },
+                                "waitAfterCompletion": "0"
+                            },
+                            "08-publish-redshift-datasource": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "powershell.exe -ExecutionPolicy RemoteSigned -Command \"",
+                                            "& C:\\TableauServer\\*\\bin\\tabcmd.exe publish c:\\tabsetup\\redshift.tds ",
+                                            "--server http://localhost ",
+                                            "--username ",
+                                            {
+                                                "Ref": "ContentAdminUser"
+                                            },
+                                            " ",
+                                            "--password ",
+                                            {
+                                                "Ref": "ContentAdminPassword"
+                                            },
+                                            " ",
+                                            "--db-username ",
+                                            {
+                                                "Ref": "RedshiftUsername"
+                                            },
+                                            " ",
+                                            "--db-password ",
+                                            {
+                                                "Ref": "RedshiftPassword"
+                                            },
+                                            " ",
+                                            "--save-db-password",
+                                            "\""
+                                        ]
+                                    ]
+                                },
+                                "waitAfterCompletion": "0"
+                            },
+                            "09-publish-postgres-datasource": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "powershell.exe -ExecutionPolicy RemoteSigned -Command \"",
+                                            "& C:\\TableauServer\\*\\bin\\tabcmd.exe publish c:\\tabsetup\\postgres.tds ",
+                                            "--server http://localhost ",
+                                            "--username ",
+                                            {
+                                                "Ref": "ContentAdminUser"
+                                            },
+                                            " ",
+                                            "--password ",
+                                            {
+                                                "Ref": "ContentAdminPassword"
+                                            },
+                                            " ",
+                                            "--db-username ",
+                                            {
+                                                "Ref": "RDSUsername"
+                                            },
+                                            " ",
+                                            "--db-password ",
+                                            {
+                                                "Ref": "RDSPassword"
+                                            },
+                                            " ",
+                                            "--save-db-password",
+                                            "\""
+                                        ]
+                                    ]
+                                },
+                                "waitAfterCompletion": "0"
+                            },
+                            "10-publish-sample-dashboard": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "powershell.exe -ExecutionPolicy RemoteSigned -Command \"",
+                                            "& C:\\TableauServer\\*\\bin\\tabcmd.exe publish c:\\tabsetup\\quickstart.twb ",
+                                            "--server http://localhost ",
+                                            "--username ",
+                                            {
+                                                "Ref": "ContentAdminUser"
+                                            },
+                                            " ",
+                                            "--password ",
+                                            {
+                                                "Ref": "ContentAdminPassword"
+                                            },
+                                            "\""
+                                        ]
+                                    ]
+                                },
+                                "waitAfterCompletion": "0"
+                            }
+                        }
+                    },
+                    "finalize": {
+                        "commands": {
+                            "11-signal-success": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "cfn-signal.exe -e 0 \"",
+                                            {
+                                                "Ref": "TableauServerWaitHandle"
+                                            },
+                                            "\""
+                                        ]
+                                    ]
+                                },
+                                "waitAfterCompletion": "0"
+                            }
+                        }
+                    }
+                }
+            },
+            "Properties": {
+                "InstanceType": {
+                    "Fn::FindInMap": [
+                        "DefaultConfiguration",
+                        "MachineConfiguration",
+                        "InstanceType"
+                    ]
+                },
+                "IamInstanceProfile": {
+                    "Ref": "IamInstanceProfile"
+                },
+                "ImageId": {
+                    "Ref": "LatestWSAmiId"
+                },
+                "BlockDeviceMappings": [
+                    {
+                        "DeviceName": "/dev/sda1",
+                        "Ebs": {
+                            "VolumeSize": {
+                                "Fn::FindInMap": [
+                                    "DefaultConfiguration",
+                                    "MachineConfiguration",
+                                    "VolumeSize"
+                                ]
+                            }
+                        }
+                    }
+                ],
+                "SecurityGroupIds": [
+                    {
+                        "Fn::GetAtt": [
+                            "InstanceSecurityGroup",
+                            "GroupId"
+                        ]
+                    }
+                ],
+                "SubnetId": {
+                    "Ref": "SubnetID"
+                },
+                "KeyName": {
+                    "Ref": "KeyPairName"
+                },
+                "UserData": {
+                    "Fn::Base64": {
+                        "Fn::Join": [
+                            "\n",
+                            [
+                                "<script>",
+                                {
+                                    "Fn::Sub": "cfn-init.exe -v -c config -s ${AWS::StackId} -r TableauWindowsServer --region ${AWS::Region}"
+                                },
+                                "</script>"
+                            ]
+                        ]
+                    }
+                },
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": {
+                            "Fn::Sub": "${AWS::StackName}-cfn-tableau-server"
+                        }
+                    }
+                ]
+            }
+        },
+        "TableauIpAddress": {
+            "Type": "AWS::EC2::EIP",
+            "Properties": {
+                "Domain": "vpc",
+                "InstanceId": {
+                    "Ref": "TableauWindowsServer"
+                }
+            }
+        }
+    },
+    "Outputs": {
+        "InstanceID": {
+            "Description": "EC2 InstanceID of the instance running Tableau Server",
+            "Value": {
+                "Ref": "TableauWindowsServer"
+            }
+        },
+        "PublicIpAddress": {
+            "Description": "Public IP Address of instance running Tableau Server",
+            "Value": {
+                "Fn::GetAtt": [
+                    "TableauWindowsServer",
+                    "PublicIp"
+                ]
+            }
+        },
+        "PublicDnsName": {
+            "Description": "Public DNS name of instance running Tableau Server",
+            "Value": {
+                "Fn::GetAtt": [
+                    "TableauWindowsServer",
+                    "PublicDnsName"
+                ]
+            }
+        },
+        "PublicGatewayPort": {
+            "Description": "The port serving web traffic on the public interface of Tableau Server",
+            "Value": {
+                "Fn::FindInMap": [
+                    "DefaultConfiguration",
+                    "TableauServerConfig",
+                    "GatewayPort"
+                ]
+            }
+        },
+        "PrivateIpAddress": {
+            "Description": "Private IP Address of instance running Tableau Server",
+            "Value": {
+                "Fn::GetAtt": [
+                    "TableauWindowsServer",
+                    "PrivateIp"
+                ]
+            }
+        },
+        "PrivateDnsName": {
+            "Description": "Private DNS name of instance running Tableau Server",
+            "Value": {
+                "Fn::GetAtt": [
+                    "TableauWindowsServer",
+                    "PrivateDnsName"
+                ]
+            }
+        }
+    }
+}

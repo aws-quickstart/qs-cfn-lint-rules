@@ -1,0 +1,112 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "Creates a SageMaker Notebook for exploratory data analyisis of data in the data lake.",
+    "Parameters": {
+        "StackSuffix": {
+            "Type": "String",
+            "Description": "The suffix of the stack"
+        },
+        "DataLakeS3BucketName": {
+            "Type": "String",
+            "Description": "S3 Bucket where data lake lives"
+        },
+        "SageMakerInputS3BucketName": {
+            "Type": "String",
+            "Description": "S3 Bucket where sage maker input data lives"
+        },
+        "SageMakerModelS3BucketName": {
+            "Type": "String",
+            "Description": "S3 Bucket where sage maker models lives"
+        },
+        "NotebookInstanceType": {
+            "Type": "String",
+            "Description": "The instance type to run the SageMaker endpoint on"
+        }
+    },
+    "Resources": {
+        "ExploratoryDataAnalysisNotebookInstance": {
+            "Type": "AWS::SageMaker::NotebookInstance",
+            "Properties": {
+                "InstanceType": { "Ref": "NotebookInstanceType" },
+                "RoleArn": { "Fn::GetAtt" : [ "SageMakerNotebookExecutionRole", "Arn" ] },
+                "NotebookInstanceName": { "Fn::Sub": "exploratory-data-analysis-${StackSuffix}" }
+            }
+        },
+        "SageMakerNotebookExecutionRole": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "AssumeRolePolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [{
+                        "Effect": "Allow",
+                        "Principal": {
+                            "Service": ["sagemaker.amazonaws.com"]
+                        },
+                        "Action": ["sts:AssumeRole"]
+                    }]
+                },
+                "Path": "/",
+                "Policies": [{
+                    "PolicyName": {
+                        "Fn::Sub": "SageMakerNotebookExecutionPolicy-${StackSuffix}"
+                    },
+                    "PolicyDocument": {
+                        "Version": "2012-10-17",
+                        "Statement": [
+                            {
+                                "Effect": "Allow",
+                                "Action": [
+                                    "s3:GetObject"
+                                ],
+                                "Resource": [
+                                    { "Fn::Sub": "arn:aws:s3:::${DataLakeS3BucketName}-${StackSuffix}/model/*" },
+                                    { "Fn::Sub": "arn:aws:s3:::${DataLakeS3BucketName}-${StackSuffix}/enhance/*" },
+                                    { "Fn::Sub": "arn:aws:s3:::${DataLakeS3BucketName}-${StackSuffix}/transform/*" }
+                                ]
+                            },
+                            {
+                                "Effect": "Allow",
+                                "Action": [
+                                    "s3:GetObject",
+                                    "s3:PutObject",
+                                    "s3:DeleteObject"                                                        
+                                ],
+                                "Resource": [
+                                    { "Fn::Sub": "arn:aws:s3:::${DataLakeS3BucketName}-${StackSuffix}/sandbox/*" },
+                                    { "Fn::Sub": "arn:aws:s3:::${SageMakerInputS3BucketName}-${StackSuffix}/*" }
+                                ]
+                            },
+                            {
+                                "Effect": "Allow",
+                                "Action": [
+                                    "s3:ListBucket"
+                                ],
+                                "Resource": [
+                                    { "Fn::Sub": "arn:aws:s3:::${SageMakerInputS3BucketName}-${StackSuffix}" },
+                                    { "Fn::Sub": "arn:aws:s3:::${DataLakeS3BucketName}-${StackSuffix}" }
+                                ]
+                            },
+                            {
+                                "Effect": "Allow",
+                                "Action": [
+                                    "sagemaker:*",
+                                    "ecr:GetAuthorizationToken",
+                                    "ecr:GetDownloadUrlForLayer",
+                                    "ecr:BatchGetImage",
+                                    "ecr:BatchCheckLayerAvailability",
+                                    "cloudwatch:PutMetricData",
+                                    "logs:CreateLogGroup",
+                                    "logs:CreateLogStream",
+                                    "logs:DescribeLogStreams",
+                                    "logs:PutLogEvents",
+                                    "logs:GetLogEvents"                             
+                                ],
+                                "Resource": "*"
+                            }
+                        ]
+                    }
+                }]
+            }
+        }
+    }
+}

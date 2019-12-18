@@ -1,0 +1,451 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Launches a Dotmatics application server and database.
+Metadata:
+  'AWS::CloudFormation::Interface':
+    ParameterGroups:
+      - Label:
+          default: Dotmatics configuration
+        Parameters:
+          - pDNSName
+      - Label:
+          default: Network configuration
+        Parameters:
+          - pVpcId
+          - pDmzSubnetA
+          - pDmzSubnetB
+          - pAppSubnetA
+          - pAppSubnetB
+          - pDBSubnetA
+          - pDBSubnetB
+          - pDnsHostedZoneID
+          - pDnsHostedZoneApexDomain
+          - pCreateTLSCert
+          - pLoadBalancerType
+          - pSecurityGroupForWebAccess
+          - pWebAccessCIDR
+      - Label:
+          default: Amazon EC2 application server configuration
+        Parameters:
+          - pEC2KeyPair
+          - pAppServerInstanceType
+      - Label:
+          default: Oracle configuration
+        Parameters:
+          - pDatabaseName
+          - pDatabasePass
+          - pAsmPass
+          - pDataGuardConfig
+          - pInstallBucketName
+          - pInstallBucketPrefix
+          - pOracleInstanceType
+          - pPrimaryIPAddress
+          - pStandbyIPAddress
+      - Label:
+          default: OSB Cloud Module configuration (optional)
+        Parameters:
+          - pOSBInstall
+          - pOSBOTN
+          - pOSBPass
+          - pOSBBucketName
+          - pOSBKey
+          - pOSBSecret
+      - Label:
+          default: AWS Quick Start configuration
+        Parameters:
+          - QSS3BucketName
+          - QSS3KeyPrefix
+    ParameterLabels:
+      pDatabasePass:
+        default: Database Password
+      pCreateTLSCert:
+        default: Create a TLS certificate for the load balancer?
+      pStandbyIPAddress:
+        default: Standby database private IP
+      pPrimaryIPAddress:
+        default: Primary database private IP
+      pOSBBucketName:
+        default: S3 bucket for backups
+      pOSBInstall:
+        default: Install Oracle Secure Backup
+      pOSBKey:
+        default: AWS access key ID
+      pOSBOTN:
+        default: OTN account email/login
+      pOSBPass:
+        default: OTN account password
+      pOSBSecret:
+        default: AWS secret access key
+      pOracleInstanceType:
+        default: Database instance type
+      pInstallBucketName:
+        default: Binaries bucket name
+      pInstallBucketPrefix:
+        default: Binaries bucket key prefix
+      pDataGuardConfig:
+        default: Data Guard configuration
+      pAppServerInstanceType:
+        default: Application server instance type
+      pAppSubnetA:
+        default: Application subnet A
+      pAppSubnetB:
+        default: Application subnet B
+      pDatabaseName:
+        default: Primary database name
+      pDBSubnetA:
+        default: Database subnet A
+      pDBSubnetB:
+        default: Database subnet B
+      pAsmPass:
+        default: ASM password
+      pDmzSubnetA:
+        default: Public subnet A
+      pDmzSubnetB:
+        default: Public subnet B
+      pDnsHostedZoneApexDomain:
+        default: Internal DNS apex domain
+      pDnsHostedZoneID:
+        default: Internal DNS hosted zone ID
+      pDNSName:
+        default: Dotmatics server DNS name
+      pEC2KeyPair:
+        default: Key pair for Dotmatics application and database server
+      pLoadBalancerType:
+        default: Load balancer type
+      pSecurityGroupForWebAccess:
+        default: Web access security group
+      pVpcId:
+        default: VPC for deployment
+      pWebAccessCIDR:
+        default: Web access CIDR
+      QSS3KeyPrefix:
+        default: Quick Start S3 key prefix
+      QSS3BucketName:
+        default: Quick Start S3 bucket name
+Parameters:
+  pCreateTLSCert:
+    AllowedValues:
+      - 'true'
+      - 'false'
+    Default: 'true'
+    Description: >-
+      Do you want to create and associate a TLS certificate with the Application
+      Load Balancer? This template performs domain validation as documented here
+      -
+      https://docs.aws.amazon.com/acm/latest/userguide/gs-acm-validate-email.html
+    Type: String
+  pStandbyIPAddress:
+    AllowedPattern: >-
+      ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])$
+    ConstraintDescription: IP address parameter must be in the form x.x.x.x
+    Description: >-
+      This must be a valid IP address for private subnet 2. Only required if
+      using Oracle Data Guard
+    Type: String
+  pPrimaryIPAddress:
+    AllowedPattern: >-
+      ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])$
+    ConstraintDescription: IP address parameter must be in the form x.x.x.x
+    Description: This must be a valid IP address for private subnet 1.
+    Type: String
+  pOSBBucketName:
+    ConstraintDescription: 'Enter your bucket name, must be an existing bucket.'
+    Description: Name of your S3 bucket to store your Oracle backups.
+    Default: override
+    Type: String
+  pOSBInstall:
+    AllowedValues:
+      - 'true'
+      - 'false'
+    Default: 'false'
+    Description: Install (true) or don't install (false) optional Oracle Secure Backup.
+    Type: String
+  pOSBKey:
+    Description: >-
+      The AWS Access Key to access your backup bucket, something like
+      AKIAIV3KL4XXIT7DXXYY.
+    Type: String
+    Default: override
+  pOSBOTN:
+    Description: Your OTN (Oracle Technology Network) account login.
+    Type: String
+    Default: override
+  pOSBPass:
+    Description: Password of your OTN (Oracle Technology Network) account.
+    NoEcho: 'true'
+    Default: override
+    Type: String
+  pOSBSecret:
+    Description: >-
+      The AWS Secret Key to access your backup bucket, something like
+      c/ZeLyzixxx3HfxPVLX9IOKMXEdSbqks3Acz7QHj.
+    NoEcho: 'true'
+    Default: override
+    Type: String
+  pOracleInstanceType:
+    AllowedValues:
+      - t2.medium
+      - t2.large
+      - m3.medium
+      - m3.large
+      - m3.xlarge
+      - m3.2xlarge
+      - m4.large
+      - m4.xlarge
+      - m4.2xlarge
+      - m4.4xlarge
+      - m4.10xlarge
+      - m4.16xlarge
+      - r3.large
+      - r3.xlarge
+      - r3.2xlarge
+      - r3.4xlarge
+      - r3.8xlarge
+      - r4.large
+      - r4.xlarge
+      - r4.2xlarge
+      - r4.4xlarge
+      - r4.8xlarge
+      - r4.16xlarge
+      - x1.16xlarge
+      - x1.32xlarge
+    ConstraintDescription: Must be a valid EC2 instance type.
+    Default: r3.2xlarge
+    Description: Choose your Oracle Database instance type.
+    Type: String
+  pInstallBucketName:
+    AllowedPattern: '^[0-9a-zA-Z-]+([0-9a-zA-Z-]+)*$'
+    ConstraintDescription: >-
+      Bucket name can include numbers, lowercase letters, uppercase letters,
+      hyphens (-).
+    Description: 'Name of your S3 bucket with your Oracle Binaries (e.g., bucket-name)'
+    Type: String
+  pInstallBucketPrefix:
+    AllowedPattern: '^[0-9a-zA-Z-]+(/[0-9a-zA-Z-]+)*$'
+    ConstraintDescription: >-
+      Key prefix can include numbers, lowercase letters, uppercase letters,
+      hyphens (-), and forward slash (/). It cannot start or end with forward
+      slash (/) because they are automatically appended.
+    Description: 'Name of your S3 prefix with your Oracle Binaries (e.g., key/prefix)'
+    Type: String
+    Default: oracle/database/12
+  pDatabaseName:
+    AllowedPattern: '([A-Za-z0-9-]{3,8})'
+    ConstraintDescription: 'No special chars, Min 3, Maximum of 8 characters.'
+    Default: dotmtsdb
+    Description: >-
+      Enter your Database Name, Min 3, Maximum of 8 characters (limited by
+      DB_NAME). Primary instance will have the same name of this.
+    Type: String
+    MaxLength: 8
+    MinLength: 3
+  pDataGuardConfig:
+    AllowedValues:
+      - Data Guard
+      - Single
+    ConstraintDescription: >-
+      Single - One instance only,  Data Guard - Two instances (Primary +
+      Standby)
+    Default: Data Guard
+    Description: >-
+      Configuration: Single - One instance only,  Data Guard - Two instances
+      (Primary + Standby)
+    Type: String
+  pAsmPass:
+    AllowedPattern: '([A-Za-z0-9_#$]{3,30})'
+    ConstraintDescription: 'Input your ASM Password, Min 3, Maximum of 30 characters.'
+    Description: >-
+      Enter your ASM Password, Min 3, maximum of 30 characters. This password is
+      used for the SYSASM, ASM Monitor, and ASM EM admin users of Oracle ASM.
+    NoEcho: 'true'
+    Type: String
+    MinLength: 3
+    MaxLength: 30
+  pDNSName:
+    Description: >-
+      The internal DNS CNAME to be used for the Dotmatics server. Leave the
+      default if you are unsure of what this does.
+    Type: String
+    Default: dotmatics
+  pAppServerInstanceType:
+    Description: Dotmatics app server EC2 instance type
+    Type: String
+    Default: t2.large
+    AllowedValues:
+      - t2.medium
+      - t2.large
+      - t2.xlarge
+      - m5.large
+      - m5.xlarge
+      - m5.2xlarge
+      - m4.large
+      - m4.xlarge
+      - m4.2xlarge
+  pAppSubnetA:
+    Description: Production App Subnet A. Target subnet for the app server.
+    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Subnet::Id>'
+    Default: /BB/Networking/VPC/Research/Subnet/App/A
+  pAppSubnetB:
+    Description: Production App Subnet B. Target subnet for the app server.
+    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Subnet::Id>'
+    Default: /BB/Networking/VPC/Research/Subnet/App/B
+  pDatabasePass:
+    AllowedPattern: '([A-Za-z0-9_#$]{3,30})'
+    ConstraintDescription: 'Input your database Password, Min 3, Maximum of 30 characters.'
+    Description: >-
+      Enter your Database Password, Min 3, maximum of 30 characters. This
+      password is used for the SYS, SYSTEM, and DBSNMP users of Oracle Database.
+    NoEcho: 'true'
+    Type: String
+    MinLength: 3
+    MaxLength: 30
+  pDBSubnetA:
+    Description: Subnet ID for Production DB Subnet A.
+    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Subnet::Id>'
+    Default: /BB/Networking/VPC/Research/Subnet/DB/A
+  pDBSubnetB:
+    Description: Subnet ID for Production DB Subnet B.
+    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Subnet::Id>'
+    Default: /BB/Networking/VPC/Research/Subnet/DB/B
+  pDmzSubnetA:
+    Description: Production DMZ Subnet A. Target subnet for the app server.
+    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Subnet::Id>'
+    Default: /BB/Networking/VPC/Research/Subnet/DMZ/A
+  pDmzSubnetB:
+    Description: Production DMZ Subnet B. Target subnet for the app server.
+    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Subnet::Id>'
+    Default: /BB/Networking/VPC/Research/Subnet/DMZ/B
+  pDnsHostedZoneApexDomain:
+    Description: (Optional) Internal DNS Apex Domain
+    Type: 'AWS::SSM::Parameter::Value<String>'
+    Default: /BB/QuickStart/DNS/DnsHostedZoneApexDomain
+  pDnsHostedZoneID:
+    Description: (Optional) Internal DNS hosted zone ID.
+    Type: 'AWS::SSM::Parameter::Value<String>'
+    Default: /BB/QuickStart/DNS/HostedZoneId
+  pEC2KeyPair:
+    Description: Key Name for app and db server.
+    Type: 'AWS::EC2::KeyPair::KeyName'
+  pLoadBalancerType:
+    Description: >-
+      The type (internet-facing or internal) of the load balancer. If you keep
+      the default setting, the load balancer will be internet addressable and
+      you don’t need VPN. If you choose internal, you must connect to your VPN
+      solution after deployment, so that your DHCP options use the VPC DNS
+      server in the VPC that your hosted zone is attached to.
+    Default: internet-facing
+    Type: String
+    AllowedValues:
+      - internet-facing
+      - internal
+  pSecurityGroupForWebAccess:
+    Description: Security group for web access
+    Type: 'AWS::SSM::Parameter::Value<String>'
+    Default: /BB/Networking/VPC/Research/InformaticsAccessSG
+  pWebAccessCIDR:
+    Description: >-
+      Will only be used if Web Access Security Group is not specified. Enter
+      0.0.0.0/0 if you want to open it to the world.
+    Type: String
+    Default: 10.0.0.0/16
+  pVpcId:
+    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::VPC::Id>'
+    Default: /BB/Networking/VPC/Research
+    Description: The ID of your existing VPC to use for the Dotmatics
+  QSS3BucketName:
+    ConstraintDescription: >-
+      Quick Start bucket name can include numbers, lowercase letters, uppercase
+      letters, and hyphens (-). It cannot start or end with a hyphen (-).
+    Default: /BB/QuickStart/QSS3BucketName
+    Description: >-
+      S3 bucket name for the Quick Start assets. Quick Start bucket name can
+      include numbers, lowercase letters, uppercase letters, and hyphens (-). It
+      cannot start or end with a hyphen (-).
+    Type: 'AWS::SSM::Parameter::Value<String>'
+  QSS3KeyPrefix:
+    ConstraintDescription: >-
+      Quick Start key prefix can include numbers, lowercase letters, uppercase
+      letters, hyphens (-), and a forward slash (/) at the end of the prefix.
+    Description: >-
+      S3 key prefix for the Quick Start assets. Quick Start key prefix can
+      include numbers, lowercase letters, uppercase letters, hyphens (-), and
+      forward slash (/).
+    Default: /BB/QuickStart/QSS3KeyPrefix
+    Type: 'AWS::SSM::Parameter::Value<String>'
+Conditions:
+  cDNSRecord: !Not 
+    - !Or 
+      - !Equals 
+        - !Ref pDnsHostedZoneID
+        - ''
+      - !Equals 
+        - !Ref pDnsHostedZoneApexDomain
+        - ''
+  cCreateTLSCert: !Equals 
+    - !Ref pCreateTLSCert
+    - 'true'
+Resources:
+  rDotmatics:
+    Type: 'AWS::CloudFormation::Stack'
+    Properties:
+      TemplateURL: !Sub >-
+        https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}submodules/quickstart-dotmatics/templates/dotmatics.template
+      Parameters:
+        pStandbyIPAddress: !Ref pStandbyIPAddress
+        pPrimaryIPAddress: !Ref pPrimaryIPAddress
+        pOSBInstall: !Ref pOSBInstall
+        pOSBKey: !If 
+          - pOSBInstall
+          - !Ref pOSBKey
+          - !Ref 'AWS::NoValue'
+        pOSBOTN: !If 
+          - pOSBInstall
+          - !Ref pOSBOTN
+          - !Ref 'AWS::NoValue'
+        pOSBPass: !If 
+          - pOSBInstall
+          - !Ref pOSBPass
+          - !Ref 'AWS::NoValue'
+        pOSBSecret: !If 
+          - pOSBInstall
+          - !Ref pOSBSecret
+          - !Ref 'AWS::NoValue'
+        pOSBBucketName: !If 
+          - pOSBInstall
+          - !Ref pOSBBucketName
+          - !Ref 'AWS::NoValue'
+        pOracleInstanceType: !Ref pOracleInstanceType
+        pInstallBucketName: !Ref pInstallBucketName
+        pInstallBucketPrefix: !Ref pInstallBucketPrefix
+        pDatabaseName: !Ref pDatabaseName
+        pDataGuardConfig: !Ref pDataGuardConfig
+        pAsmPass: !Ref pAsmPass
+        pDNSName: !Ref pDNSName
+        pAppServerInstanceType: !Ref pAppServerInstanceType
+        pAppSubnetA: !Ref pAppSubnetA
+        pAppSubnetB: !Ref pAppSubnetB
+        pDatabasePass: !Ref pDatabasePass
+        pDBSubnetA: !Ref pDBSubnetA
+        pDBSubnetB: !Ref pDBSubnetB
+        pDmzSubnetA: !Ref pDmzSubnetA
+        pDmzSubnetB: !Ref pDmzSubnetB
+        pDnsHostedZoneApexDomain: !Ref pDnsHostedZoneApexDomain
+        pDnsHostedZoneID: !Ref pDnsHostedZoneID
+        pEC2KeyPair: !Ref pEC2KeyPair
+        pLoadBalancerType: !Ref pLoadBalancerType
+        pSecurityGroupForWebAccess: !Ref pSecurityGroupForWebAccess
+        pVpcId: !Ref pVpcId
+        pWebAccessCIDR: !Ref pWebAccessCIDR
+        QSS3BucketName: !Ref QSS3BucketName
+        QSS3KeyPrefix: !Ref QSS3KeyPrefix
+Outputs:
+  oLoadBalancerDNS:
+    Description: DNS of Load Balancer to access Dotmatics
+    Value: !GetAtt rDotmatics.Outputs.oLoadBalancerDNS
+  oDNSUrl:
+    Condition: cDNSRecord
+    Description: URL to Load Balancer to access Domatics
+    Value: !GetAtt rDotmatics.Outputs.oDNSUrl
+  oDNSUrlTLS:
+    Condition: cCreateTLSCert
+    Description: URL to Load Balancer to access Dotmaics application over TLS.
+    Value: !Sub 'https://${pDNSName}.${pDnsHostedZoneApexDomain}/browser'

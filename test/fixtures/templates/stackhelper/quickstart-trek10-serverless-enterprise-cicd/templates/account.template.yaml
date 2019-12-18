@@ -1,0 +1,279 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  (qs-1ph8neh81) 
+  Serverless CICD Quick Start
+  Common resources for the shared services account
+
+Parameters:
+  DevAwsAccountId:
+    Description: AWS account ID for development account
+    Type: String
+    AllowedPattern: (\d{12}|^$)
+    ConstraintDescription: Must be an AWS account ID
+    Default: '159527342995'
+  ProdAwsAccountId:
+    Description: AWS account ID for production account
+    Type: String
+    AllowedPattern: (\d{12}|^$)
+    ConstraintDescription: Must be an AWS account ID
+    Default: '159527342995'
+
+Conditions:
+  AddDevAccountPermissions: !Not [!Equals [ !Ref DevAwsAccountId, '' ]]
+  AddProdAccountPermissions: !And [!Not [!Equals [ !Ref ProdAwsAccountId, '' ]],
+                                   !Not [!Equals [ !Ref DevAwsAccountId, !Ref ProdAwsAccountId  ]]]
+
+Resources:
+  SamBucket:
+    DependsOn: ArtifactBucketKey
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              KMSMasterKeyID: !Sub ${ArtifactBucketKey.Arn}
+              SSEAlgorithm: aws:kms
+
+  SamBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref SamBucket
+      PolicyDocument:
+        Statement:
+          - Action:
+              - s3:*
+            Effect: Allow
+            Resource:
+              - !Sub ${SamBucket.Arn}
+              - !Sub ${SamBucket.Arn}/*
+            Principal:
+              AWS:
+                - !Sub arn:aws:iam::${AWS::AccountId}:root
+          - Action:
+              - s3:GetObject
+              - s3:ListBucket
+            Effect: Allow
+            Resource:
+              - !Sub ${SamBucket.Arn}
+              - !Sub ${SamBucket.Arn}/*
+            Principal:
+              AWS:
+                - !If
+                  - AddDevAccountPermissions
+                  - !Sub arn:aws:iam::${DevAwsAccountId}:root
+                  - !Ref AWS::NoValue
+                - !If
+                  - AddProdAccountPermissions
+                  - !Sub arn:aws:iam::${ProdAwsAccountId}:root
+                  - !Ref AWS::NoValue
+
+  PipelineServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Path: /
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+              - codepipeline.amazonaws.com
+              - codebuild.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: root
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Resource: '*'
+                Effect: Allow
+                Action:
+                    - codecommit:GetBranch
+                    - codecommit:GetCommit
+                    - codecommit:UploadArchive
+                    - codecommit:GetUploadArchiveStatus
+                    - codecommit:CancelUploadArchive
+              - Resource: '*'
+                Effect: Allow
+                Action:
+                  - codebuild:StartBuild
+                  - codebuild:BatchGetBuilds
+                  - kms:Encrypt
+                  - kms:Decrypt
+                  - kms:ReEncrypt*
+                  - kms:GenerateDataKey*
+                  - kms:DescribeKey
+                  - sns:Publish
+                  - lambda:Invoke*
+                  - Lambda:List*
+              - Resource: '*'
+                Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                  - ecr:GetAuthorizationToken
+              - Effect: Allow
+                Action:
+                  - sts:AssumeRole
+                Resource:
+                  - !Sub arn:aws:iam::${DevAwsAccountId}:role/CodePipelineServiceRole-${AWS::Region}-${DevAwsAccountId}-dev
+                  - !Sub arn:aws:iam::${ProdAwsAccountId}:role/CodePipelineServiceRole-${AWS::Region}-${ProdAwsAccountId}-prod
+              - Resource: '*'
+                Effect: Allow
+                Action:
+                    - cloudformation:ListExports
+
+  PipelineServiceRoleS3Policy:
+    Type: AWS::IAM::Policy
+    Properties: 
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Resource:
+              - !GetAtt ArtifactBucket.Arn
+              - !Sub ${ArtifactBucket.Arn}/*
+              - !GetAtt SamBucket.Arn
+              - !Sub ${SamBucket.Arn}/*
+            Effect: Allow
+            Action:
+                - s3:PutObject
+                - s3:GetObject
+                - s3:GetObjectVersion
+                - s3:GetBucketVersioning
+      PolicyName: PipelineServiceRoleS3Policy
+      Roles:
+        - !Ref PipelineServiceRole
+
+  ArtifactBucketKey:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: Code & Deployment Artifact Key
+      EnableKeyRotation: true
+      KeyPolicy:
+        Version: '2012-10-17'
+        Id: !Ref AWS::StackName
+        Statement:
+          - Sid: Allows admin of the key
+            Effect: Allow
+            Principal:
+              AWS: !Sub arn:aws:iam::${AWS::AccountId}:root
+            Action:
+              - kms:Create*
+              - kms:Describe*
+              - kms:Enable*
+              - kms:List*
+              - kms:Put*
+              - kms:Update*
+              - kms:Revoke*
+              - kms:Disable*
+              - kms:Get*
+              - kms:Delete*
+              - kms:ScheduleKeyDeletion
+              - kms:CancelKeyDeletion
+            Resource: '*'
+          - Sid: Allow use of the key for CodePipeline
+            Effect: Allow
+            Principal:
+              AWS:
+                - !GetAtt PipelineServiceRole.Arn
+                - !If
+                  - AddDevAccountPermissions
+                  - !Sub arn:aws:iam::${DevAwsAccountId}:root
+                  - !Ref AWS::NoValue
+                - !If
+                  - AddProdAccountPermissions
+                  - !Sub arn:aws:iam::${ProdAwsAccountId}:root
+                  - !Ref AWS::NoValue
+            Action:
+              - kms:Encrypt
+              - kms:Decrypt
+              - kms:ReEncrypt*
+              - kms:GenerateDataKey*
+              - kms:DescribeKey
+            Resource: '*'
+          - Sid: Allow access through Amazon S3 for all principals in the accounts that are authorized to use Amazon S3
+            Effect: Allow
+            Principal:
+              AWS: '*'
+            Action:
+              - kms:Encrypt
+              - kms:Decrypt
+              - kms:ReEncrypt*
+              - kms:GenerateDataKey*
+              - kms:DescribeKey
+            Resource: '*'
+            Condition:
+              StringEquals:
+                kms:ViaService: !Sub s3.${AWS::Region}.amazonaws.com
+                kms:CallerAccount:
+                  - !Ref AWS::AccountId
+
+  ArtifactBucketAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: alias/artifact-bucket
+      TargetKeyId: !Ref ArtifactBucketKey
+
+  ArtifactBucket:
+    DependsOn: ArtifactBucketKey
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              KMSMasterKeyID: !Sub ${ArtifactBucketKey.Arn}
+              SSEAlgorithm: aws:kms
+
+  ArtifactBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref ArtifactBucket
+      PolicyDocument:
+        Statement:
+          - Action:
+              - s3:*
+            Effect: Allow
+            Resource:
+              - !GetAtt ArtifactBucket.Arn
+              - !Sub ${ArtifactBucket.Arn}/*
+            Principal:
+              AWS:
+                - !Sub arn:aws:iam::${AWS::AccountId}:root
+          - Action:
+              - s3:GetObject
+              - s3:ListBucket
+            Effect: Allow
+            Resource:
+              - !Sub arn:aws:s3:::${ArtifactBucket}
+              - !Sub arn:aws:s3:::${ArtifactBucket}/*
+            Principal:
+              AWS:
+                - !If
+                  - AddDevAccountPermissions
+                  - !Sub arn:aws:iam::${DevAwsAccountId}:root
+                  - !Ref AWS::NoValue
+                - !If
+                  - AddProdAccountPermissions
+                  - !Sub arn:aws:iam::${ProdAwsAccountId}:root
+                  - !Ref AWS::NoValue
+
+Outputs:
+  SamTranslationBucket:
+    Description: Bucket used when packaging SAM templates
+    Value: !Ref SamBucket
+  PipelineArtifactBucket:
+    Description: Artifact bucket for all pipelines
+    Value: !Ref ArtifactBucket
+  PipelineServiceRoleArn:
+    Description: ARN of the IAM role used by CodePipeline and CodeBuild in this account
+    Value: !GetAtt PipelineServiceRole.Arn
+  ArtifactBucketKeyArn:
+    Description: KMS key for codepipelines and artifacts
+    Value: !GetAtt ArtifactBucketKey.Arn
+  ArtifactBucketKeyId:
+    Description: KMS key ID for codepipelines and artifacts
+    Value: !Ref ArtifactBucketKey
+  ArtifactBucketAliasName:
+    Description: KMS key alias for codepipelines and artifacts
+    Value: !Ref ArtifactBucketAlias

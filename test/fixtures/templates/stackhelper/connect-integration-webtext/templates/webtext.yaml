@@ -1,0 +1,138 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+Description: WEBTEXT CAM Integration for Amazon Connect Quick Start (qs-1o7fbe6sg)
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+    - Label:
+        default: WEBTEXT Configuration
+      Parameters:
+      - ApiUser
+      - ApiPass
+      - IntegrationEndpoint
+    ParameterLabels:
+      ApiUser:
+        default: WEBTEXT api_usr
+      ApiPass:
+        default: WEBTEXT api_pass
+      IntegrationEndpoint:
+        default: Integration Endpoint
+Parameters:
+  ApiUser:
+    AllowedPattern: ^[0-9a-zA-Z]*$
+    ConstraintDescription: User does not meet format requirements. User should contain
+      8 to 64 printable ASCII characters excluding /, ", ', \, and @. It must contain
+      1 uppercase letter, 1 lowercase letter, and 1 number.
+    Description: Provide the api_usr as supplied by WEBTEXT
+    Type: String
+    MinLength: 6
+    MaxLength: 64
+  ApiPass:
+    AllowedPattern: ^[0-9a-zA-Z]*$
+    ConstraintDescription: Password does not meet complexity requirements. Password
+      must contain 8 to 64 printable ASCII characters excluding /, ", ', \, and @.
+      It must contain 1 uppercase letter, 1 lowercase letter, and 1 number.
+    Description: Password must contain 8 to 64 printable ASCII characters excluding
+      /, ", ', \, and @. It must contain 1 uppercase letter, 1 lowercase letter, and
+      1 number.
+    Type: String
+    MinLength: 6
+    MaxLength: 64
+    NoEcho: true
+  IntegrationEndpoint:
+    AllowedPattern: ^https:\/\/[a-zA-Z0-9-\/\.]+$
+    ConstraintDescription: Endpoint must be a valid https URL as provided.
+    Default: https://appgw.webtext.com/awsconnect/agent
+    Description: The endpoint of the integration.
+    Type: String
+Rules:
+  RegionSupport:
+    Assertions:
+    - Assert:
+        Fn::Equals:
+        - Ref: AWS::Region
+        - us-east-1
+      AssertDescription: Region must be US East (N. Virginia) - us-east-1
+Resources:
+  IntegrationTestFunctionExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Path: /
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+  IntegrationTestFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: main.handler
+      MemorySize: 128
+      Role:
+        Fn::GetAtt: IntegrationTestFunctionExecutionRole.Arn
+      Runtime: python2.7
+      Timeout: 30
+      Code:
+        S3Bucket: aws-quickstart
+        S3Key: connect-integration-webtext/functions/packages/integration-test/lambda.zip
+  IntegrationTest:
+    Type: Custom::IntegrationTest
+    Version: '1.0'
+    Properties:
+      ServiceToken:
+        Fn::GetAtt: IntegrationTestFunction.Arn
+      IntegrationEndpoint:
+        Ref: IntegrationEndpoint
+  IntegrationFunctionExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2017-10-24'
+        Statement:
+          Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Path: /
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+  IntegrationFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: webtextChat.lambda_handler
+      Runtime: python3.6
+      Description: WEBTEXT CAM integration function
+      MemorySize: 128
+      Timeout: 15
+      Role:
+        Fn::GetAtt: IntegrationFunctionExecutionRole.Arn
+      Environment:
+        Variables:
+          IntegrationEndpoint:
+            Ref: IntegrationEndpoint
+      Code:
+        S3Bucket: aws-quickstart
+        S3Key: connect-integration-webtext/functions/packages/integration/lambda.zip
+  IntegrationFunctionPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName:
+        Ref: IntegrationFunction
+      Action: lambda:InvokeFunction
+      Principal: connect.amazonaws.com
+      SourceAccount:
+        Ref: AWS::AccountId
+Outputs:
+  IntegrationFunction:
+    Description: Lambda Function for Amazon Connect WEBTEXT Integration
+    Value:
+      Fn::GetAtt: IntegrationFunction.Arn
+...

@@ -1,0 +1,72 @@
+Description: >
+  This template deploys an EFS file system that can be used from ECS services for persistent data.
+
+Parameters:
+  EnvironmentName:
+    AllowedPattern: ^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$
+    Description: An environment name that will be prefixed to resource names.
+    Type: String
+  EFSNameTag:
+    MinLength: 1
+    Description: The name of the EFS volume.
+    Type: String
+    Default: xl-platform-EFSvolume
+  VPCID:
+    Type: AWS::EC2::VPC::Id
+    Description: The VPC EFS should be deployed to
+  VPCCIDR:
+    Description: Enter the CIDR Range for your VPC
+    Type: String
+    Default: 10.0.0.0/19
+    AllowedPattern: "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})"
+    ConstraintDescription: must be a valid IP CIDR range of the form x.x.x.x/x.
+  Subnets:
+    Description: The private subnets this EFS can be mount
+    Type: List<AWS::EC2::Subnet::Id>
+
+Resources:
+
+  MountTargetSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId:
+        Ref: VPCID
+      GroupDescription: Security group for mount target
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: '2049'
+        ToPort: '2049'
+        CidrIp:
+          Ref: VPCCIDR
+      Tags:
+      - Key: Name
+        Value: !Sub ${EnvironmentName}-EFS-Hosts
+  FileSystem:
+    Type: AWS::EFS::FileSystem
+    Properties:
+      FileSystemTags:
+      - Key: Name
+        Value:
+          Ref: EnvironmentName
+  MountTarget:
+    Type: AWS::EFS::MountTarget
+    Properties:
+      FileSystemId:
+        Ref: FileSystem
+      SubnetId: !Select [ 0, !Ref Subnets ]
+      SecurityGroups:
+      - Ref: MountTargetSecurityGroup
+  MountTarget2:
+    Type: AWS::EFS::MountTarget
+    Properties:
+      FileSystemId:
+        Ref: FileSystem
+      SubnetId: !Select [ 1, !Ref Subnets ]
+      SecurityGroups:
+      - Ref: MountTargetSecurityGroup
+
+Outputs:
+  Filesystem:
+    Description: A reference to the EFS FileSystem
+    Value: !Ref FileSystem
+

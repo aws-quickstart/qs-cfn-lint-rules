@@ -1,0 +1,892 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: 'This template deploys an ECS cluster to the provided VPC and subnets using an Auto Scaling Group'
+Parameters:
+  AWXAdminPassword:
+    Description: AWX admin user password, required
+    Type: String
+    NoEcho: 'true'
+  AWXAdminUsername:
+    Description: AWX Administrator Username, leave blank to use the default 'admin'
+    Type: String
+    Default: 'admin'
+  ECSClusterName:
+    Description: Name of existing ECS Cluster, leave blank to create a new cluster
+      and instances
+    Type: String
+    Default: ''
+  ALBArn:
+    Description: ARN of existing Application Load Balancer, leave blank to create
+      a new ALB
+    Type: String
+    Default: ''
+  AWXTaskECRRepositoryName:
+    Description: Name of existing awx_task ECR Repository, leave blank to create a
+      new repository
+    Type: String
+    Default: ''
+  AWXWebECRRepositoryName:
+    Description: Name of existing awx_web ECR Repository, leave blank to create a
+      new repository
+    Type: String
+    Default: ''
+  AWXRabbitMQECRRepositoryName:
+    Description: Name of existing rabbitmq ECR Repository, leave blank to create a
+      new repository
+    Type: String
+    Default: ''
+  AWXMemcachedECRRepositoryName:
+    Description: Name of existing memcached ECR Repository, leave blank to create
+      a new repository
+    Type: String
+    Default: ''
+  DatabaseEndpoint:
+    Description: Endpoint for postgres database, leave blank to create a new RDS database
+    Type: String
+    Default: ''
+  InstanceType:
+    Description: Which instance type should we use to build the ECS cluster? Only
+      applicable if ECSClusterName is blank
+    Type: String
+    Default: c4.2xlarge
+  ClusterSize:
+    Description: How many ECS hosts do you want to initially deploy? Only applicable
+      if ECSClusterName is blank
+    Type: Number
+    Default: 2
+  RemoteAccessCIDR:
+    AllowedPattern: ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/([0-9]|[1-2][0-9]|3[0-2]))$
+    ConstraintDescription: CIDR block parameter must be in the form x.x.x.x/x
+    Description: The CIDR IP range that is permitted to access AWX. We recommend that
+      you set this value to a trusted IP range. Only applicable if ALBArn is blank
+    Type: String
+  ECSSubnets:
+    Description: Choose which subnets this ECS cluster should be deployed to. Only
+      applicable if ECSClusterName is blank
+    Type: List<AWS::EC2::Subnet::Id>
+  ALBSubnets:
+    Description: Choose which subnets the Application Load Balancer should be deployed
+      to. Only applicable if ALBArn is blank
+    Type: List<AWS::EC2::Subnet::Id>
+  RDSSubnets:
+    Description: Choose which subnets the RDS Database should be deployed to. Only
+      applicable if DatabaseEndpoint is blank
+    Type: List<AWS::EC2::Subnet::Id>
+  VPC:
+    Description: Choose which VPC this ECS cluster should be deployed to. Only applicable
+      if ECSClusterName is blank
+    Type: AWS::EC2::VPC::Id
+  KeyPairName:
+    Description: SSH KeyPair name
+    Type: String
+    Default: ''
+  RDSAccessCidr:
+    Description: CIDR block to allow to connect to database. Only applicable if DatabaseEndpoint
+      is blank
+    Type: String
+  AllocatedStorageAndIops:
+    Description: Storage/IOPS to allocate. Only applicable if DatabaseEndpoint is
+      blank
+    Type: String
+    Default: 100 GB / 1,000 IOPS
+    AllowedValues:
+      - 100 GB / 1,000 IOPS
+      - 300 GB / 3,000 IOPS
+      - 600 GB / 6,000 IOPS
+      - 1,000 GB / 10,000 IOPS
+      - 1,500 GB / 15,000 IOPS
+      - 2,000 GB / 20,000 IOPS
+      - 3,000 GB / 30,000 IOPS
+      - 4,000 GB / 40,000 IOPS
+      - 6,000 GB / 60,000 IOPS
+  AllowMajorVersionUpgrade:
+    Description: If you update the EngineVersion property to a version that's different
+      from the DB instance's current major version, set this property to true. Only
+      applicable if DatabaseEndpoint is blank
+    Type: String
+    Default: 'false'
+    AllowedValues:
+      - 'true'
+      - 'false'
+  AutoMinorVersionUpgrade:
+    Description: Indicates that minor engine upgrades are applied automatically to
+      the DB instance during the maintenance window. Only applicable if DatabaseEndpoint
+      is blank
+    Type: String
+    Default: 'true'
+    AllowedValues:
+      - 'true'
+      - 'false'
+  AvailabilityZones:
+    Description: list of availability zones to use, must be the same quantity as specified
+      in NumberOfAvailabilityZones. Only applicable if DatabaseEndpoint is blank
+    Type: List<AWS::EC2::AvailabilityZone::Name>
+  BackupRetentionPeriod:
+    Description: The number of days during which automatic DB snapshots are retained.
+      Setting 0 disables automatic snapshots, maximum value is 35. Only applicable
+      if DatabaseEndpoint is blank
+    Type: Number
+    Default: '35'
+    MinValue: '0'
+    MaxValue: '35'
+  CidrBlocks:
+    Description: comma seperated list of CIDR blocks to place RDS into, must be the
+      same quantity as specified in NumberOfAvailabilityZones. Only applicable if
+      DatabaseEndpoint is blank
+    Type: CommaDelimitedList
+    Default: 172.16.29.0/26,172.16.29.64/26
+  CopyTagsToSnapshot:
+    Description: Indicates whether to copy all of the user-defined tags from the DB
+      instance to snapshots of the DB instance. Only applicable if DatabaseEndpoint
+      is blank
+    Type: String
+    Default: 'true'
+    AllowedValues:
+      - 'true'
+      - 'false'
+  DBInstanceClass:
+    Description: The compute and memory capacity of the DB instance. Only applicable
+      if DatabaseEndpoint is blank
+    Type: String
+    Default: db.t2.medium
+    AllowedValues:
+      - db.m1.small
+      - db.m1.medium
+      - db.m1.large
+      - db.m1.xlarge
+      - db.m2.xlarge
+      - db.m2.2xlarge
+      - db.m2.4xlarge
+      - db.m3.medium
+      - db.m3.large
+      - db.m3.xlarge
+      - db.m3.2xlarge
+      - db.m4.large
+      - db.m4.xlarge
+      - db.m4.2xlarge
+      - db.m4.4xlarge
+      - db.m4.10xlarge
+      - db.r3.large
+      - db.r3.xlarge
+      - db.r3.2xlarge
+      - db.r3.4xlarge
+      - db.r3.8xlarge
+      - db.t2.micro
+      - db.t2.small
+      - db.t2.medium
+      - db.t2.large
+  DBName:
+    Description: The name of the database to create when the DB instance is created.
+      Only applicable if DatabaseEndpoint is blank
+    Type: String
+    MinLength: '1'
+    MaxLength: '63'
+    AllowedPattern: ^(?!^postgres$)[a-zA-Z_][a-zA-Z0-9_]*$
+    ConstraintDescription: must contain from 1 to 63 alphanumeric characters, and
+      not be reserved postgres term. Only applicable if DatabaseEndpoint is blank
+    Default: awx
+  EngineVersion:
+    Description: The version number of the database engine to use. Only applicable
+      if DatabaseEndpoint is blank
+    Type: String
+    Default: 9.6.3
+    AllowedValues:
+      - 9.3.12
+      - 9.3.14
+      - 9.3.16
+      - 9.3.17
+      - 9.4.7
+      - 9.4.9
+      - 9.4.11
+      - 9.4.12
+      - 9.5.2
+      - 9.5.4
+      - 9.5.6
+      - 9.5.7
+      - 9.6.1
+      - 9.6.2
+      - 9.6.3
+  MasterUserPassword:
+    Description: Master user database Password. Only applicable if DatabaseEndpoint
+      is blank
+    Type: String
+    NoEcho: 'true'
+  MasterUsername:
+    Description: Master database Username. Only applicable if DatabaseEndpoint is
+      blank
+    Type: String
+  MonitoringInterval:
+    Description: The interval, in seconds, between points when Enhanced Monitoring
+      metrics are collected for the DB instance. Only applicable if DatabaseEndpoint
+      is blank
+    Type: String
+    Default: '1'
+    AllowedValues:
+      - '0'
+      - '1'
+      - '5'
+      - '10'
+      - '15'
+      - '30'
+      - '60'
+  MultiAZ:
+    Description: Specifies if the database instance is a multiple Availability Zone
+      deployment. Only applicable if DatabaseEndpoint is blank
+    Type: String
+    Default: 'true'
+    AllowedValues:
+      - 'true'
+      - 'false'
+  NumberOfAvailabilityZones:
+    Description: Quantity of subnets to use, if selecting more than 2 the region this
+      stack is in must have at least that many Availability Zones. Only applicable
+      if DatabaseEndpoint is blank
+    Type: String
+    Default: '2'
+    AllowedValues:
+      - '2'
+      - '3'
+      - '4'
+      - '5'
+  PortNumber:
+    Description: The port number for the database server to listen on
+    Type: Number
+    Default: '5432'
+    MinValue: '1150'
+    MaxValue: '65535'
+  PostgresServerTimezone:
+    Description: The default timezone for the database engine to use. Only applicable
+      if DatabaseEndpoint is blank
+    Type: String
+    Default: UTC
+    AllowedValues:
+      - Africa/Cairo
+      - Africa/Casablanca
+      - Africa/Harare
+      - Africa/Monrovia
+      - Africa/Nairobi
+      - Africa/Tripoli
+      - Africa/Windhoek
+      - America/Araguaina
+      - America/Asuncion
+      - America/Bogota
+      - America/Caracas
+      - America/Chihuahua
+      - America/Cuiaba
+      - America/Denver
+      - America/Fortaleza
+      - America/Guatemala
+      - America/Halifax
+      - America/Manaus
+      - America/Matamoros
+      - America/Monterrey
+      - America/Montevideo
+      - America/Phoenix
+      - America/Santiago
+      - America/Tijuana
+      - Asia/Amman
+      - Asia/Ashgabat
+      - Asia/Baghdad
+      - Asia/Baku
+      - Asia/Bangkok
+      - Asia/Beirut
+      - Asia/Calcutta
+      - Asia/Damascus
+      - Asia/Dhaka
+      - Asia/Irkutsk
+      - Asia/Jerusalem
+      - Asia/Kabul
+      - Asia/Karachi
+      - Asia/Kathmandu
+      - Asia/Krasnoyarsk
+      - Asia/Magadan
+      - Asia/Muscat
+      - Asia/Novosibirsk
+      - Asia/Riyadh
+      - Asia/Seoul
+      - Asia/Shanghai
+      - Asia/Singapore
+      - Asia/Taipei
+      - Asia/Tehran
+      - Asia/Tokyo
+      - Asia/Ulaanbaatar
+      - Asia/Vladivostok
+      - Asia/Yakutsk
+      - Asia/Yerevan
+      - Atlantic/Azores
+      - Australia/Adelaide
+      - Australia/Brisbane
+      - Australia/Darwin
+      - Australia/Hobart
+      - Australia/Perth
+      - Australia/Sydney
+      - Canada/Newfoundland
+      - Canada/Saskatchewan
+      - Brazil/East
+      - Europe/Amsterdam
+      - Europe/Athens
+      - Europe/Dublin
+      - Europe/Helsinki
+      - Europe/Istanbul
+      - Europe/Kaliningrad
+      - Europe/Moscow
+      - Europe/Paris
+      - Europe/Prague
+      - Europe/Sarajevo
+      - Pacific/Auckland
+      - Pacific/Fiji
+      - Pacific/Guam
+      - Pacific/Honolulu
+      - Pacific/Samoa
+      - US/Alaska
+      - US/Central
+      - US/Eastern
+      - US/East-Indiana
+      - US/Pacific
+      - UTC
+  PreferredBackupWindow:
+    Description: The daily time range in UTC during which automated backups are created
+      (if automated backups are enabled). Cannot overlap with PreferredMaintenanceWindowTime.
+      Only applicable if DatabaseEndpoint is blank
+    Type: String
+    Default: 00:00-02:00
+    AllowedValues:
+      - 00:00-02:00
+      - 01:00-03:00
+      - 02:00-04:00
+      - 03:00-05:00
+      - 04:00-06:00
+      - 05:00-07:00
+      - 06:00-08:00
+      - 07:00-09:00
+      - 08:00-10:00
+      - 09:00-11:00
+      - 10:00-12:00
+      - 11:00-13:00
+      - 12:00-14:00
+      - 13:00-15:00
+      - 14:00-16:00
+      - 15:00-17:00
+      - 16:00-18:00
+      - 17:00-19:00
+      - 18:00-20:00
+      - 19:00-21:00
+      - 20:00-22:00
+      - 21:00-23:00
+      - 22:00-24:00
+  PreferredMaintenanceWindowDay:
+    Description: The day of the week which RDS maintenance will be performed. Only
+      applicable if DatabaseEndpoint is blank
+    Type: String
+    Default: Mon
+    AllowedValues:
+      - Mon
+      - Tue
+      - Wed
+      - Thu
+      - Fri
+      - Sat
+      - Sun
+  PreferredMaintenanceWindowEndTime:
+    Description: The weekly end time in UTC for the RDS maintenance window, must be
+      more than PreferredMaintenanceWindowEndTime and cannot overlap with PreferredBackupWindow.
+      Only applicable if DatabaseEndpoint is blank
+    Type: String
+    Default: 06:00
+    AllowedValues:
+      - 00:00
+      - 01:00
+      - 02:00
+      - 03:00
+      - 04:00
+      - 05:00
+      - 06:00
+      - 07:00
+      - 08:00
+      - 09:00
+      - '10:00'
+      - '11:00'
+      - '12:00'
+      - '13:00'
+      - '14:00'
+      - '15:00'
+      - '16:00'
+      - '17:00'
+      - '18:00'
+      - '19:00'
+      - '20:00'
+      - '21:00'
+      - '22:00'
+  PreferredMaintenanceWindowStartTime:
+    Description: The weekly start time in UTC for the RDS maintenance window, must
+      be less than PreferredMaintenanceWindowEndTime and cannot overlap with PreferredBackupWindow.
+      Only applicable if DatabaseEndpoint is blank
+    Type: String
+    Default: 04:00
+    AllowedValues:
+      - 00:00
+      - 01:00
+      - 02:00
+      - 03:00
+      - 04:00
+      - 05:00
+      - 06:00
+      - 07:00
+      - 08:00
+      - 09:00
+      - '10:00'
+      - '11:00'
+      - '12:00'
+      - '13:00'
+      - '14:00'
+      - '15:00'
+      - '16:00'
+      - '17:00'
+      - '18:00'
+      - '19:00'
+      - '20:00'
+      - '21:00'
+      - '22:00'
+  PubliclyAccessible:
+    Description: Indicates whether the DB instance is an Internet-facing instance.
+      Only applicable if DatabaseEndpoint is blank
+    Type: String
+    Default: 'false'
+    AllowedValues:
+      - 'true'
+      - 'false'
+  StorageEncrypted:
+    Description: Indicates whether the DB instance is encrypted. Only applicable if
+      DatabaseEndpoint is blank
+    Type: String
+    Default: 'true'
+    AllowedValues:
+      - 'true'
+      - 'false'
+  StorageType:
+    Description: Specifies the storage type to be associated with the DB instance.
+      Only applicable if DatabaseEndpoint is blank
+    Type: String
+    Default: io1
+    AllowedValues:
+      - io1
+      - gp2
+      - standard
+Mappings:
+  AWSRegionToAMI:
+    us-east-2:
+      AMI: ami-1c002379
+    us-east-1:
+      AMI: ami-9eb4b1e5
+    us-west-2:
+      AMI: ami-1d668865
+    us-west-1:
+      AMI: ami-4a2c192a
+    eu-west-2:
+      AMI: ami-cb1101af
+    eu-west-1:
+      AMI: ami-8fcc32f6
+    eu-central-1:
+      AMI: ami-0460cb6b
+    ap-northeast-1:
+      AMI: ami-b743bed1
+    ap-northeast-2:
+      AMI: ami-a5dd70cb
+    ap-southeast-2:
+      AMI: ami-c1a6bda2
+    ap-southeast-1:
+      AMI: ami-9d1f7efe
+    ca-central-1:
+      AMI: ami-b677c9d2
+    ap-south-1:
+      AMI: ami-ca8ad9a5
+    eu-west-3:
+      AMI: ami-6fa21412
+  Version2Family:
+    9.3.12:
+      Family: postgres9.3
+      MajorVersion: '9.3'
+    9.3.14:
+      Family: postgres9.3
+      MajorVersion: '9.3'
+    9.3.16:
+      Family: postgres9.3
+      MajorVersion: '9.3'
+    9.3.17:
+      Family: postgres9.3
+      MajorVersion: '9.3'
+    9.4.7:
+      Family: postgres9.4
+      MajorVersion: '9.4'
+    9.4.9:
+      Family: postgres9.4
+      MajorVersion: '9.4'
+    9.4.11:
+      Family: postgres9.4
+      MajorVersion: '9.4'
+    9.4.12:
+      Family: postgres9.4
+      MajorVersion: '9.4'
+    9.5.2:
+      Family: postgres9.5
+      MajorVersion: '9.5'
+    9.5.4:
+      Family: postgres9.5
+      MajorVersion: '9.5'
+    9.5.6:
+      Family: postgres9.5
+      MajorVersion: '9.5'
+    9.5.7:
+      Family: postgres9.5
+      MajorVersion: '9.5'
+    9.6.1:
+      Family: postgres9.6
+      MajorVersion: '9.6'
+    9.6.2:
+      Family: postgres9.6
+      MajorVersion: '9.6'
+    9.6.3:
+      Family: postgres9.6
+      MajorVersion: '9.6'
+Conditions:
+  CreateECSCluster: !Equals [!Ref 'ECSClusterName', '']
+  CreateALB: !Equals [!Ref 'ALBArn', '']
+  CreateRDS: !Equals [!Ref 'DatabaseEndpoint', '']
+  CreateAWXWebECRRepository: !Equals [!Ref 'AWXWebECRRepositoryName', '']
+  CreateAWXTaskECRRepository: !Equals [!Ref 'AWXTaskECRRepositoryName', '']
+  CreateAWXRabbitMQECRRepository: !Equals [!Ref 'AWXRabbitMQECRRepositoryName', '']
+  CreateAWXMemcachedECRRepository: !Equals [!Ref 'AWXMemcachedECRRepositoryName', '']
+  CreateDummy: !And [!Not [!Equals [!Ref 'ECSClusterName', '']], !Not [!Equals [!Ref 'ALBArn',
+        '']], !Not [!Equals [!Ref 'DatabaseEndpoint', '']], !Not [!Equals [!Ref 'AWXWebECRRepositoryName',
+        '']], !Not [!Equals [!Ref 'AWXTaskECRRepositoryName', '']], !Not [!Equals [
+        !Ref 'AWXRabbitMQECRRepositoryName', '']], !Not [!Equals [AWXMemcachedECRRepository,
+        '']]]
+  3az: !Or [!Equals [!Ref 'NumberOfAvailabilityZones', '3'], !Equals [!Ref 'NumberOfAvailabilityZones',
+      '4'], !Equals [!Ref 'NumberOfAvailabilityZones', '5']]
+  4az: !Or [!Equals [!Ref 'NumberOfAvailabilityZones', '4'], !Equals [!Ref 'NumberOfAvailabilityZones',
+      '5']]
+  5az: !Equals [!Ref 'NumberOfAvailabilityZones', '5']
+  100GB: !Equals [!Ref 'AllocatedStorageAndIops', '100 GB / 1,000 IOPS']
+  300GB: !Equals [!Ref 'AllocatedStorageAndIops', '300 GB / 3,000 IOPS']
+  600GB: !Equals [!Ref 'AllocatedStorageAndIops', '600 GB / 6,000 IOPS']
+  1000GB: !Equals [!Ref 'AllocatedStorageAndIops', '1,000 GB / 10,000 IOPS']
+  1500GB: !Equals [!Ref 'AllocatedStorageAndIops', '1,500 GB / 15,000 IOPS']
+  2000GB: !Equals [!Ref 'AllocatedStorageAndIops', '2,000 GB / 20,000 IOPS']
+  3000GB: !Equals [!Ref 'AllocatedStorageAndIops', '3,000 GB / 30,000 IOPS']
+  4000GB: !Equals [!Ref 'AllocatedStorageAndIops', '4,000 GB / 40,000 IOPS']
+Resources:
+  DummyResource:
+    Condition: CreateDummy
+    Type: AWS::CloudFormation::WaitConditionHandle
+  ECSCluster:
+    Condition: CreateECSCluster
+    Type: AWS::ECS::Cluster
+  ClusterSecurityGroup:
+    Condition: CreateECSCluster
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: AWX ECS cluster hosts
+      VpcId: !Ref 'VPC'
+      SecurityGroupIngress:
+        - SourceSecurityGroupId: !Ref 'ALBSecurityGroup'
+          IpProtocol: '-1'
+  ECSAutoScalingGroup:
+    Condition: CreateECSCluster
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      VPCZoneIdentifier: !Ref 'ECSSubnets'
+      LaunchConfigurationName: !Ref 'ECSLaunchConfiguration'
+      MinSize: !Ref 'ClusterSize'
+      MaxSize: !Ref 'ClusterSize'
+      DesiredCapacity: !Ref 'ClusterSize'
+    CreationPolicy:
+      ResourceSignal:
+        Timeout: PT15M
+    UpdatePolicy:
+      AutoScalingRollingUpdate:
+        MinInstancesInService: 1
+        MaxBatchSize: 1
+        PauseTime: PT15M
+        SuspendProcesses:
+          - HealthCheck
+          - ReplaceUnhealthy
+          - AZRebalance
+          - AlarmNotification
+          - ScheduledActions
+        WaitOnResourceSignals: true
+  ECSLaunchConfiguration:
+    Condition: CreateECSCluster
+    Type: AWS::AutoScaling::LaunchConfiguration
+    Properties:
+      ImageId: !FindInMap [AWSRegionToAMI, !Ref 'AWS::Region', AMI]
+      InstanceType: !Ref 'InstanceType'
+      KeyName: !Ref 'KeyPairName'
+      SecurityGroups:
+        - !GetAtt 'ClusterSecurityGroup.GroupId'
+      IamInstanceProfile: !Ref 'ECSInstanceProfile'
+      UserData: !Base64
+        Fn::Sub: '#!/bin/bash
+
+          yum install -y aws-cfn-bootstrap
+
+          /opt/aws/bin/cfn-init -v --region ${AWS::Region} --stack ${AWS::StackName}
+          --resource ECSLaunchConfiguration
+
+          /opt/aws/bin/cfn-signal -e $? --region ${AWS::Region} --stack ${AWS::StackName}
+          --resource ECSAutoScalingGroup
+
+          '
+    Metadata:
+      AWS::CloudFormation::Init:
+        config:
+          commands:
+            01_add_instance_to_cluster:
+              command: !Sub 'echo ECS_CLUSTER=${ECSCluster} >> /etc/ecs/ecs.config'
+          files:
+            /etc/cfn/cfn-hup.conf:
+              mode: 256
+              owner: root
+              group: root
+              content: !Sub '[main]
+
+                stack=${AWS::StackId}
+
+                region=${AWS::Region}
+
+                '
+            /etc/cfn/hooks.d/cfn-auto-reloader.conf:
+              content: !Sub ['[cfn-auto-reloader-hook]
+
+                  triggers=post.update
+
+                  path=Resources.ECSLaunchConfiguration.Metadata.AWS::CloudFormation::Init
+
+                  ${Param1}', {Param1: !Sub 'action=/opt/aws/bin/cfn-init -v --region
+                    ${AWS::Region} --stack ${AWS::StackName} --resource ECSLaunchConfiguration'}]
+          services:
+            sysvinit:
+              cfn-hup:
+                enabled: true
+                ensureRunning: true
+                files:
+                  - /etc/cfn/cfn-hup.conf
+                  - /etc/cfn/hooks.d/cfn-auto-reloader.conf
+  ECSInstanceRole:
+    Condition: CreateECSCluster
+    Type: AWS::IAM::Role
+    Properties:
+      Path: /
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action: sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+      Policies:
+        - PolicyName: ecs-service
+          PolicyDocument:
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ecs:CreateCluster
+                  - ecs:DeregisterContainerInstance
+                  - ecs:DiscoverPollEndpoint
+                  - ecs:Poll
+                  - ecs:RegisterContainerInstance
+                  - ecs:StartTelemetrySession
+                  - ecs:Submit*
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:BatchGetImage
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:GetAuthorizationToken
+                Resource: '*'
+  ECSInstanceProfile:
+    Condition: CreateECSCluster
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: /
+      Roles:
+        - !Ref 'ECSInstanceRole'
+  ALBSecurityGroup:
+    Condition: CreateALB
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: AWX ECS Application Load Balancer
+      VpcId: !Ref 'VPC'
+      SecurityGroupIngress:
+        - CidrIp: !Ref 'RemoteAccessCIDR'
+          IpProtocol: '-1'
+  ALB:
+    Condition: CreateALB
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Subnets: !Ref 'ALBSubnets'
+      SecurityGroups:
+        - !Ref 'ALBSecurityGroup'
+  AWXTaskECRRepository:
+    Condition: CreateAWXTaskECRRepository
+    Type: AWS::ECR::Repository
+  AWXWebECRRepository:
+    Condition: CreateAWXWebECRRepository
+    Type: AWS::ECR::Repository
+  AWXMemcachedECRRepository:
+    Condition: CreateAWXMemcachedECRRepository
+    Type: AWS::ECR::Repository
+  AWXRabbitMQECRRepository:
+    Condition: CreateAWXRabbitMQECRRepository
+    Type: AWS::ECR::Repository
+  DBInstance:
+    Condition: CreateRDS
+    Type: AWS::RDS::DBInstance
+    DeletionPolicy: Snapshot
+    Properties:
+      AllocatedStorage: !If [100GB, '100', !If [300GB, '300', !If [600GB, '600', !If [
+              1000GB, '1000', !If [1500GB, '1500', !If [2000GB, '2000', !If [3000GB,
+                    '3000', !If [4000GB, '4000', '6000']]]]]]]]
+      AllowMajorVersionUpgrade: !Ref 'AllowMajorVersionUpgrade'
+      AutoMinorVersionUpgrade: !Ref 'AutoMinorVersionUpgrade'
+      BackupRetentionPeriod: !Ref 'BackupRetentionPeriod'
+      CopyTagsToSnapshot: !Ref 'CopyTagsToSnapshot'
+      DBInstanceClass: !Ref 'DBInstanceClass'
+      DBName: !Ref 'DBName'
+      DBParameterGroupName: !Ref 'DBParameterGroup'
+      DBSubnetGroupName: !Ref 'DBSubnetGroup'
+      Engine: postgres
+      EngineVersion: !Ref 'EngineVersion'
+      Iops: !If [100GB, '1000', !If [300GB, '3000', !If [600GB, '6000', !If [1000GB,
+              '10000', !If [1500GB, '15000', !If [2000GB, '20000', !If [3000GB, '30000',
+                    !If [4000GB, '40000', '60000']]]]]]]]
+      KmsKeyId: !GetAtt 'KMSKey.Arn'
+      LicenseModel: postgresql-license
+      MasterUsername: !Ref 'MasterUsername'
+      MasterUserPassword: !Ref 'MasterUserPassword'
+      MonitoringInterval: !Ref 'MonitoringInterval'
+      MonitoringRoleArn: !GetAtt 'MonitoringRole.Arn'
+      MultiAZ: !Ref 'MultiAZ'
+      OptionGroupName: !Ref 'DBOptionGroup'
+      Port: !Ref 'PortNumber'
+      PreferredBackupWindow: !Ref 'PreferredBackupWindow'
+      PreferredMaintenanceWindow: !Sub '${PreferredMaintenanceWindowDay}:${PreferredMaintenanceWindowStartTime}-${PreferredMaintenanceWindowDay}:${PreferredMaintenanceWindowEndTime}'
+      PubliclyAccessible: !Ref 'PubliclyAccessible'
+      StorageEncrypted: !Ref 'StorageEncrypted'
+      StorageType: !Ref 'StorageType'
+      VPCSecurityGroups:
+        - !Ref 'RDSSecurityGroup'
+  DBOptionGroup:
+    Condition: CreateRDS
+    Type: AWS::RDS::OptionGroup
+    DeletionPolicy: Retain
+    Properties:
+      EngineName: postgres
+      MajorEngineVersion: !FindInMap [Version2Family, !Ref 'EngineVersion', MajorVersion]
+      OptionGroupDescription: !Sub 'Application: AWX Database: ${DBName}'
+      OptionConfigurations: []
+  DBParameterGroup:
+    Condition: CreateRDS
+    Type: AWS::RDS::DBParameterGroup
+    Properties:
+      Description: !Sub 'Application: AWX Database: ${DBName}'
+      Family: !FindInMap [Version2Family, !Ref 'EngineVersion', Family]
+      Parameters:
+        timezone: !Ref 'PostgresServerTimezone'
+  DBSubnetGroup:
+    Condition: CreateRDS
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: !Sub 'Application: AWX Database: ${DBName}'
+      SubnetIds:
+        - !Select [0, !Ref 'RDSSubnets']
+        - !Select [1, !Ref 'RDSSubnets']
+        - !If [3az, !Select [2, !Ref 'RDSSubnets'], !Ref 'AWS::NoValue']
+        - !If [4az, !Select [3, !Ref 'RDSSubnets'], !Ref 'AWS::NoValue']
+        - !If [5az, !Select [4, !Ref 'RDSSubnets'], !Ref 'AWS::NoValue']
+  KMSKey:
+    Condition: CreateRDS
+    Type: AWS::KMS::Key
+    Properties:
+      Description: !Sub 'Application: AWX Database: ${DBName}'
+      Enabled: 'true'
+      EnableKeyRotation: 'true'
+      KeyPolicy:
+        Version: '2012-10-17'
+        Id: key-default-1
+        Statement:
+          - Sid: Allow administration of the key
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:aws:iam::${AWS::AccountId}:root'
+            Action:
+              - kms:Create*
+              - kms:Describe*
+              - kms:Enable*
+              - kms:List*
+              - kms:Put*
+              - kms:Update*
+              - kms:Revoke*
+              - kms:Disable*
+              - kms:Get*
+              - kms:Delete*
+              - kms:ScheduleKeyDeletion
+              - kms:CancelKeyDeletion
+            Resource: '*'
+  MonitoringRole:
+    Condition: CreateRDS
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: monitoring.rds.amazonaws.com
+            Action: sts:AssumeRole
+      Path: /
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonRDSEnhancedMonitoringRole
+  RDSSecurityGroup:
+    Condition: CreateRDS
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub 'Allow Client connections to Application: AWX Database:
+        ${DBName}'
+      VpcId: !Ref 'VPC'
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: !Ref 'PortNumber'
+          ToPort: !Ref 'PortNumber'
+          CidrIp: !Ref 'RDSAccessCidr'
+      SecurityGroupEgress:
+        - IpProtocol: '-1'
+          FromPort: '-1'
+          ToPort: '-1'
+          CidrIp: 0.0.0.0/0
+Outputs:
+  Cluster:
+    Description: A reference to the ECS cluster
+    Value: !If [CreateECSCluster, !Ref 'ECSCluster', !Ref 'ECSClusterName']
+  RabbitMQRegistry:
+    Description: A reference to the rabbitmq ECR repository
+    Value: !If [CreateAWXRabbitMQECRRepository, !Ref 'AWXRabbitMQECRRepository', !Ref 'AWXRabbitMQECRRepositoryName']
+  MemcachedRegistry:
+    Description: A reference to the memcached ECR repository
+    Value: !If [CreateAWXMemcachedECRRepository, !Ref 'AWXMemcachedECRRepository',
+      !Ref 'AWXMemcachedECRRepositoryName']
+  AWXWebRegistry:
+    Description: A reference to the awx_web ECR repository
+    Value: !If [CreateAWXWebECRRepository, !Ref 'AWXWebECRRepository', !Ref 'AWXWebECRRepositoryName']
+  AWXTaskRegistry:
+    Description: A reference to the ECR repository
+    Value: !If [CreateAWXTaskECRRepository, !Ref 'AWXTaskECRRepository', !Ref 'AWXTaskECRRepositoryName']
+  DBEndpoint:
+    Description: Database endpoint
+    Value: !If [CreateRDS, !GetAtt 'DBInstance.Endpoint.Address', !Ref 'DatabaseEndpoint']
+  ALBARN:
+    Description: ALB ARN
+    Value: !Ref ALB
+  ALBDNSName:
+    Description: ALB DNSName
+    Value: !GetAtt 'ALB.DNSName'
+  ECSInstanceRoleARN:
+    Description: ECS IAM Role
+    Value: !GetAtt 'ECSInstanceRole.Arn'

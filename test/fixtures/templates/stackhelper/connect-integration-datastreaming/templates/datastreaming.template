@@ -1,0 +1,559 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Data Streaming Integration (Workload Template) for Amazon Connect Quick
+  Start (qs-1no5jafma)
+Mappings:
+  FirehoseRegionConfig:
+    us-east-1:
+      IPRange: 52.70.63.192/27
+    us-east-2:
+      IPRange: 13.58.135.96/27
+    us-west-2:
+      IPRange: 52.89.255.224/27
+    ap-northeast-1:
+      IPRange: 13.113.196.224/27
+    eu-central-1:
+      IPRange: 35.158.127.160/27
+    eu-west-1:
+      IPRange: 52.19.239.192/27
+  QuickSightRegionConfig:
+    us-east-1:
+      IPRange: 52.23.63.224/27
+    us-east-2:
+      IPRange: 52.15.247.160/27
+    us-west-2:
+      IPRange: 54.70.204.128/27
+    ap-southeast-1:
+      IPRange: 13.229.254.0/27
+    ap-southeast-2:
+      IPRange: 54.153.249.96/27
+    eu-west-1:
+      IPRange: 52.210.255.224/27
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+    - Label:
+        default: Amazon Redshift Configuration
+      Parameters:
+      - DBName
+      - DBUser
+      - DBPwd
+      - DBPort
+    - Label:
+        default: Network Configuration
+      Parameters:
+      - VPCID
+      - PrivateSubnetID
+      - PublicSubnetID
+    - Label:
+        default: AWS Quick Start Configuration
+      Parameters:
+      - QSS3BucketName
+      - QSS3KeyPrefix
+    ParameterLabels:
+      DBName:
+        default: Database Name
+      DBPort:
+        default: Database Port
+      DBPwd:
+        default: Master User Password
+      DBUser:
+        default: Master User Name
+      PrivateSubnetID:
+        default: Private Subnet ID
+      PublicSubnetID:
+        default: Public Subnet ID
+      QSS3BucketName:
+        default: Quick Start S3 Bucket Name
+      QSS3KeyPrefix:
+        default: Quick Start S3 Key Prefix
+      VPCID:
+        default: VPC ID
+Parameters:
+  DBName:
+    Description: Provide a name for your database or accept the default
+    Type: String
+    Default: acctr
+  DBPort:
+    Description: Provide a database port or accept the default
+    Type: Number
+    MinValue: 1150
+    MaxValue: 65535
+    Default: 5439
+  DBPwd:
+    AllowedPattern: ^(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?!.*[@/\\"']).*$
+    ConstraintDescription: Password does not meet complexity requirements
+    Description: Password must contain 8 to 64 printable ASCII characters excluding
+      /, ", ', \, and @. It must contain 1 uppercase letter, 1 lowercase letter, and
+      1 number.
+    Type: String
+    MinLength: 8
+    MaxLength: 64
+    NoEcho: true
+  DBUser:
+    Description: Provide a name for the database administrator account or accept the
+      default
+    Type: String
+  PrivateSubnetID:
+    Description: Select at least one private subnet
+    Type: List<AWS::EC2::Subnet::Id>
+  PublicSubnetID:
+    Description: Select at least one public subnet
+    Type: List<AWS::EC2::Subnet::Id>
+  QSS3BucketName:
+    AllowedPattern: ^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$
+    ConstraintDescription: Quick Start bucket name can include numbers, lowercase
+      letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen
+      (-)
+    Description: S3 bucket name for the Quick Start assets. This string can include
+      numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start
+      or end with a hyphen (-)
+    Default: aws-quickstart
+    Type: String
+  QSS3KeyPrefix:
+    AllowedPattern: ^[0-9a-zA-Z-/]*$
+    ConstraintDescription: Quick Start key prefix can include numbers, lowercase letters,
+      uppercase letters, hyphens (-), and forward slash (/)
+    Description: S3 key prefix for the Quick Start assets. Quick Start key prefix
+      can include numbers, lowercase letters, uppercase letters, hyphens (-), and
+      forward slash (/)
+    Type: String
+    Default: connect-integration-datastreaming/
+  VPCID:
+    Description: Select an existing VPC where you would like to provision your Redshift
+      Cluster
+    Type: AWS::EC2::VPC::Id
+Rules:
+  RegionSupport:
+    Assertions:
+    - Assert:
+        Fn::Equals:
+        - Ref: AWS::Region
+        - us-east-1
+      AssertDescription: Region must be US East (N. Virginia) - us-east-1
+  SubnetsInVPC:
+    Assertions:
+    - Assert:
+        Fn::EachMemberIn:
+        - Fn::ValueOfAll:
+          - AWS::EC2::Subnet::Id
+          - VpcId
+        - Fn::RefAll: AWS::EC2::VPC::Id
+      AssertDescription: All subnets must in the VPC
+Resources:
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Path: /
+      Policies:
+      - PolicyName: kinesis
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - kinesis:GetShardIterator
+            - kinesis:GetRecords
+            - kinesis:DescribeStream
+            Resource:
+              Fn::GetAtt: KinesisStream.Arn
+          - Effect: Allow
+            Action:
+            - kinesis:ListStreams
+            Resource: '*'
+      - PolicyName: firehose
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - firehose:PutRecord
+            - firehose:PutRecordBatch
+            Resource:
+            - Fn::Sub: arn:aws:firehose:${AWS::Region}:${AWS::AccountId}:deliverystream/${FireHoseCTRStream}
+            - Fn::Sub: arn:aws:firehose:${AWS::Region}:${AWS::AccountId}:deliverystream/${FireHoseCTRATTRStream}
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+  FirehoseRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          Effect: Allow
+          Principal:
+            Service:
+            - firehose.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Path: /
+  FirehoseS3Policy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: s3
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Action:
+          - s3:AbortMultipartUpload
+          - s3:GetBucketLocation
+          - s3:GetObject
+          - s3:ListBucket
+          - s3:ListBucketMultipartUploads
+          - s3:PutObject
+          Resource:
+          - Fn::GetAtt: S3Bucket.Arn
+          - Fn::Sub: ${S3Bucket.Arn}/*
+      Roles:
+      - Ref: FirehoseRole
+  FirehoseLogsPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: logs
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Action:
+          - logs:PutLogEvents
+          - logs:CreateLogStream
+          Resource:
+          - Fn::Sub: arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/kinesisfirehose/${FireHoseCTRStream}:log-stream:*
+          - Fn::Sub: arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/kinesisfirehose/${FireHoseCTRATTRStream}:log-stream:*
+      Roles:
+      - Ref: FirehoseRole
+  FirehosePolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: firehose
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Action:
+          - firehose:PutRecord
+          - firehose:PutRecordBatch
+          - firehose:UpdateDestination
+          Resource:
+          - Fn::Sub: arn:aws:firehose:${AWS::Region}:${AWS::AccountId}:deliverystream/${FireHoseCTRStream}
+          - Fn::Sub: arn:aws:firehose:${AWS::Region}:${AWS::AccountId}:deliverystream/${FireHoseCTRATTRStream}
+      Roles:
+      - Ref: FirehoseRole
+  LambdaCTRProcessor:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: ctrprocessor.handler
+      Runtime: nodejs8.10
+      Description: Amazon Connect CTR Processor
+      MemorySize: 128
+      Timeout: 30
+      Role:
+        Fn::GetAtt: LambdaExecutionRole.Arn
+      Code:
+        S3Bucket:
+          Ref: QSS3BucketName
+        S3Key:
+          Fn::Sub: ${QSS3KeyPrefix}functions/packages/ctrprocessor/ctrprocessor.zip
+  S3Bucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+  RedshiftElasticIP:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+  RedShiftSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId:
+        Ref: VPCID
+      GroupDescription: Amazon Redshift security group
+      SecurityGroupIngress:
+      - CidrIp:
+          Fn::FindInMap:
+          - FirehoseRegionConfig
+          - Ref: AWS::Region
+          - IPRange
+        FromPort:
+          Ref: DBPort
+        ToPort:
+          Ref: DBPort
+        IpProtocol: tcp
+      - CidrIp:
+          Fn::FindInMap:
+          - QuickSightRegionConfig
+          - Ref: AWS::Region
+          - IPRange
+        FromPort:
+          Ref: DBPort
+        ToPort:
+          Ref: DBPort
+        IpProtocol: tcp
+      - SourceSecurityGroupId:
+          Ref: RedshiftTblCreatorSG
+        FromPort:
+          Ref: DBPort
+        ToPort:
+          Ref: DBPort
+        IpProtocol: tcp
+  ClusterSubnetGroup:
+    Type: AWS::Redshift::ClusterSubnetGroup
+    Properties:
+      Description: RedshiftClusterSubnetGroup
+      SubnetIds:
+        Ref: PublicSubnetID
+  RedshiftCluster:
+    Type: AWS::Redshift::Cluster
+    DependsOn: ClusterSubnetGroup
+    Properties:
+      ClusterType: multi-node
+      DBName:
+        Ref: DBName
+      ElasticIp:
+        Ref: RedshiftElasticIP
+      MasterUsername:
+        Ref: DBUser
+      MasterUserPassword:
+        Ref: DBPwd
+      NodeType: ds2.xlarge
+      NumberOfNodes: 2
+      Port:
+        Ref: DBPort
+      PubliclyAccessible: true
+      VpcSecurityGroupIds:
+      - Ref: RedShiftSecurityGroup
+      ClusterSubnetGroupName:
+        Ref: ClusterSubnetGroup
+  RedshiftTblCreatorSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId:
+        Ref: VPCID
+      GroupDescription: Redshift table creator security group
+  RedshiftTblCreatorCR:
+    Type: Custom::RedshiftTableCreator
+    Version: '1.0'
+    Properties:
+      ServiceToken:
+        Fn::GetAtt: RedshiftTblCreator.Arn
+      host:
+        Fn::GetAtt: RedshiftCluster.Endpoint.Address
+      db:
+        Ref: DBName
+      user:
+        Ref: DBUser
+      password:
+        Ref: DBPwd
+      port:
+        Fn::GetAtt: RedshiftCluster.Endpoint.Port
+  RedshiftTblCreatorExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Path: /
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole
+  RedshiftTblCreator:
+    Type: AWS::Lambda::Function
+    DependsOn: RedshiftCluster
+    Properties:
+      Handler: tblcreate.handler
+      Runtime: nodejs8.10
+      Description: Amazon Connect Table Creator for Redshift
+      MemorySize: 128
+      Timeout: 60
+      Role:
+        Fn::GetAtt: RedshiftTblCreatorExecutionRole.Arn
+      Code:
+        S3Bucket:
+          Ref: QSS3BucketName
+        S3Key:
+          Fn::Sub: ${QSS3KeyPrefix}functions/packages/tblcreate/tblcreate.zip
+      VpcConfig:
+        SecurityGroupIds:
+        - Ref: RedshiftTblCreatorSG
+        SubnetIds:
+          Ref: PrivateSubnetID
+  FireHoseCTRStreamLogGroup:
+    Type: AWS::Logs::LogGroup
+  FirehoseCTRStreamLogS3:
+    Type: AWS::Logs::LogStream
+    Properties:
+      LogGroupName:
+        Ref: FireHoseCTRStreamLogGroup
+      LogStreamName: S3Delivery
+  FirehoseCTRStreamLogRS:
+    Type: AWS::Logs::LogStream
+    Properties:
+      LogGroupName:
+        Ref: FireHoseCTRStreamLogGroup
+      LogStreamName: RedshiftDelivery
+  FireHoseCTRStream:
+    Type: AWS::KinesisFirehose::DeliveryStream
+    DependsOn:
+    - RedshiftTblCreator
+    Properties:
+      DeliveryStreamName: connect-ctr-to-rs
+      RedshiftDestinationConfiguration:
+        ClusterJDBCURL:
+          Fn::Sub: jdbc:redshift://${RedshiftCluster.Endpoint.Address}:${DBPort}/${DBName}
+        CopyCommand:
+          CopyOptions:
+            Fn::Sub: FORMAT AS JSON 's3://${QSS3BucketName}/${QSS3KeyPrefix}scripts/ctr.json'
+              TIMEFORMAT AS 'YYYY-MM-DDTHH:MI:SSZ'
+          DataTableName: ctr
+        Password:
+          Ref: DBPwd
+        RoleARN:
+          Fn::GetAtt: FirehoseRole.Arn
+        S3Configuration:
+          BucketARN:
+            Fn::GetAtt: S3Bucket.Arn
+          BufferingHints:
+            IntervalInSeconds: 60
+            SizeInMBs: 1
+          CloudWatchLoggingOptions:
+            Enabled: true
+            LogGroupName:
+              Ref: FireHoseCTRStreamLogGroup
+            LogStreamName:
+              Ref: FirehoseCTRStreamLogS3
+          CompressionFormat: UNCOMPRESSED
+          Prefix: ctr-
+          RoleARN:
+            Fn::GetAtt: FirehoseRole.Arn
+        Username:
+          Ref: DBUser
+        CloudWatchLoggingOptions:
+          Enabled: true
+          LogGroupName:
+            Ref: FireHoseCTRStreamLogGroup
+          LogStreamName:
+            Ref: FirehoseCTRStreamLogRS
+  FireHoseCTRATTRStreamLogGroup:
+    Type: AWS::Logs::LogGroup
+  FirehoseCTRATTRStreamLogS3:
+    Type: AWS::Logs::LogStream
+    Properties:
+      LogGroupName:
+        Ref: FireHoseCTRATTRStreamLogGroup
+      LogStreamName: S3Delivery
+  FirehoseCTRATTRStreamLogRS:
+    Type: AWS::Logs::LogStream
+    Properties:
+      LogGroupName:
+        Ref: FireHoseCTRATTRStreamLogGroup
+      LogStreamName: RedshiftDelivery
+  FireHoseCTRATTRStream:
+    Type: AWS::KinesisFirehose::DeliveryStream
+    DependsOn:
+    - RedshiftTblCreator
+    Properties:
+      DeliveryStreamName: connect-ctr-attr-to-rs
+      RedshiftDestinationConfiguration:
+        ClusterJDBCURL:
+          Fn::Sub: jdbc:redshift://${RedshiftCluster.Endpoint.Address}:${DBPort}/${DBName}
+        CopyCommand:
+          CopyOptions:
+            Fn::Sub: FORMAT AS JSON 's3://${QSS3BucketName}/${QSS3KeyPrefix}scripts/ctr_attr.json'
+              TIMEFORMAT AS 'YYYY-MM-DDTHH:MI:SSZ'
+          DataTableName: ctr_attr
+        Password:
+          Ref: DBPwd
+        RoleARN:
+          Fn::GetAtt: FirehoseRole.Arn
+        S3Configuration:
+          BucketARN:
+            Fn::GetAtt: S3Bucket.Arn
+          BufferingHints:
+            IntervalInSeconds: 60
+            SizeInMBs: 5
+          CloudWatchLoggingOptions:
+            Enabled: true
+            LogGroupName:
+              Ref: FireHoseCTRATTRStreamLogGroup
+            LogStreamName:
+              Ref: FirehoseCTRATTRStreamLogS3
+          CompressionFormat: UNCOMPRESSED
+          Prefix: ctr_attr-
+          RoleARN:
+            Fn::GetAtt: FirehoseRole.Arn
+        Username:
+          Ref: DBUser
+        CloudWatchLoggingOptions:
+          Enabled: true
+          LogGroupName:
+            Ref: FireHoseCTRATTRStreamLogGroup
+          LogStreamName:
+            Ref: FirehoseCTRATTRStreamLogRS
+  KinesisStream:
+    Type: AWS::Kinesis::Stream
+    DependsOn:
+    - FireHoseCTRStream
+    - FireHoseCTRATTRStream
+    Properties:
+      Name: ctr-processor
+      ShardCount: 1
+  CTREventTrigger:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      EventSourceArn:
+        Fn::GetAtt: KinesisStream.Arn
+      FunctionName:
+        Fn::GetAtt: LambdaCTRProcessor.Arn
+      StartingPosition: LATEST
+Outputs:
+  RedshiftCluster:
+    Description: Amazon Redshift Cluster URL
+    Value:
+      Fn::GetAtt: RedshiftCluster.Endpoint.Address
+  S3Bucket:
+    Description: Amazon Connect Data Streaming S3 Bucket
+    Value:
+      Ref: S3Bucket
+  LambdaExecutionRole:
+    Description: Lambda Function Execution Role
+    Value:
+      Ref: LambdaExecutionRole
+  LambdaCTRProcessor:
+    Description: Lambda Function for CTR Processor
+    Value:
+      Ref: LambdaCTRProcessor
+  KinesisStream:
+    Description: Kinesis CTR Data Stream
+    Value:
+      Ref: KinesisStream
+  FirehoseRole:
+    Description: Kinesis Firehose IAM Role
+    Value:
+      Ref: FirehoseRole
+  FireHoseCTRStream:
+    Description: Kinesis Firehose for CTR Stream
+    Value:
+      Ref: FireHoseCTRStream
+  FireHoseCTRATTRStream:
+    Description: Kinesis Firehose for CTR Attributes Stream
+    Value:
+      Ref: FireHoseCTRATTRStream
+  RedshiftTblCreator:
+    Description: Lambda Function for Redshift Table Creation
+    Value:
+      Ref: RedshiftTblCreator
+...

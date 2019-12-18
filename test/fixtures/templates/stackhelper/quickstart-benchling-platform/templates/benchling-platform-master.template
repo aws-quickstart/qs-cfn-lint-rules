@@ -1,0 +1,173 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Biotech Blueprint template to automate creating PrivateLink and split horizon DNS configs to Benchling's SaaS platform. (qs-1of00337n)
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+    - Label:
+        default: PrivateLink Configuration
+      Parameters:
+      - pPrivateLinkServiceName
+      - pInternalHostedZoneSecondLevelDomainName
+    - Label:
+        default: Network Configuration
+      Parameters:
+      - pAvailabilityZones
+      - pVPCCIDR
+      - pPublicSubnet1CIDR
+      - pPublicSubnet2CIDR
+      - pPrivateSubnet1CIDR
+      - pPrivateSubnet2CIDR
+      - pSecurityGroupForWebAccess
+      - pWebAccessCIDR
+      - pEC2KeyPair
+    - Label:
+        default: AWS Quick Start Configuration
+      Parameters:
+      - QSS3BucketName
+      - QSS3KeyPrefix
+    ParameterLabels:
+      pAvailabilityZones:
+        default: Availability Zones
+      pEC2KeyPair:
+        default: Key Pair for Server
+      pInternalHostedZoneSecondLevelDomainName:
+        default: Subdomain
+      pPrivateLinkServiceName:
+        default: PrivateLink Service Name
+      pPrivateSubnet1CIDR:
+        default: Private Subnet 1 CIDR
+      pPrivateSubnet2CIDR:
+        default: Private Subnet 2 CIDR
+      pPublicSubnet1CIDR:
+        default: Public Subnet 1 CIDR
+      pPublicSubnet2CIDR:
+        default: Public Subnet 2 CIDR
+      pSecurityGroupForWebAccess:
+        default: Web Access Security Group
+      pVPCCIDR:
+        default: VPC CIDR  
+      pWebAccessCIDR:
+        default: Web Access CIDR (No SG)
+      QSS3KeyPrefix:
+        default: Quick Start S3 Key Prefix
+      QSS3BucketName:
+        default: Quick Start S3 Bucket Name
+
+Parameters:
+  pAvailabilityZones:
+    Description: List of Availability Zones to use for the subnets in the VPC. Only
+      two Availability Zones are used for this deployment, and the logical order of
+      your selections is preserved.
+    Type: List<AWS::EC2::AvailabilityZone::Name>
+  pEC2KeyPair:
+    Description: Key Name for Mosaic server.
+    Type: AWS::EC2::KeyPair::KeyName    
+  pInternalHostedZoneSecondLevelDomainName:
+    Description: Route53 Hosted Zone 2nd level domain resources
+    Type: String
+  pPrivateLinkServiceName:
+    Description: PrivateLink Service Name
+    Type: String
+    Default: com.amazonaws.vpce.us-east-1.vpce-svc-0f2ce31d9b9a9690b
+  pPrivateSubnet1CIDR:
+    AllowedPattern: ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/(1[6-9]|2[0-8]))$
+    ConstraintDescription: CIDR block parameter must be in the form x.x.x.x/16-28
+    Default: 10.0.0.0/19
+    Description: CIDR block for private subnet 1 located in Availability Zone 1
+    Type: String
+  pPrivateSubnet2CIDR:
+    AllowedPattern: ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/(1[6-9]|2[0-8]))$
+    ConstraintDescription: CIDR block parameter must be in the form x.x.x.x/16-28
+    Default: 10.0.32.0/19
+    Description: CIDR block for private subnet 2 located in Availability Zone 2
+    Type: String
+  pPublicSubnet1CIDR:
+    AllowedPattern: ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/(1[6-9]|2[0-8]))$
+    ConstraintDescription: CIDR block parameter must be in the form x.x.x.x/16-28
+    Default: 10.0.128.0/20
+    Description: CIDR block for the public (DMZ) subnet 1 located in Availability
+      Zone 1
+    Type: String
+  pPublicSubnet2CIDR:
+    AllowedPattern: ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/(1[6-9]|2[0-8]))$
+    ConstraintDescription: CIDR block parameter must be in the form x.x.x.x/16-28
+    Default: 10.0.144.0/20
+    Description: CIDR block for the public (DMZ) subnet 2 located in Availability
+      Zone 2
+    Type: String
+  pSecurityGroupForWebAccess:
+    Description: Security group for web access
+    Type: String
+    Default: ""
+  pVPCCIDR:
+    AllowedPattern: ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/(1[6-9]|2[0-8]))$
+    ConstraintDescription: CIDR block parameter must be in the form x.x.x.x/16-28
+    Default: 10.0.0.0/16
+    Description: CIDR block for the VPC
+    Type: String
+  pWebAccessCIDR:
+    Description:  Will only be used if Web Access Security Group is not specified. Enter 0.0.0.0/0 if you want to open it to the world.
+    Type: String
+    Default: "10.0.0.0/16"
+  QSS3BucketName:
+    AllowedPattern: ^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$
+    ConstraintDescription: Quick Start bucket name can include numbers, lowercase
+      letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen
+      (-).
+    Default: aws-quickstart
+    Description: S3 bucket name for the Quick Start assets. Quick Start bucket name
+      can include numbers, lowercase letters, uppercase letters, and hyphens (-).
+      It cannot start or end with a hyphen (-).
+    Type: String
+  QSS3KeyPrefix:
+    AllowedPattern: ^[0-9a-zA-Z-/]*$
+    ConstraintDescription: Quick Start key prefix can include numbers, lowercase letters,
+      uppercase letters, hyphens (-), and a forward slash (/) at the end of the prefix.
+    Description: S3 key prefix for the Quick Start assets. Quick Start key prefix
+      can include numbers, lowercase letters, uppercase letters, hyphens (-), and
+      forward slash (/).
+    Default: quickstart-benchling-platform/
+    Type: String
+
+Resources:
+  rVPCStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL:
+        Fn::Sub: https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}submodules/quickstart-aws-vpc/templates/aws-vpc.template
+      Parameters:
+        AvailabilityZones: !Join [ "," , !Ref pAvailabilityZones ]
+        KeyPairName: !Ref pEC2KeyPair
+        NumberOfAZs: 2
+        PrivateSubnet1ACIDR: !Ref pPrivateSubnet1CIDR
+        PrivateSubnet2ACIDR: !Ref pPrivateSubnet2CIDR
+        PublicSubnet1CIDR: !Ref pPublicSubnet1CIDR
+        PublicSubnet2CIDR: !Ref pPublicSubnet2CIDR
+        VPCCIDR: !Ref pVPCCIDR
+
+  # Benchling
+  rBenchling:
+    Type: AWS::CloudFormation::Stack
+    DependsOn:
+    - rVPCStack
+    Properties:
+      TemplateURL: !Sub https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}templates/benchling-platform.template
+      Parameters:
+        pInternalHostedZoneSecondLevelDomainName: !Ref pInternalHostedZoneSecondLevelDomainName
+        pAppSubnetA: !GetAtt rVPCStack.Outputs.PrivateSubnet1AID
+        pAppSubnetB: !GetAtt rVPCStack.Outputs.PrivateSubnet2AID
+        pPrivateLinkServiceName: !Ref pPrivateLinkServiceName
+        pSecurityGroupForWebAccess: !Ref pSecurityGroupForWebAccess
+        pVpcId: !GetAtt rVPCStack.Outputs.VPCID
+        pWebAccessCIDR: !Ref pWebAccessCIDR
+
+Outputs:
+  BenchlingURL:
+    Value: !GetAtt rBenchling.Outputs.BenchlingURL
+  rInternalHostedZoneIDParam:
+    Description: Route53 internal hosted zone ID for Benchling split horizon DNS.
+    Value: !GetAtt rBenchling.Outputs.rInternalHostedZoneIDParam
+  rInternalHostedZoneApexDomainName: 
+    Description: Route53 internal hosted zone domain name for Benchling service
+    Value: !GetAtt rBenchling.Outputs.rInternalHostedZoneApexDomainName
+        

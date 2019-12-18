@@ -1,0 +1,179 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "Download files from S3 bucket and add delay.",
+    "Parameters": {
+        "SourceS3Bucket": {
+            "Default": "pan-boot-euca1",
+            "Description": "Enter the name of the Bootstrap S3 bucket for the VM-Series firewall",
+            "MaxLength": "63",
+            "MinLength": "3",
+            "Type": "String"
+        }
+    },
+    "Mappings": {},
+    "Resources": {
+        "DownloadFiles": {
+            "Type": "AWS::CloudFormation::CustomResource",
+            "Properties": {
+                "ServiceToken": {
+                    "Fn::GetAtt": [
+                        "DownloadFilesFunction",
+                        "Arn"
+                    ]
+                },
+                "SourceBucket": {
+                    "Ref": "SourceS3Bucket"
+                }
+            }
+        },
+        "LambdaExecutionRole": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "AssumeRolePolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Principal": {
+                                "Service": [
+                                    "lambda.amazonaws.com"
+                                ]
+                            },
+                            "Action": [
+                                "sts:AssumeRole"
+                            ]
+                        }
+                    ]
+                },
+                "Path": "/",
+                "Policies": [
+                    {
+                        "PolicyName": "root",
+                        "PolicyDocument": {
+                            "Version": "2012-10-17",
+                            "Statement": [
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "logs:CreateLogGroup",
+                                        "logs:CreateLogStream",
+                                        "logs:PutLogEvents",
+                                        "logs:DescribeLogStreams"
+                                    ],
+                                    "Resource": "arn:aws:logs:*:*:*"
+                                },
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "s3:GetObject",
+                                        "s3:ListBucket"
+                                    ],
+                                    "Resource": "arn:aws:s3:::*"
+                                },
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "s3:GetObject",
+                                        "s3:ListBucket"
+                                    ],
+                                    "Resource": [
+                                        {
+                                            "Fn::Join": [
+                                                "",
+                                                [
+                                                    "arn:aws:s3:::",
+                                                    {
+                                                        "Ref": "SourceS3Bucket"
+                                                    },
+                                                    "/*"
+                                                ]
+                                            ]
+                                        }
+                                    ]
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        "DownloadFilesFunction": {
+            "Type": "AWS::Lambda::Function",
+            "Properties": {
+                "Description": "Download objects from a source S3 bucket to local /tmp/",
+                "Handler": "index.handler",
+                "Runtime": "python2.7",
+                "Role": {
+                    "Fn::GetAtt": [
+                        "LambdaExecutionRole",
+                        "Arn"
+                    ]
+                },
+                "Timeout": 299,
+                "Code": {
+                    "ZipFile": {
+                        "Fn::Join": [
+                            "\n",
+                            [
+                                "import json",
+                                "import logging",
+                                "import threading",
+                                "import time",
+                                "",
+                                "import boto3",
+                                "import cfnresponse",
+                                "",
+                                "",
+                                "logger = logging.getLogger()",
+                                "logger.setLevel(logging.DEBUG)",
+                                "",
+                                "",
+                                "def delaydownload(source_bucket, seconds):",
+                                "    s3 = boto3.resource('s3')",
+                                "    logger.debug('sleeping {}sec'.format(seconds))",
+                                "    time.sleep(seconds)",
+                                "    logger.debug('woke up - downloading {}/config/bootstrap.xml'.format(source_bucket))",
+                                "    s3.meta.client.download_file(source_bucket, 'config/bootstrap.xml', '/tmp/bootstrap.xml')",
+                                "    logger.debug('sleeping 5sec')",
+                                "    time.sleep(5)",
+                                "    logger.debug('woke up - download {}/config/init-cfg.txt'.format(source_bucket))",
+                                "    s3.meta.client.download_file(source_bucket, 'config/init-cfg.txt', '/tmp/init-cfg.txt')",
+                                "    logger.debug('sleeping 5sec')",
+                                "    time.sleep(5)",
+                                "    logger.debug('download finished successfully')",
+                                "",
+                                "",
+                                "def timeout(event, context):",
+                                "    logger.error('Execution is about to time out, sending failure response to CloudFormation')",
+                                "    cfnresponse.send(event, context, cfnresponse.FAILED, {}, None)",
+                                "",
+                                "",
+                                "def handler(event, context):",
+                                "    # make sure we send a failure to CloudFormation if the function is going to timeout",
+                                "    timer = threading.Timer((context.get_remaining_time_in_millis() / 1000.00) - 0.5, timeout, args=[event, context])",
+                                "    timer.start()",
+                                "",
+                                "    print('Received event: %s' % json.dumps(event))",
+                                "    status = cfnresponse.SUCCESS",
+                                "    try:",
+                                "        source_bucket = event['ResourceProperties']['SourceBucket']",
+                                "        if event['RequestType'] == 'Delete':",
+                                "            logger.debug('Delete request - nothing to do')",
+                                "        else:",
+                                "            delaydownload(source_bucket, 180)",
+                                "    except Exception as e:",
+                                "        logger.error('Exception: %s' % e, exc_info=True)",
+                                "        status = cfnresponse.FAILED",
+                                "    finally:",
+                                "        timer.cancel()",
+                                "        cfnresponse.send(event, context, status, {}, None)",
+                                ""
+                            ]
+                        ]
+                    }
+                }
+            }
+        }
+    },
+    "Outputs": {}
+}

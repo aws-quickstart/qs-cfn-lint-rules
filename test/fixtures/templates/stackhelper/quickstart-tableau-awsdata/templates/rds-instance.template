@@ -1,0 +1,231 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "Create a highly-available, Relational Database Service Instance of PostgreSQL version 9.3 with alarming on important metrics that indicate the health of the database. **WARNING** This template creates a multi-AZ (by default) RDS instance. You will be billed for the AWS resources used if you create a stack from this template. (qs-1ndudd5br)",
+    "Parameters": {
+        "VpcId": {
+            "Type": "String",
+            "Description": "VpcId of your existing Virtual Private Cloud(VPC)"
+        },
+        "Subnets": {
+            "Type": "List<AWS::EC2::Subnet::Id>",
+            "Description": "Subnets in the VPC"
+        },
+        "InboundTraffic": {
+            "Description": "Allow inbound traffic to the cluster from this CIDR range.",
+            "Type": "String",
+            "MinLength": "9",
+            "MaxLength": "18",
+            "Default": "10.0.1.0/24",
+            "AllowedPattern": "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})",
+            "ConstraintDescription": "must be a valid CIDR range of the form x.x.x.x/x."
+        },
+        "DatabasePort": {
+            "Description": "The port that Redshift will listen on and that will be allowed through the Security Group. ",
+            "Type": "String",
+            "Default": "5432"
+        },
+        "DBIdentifier": {
+            "Type": "String",
+            "Description": "The identifier of this postgress database",
+            "Default": "postgressCacheForRedShift"
+        },
+        "DBName": {
+            "Default": "postgressCacheForRedShift",
+            "Description": "The database name",
+            "Type": "String",
+            "MinLength": "1",
+            "MaxLength": "64",
+            "AllowedPattern": "[a-zA-Z][a-zA-Z0-9]*",
+            "ConstraintDescription": "must begin with a letter and contain only alphanumeric characters"
+        },
+        "DBUser": {
+            "Default": "admin",
+            "Description": "The database admin account username",
+            "Type": "String",
+            "MinLength": "1",
+            "MaxLength": "16",
+            "AllowedPattern": "[a-zA-Z][a-zA-Z0-9]*",
+            "ConstraintDescription": "must begin with a letter and contain only alphanumeric characters"
+        },
+        "DBPassword": {
+            "Description": "The password associated with the master user account for the RDS Instance. ",
+            "Type": "String",
+            "NoEcho": "true",
+            "MinLength": "1",
+            "MaxLength": "41",
+            "AllowedPattern": "[a-zA-Z0-9]*",
+            "ConstraintDescription": "must contain only alphanumeric characters."
+        },
+        "DBAllocatedStorage": {
+            "Default": "5",
+            "Description": "The size of the database (GiB)",
+            "Type": "Number",
+            "MinValue": "5",
+            "MaxValue": "1024",
+            "ConstraintDescription": "must be between 5 and 1024GiB"
+        },
+        "DBInstanceClass": {
+            "Default": "db.t2.large",
+            "Description": "The database instance type",
+            "Type": "String",
+            "ConstraintDescription": "must select a valid database instance type"
+        },
+        "MultiAZDatabase": {
+            "Default": "true",
+            "Description": "Create a multi-AZ RDS database instance",
+            "Type": "String",
+            "AllowedValues": [
+                "true",
+                "false"
+            ],
+            "ConstraintDescription": "must be either true or false"
+        }
+    },
+    "Resources": {
+        "DBSubnetGroup": {
+            "Type": "AWS::RDS::DBSubnetGroup",
+            "Properties": {
+                "DBSubnetGroupDescription": "Subnets available for the RDS DB Instance",
+                "SubnetIds": {
+                    "Ref": "Subnets"
+                }
+            }
+        },
+        "SecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "GroupDescription": "Allow access to the PostgreSQL from the other instances",
+                "VpcId": {
+                    "Ref": "VpcId"
+                },
+                "SecurityGroupIngress": [
+                    {
+                        "CidrIp": {
+                            "Ref": "InboundTraffic"
+                        },
+                        "FromPort": {
+                            "Ref": "DatabasePort"
+                        },
+                        "ToPort": {
+                            "Ref": "DatabasePort"
+                        },
+                        "IpProtocol": "tcp"
+                    }
+                ]
+            }
+        },
+        "RDSInstance": {
+            "Type": "AWS::RDS::DBInstance",
+            "Properties": {
+                "PubliclyAccessible": "false",
+                "AllocatedStorage": {
+                    "Ref": "DBAllocatedStorage"
+                },
+                "AutoMinorVersionUpgrade": "false",
+                "VPCSecurityGroups": [
+                    {
+                        "Ref": "SecurityGroup"
+                    }
+                ],
+                "DBName": {
+                    "Ref": "DBName"
+                },
+                "DBInstanceClass": {
+                    "Ref": "DBInstanceClass"
+                },
+                "DBSubnetGroupName": {
+                    "Ref": "DBSubnetGroup"
+                },
+                "Engine": "postgres",
+                "EngineVersion": "9.5.2",
+                "MasterUsername": {
+                    "Ref": "DBUser"
+                },
+                "MasterUserPassword": {
+                    "Ref": "DBPassword"
+                },
+                "MultiAZ": {
+                    "Ref": "MultiAZDatabase"
+                },
+                "StorageType": "gp2",
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": {
+                            "Ref": "DBIdentifier"
+                        }
+                    }
+                ]
+            }
+        }
+    },
+    "Outputs": {
+        "JDBCConnectionString": {
+            "Description": "JDBC connection string for database",
+            "Value": {
+                "Fn::Join": [
+                    "",
+                    [
+                        "jdbc:postgresql://",
+                        {
+                            "Fn::GetAtt": [
+                                "RDSInstance",
+                                "Endpoint.Address"
+                            ]
+                        },
+                        ":",
+                        {
+                            "Fn::GetAtt": [
+                                "RDSInstance",
+                                "Endpoint.Port"
+                            ]
+                        },
+                        "/",
+                        {
+                            "Ref": "DBName"
+                        }
+                    ]
+                ]
+            }
+        },
+        "DBAddress": {
+            "Description": "address of database endpoint",
+            "Value": {
+                "Fn::GetAtt": [
+                    "RDSInstance",
+                    "Endpoint.Address"
+                ]
+            }
+        },
+        "DBPort": {
+            "Description": "database endpoint port",
+            "Value": {
+                "Fn::GetAtt": [
+                    "RDSInstance",
+                    "Endpoint.Port"
+                ]
+            }
+        },
+        "DBUser": {
+            "Description": "DB user name",
+            "Value": {
+                "Ref": "DBUser"
+            }
+        },
+        "DBName": {
+            "Value": {
+                "Ref": "DBName"
+            }
+        },
+        "DBPassword": {
+            "Value": {
+                "Ref": "DBPassword"
+            }
+        },
+        "Port": {
+            "Value": {
+                "Ref": "DatabasePort"
+            }
+        }
+    }
+}

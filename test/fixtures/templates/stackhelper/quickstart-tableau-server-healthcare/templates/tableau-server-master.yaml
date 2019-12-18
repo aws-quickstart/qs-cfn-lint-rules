@@ -1,0 +1,436 @@
+# - master
+#   - bastion
+#     - bastion windows
+#     - bastion linux
+#   - logging
+#     - config rules
+#   - tableau
+#     - encrypt ami
+#     - encrypted elb
+#       - copy lambda
+#       - configure ssl
+#       - acm/route53
+#     - tableau windows
+#     - tableau centos7
+#     - tableau ubuntu
+#     - tableau linux
+
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Tableau Server Single Node (Windows, Ubuntu, Amazon Linux 2, CentOS) configured for healthcare. (qs-1oui27s1b)'
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+    - Label:
+        default: AWS Environment and Machine Configuration
+      Parameters:
+      - AvailabilityZones
+      - InstanceType
+      - KeyPairName
+      - AMIOS
+      - SourceCIDR
+      - BastionAdminCIDR
+      - ConfigRecorder
+      - ConfigDeliveryChannel
+    - Label:
+        default: Server DNS configuration
+      Parameters:
+      - AWSPublicFQDN
+      - AWSHostedZoneID
+      - SSLCertificateARN
+    - Label:
+        default: Secrets
+      Parameters:
+      - Username
+      - Password
+      - TableauServerAdminUser
+      - TableauServerAdminPassword
+      - WindowsBastionAdmin
+      - WindowsBastionPwd
+    - Label:
+        default: Registration
+      Parameters:
+      - AcceptEULA
+      - TableauServerLicenseKey
+      - RegFirstName
+      - RegLastName
+      - RegEmail
+      - RegCompany
+      - RegTitle
+      - RegDepartment
+      - RegIndustry
+      - RegPhone
+      - RegCity
+      - RegState
+      - RegZip
+      - RegCountry
+    - Label:
+        default: AWS Quick Start Configuration
+      Parameters:
+      - QSS3BucketName
+      - QSS3KeyPrefix
+      - QSTagKey
+      - QSTagValue
+    ParameterLabels:
+      AMIOS:
+        default: AMI Operating System
+      AWSHostedZoneID:
+        default: DNS Zone ID
+      AWSPublicFQDN:
+        default: Full DNS Name for Tableau Server
+      AcceptEULA:
+        default: Accept Tableau End User License Agreement
+      AvailabilityZones:
+        default: Availability Zones
+      BastionAdminCIDR:
+        default: CIDR for Bastion Host Access
+      ConfigRecorder:
+        default: AWS Config Recorder ARN
+      ConfigDeliveryChannel:
+        default: AWS Config Delivery Channel ARN
+      InstanceType:
+        default: Tableau Server instance type
+      KeyPairName:
+        default: Key Pair Name
+      Password:
+        default: Tableau Services Manager (TSM) administrator password
+      QSS3BucketName:
+        default: Quick Start S3 Bucket Name
+      QSS3KeyPrefix:
+        default: Quick Start S3 Key Prefix
+      QSTagKey:
+        default: Quick Start Tag key
+      QSTagValue:
+        default: Quick Start Tag value
+      RegCity:
+        default: City
+      RegCompany:
+        default: Company
+      RegCountry:
+        default: Country
+      RegDepartment:
+        default: Department
+      RegEmail:
+        default: Email Address
+      RegFirstName:
+        default: First Name
+      RegIndustry:
+        default: Industry
+      RegLastName:
+        default: Last Name
+      RegPhone:
+        default: Phone
+      RegState:
+        default: State
+      RegTitle:
+        default: Title
+      RegZip:
+        default: Zip/Postal Code
+      SourceCIDR:
+        default: Source CIDR for Access
+      SSLCertificateARN:
+        default: SSL Certificate ARN (Requires matching DNS name)
+      TableauServerAdminPassword:
+        default: Tableau Server administrator password
+      TableauServerAdminUser:
+        default: Tableau Server administrator username
+      TableauServerLicenseKey:
+        default: Tableau Activation Key
+      Username:
+        default: Tableau Services Manager (TSM) administrator username
+      WindowsBastionAdmin:
+        default: Windows Bastion admin username
+      WindowsBastionPwd:
+        default: Windows Bastion admin password
+Parameters:
+  AMIOS:
+    AllowedValues:
+      - Amazon-Linux-2
+      - CentOS-7-HVM
+      - Ubuntu-Server-16.04-LTS-HVM
+      - Windows-Server-2012-R2
+    Description: The operating system (Microsoft Windows Server, CentOS, Ubuntu Server, or Amazon Linux 2) on the EC2 instance where Tableau Server will be installed. If you choose CentOS, make sure that you have a subscription to the CentOS AMI in AWS Marketplace
+    Default: Amazon-Linux-2
+    Type: String
+  AWSHostedZoneID:
+    Description: DNS Zone ID to contain the server's DNS entry.
+    Type: String
+  AWSPublicFQDN:
+    Description: Tableau Server portal will be reachable at this address.
+    Type: String
+  AcceptEULA:
+    AllowedValues:
+    - 'Yes'
+    - 'No'
+    Default: 'No'
+    Description: 'View the EULA at the Link: https://www.tableau.com/eula'
+    Type: String
+  AvailabilityZones:
+    Description: 'List of Availability Zones to use for the subnets in the VPC. 
+      You must use two Availabilty Zones. The Quick Start preserves the logical order you specify.'
+    Type: List<AWS::EC2::AvailabilityZone::Name>
+  ConfigRecorder:
+    Type: String
+    Default: ""
+    Description: Config Recorder in your AWS Region. Leaving empty will try to create a new recorder.
+  ConfigDeliveryChannel:
+    Type: String
+    Default: ""
+    Description: Config Delivery Channel in your AWS Region. Leaving empty will try to create a new recorder. Required if you specify Config Recorder
+  InstanceType:
+    AllowedValues:
+    - c5.4xlarge
+    - c5d.4xlarge
+    - c4.4xlarge
+    - m4.4xlarge
+    - m5.4xlarge
+    - r5d.4xlarge
+    ConstraintDescription: must be a valid EC2 instance type.
+    Default: m5.4xlarge
+    Description: The EC2 instance type where Tableau Server will be installed.
+    Type: String
+  KeyPairName:
+    AllowedPattern: ".+"
+    ConstraintDescription: must be the name of an existing EC2 KeyPair.
+    Description: Name of an existing EC2 KeyPair to enable SSH access to the instances
+    Type: AWS::EC2::KeyPair::KeyName
+  Password:
+    Description: Tableau Services Manager (TSM) administrator password
+    Type: String
+    NoEcho: true
+    AllowedPattern: "^(?=[a-zA-Z0-9#@$?!]{8,}$)(?=.*?[a-z])(?=.*?[A-Z])(?=.*?[0-9]).*"
+    MinLength: 8
+  QSS3BucketName:
+    AllowedPattern: "^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$"
+    ConstraintDescription: Quick Start bucket name can include numbers, lowercase
+      letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-).
+    Default: aws-quickstart
+    Description: S3 bucket name for the Quick Start assets. This string can include
+      numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start
+      or end with a hyphen (-).
+    Type: String
+  QSS3KeyPrefix:
+    AllowedPattern: "^[0-9a-zA-Z-/]*$"
+    ConstraintDescription: Quick Start key prefix can include numbers, lowercase letters,
+      uppercase letters, hyphens (-), and forward slash (/).
+    Default: quickstart-tableau-server-healthcare/
+    Description: S3 key prefix for the Quick Start assets. Quick Start key prefix
+      can include numbers, lowercase letters, uppercase letters, hyphens (-), and
+      forward slash (/).
+    Type: String
+  QSTagKey:
+    Type: String
+    Description: Tag key to identify resources from this Quick Start.
+    Default: QuickStartID
+  QSTagValue:
+    Type: String
+    Description: Tag value to identify resources from this Quick Start.
+    Default: TableauServerHealthcare
+  RegCity:
+    Description: City
+    MinLength: 1
+    Type: String
+  RegCompany:
+    Description: Company
+    MinLength: 1
+    Type: String
+  RegCountry:
+    Description: Country
+    MinLength: 1
+    Type: String
+  RegDepartment:
+    Description: Department
+    MinLength: 1
+    Type: String
+  RegEmail:
+    Description: Email
+    MinLength: 1
+    Type: String
+  RegFirstName:
+    Description: First Name
+    MinLength: 1
+    Type: String
+  RegIndustry:
+    Description: Industry
+    MinLength: 1
+    Type: String
+  RegLastName:
+    Description: Last Name
+    MinLength: 1
+    Type: String
+  RegPhone:
+    Description: Phone
+    MinLength: 1
+    Type: String
+  RegState:
+    Description: State
+    MinLength: 1
+    Type: String
+  RegTitle:
+    Description: Title
+    MinLength: 1
+    Type: String
+  RegZip:
+    Description: ZIP/Postal Code
+    MinLength: 1
+    Type: String
+  SourceCIDR:
+    AllowedPattern: "^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\\/([0-9]|[1-2][0-9]|3[0-2]))$"
+    ConstraintDescription: Must be a valid IP CIDR range of the form x.x.x.x/x.
+    Description: "The CIDR address from which you will connect to the instance. We recommend that you set this value to a trusted CIDR block to restrict access to IP addresses from only your network. The CIDR block parameter must be in the form x.x.x.x/x. Specify separate IP address ranges for these three ports: port 443, port 8850, and port 3389."
+    Type: String
+  SSLCertificateARN:
+    Type: String
+    Default: ""
+    Description: The Amazon Resource Name for the existing SSL cert you wish to use; empty for none
+  TableauServerAdminPassword:
+    Description: The password of the initial administrator for Tableau Server
+    MinLength: 1
+    NoEcho: true
+    Type: String
+  TableauServerAdminUser:
+    Description: The name of the initial administrator for Tableau Server
+    MinLength: 1
+    Type: String
+  TableauServerLicenseKey:
+    Description: License Key
+    Type: String
+  Username:
+    AllowedPattern: "^(?!(tableau|tsmagent|admin|root)$)[A-Za-z0-9]+$"
+    Description: Tableau Services Manager (TSM) administrator username (cannot be 'tableau' or 'tsmagent' or 'admin' or 'root')
+    MaxLength: 30
+    Type: String
+  BastionAdminCIDR:
+    AllowedPattern: "^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\\/([0-9]|[1-2][0-9]|3[0-2]))$"
+    ConstraintDescription: CIDR block parameter must be in the form x.x.x.x/x
+    Description: The CIDR address from which you will remote into the instance
+    Type: String
+  WindowsBastionPwd:
+    Description: '[Optional] Used only for Windows bastion host. Password for the administrative account. Must be at least 8 characters containing letters, numbers and symbols. If using Windows, min length should be 8.'
+    Type: String
+    Default: ""
+    MaxLength: 32
+    NoEcho: true
+  WindowsBastionAdmin:
+    Description: '[Optional] Used only for Windows bastion host. User name for the new local administrator account. If you are using Windows, min length should be 5.'
+    Type: String
+    Default: ""
+    MaxLength: 25
+    AllowedPattern: "^[a-zA-Z0-9]*$"
+
+Rules:
+  AcceptEULARule:
+    Assertions:
+    - Assert:
+        !Equals ['Yes', !Ref AcceptEULA]
+      AssertDescription: 'User must agree to Tableau Software EULA which can be viewed at the link: https://www.tableau.com/eula'
+
+Mappings:
+  DefaultConfiguration:
+    MachineConfiguration:
+      BastionInstanceType: t2.large
+    NetworkConfiguration:
+      VPCCIDR: 10.0.0.0/16
+      PublicSubnet1CIDR: 10.0.1.0/24
+      PrivateSubnet1CIDR: 10.0.2.0/24
+      PublicSubnet2CIDR: 10.0.3.0/24
+      PrivateSubnet2CIDR: 10.0.4.0/24
+Conditions:
+  IsWindows: !Equals [ !Ref AMIOS, Windows-Server-2012-R2 ]
+  IsLinux: !Not [ Condition: IsWindows ]
+
+Resources:
+  VPCStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}submodules/quickstart-aws-vpc/templates/aws-vpc.template
+      Parameters:
+        AvailabilityZones: !Join [ ",", !Ref AvailabilityZones ]
+        KeyPairName: !Ref KeyPairName
+        NumberOfAZs: 2
+        PrivateSubnet1ACIDR: !FindInMap [ DefaultConfiguration, NetworkConfiguration, PrivateSubnet1CIDR ]
+        PrivateSubnet2ACIDR: !FindInMap [ DefaultConfiguration, NetworkConfiguration, PrivateSubnet2CIDR ]
+        PublicSubnet1CIDR: !FindInMap [ DefaultConfiguration, NetworkConfiguration, PublicSubnet1CIDR ]
+        PublicSubnet2CIDR: !FindInMap [ DefaultConfiguration, NetworkConfiguration, PublicSubnet2CIDR ]
+        PublicSubnetTag2: !Join [ "=", [ !Ref QSTagKey, !Join [ '-', [ !Ref QSTagValue, !Ref "AWS::StackName"]]]]
+        PrivateSubnetATag2: !Join [ "=", [ !Ref QSTagKey, !Join [ '-', [ !Ref QSTagValue, !Ref "AWS::StackName"]]]]
+        VPCCIDR: !FindInMap [ DefaultConfiguration, NetworkConfiguration, VPCCIDR ]
+
+  BastionStack:
+    Type: AWS::CloudFormation::Stack
+    DependsOn:
+    - VPCStack
+    Properties:
+      TemplateURL: !Sub https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}templates/bastion.yaml
+      Parameters:
+        BastionInstanceType: !FindInMap [ DefaultConfiguration, MachineConfiguration, BastionInstanceType ]
+        KeyPairName: !Ref KeyPairName
+        RemoteAccessCIDR: !Ref BastionAdminCIDR
+        PublicSubnet1ID: !GetAtt VPCStack.Outputs.PublicSubnet1ID
+        PublicSubnet2ID: !GetAtt VPCStack.Outputs.PublicSubnet2ID
+        QSS3BucketName: !Ref QSS3BucketName
+        QSS3KeyPrefix: !Ref QSS3KeyPrefix
+        VPCID: !GetAtt VPCStack.Outputs.VPCID
+        WindowsBastionAdmin: !If [ IsWindows, !Ref WindowsBastionAdmin, "" ]
+        WindowsBastionPwd: !If [ IsWindows, !Ref WindowsBastionPwd, "" ]
+        WindowsOrLinux: !If [ IsWindows, windows, linux ]
+
+  TableauStack:
+    Type: AWS::CloudFormation::Stack
+    DependsOn:
+    - VPCStack
+    Properties:
+      TemplateURL: !Sub https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}templates/tableau-server.yaml
+      Parameters:
+        AMIOS: !Ref AMIOS
+        AWSHostedZoneID: !Ref AWSHostedZoneID
+        AWSPublicFQDN: !Ref AWSPublicFQDN
+        AcceptEULA: !Ref AcceptEULA
+        ConfigRecorder: !Ref ConfigRecorder
+        ConfigDeliveryChannel: !Ref ConfigDeliveryChannel
+        InstanceType: !Ref InstanceType
+        KeyPairName: !Ref KeyPairName
+        Password: !Ref Password
+        QSS3BucketName: !Ref QSS3BucketName
+        QSS3KeyPrefix: !Ref QSS3KeyPrefix
+        QSTagKey: !Ref QSTagKey
+        QSTagValue: !Ref QSTagValue
+        PrivateSubnetIds: !Sub "${VPCStack.Outputs.PrivateSubnet1AID},${VPCStack.Outputs.PrivateSubnet2AID}"
+        PublicSubnetIds: !Sub "${VPCStack.Outputs.PublicSubnet1ID},${VPCStack.Outputs.PublicSubnet2ID}"
+        BastionSecurityGroup: !GetAtt BastionStack.Outputs.BastionSecurityGroupID
+        SourceCIDR: !Ref SourceCIDR
+        Username: !Ref Username
+        TableauServerAdminUser: !Ref TableauServerAdminUser
+        TableauServerAdminPassword: !Ref TableauServerAdminPassword
+        TableauServerLicenseKey: !Ref TableauServerLicenseKey
+        RegFirstName: !Ref RegFirstName
+        RegLastName: !Ref RegLastName
+        RegEmail: !Ref RegEmail
+        RegCompany: !Ref RegCompany
+        RegTitle: !Ref RegTitle
+        RegDepartment: !Ref RegDepartment
+        RegIndustry: !Ref RegIndustry
+        RegPhone: !Ref RegPhone
+        RegCity: !Ref RegCity
+        RegState: !Ref RegState
+        RegZip: !Ref RegZip
+        RegCountry: !Ref RegCountry
+        SSLCertificateARN: !Ref SSLCertificateARN
+        VpcCidr: !GetAtt VPCStack.Outputs.VPCCIDR
+        VpcId: !GetAtt VPCStack.Outputs.VPCID
+        
+Outputs:
+  VPCID:
+    Description: VPC ID
+    Value: !GetAtt VPCStack.Outputs.VPCID
+  LoadBalancerDNSName:
+    Description: DNS Name for the load balancer
+    Value: !GetAtt TableauStack.Outputs.LoadBalancerDNSName
+  BastionEIP:
+    Description: Public DNS name of bastion host
+    Value: !GetAtt BastionStack.Outputs.BastionPublicIp
+  TableauServerURL:
+    Description: Public DNS name to reach cluster
+    Value: !Sub https://${AWSPublicFQDN}
+  TSMUrl:
+    Description: URL to access TSM GUI. Accessible via Bastion Host
+    Value: !Sub https://${AWSPublicFQDN}:8850

@@ -1,0 +1,254 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: >
+  Sub template that installs XL Release as docker containers in the provisioned ECS cluster.
+# Metadata: 
+
+Parameters: 
+  VPCID:
+    Description: The VPC Id
+    Type: AWS::EC2::VPC::Id
+  ECSCluster:
+    Description: The provisioned ECS Cluster ID
+    Type: String
+  ECSServiceRole:
+    Description: The ECS Service role
+    Type: String
+  LaunchType:
+    Description: The desired launch type, can be only be 'ECS EC2' at this moment
+    AllowedValues:
+    - ECS EC2
+    Type: String
+    Default: ECS EC2
+  DockerImage:
+    Description: The registry and docker image to deploy
+    Type: String
+    Default: xebialabs/xl-release
+  Version:
+    Description: The version of XL Release to deploy
+    AllowedPattern: '^[0-9]+\.[0-9+]($|\.[0-9]+$|\.[0-9]+[-+.].+$)'
+    Type: String
+  AdminPassword:
+    Description: The admin password of XL Release
+    MinLength: 8
+    Type: String
+    NoEcho: True
+  Port:
+    Description: The port to run XL Release on
+    AllowedPattern: ^[1-9][0-9]{3,4}$
+    Type: String
+    Default: '5516'
+  LoadBalancer:
+    Description: The Application Load Balancer to register with
+    Type: String
+  ALBSecurityGroup:
+    Description: The Application Load Balancer security group to attach ingress rules to
+    Type: AWS::EC2::SecurityGroup::Id
+  RemoteAccessCIDR:
+    Description: CIDR block for remote access
+    Type: String
+    AllowedPattern: (\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})
+    ConstraintDescription: CIDR block parameter must be in the form x.x.x.x/16-28
+  TaskExecutionRole:
+    Description: The Task Execution Role
+    Type: String
+  DBHost:
+    Description: The Postgres DB Host/Endpoint
+    Type: String
+  DBUser:
+    Description: The Postgres DB username
+    Type: String
+  DBPassword:
+    Description: The Postgres DB Password
+    Type: String
+    NoEcho: True
+  CreateDBLambdaFunction:
+    Description: The Arn of the Create Database lambda function
+    Type: String
+  MountPoint:
+    Description: The Linux mount point for the EFS volume
+    Type: String
+    MinLength: '1'
+  UseExternalDB:
+    Description: Use an external Database
+    AllowedValues:
+    - true
+    - false
+    Default: true
+    Type: String
+  ClusterMode:
+    Description: Set the clustermode for XL Release
+    AllowedValues:
+    - default
+    - hot-standby
+    - full
+    Default: default
+    Type: String
+  License:
+    Description: The (Base64 encoded) license for XL Release
+    Type: String
+    AllowedPattern: '[0-9A-Za-z=+/]*'
+    Default: trial
+  SslCertificateArn:
+    Description: The ARN of the SSL certificate used to secure internet access to the XebiaLabs DevOps Platform
+    Type: String
+    Default: ':default'
+
+# Mappings: 
+
+Conditions:
+  ShouldLaunchECSEC2: !Equals [ !Ref LaunchType, 'ECS EC2' ]
+  ShouldLaunchECSFargate: !Equals [ !Ref LaunchType, 'ECS Fargate' ]
+  ShouldLaunchECSCluster: !Or [ Condition: ShouldLaunchECSEC2, Condition: ShouldLaunchECSFargate]
+  ShouldUseExternalDB: !Equals [ !Ref UseExternalDB, 'true' ]
+  ShouldLaunchCluster: !Not [ !Equals [ !Ref ClusterMode, 'default' ] ]
+  LicenseProvided: !Not [ !Equals [ !Ref License, 'trial' ] ]
+  SslCertificateProvided: !Not [ !Equals [ !Ref SslCertificateArn, ':default' ] ]
+Resources:
+  CreateXLReleaseDatabase:
+    Type: Custom::CreateXLReleaseDatabase
+    Condition: ShouldUseExternalDB
+    Properties:
+      ServiceToken: !Ref CreateDBLambdaFunction
+      DBName: xlrelease
+      DBHost: !Ref DBHost
+      DBUser: !Ref DBUser
+      DBPassword: !Ref DBPassword
+  CreateXLReleaseArchiveDatabase:
+    Type: Custom::CreateXLReleaseArchiveDatabase
+    Condition: ShouldUseExternalDB
+    Properties:
+      ServiceToken: !Ref CreateDBLambdaFunction
+      DBName: xlrarchive
+      DBHost: !Ref DBHost
+      DBUser: !Ref DBUser
+      DBPassword: !Ref DBPassword
+  XLReleaseECSService:
+    Type: AWS::ECS::Service
+    DependsOn: [ XLReleaseALBListener, CreateXLReleaseArchiveDatabase, CreateXLReleaseDatabase ]
+    Condition: ShouldLaunchECSCluster
+    Properties:
+      Cluster: !Ref ECSCluster
+      Role: !Ref ECSServiceRole
+      DesiredCount: !If [ ShouldLaunchCluster, 2, 1 ]
+      LaunchType: !If [ ShouldLaunchECSEC2, EC2, FARGATE ]
+      PlacementConstraints:
+        - Type: distinctInstance
+      PlacementStrategies:
+        - Type: spread
+          Field: 'attribute:ecs.availability-zone'
+      LoadBalancers:
+      - ContainerName: xl-release
+        ContainerPort: !Ref Port
+        TargetGroupArn: !Ref XLReleaseTargetGroup
+      TaskDefinition: !Ref XLReleaseTaskDefinition
+  XLReleaseTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Condition: ShouldLaunchECSCluster
+    Properties:
+      ExecutionRoleArn: !Ref TaskExecutionRole
+      ContainerDefinitions:
+      - Name: xl-release
+        Image: !Join [ ':', [ !Ref DockerImage, !Ref Version ] ]
+        Memory: 4096
+        Cpu: 2
+        PortMappings:
+        - ContainerPort: !Ref Port
+          Protocol: tcp
+        Environment:
+        - Name: ADMIN_PASSWORD
+          Value: !Ref AdminPassword
+        - Name: XL_CLUSTER_MODE
+          Value: !Ref ClusterMode
+        - Name: XL_DB_URL
+          Value: !If
+          - ShouldUseExternalDB
+          - !Sub "jdbc:postgresql://${DBHost}/xlrelease"
+          - "jdbc:h2:file:/opt/xebialabs/xl-deploy-server/repository/xlrelease"
+        - Name: XL_DB_USERNAME
+          Value: !If
+          - ShouldUseExternalDB
+          - !Ref DBUser
+          - sa
+        - Name: XL_DB_PASSWORD
+          Value: !If
+          - ShouldUseExternalDB
+          - !Ref DBPassword
+          - "123"
+        - Name: XL_REPORT_DB_URL
+          Value: !If
+          - ShouldUseExternalDB
+          - !Sub "jdbc:postgresql://${DBHost}/xlrarchive"
+          - "jdbc:h2:file:/opt/xebialabs/xl-deploy-server/repository/xlrarchive"
+        - Name: XL_REPORT_DB_USERNAME
+          Value: !If
+          - ShouldUseExternalDB
+          - !Ref DBUser
+          - sa
+        - Name: XL_REPORT_DB_PASSWORD
+          Value: !If
+          - ShouldUseExternalDB
+          - !Ref DBPassword
+          - "123"
+        - Name: XL_METRICS_ENABLED
+          Value: "false"
+        - Name: XL_LICENSE
+          Value: !If
+          - LicenseProvided
+          - !Ref License
+          - !Ref AWS::NoValue
+        Hostname: xl-release
+        MountPoints:
+        - ContainerPath: "/opt/xebialabs/xl-release-server/repository"
+          SourceVolume: xl-release-repository-efs
+        - ContainerPath: "/opt/xebialabs/xl-release-server/work"
+          SourceVolume: xl-release-work-efs
+      Volumes:
+      - Host:
+          SourcePath: !Sub "${MountPoint}/xl-release/repository"
+        Name: xl-release-repository-efs
+      - Host:
+          SourcePath: !Sub "${MountPoint}/xl-release/work"
+        Name: xl-release-work-efs
+  XLReleaseALBListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref LoadBalancer
+      Port: !Ref Port
+      Protocol: !If [ SslCertificateProvided, HTTPS, HTTP ]
+      Certificates:
+      - !If [ SslCertificateProvided, { CertificateArn: !Ref SslCertificateArn }, !Ref 'AWS::NoValue' ]
+      DefaultActions:
+      - Type: forward
+        TargetGroupArn: !Ref XLReleaseTargetGroup
+  XLReleaseTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      VpcId: !Ref VPCID
+      Port: !Ref Port
+      Protocol: HTTP
+      Matcher:
+        # The healthcheck endpoint is protected by the license checker, which will return 402 if no license is present.
+        # Ensure that is treated as a healthy response also.
+        HttpCode: 200-299,402
+      HealthCheckIntervalSeconds: 300
+      HealthCheckPath: /ha/health
+      HealthCheckProtocol: HTTP
+      HealthCheckTimeoutSeconds: 30
+      HealthyThresholdCount: 2
+      TargetGroupAttributes:
+      - Key: stickiness.enabled
+        Value: 'true'
+      - Key: stickiness.type
+        Value: lb_cookie
+      - Key: stickiness.lb_cookie.duration_seconds
+        Value: '86400'
+
+  XLReleaseIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      CidrIp: !Ref RemoteAccessCIDR
+      FromPort: !Ref Port
+      ToPort: !Ref Port
+      GroupId: !Ref ALBSecurityGroup
+      IpProtocol: tcp
+# Outputs:

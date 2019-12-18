@@ -1,0 +1,458 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "Creates RESTful APIs to get historical and predicted values from the data stream. (qs-1onlac5tl)",
+    "Parameters": {
+        "StackSuffix": {
+            "Type": "String",
+            "Description": "The suffix of the stack"
+        },
+        "LambdaCodeS3Bucket": {
+            "Type": "String",
+            "Description": "S3 Bucket where lambda code exists"
+        },
+        "LambdaCodeS3KeyPrefix": {
+            "Type": "String",
+            "Description": "S3 Bucket where lambda code exists"
+        },
+        "DeliverApiLambdaCodeLocation": {
+            "Type": "String",
+            "Description": "S3 Path where Deliver API Lambda code exists"
+        },
+        "PredictApiLambdaCodeLocation": {
+            "Type": "String",
+            "Description": "S3 Path where Deliver API Lambda code exists"
+        },
+        "SageMakerEndpointName": {
+            "Type": "String",
+            "Description": "Name of the SageMaker endpoint that will be executed to generate predictions"
+        },
+        "DataLakeS3BucketName": {
+            "Type": "String",
+            "Description": "S3 Bucket where data lake lives"
+        }
+    },
+    "Resources": {
+        "DeliverApiLambdaRole": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "AssumeRolePolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [{
+                        "Effect": "Allow",
+                        "Principal": {
+                            "Service": ["lambda.amazonaws.com"]
+                        },
+                        "Action": ["sts:AssumeRole"]
+                    }]
+                },
+                "Path": "/",
+                "Policies": [{
+                    "PolicyName": {"Fn::Sub": "DeliverApiLambdaPolicy-${StackSuffix}"},
+                    "PolicyDocument": {
+                        "Version": "2012-10-17",
+                        "Statement": [{
+                                "Effect": "Allow",
+                                "Action": [
+                                    "logs:CreateLogGroup",
+                                    "logs:CreateLogStream",
+                                    "logs:PutLogEvents"
+                                ],
+                                "Resource": "*"
+                            },
+                            {
+                                "Effect": "Allow",
+                                "Action": [
+                                    "s3:ListBucket"
+                                ],
+                                "Resource": { "Fn::Sub": "arn:aws:s3:::${DataLakeS3BucketName}-${StackSuffix}" }
+                            },
+                            {
+                                "Effect": "Allow",
+                                "Action": [
+                                    "s3:GetObject"
+                                ],
+                                "Resource": { "Fn::Sub": "arn:aws:s3:::${DataLakeS3BucketName}-${StackSuffix}/transform/*"}
+                            }
+                        ]
+                    }
+                }],
+                "RoleName": {
+                    "Fn::Sub": "DeliverApiLambdaRole-${StackSuffix}"
+                }
+            }
+        },        
+        "PredictApiLambdaRole": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "AssumeRolePolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [{
+                        "Effect": "Allow",
+                        "Principal": {
+                            "Service": ["lambda.amazonaws.com"]
+                        },
+                        "Action": ["sts:AssumeRole"]
+                    }]
+                },
+                "Path": "/",
+                "Policies": [{
+                    "PolicyName": {
+                        "Fn::Sub": "PredictApiLambdaPolicy-${StackSuffix}"
+                    },
+                    "PolicyDocument": {
+                        "Version": "2012-10-17",
+                        "Statement": [
+                            {
+                                "Effect": "Allow",
+                                "Action": [
+                                    "s3:ListBucket"
+                                ],
+                                "Resource": { "Fn::Sub": "arn:aws:s3:::${DataLakeS3BucketName}-${StackSuffix}" }
+                            },
+                            {
+                                "Effect": "Allow",
+                                "Action": [
+                                    "s3:GetObject"
+                                ],
+                                "Resource": { "Fn::Sub": "arn:aws:s3:::${DataLakeS3BucketName}-${StackSuffix}/transform/*"}
+                            },
+                            {
+                                "Action": [
+                                    "sagemaker:InvokeEndpoint",
+                                    "sagemaker:DescribeEndpoint",
+                                    "sagemaker:DescribeEndpointConfiguration"
+                                ],
+                                "Effect": "Allow",
+                                "Resource": {
+                                    "Fn::Sub": "arn:aws:sagemaker:*:*:endpoint/${SageMakerEndpointName}-${StackSuffix}"
+                                },
+                                "Sid": "GetPredictions"
+                            }, 
+                            {
+                                "Action": [
+                                    "logs:CreateLogGroup",
+                                    "logs:CreateLogStream",
+                                    "logs:PutLogEvents"
+                                ],
+                                "Effect": "Allow",
+                                "Resource": "*",
+                                "Sid": "Logs"
+                            }
+                        ]}
+                    }],
+                    "RoleName": {
+                        "Fn::Sub": "PredictApiLambdaRole-${StackSuffix}"
+                    }
+                }
+            },
+        "ApiGatewayCloudWatchLogsRole": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "RoleName": {
+                    "Fn::Sub": "ApiGatewayCloudWatchLogsRole-${StackSuffix}"
+                },
+                "AssumeRolePolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [{
+                        "Effect": "Allow",
+                        "Principal": {
+                            "Service": ["apigateway.amazonaws.com"]
+                        },
+                        "Action": ["sts:AssumeRole"]
+                    }]
+                },
+                "Policies": [{
+                    "PolicyName": {
+                        "Fn::Sub": "ApiGatewayLogsPolicy-${StackSuffix}"
+                    },
+                    "PolicyDocument": {
+                        "Version": "2012-10-17",
+                        "Statement": [{
+                            "Effect": "Allow",
+                            "Action": [
+                                "logs:CreateLogGroup",
+                                "logs:CreateLogStream",
+                                "logs:DescribeLogGroups",
+                                "logs:DescribeLogStreams",
+                                "logs:PutLogEvents",
+                                "logs:GetLogEvents",
+                                "logs:FilterLogEvents"
+                            ],
+                            "Resource": "*"
+                        }]
+                    }
+                }]
+            }
+        },
+        "DeliverApiLambda": {
+            "Type": "AWS::Lambda::Function",
+            "Properties": {
+                "FunctionName": {
+                    "Fn::Sub": "DeliverApiLambda-${StackSuffix}"
+                },
+                "Handler": "index.handler",
+                "Role": {
+                    "Fn::GetAtt": ["DeliverApiLambdaRole", "Arn"]
+                },
+                "Code": {
+                    "S3Bucket": {"Ref" : "LambdaCodeS3Bucket"},
+                    "S3Key": {
+                        "Fn::Sub": "${LambdaCodeS3KeyPrefix}${DeliverApiLambdaCodeLocation}"
+                    }
+                },
+                "Runtime": "nodejs8.10",
+                "Timeout": 30,
+                "Environment": {
+                    "Variables": {
+                        "OutputBucketName": {
+                            "Fn::Sub": "${DataLakeS3BucketName}-${StackSuffix}"
+                        },
+                        "ObjectPrefix": "transform"
+                    }
+                }
+            }
+        },
+        "PredictApiLambda": {
+            "Type": "AWS::Lambda::Function",
+            "Properties": {
+                "FunctionName": {
+                    "Fn::Sub": "PredictApiLambda-${StackSuffix}"
+                },
+                "Handler": "index.handler",
+                "Role": {
+                    "Fn::GetAtt": ["PredictApiLambdaRole", "Arn"]
+                },
+                "Code": {
+                    "S3Bucket": {"Ref" : "LambdaCodeS3Bucket"},
+                    "S3Key": {
+                        "Fn::Sub": "${LambdaCodeS3KeyPrefix}${PredictApiLambdaCodeLocation}"
+                    }
+                },
+                "Runtime": "nodejs8.10",
+                "Timeout": 30,
+                "Environment": {
+                    "Variables": {
+                        "OutputBucketName": {
+                            "Fn::Sub": "${DataLakeS3BucketName}-${StackSuffix}"
+                        },
+                        "ObjectPrefix": "transform",
+                        "SageMakerEndpointName": {
+                            "Fn::Sub": "${SageMakerEndpointName}-${StackSuffix}"
+                        }
+                    }
+                }
+            }
+        },
+        "ApiGatewayAccount": {
+            "Type": "AWS::ApiGateway::Account",
+            "Properties": {
+                "CloudWatchRoleArn": {
+                    "Fn::GetAtt": ["ApiGatewayCloudWatchLogsRole", "Arn"]
+                }
+            }
+        },
+        "DeliverApi": {
+            "Type": "AWS::ApiGateway::RestApi",
+            "Properties": {
+                "Name": {
+                    "Fn::Sub": "DeliverApi-${StackSuffix}"
+                },
+                "Description": "API used for Delivering Transform Data",
+                "FailOnWarnings": true
+            }
+        },
+        "DeliverApiLambdaPermission": {
+            "Type": "AWS::Lambda::Permission",
+            "Properties": {
+                "Action": "lambda:invokeFunction",
+                "FunctionName": {
+                    "Fn::GetAtt": ["DeliverApiLambda", "Arn"]
+                },
+                "Principal": "apigateway.amazonaws.com",
+                "SourceArn": {
+                    "Fn::Sub": "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${DeliverApi}/*"
+                }
+            }
+        },
+        "PredictApiLambdaPermission": {
+            "Type": "AWS::Lambda::Permission",
+            "Properties": {
+                "Action": "lambda:invokeFunction",
+                "FunctionName": {
+                    "Fn::GetAtt": ["PredictApiLambda", "Arn"]
+                },
+                "Principal": "apigateway.amazonaws.com",
+                "SourceArn": {
+                    "Fn::Sub": "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${DeliverApi}/*"
+                }
+            }
+        },
+        "DeliverApiDeployment": {
+            "Type": "AWS::ApiGateway::Deployment",
+            "DependsOn": ["DeliverApiGetRequest"],
+            "Properties": {
+                "RestApiId": {
+                    "Ref": "DeliverApi"
+                },
+                "StageName": "DummyStage"
+            }
+        },
+        "DeliverApiStage": {
+            "DependsOn": ["ApiGatewayAccount"],
+            "Type": "AWS::ApiGateway::Stage",
+            "Properties": {
+                "DeploymentId": {
+                    "Ref": "DeliverApiDeployment"
+                },
+                "MethodSettings": [{
+                    "DataTraceEnabled": true,
+                    "HttpMethod": "GET",
+                    "LoggingLevel": "INFO",
+                    "ResourcePath": "/*"
+                }],
+                "RestApiId": {
+                    "Ref": "DeliverApi"
+                },
+                "StageName": "LATEST"
+            }
+        },
+        "DeliverApiResource": {
+            "Type": "AWS::ApiGateway::Resource",
+            "Properties": {
+                "RestApiId": {
+                    "Ref": "DeliverApi"
+                },
+                "ParentId": {
+                    "Fn::GetAtt": ["DeliverApi", "RootResourceId"]
+                },
+                "PathPart": "deliver"
+            }
+        },
+        "DeliverApiGetRequest": {
+            "DependsOn": "DeliverApiLambdaPermission",
+            "Type": "AWS::ApiGateway::Method",
+            "Properties": {
+                "AuthorizationType": "NONE",
+                "HttpMethod": "GET",
+                "Integration": {
+                    "Type": "AWS",
+                    "IntegrationHttpMethod": "POST",
+                    "Uri": {
+                        "Fn::Join": ["", ["arn:aws:apigateway:", {
+                            "Ref": "AWS::Region"
+                        }, ":lambda:path/2015-03-31/functions/", {
+                            "Fn::GetAtt": ["DeliverApiLambda", "Arn"]
+                        }, "/invocations"]]
+                    },
+                    "IntegrationResponses": [{
+                        "StatusCode": 200
+                    }],
+                    "RequestTemplates": {
+                        "application/json": {
+                            "Fn::Join": ["", [
+                                "{",
+                                "\"startDate\": \"$input.params('startDate')\"",
+                                ",",
+                                "\"endDate\": \"$input.params('endDate')\"",
+                                ",",
+                                "\"instanceType\": \"$input.params('instanceType')\"",
+                                ",",
+                                "\"availabilityZone\": \"$input.params('availabilityZone')\"",
+                                "}"
+                            ]]
+                        }
+                    }
+                },
+                "RequestParameters": {
+                    "method.request.querystring.startDate": true,
+                    "method.request.querystring.endDate": true,
+                    "method.request.querystring.instanceType": true,
+                    "method.request.querystring.availabilityZone": true
+                },
+                "ResourceId": {
+                    "Ref": "DeliverApiResource"
+                },
+                "RestApiId": {
+                    "Ref": "DeliverApi"
+                },
+                "MethodResponses": [{
+                    "StatusCode": 200
+                }]
+            }
+        },
+        "PredictApiResource": {
+            "Type": "AWS::ApiGateway::Resource",
+            "Properties": {
+                "RestApiId": {
+                    "Ref": "DeliverApi"
+                },
+                "ParentId": {
+                    "Fn::GetAtt": ["DeliverApi", "RootResourceId"]
+                },
+                "PathPart": "predict"
+            }
+        },
+        "PredictApiGetRequest": {
+            "DependsOn": "PredictApiLambdaPermission",
+            "Type": "AWS::ApiGateway::Method",
+            "Properties": {
+                "AuthorizationType": "NONE",
+                "HttpMethod": "GET",
+                "Integration": {
+                    "Type": "AWS",
+                    "IntegrationHttpMethod": "POST",
+                    "Uri": {
+                        "Fn::Join": ["", ["arn:aws:apigateway:", {
+                            "Ref": "AWS::Region"
+                        }, ":lambda:path/2015-03-31/functions/", {
+                            "Fn::GetAtt": ["PredictApiLambda", "Arn"]
+                        }, "/invocations"]]
+                    },
+                    "IntegrationResponses": [{
+                        "StatusCode": 200
+                    }],
+                    "RequestTemplates": {
+                        "application/json": {
+                            "Fn::Join": ["", [
+                                "{",
+                                "\"startDate\": \"$input.params('startDate')\"",
+                                ",",
+                                "\"endDate\": \"$input.params('endDate')\"",
+                                ",",
+                                "\"instanceType\": \"$input.params('instanceType')\"",
+                                ",",
+                                "\"availabilityZone\": \"$input.params('availabilityZone')\"",
+                                "}"
+                            ]]
+                        }
+                    }
+                },
+                "RequestParameters": {
+                    "method.request.querystring.startDate": true,
+                    "method.request.querystring.endDate": true,
+                    "method.request.querystring.instanceType": true,
+                    "method.request.querystring.availabilityZone": true
+                },
+                "ResourceId": {
+                    "Ref": "PredictApiResource"
+                },
+                "RestApiId": {
+                    "Ref": "DeliverApi"
+                },
+                "MethodResponses": [{
+                    "StatusCode": 200
+                }]
+            }
+        }
+    },
+    "Outputs": {
+        "DeliverEndpointUrl": { 
+            "Description": "URL for the deliver endpoint",
+            "Value": {"Fn::Sub": "https://${DeliverApi}.execute-api.${AWS::Region}.amazonaws.com/${DeliverApiStage}/deliver"}
+        },
+        "PredictEndpointUrl": { 
+            "Description": "URL for the predict endpoint",
+            "Value": {"Fn::Sub": "https://${DeliverApi}.execute-api.${AWS::Region}.amazonaws.com/${DeliverApiStage}/predict"}
+        }
+    }
+}

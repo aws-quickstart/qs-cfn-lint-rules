@@ -1,0 +1,345 @@
+Description: >
+    This template deploys an ECS cluster
+
+Parameters:
+
+    EnvironmentName:
+        Description: An environment name that will be prefixed to resource names
+        Type: String
+
+    InstanceType:
+        Description: EC2 instance type
+        Type: String
+        Default: t2.medium
+        AllowedValues: [t2.micro, t2.small, t2.medium, t2.large, m3.medium, m3.large,
+        m3.xlarge, m3.2xlarge, m4.large, m4.xlarge, m4.2xlarge, m4.4xlarge, m4.10xlarge,
+        c4.large, c4.xlarge, c4.2xlarge, c4.4xlarge, c4.8xlarge, c3.large, c3.xlarge,
+        c3.2xlarge, c3.4xlarge, c3.8xlarge, r3.large, r3.xlarge, r3.2xlarge, r3.4xlarge,
+        r3.8xlarge, i2.xlarge, i2.2xlarge, i2.4xlarge, i2.8xlarge]
+        ConstraintDescription: Please choose a valid instance type.
+
+    ClusterSize:
+        Description: How many hosts do you want to initially deploy?
+        Type: Number
+        Default: 3
+
+    VPC:
+        Description: Choose which VPC this cluster should be deployed to
+        Type: AWS::EC2::VPC::Id
+
+    KeyName:
+        Default: ''
+        Description: Name of an existing EC2 KeyPair to enable SSH access to the instances
+        Type: 'AWS::EC2::KeyPair::KeyName'
+
+    AMI:
+        Description: Build AMI - This should be passed in
+        Type: String
+
+    Subnets:
+        Description: Choose which subnets this cluster should be deployed to
+        Type: List<AWS::EC2::Subnet::Id>
+
+    LoadBalancerSecurityGroup:
+        Description: Select the Load Balancer Security Group to use for the cluster hosts
+        Type: AWS::EC2::SecurityGroup::Id
+
+    Path: 
+        Description: The path to register with the Application Load Balancer
+        Type: String
+        Default: /
+
+    MinClusterSize:
+        Description: Minimum hosts to deploy
+        Type: Number
+        Default: 1
+
+    MaxClusterSize:
+        Description: Maximum hosts to deploy
+        Type: Number
+        Default: 5
+
+    HostVolumeSize:
+        Description: Size in GB of additional non-root volume
+        Type: String
+        Default: '128'
+        AllowedValues:
+        - '8'
+        - '16'
+        - '32'
+        - '64'
+        - '128'
+        - '256'
+        - '512'
+        - '1024'
+        - '2048'
+        - '4096'
+
+    BlockVolumeSize:
+        Description: Size in GB of additional non-root volume
+        Type: String
+        Default: '256'
+        AllowedValues:
+        - '8'
+        - '16'
+        - '32'
+        - '64'
+        - '128'
+        - '256'
+        - '512'
+        - '1024'
+        - '2048'
+        - '4096'
+
+    EFS:
+        Description: Choose which EFS this ECS cluster should use for filestorage
+        Type: String
+        Default: ""
+
+    MountPoint:
+        Description: The mount point for the EFS volume
+        Type: String
+        Default: "/efs"
+
+    DeploymentType:
+        Type: String
+        Default: efs
+
+    DockerUsername:
+        Description: (Optional) Docker username
+        Type: String
+        Default: ''
+
+    DockerPassword:
+        Description: (Optional) Docker password
+        Type: String
+        Default: ''
+        NoEcho: true
+
+    DockerEmail:
+        Description: (Optional) Docker email address
+        Type: String
+        Default: ''
+
+Resources:
+
+    ECSCluster:
+        Type: AWS::ECS::Cluster
+        Properties:
+            ClusterName: !Ref EnvironmentName
+
+    ECSHostSecurityGroup:
+        Type: AWS::EC2::SecurityGroup
+        Properties: 
+            VpcId: !Ref VPC
+            GroupDescription: Access to the ECS hosts and the tasks/containers that run on them
+            SecurityGroupIngress:
+                - IpProtocol: tcp
+                  FromPort: 0
+                  ToPort: 65535
+                  SourceSecurityGroupId: !Ref LoadBalancerSecurityGroup 
+                - IpProtocol: tcp
+                  FromPort: 80
+                  ToPort: 80
+                  CidrIp: "0.0.0.0/0"
+                - IpProtocol: tcp
+                  FromPort: 443
+                  ToPort: 443
+                  CidrIp: "0.0.0.0/0"
+            Tags: 
+                - Key: Name
+                  Value: !Sub ${EnvironmentName}-ECS-Hosts
+
+    ECSRole:
+        Type: AWS::IAM::Role
+        Properties: 
+            Path: /
+            RoleName: !Sub ${EnvironmentName}-ECSRole-${AWS::Region}
+            AssumeRolePolicyDocument: |
+                {
+                    "Statement": [{
+                        "Action": "sts:AssumeRole",
+                        "Effect": "Allow",
+                        "Principal": { 
+                            "Service": "ec2.amazonaws.com" 
+                        }
+                    }]
+                }
+            Policies: 
+                - PolicyName: ecs-service
+                  PolicyDocument: |
+                    {
+                        "Statement": [
+                            {
+                                "Effect": "Allow",
+                                "Action": [
+                                    "ecs:CreateCluster",
+                                    "ecs:DeregisterContainerInstance",
+                                    "ecs:DiscoverPollEndpoint",
+                                    "ecs:Poll",
+                                    "ecs:RegisterContainerInstance",
+                                    "ecs:StartTelemetrySession",
+                                    "ecs:Submit*",
+                                    "logs:CreateLogStream",
+                                    "logs:PutLogEvents",
+                                    "ecr:BatchCheckLayerAvailability",
+                                    "ecr:BatchGetImage",
+                                    "ecr:GetDownloadUrlForLayer",
+                                    "ecr:GetAuthorizationToken",
+                                    "ecs:Describe*",
+                                    "ecs:List*",
+                                    "ec2:Describe*"
+                                ],
+                                "Resource": "*"
+                            }
+                        ]
+                    }
+
+    ECSInstanceProfile: 
+        Type: AWS::IAM::InstanceProfile
+        Properties:
+            Path: /
+            Roles: 
+                - !Ref ECSRole
+
+    ECSLaunchConfiguration:
+        Type: AWS::AutoScaling::LaunchConfiguration
+        Properties:
+            ImageId:  !Ref AMI
+            InstanceType: !Ref InstanceType
+            SecurityGroups: 
+                - !Ref ECSHostSecurityGroup
+                - !Ref LoadBalancerSecurityGroup
+            IamInstanceProfile: !Ref ECSInstanceProfile
+            KeyName: !Ref KeyName
+            AssociatePublicIpAddress: true
+            BlockDeviceMappings:
+            - DeviceName: /dev/xvda
+              Ebs:
+                VolumeSize: !Ref HostVolumeSize
+                DeleteOnTermination: 'true'
+            - DeviceName: /dev/xvdb
+              Ebs:
+                VolumeSize: !Ref BlockVolumeSize
+                DeleteOnTermination: 'true'
+            UserData: 
+                "Fn::Base64": !Sub |
+                    #!/bin/bash
+                    yum install -y aws-cfn-bootstrap
+                    mount --make-shared /
+                    /opt/aws/bin/cfn-init -v -c ${DeploymentType} --region ${AWS::Region} --stack ${AWS::StackName} --resource ECSLaunchConfiguration
+                    /opt/aws/bin/cfn-signal -e $? --region ${AWS::Region} --stack ${AWS::StackName} --resource ECSAutoScalingGroup
+
+        Metadata:
+            AWS::CloudFormation::Init:
+                configSets:
+                    standard:
+                    - "standard"
+                    efs:
+                    - "efs"  
+                    - "standard"
+                standard:
+                    files:
+                        "/etc/cfn/cfn-hup.conf":
+                            mode: 000400
+                            owner: root
+                            group: root
+                            content: !Sub |
+                                [main]
+                                stack=${AWS::StackId}
+                                region=${AWS::Region}
+                        
+                        "/etc/cfn/hooks.d/cfn-auto-reloader.conf":
+                            content: !Sub |
+                                [cfn-auto-reloader-hook]
+                                triggers=post.update
+                                path=Resources.ECSLaunchConfiguration.Metadata.AWS::CloudFormation::Init
+                                action=/opt/aws/bin/cfn-init -v -c ${DeploymentType} --region ${AWS::Region} --stack ${AWS::StackName} --resource ECSLaunchConfiguration
+                    services: 
+                        sysvinit:
+                            cfn-hup: 
+                                enabled: true
+                                ensureRunning: true
+                                files: 
+                                    - /etc/cfn/cfn-hup.conf
+                                    - /etc/cfn/hooks.d/cfn-auto-reloader.conf
+                    commands:
+                        add_instance_to_cluster:
+                            command: !Sub |
+                                echo ECS_CLUSTER=${ECSCluster} >> /etc/ecs/ecs.config
+                                echo ECS_ENGINE_AUTH_TYPE=docker >> /etc/ecs/ecs.config
+                                echo ECS_ENABLE_CONTAINER_METADATA=true >> /etc/ecs/ecs.config
+                                if [ "${DockerUsername}" != "" ] ; then echo 'ECS_ENGINE_AUTH_DATA={"https://index.docker.io/v1/":{"username":"'"${DockerUsername}"'","password":"'"${DockerPassword}"'","email":"'"${DockerEmail}"'"}}' >> /etc/ecs/ecs.config; fi
+                        change_cluster_storage_driver:
+                            command: !Sub echo 'DOCKER_STORAGE_OPTIONS="--storage-driver overlay2"' > /etc/sysconfig/docker-storage
+                        storage_opt_hack:
+                            command: !Sub echo 'OPTIONS="${!OPTIONS} --storage-opt dm.basesize=99999G"' >> /etc/sysconfig/docker
+                        restart_docker:
+                            command: !Sub service docker restart
+                        update_ecs:
+                            command: !Sub yum update -y ecs-init
+                        sendmail_off:
+                            command: !Sub |
+                                service sendmail stop
+                                chkconfig sendmail off
+                efs:
+                    packages:
+                        yum:
+                            nfs-utils: []
+                    commands:
+                        02_createdir:
+                            command: !Sub "mkdir -p ${MountPoint}"
+                        03_mount:
+                            command: !Sub "mount -t nfs4 -o nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2 ${EFS}.efs.${AWS::Region}.amazonaws.com:/ ${MountPoint}"
+                        04_permissions:
+                            command: !Sub "chown ec2-user:ec2-user ${MountPoint}"
+
+    ECSAutoScalingGroup:
+        Type: AWS::AutoScaling::AutoScalingGroup
+        Properties: 
+            VPCZoneIdentifier: !Ref Subnets
+            LaunchConfigurationName: !Ref ECSLaunchConfiguration
+            MinSize: !Ref MinClusterSize
+            MaxSize: !Ref MaxClusterSize
+            DesiredCapacity: !Ref ClusterSize
+            Tags:
+                - Key: Name
+                  Value: !Join 
+                    - '-'
+                    - - !Ref 'EnvironmentName'
+                      - 'ECS-Instance'
+                  PropagateAtLaunch: true
+        CreationPolicy:
+            ResourceSignal: 
+                Timeout: PT15M
+        UpdatePolicy:
+            AutoScalingRollingUpdate:
+                MinInstancesInService: 1
+                MaxBatchSize: 1
+                PauseTime: PT15M
+                SuspendProcesses:
+                  - HealthCheck
+                  - ReplaceUnhealthy
+                  - AZRebalance
+                  - AlarmNotification
+                  - ScheduledActions
+                WaitOnResourceSignals: true
+
+Outputs:
+
+    Cluster:
+        Description: A reference to the ECS cluster
+        Value: !Ref ECSCluster
+
+    ClusterArn:
+        Description: A reference to the ECS cluster ARN
+        Value: !GetAtt ECSCluster.Arn
+
+    ECSHostSecurityGroup:
+        Description: A reference to the ECSHostSecurityGroup
+        Value: !Ref ECSHostSecurityGroup
+
+    ECSRole:
+        Description: A reference to the ECSRole
+        Value: !Ref ECSRole
+

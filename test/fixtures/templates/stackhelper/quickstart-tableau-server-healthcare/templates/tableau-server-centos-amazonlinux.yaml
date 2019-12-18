@@ -1,0 +1,304 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'AWS CloudFormation Template: Tableau Server running on Linux (Centos and Amazon Linux). (qs-1oui27s1l)'
+
+Parameters:
+  AMIOS:
+    AllowedValues:
+      - Amazon-Linux-2
+      - CentOS-7-HVM
+      - Ubuntu-Server-16.04-LTS-HVM
+      - Windows-Server-2012-R2
+    Description: The Linux or Windows distribution for the AMI to be used for the EC2 instances
+    Type: String
+  AcceptEULA:
+    AllowedValues:
+    - 'Yes'
+    - 'No'
+    Default: 'No'
+    Description: 'View the EULA at the Link: https://www.tableau.com/eula'
+    Type: String
+  InstanceType:
+    AllowedValues:
+    - c5.4xlarge
+    - c5d.4xlarge
+    - c4.4xlarge
+    - m4.4xlarge
+    - m5.4xlarge
+    - r5d.4xlarge
+    ConstraintDescription: must be a valid EC2 instance type.
+    Default: m5.4xlarge
+    Description: Amazon EC2 instance type
+    Type: String
+  KeyPairName:
+    ConstraintDescription: The name of an existing EC2 KeyPair.
+    Description: Public/private key pairs allow you to securely connect to your instance
+      after it launches
+    Type: AWS::EC2::KeyPair::KeyName
+  InstanceSecurityGroup:
+    Description: The Security Group Id for the instance
+    Type: AWS::EC2::SecurityGroup::Id
+  PrivateSubnetIds:
+    Description: Private Subnet Ids to launch Tableau Server in
+    Type: List<AWS::EC2::Subnet::Id>
+  Username:
+    Description: Tableau Services Manager (TSM) administrator username (cannot be
+      Administrator)
+    Type: String
+    AllowedPattern: "[A-Za-z0-9]+"
+    MaxLength: '30'
+  Password:
+    Description: Tableau Services Manager (TSM) administrator password
+    Type: String
+    NoEcho: 'true'
+    AllowedPattern: "^(?=[a-zA-Z0-9#@$?!]{8,}$)(?=.*?[a-z])(?=.*?[A-Z])(?=.*?[0-9]).*"
+    MinLength: '8'
+  TableauServerAdminUser:
+    Description: The name of the initial administrator for Tableau Server
+    Type: String
+    MinLength: '1'
+  TableauServerAdminPassword:
+    Description: The password of the initial administrator for Tableau Server
+    Type: String
+    MinLength: '1'
+    NoEcho: 'true'
+  TableauServerLicenseKey:
+    Description: License Key (leave blank for trial)
+    Type: String
+  ElbTargetGroups:
+    Description: ELB target groups for the ASG
+    Type: CommaDelimitedList
+  RegCity:
+    Description: City
+    Type: String
+  RegCompany:
+    Description: Company
+    Type: String
+  RegCountry:
+    Description: Country
+    Type: String
+  RegDepartment:
+    Description: Department
+    Type: String
+  RegEmail:
+    Description: Email
+    MinLength: '1'
+    Type: String
+  RegFirstName:
+    Description: First Name
+    MinLength: '1'
+    Type: String
+  RegIndustry:
+    Description: Industry
+    Type: String
+  RegLastName:
+    Description: Last Name
+    MinLength: '1'
+    Type: String
+  RegPhone:
+    Description: Phone
+    Type: String
+  RegState:
+    Description: State
+    Type: String
+  RegTitle:
+    Description: Title
+    Type: String
+  RegZip:
+    Description: ZIP/Postal Code
+    Type: String
+  ImageId:
+    Type: AWS::EC2::Image::Id
+    Description: AmiId
+  QSTagKey:
+    Type: String
+    Description: Tag key to identify resources from this Quick Start
+  QSTagValue:
+    Type: String
+    Description: Tag value to identify resources from this Quick Start
+  TableauServerInstanceProfile:
+    Type: String
+    Description: Tableau Server Instance Role. Used for tagging EBS volumes
+Mappings:
+  DefaultConfiguration:
+    InstallationConfig:
+      TableauServerInstaller: https://s3-us-west-2.amazonaws.com/tableau-healthcare-quickstart/tableau-server.x86_64.rpm
+      AutomatedInstaller: https://s3-us-west-2.amazonaws.com/tableau-healthcare-quickstart/automated-installer.sh
+    MachineConfiguration:
+      SystemVolumeSize: 100
+Conditions:
+  IsTrial: !Equals [ '', !Ref TableauServerLicenseKey ]
+  IsAmazonLinux: !Equals [ 'Amazon-Linux-2', !Ref AMIOS ]
+  
+Resources:
+  TableauASG:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      DesiredCapacity: 1
+      HealthCheckGracePeriod: 6000
+      HealthCheckType: ELB
+      LaunchConfigurationName: !Ref TableauLaunchConfig
+      MaxSize: 1
+      MinSize: 1
+      Tags:
+      - Key: !Ref QSTagKey
+        Value: !Ref QSTagValue
+        PropagateAtLaunch: true
+      TargetGroupARNs: !Ref ElbTargetGroups
+      VPCZoneIdentifier: !Ref PrivateSubnetIds
+    CreationPolicy:
+      ResourceSignal:
+        Count: 1
+        Timeout: PT2H
+
+  TableauLaunchConfig:
+    Type: AWS::AutoScaling::LaunchConfiguration
+    Metadata:
+      AWS::CloudFormation::Init:
+        config:
+          packages:
+            rpm:
+              epel-release: https://dl.fedoraproject.org/pub/epel/epel-release-latest-7.noarch.rpm
+              postgresql-odbc: https://s3-us-west-2.amazonaws.com/tableau-quickstart/tableau-postgresql-odbc-9.5.3-1.x86_64.rpm
+            yum:
+              awscli: []
+          files:
+            "/tmp/secrets.properties":
+              mode: '640'
+              content: !Sub |
+                tsm_admin_user='${Username}'
+                tsm_admin_pass='${Password}'
+                tableau_server_admin_user='${TableauServerAdminUser}'
+                tableau_server_admin_pass='${TableauServerAdminPassword}'
+            "/tmp/config.json":
+              content:
+                {
+                  "configEntities": {
+                    "gatewaySettings": {
+                      "_type": "gatewaySettingsType",
+                      "port": 80,
+                      "firewallOpeningEnabled": true,
+                      "sslRedirectEnabled": true,
+                      "publicHost": "localhost",
+                      "publicPort": 443
+                    },
+                    "identityStore": {
+                      "_type": "identityStoreType",
+                      "type": "local"
+                    }
+                  }
+                }
+            "/tmp/tableau-server.rpm":
+              source: !FindInMap [ DefaultConfiguration, InstallationConfig, TableauServerInstaller ]
+            "/tmp/automated-installer":
+              mode: '550'
+              source: !FindInMap [ DefaultConfiguration, InstallationConfig, AutomatedInstaller ]
+            "/tmp/registration.json":
+              content: !Sub |
+                {
+                  "first_name": "${RegFirstName}",
+                  "last_name": "${RegLastName}",
+                  "email": "${RegEmail}",
+                  "company": "${RegCompany};AWSQuickStart-LinuxHealthcare",
+                  "title": "${RegTitle}",
+                  "department": "${RegDepartment}",
+                  "industry": "${RegIndustry}",
+                  "phone": "${RegPhone}",
+                  "city": "${RegCity}",
+                  "state": "${RegState}",
+                  "zip": "${RegZip}",
+                  "country": "${RegCountry}"
+                }
+    Properties:
+      AssociatePublicIpAddress: false
+      BlockDeviceMappings:
+        - DeviceName: !If [ IsAmazonLinux, /dev/xvda, /dev/sda1 ]
+          Ebs:
+            VolumeType: gp2
+            VolumeSize: !FindInMap [ DefaultConfiguration, MachineConfiguration, SystemVolumeSize ]
+      ImageId: !Ref ImageId
+      InstanceType: !Ref InstanceType
+      IamInstanceProfile: !Ref TableauServerInstanceProfile
+      KeyName: !Ref KeyPairName
+      SecurityGroups:
+      - !Ref InstanceSecurityGroup
+      EbsOptimized: true
+      UserData:
+        Fn::Base64: !Sub
+          - | 
+            #!/bin/bash -x
+            set -e
+
+            yum -y update && yum install awscli -y
+
+            EC2_INSTANCE_ID=$(curl -s http://169.254.169.254/latest/meta-data/instance-id)
+            DISK_IDS=$(aws ec2 describe-volumes --filters Name=attachment.instance-id,Values=$EC2_INSTANCE_ID --query 'Volumes[*].[VolumeId]' --region=${AWS::Region} --out "text" | cut -f 1)
+            aws ec2 create-tags --resources $DISK_IDS --tags Key=${QSTagKey},Value=${QSTagValue} --region ${AWS::Region}
+
+            # Call Init
+            ${CfnInitInstall}
+            
+            /opt/aws/bin/cfn-init --stack '${AWS::StackName}' --resource TableauLaunchConfig --region '${AWS::Region}' >> /tmp/cfn-init.log 2>&1
+            
+            # Machine Configs
+            hostnamectl set-hostname $(hostnamectl --static)
+            setup_sftp() {
+              source 'tmp/secrets.properties'
+              useradd -m "$tsm_admin_user"
+              echo -e "$tsm_admin_pass\n$tsm_admin_pass" | passwd "$tsm_admin_user" 
+            }
+
+            setup_sftp
+            unset -f setup_sftp
+            export LANG=en_US.UTF-8
+
+            # Install Tableau Server
+            install() {
+              source '/tmp/secrets.properties'
+              /tmp/automated-installer -a $tsm_admin_user -f /tmp/config.json -r /tmp/registration.json -s /tmp/secrets.properties ${Trial} -v --accepteula --force /tmp/tableau-server.rpm
+            }
+
+            install >> /tmp/install.log 2>&1
+            unset -f install
+
+            # SSL Cert
+            # Get Version
+            cd /opt/tableau/tableau_server/packages/
+            TABLEAUVERSION=`ls -1 | head -1 | awk 'BEGIN{FS="."}{for (i=2; i<NF; i++) printf $i "."; printf $NF}'`
+
+            TSMPATH=/opt/tableau/tableau_server/packages/bin.$TABLEAUVERSION/tsm
+            SSLFOLDER=/var/opt/tableau/tableau_server/data/ssl
+            mkdir $SSLFOLDER
+            #OPENSSL=/opt/tableau/tableau_server/packages/apache.$TABLEAUVERSION/bin/openssl
+
+            # Create and sign certificate
+            cd $SSLFOLDER
+            CERTNAME=tableau-quickstart
+            openssl genrsa -out $CERTNAME.key 4096
+            openssl req -new -key $CERTNAME.key -out $CERTNAME.csr -subj "/C=US/ST=Washington/L=Seattle/O=MyOrg/OU=MyDept/CN=example.com" -config /opt/tableau/tableau_server/packages/apache.$TABLEAUVERSION/conf/openssl.cnf
+            openssl x509 -req -days 365 -in $CERTNAME.csr -signkey $CERTNAME.key -out $CERTNAME.crt
+
+            # Update TSM
+            tsm_update() {
+              source '/tmp/secrets.properties'
+              $TSMPATH security external-ssl enable --cert-file $SSLFOLDER/$CERTNAME.crt --key-file $SSLFOLDER/$CERTNAME.key -u $tsm_admin_user -p $tsm_admin_pass
+              $TSMPATH pending-changes apply --ignore-prompt -u $tsm_admin_user -p $tsm_admin_pass
+            }
+
+            tsm_update >> /tmp/tsm_update.log 2>&1
+            unset -f tsm_update
+
+            # Signal successful completion
+            /opt/aws/bin/cfn-signal -e $? --stack '${AWS::StackName}' --resource TableauASG --region '${AWS::Region}'
+
+            # Cleanup
+            #rm -f /tmp/config.json
+            #rm -f /tmp/registration.json
+            #rm -f /tmp/secrets.properties
+            #rm -f /tmp/tableau-server.deb
+            #rm -f /tmp/automated-installer
+          - Trial: !If [ IsTrial, '', !Sub ' -k ${TableauServerLicenseKey} ']
+            CfnInitInstall: !If [ IsAmazonLinux, '', '/usr/bin/easy_install --script-dir /opt/aws/bin https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-latest.tar.gz' ]
+            RootVolMap: !If [ IsAmazonLinux, /dev/xvda, /dev/sda1 ]
+Outputs:
+  TableauASG: 
+    Value: !Ref TableauASG

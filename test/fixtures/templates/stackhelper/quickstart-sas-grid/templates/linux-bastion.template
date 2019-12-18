@@ -1,0 +1,824 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "This template deploys a linux box",
+    "Parameters": {
+        "SASSoftwareDepot": {
+            "AllowedPattern": "^([-a-zA-Z0-9@:%_\\+.~#?&//=]*)$",
+            "ConstraintDescription": "must be a valid S3 location where your Software Depot tar file resides, e.g. mysasbucket/sasorders",
+            "Description": "S3 folder location of the Software Depot tar file",
+            "Type": "String"
+        },
+        "SASSoftwareDepotName": {
+            "AllowedPattern": "^([-a-zA-Z0-9@:%_\\+.~#?&//=]*)$",
+            "ConstraintDescription": "must be the name of the software depot minus .tar",
+            "Description": "Name of the SAS Depot file tar file minus .tar",
+            "Type": "String"
+        },
+        "SASPlanFiles": {
+            "AllowedPattern": "^([-a-zA-Z0-9@:%_\\+.~#?&//=]*)$",
+            "ConstraintDescription": "must be a directory of files in a valid S3 location, e.g. mysasbucket/sasplanfiles/",
+            "Description": "S3 location of the folder with the SAS Plan files",
+            "Type": "String"
+        },
+        "SASLicenseMeta": {
+            "AllowedPattern": "^([-a-zA-Z0-9@:%_\\+.~#?&//=]*)$",
+            "ConstraintDescription": "must be file name containing the SAS Metadata license such as SAS94_9C1TDT_70243248_LINUX_X86-64.txt",
+            "Description": "Name of SAS Metadata License file",
+            "Type": "String"
+        },
+        "SASLicenseApp": {
+            "AllowedPattern": "^([-a-zA-Z0-9@:%_\\+.~#?&//=]*)$",
+            "ConstraintDescription": "must be file name containing the SAS Application Server license such as SAS94_9C1TDT_70243247_LINUX_X86-64.txt",
+            "Description": "Name of SAS Application Server License file",
+            "Type": "String"
+        },
+        "SASGridKeyPairName": {
+            "Description": "Name of SAS Grid private key",
+            "Type": "AWS::EC2::KeyPair::KeyName",
+            "MinLength": "1",
+            "ConstraintDescription": "must be a existing AWS Key Pair name current AWS region."
+        },
+        "LustreKeyPairName": {
+            "Description": "Name of Lustre private key",
+            "Type": "AWS::EC2::KeyPair::KeyName",
+            "MinLength": "1",
+            "ConstraintDescription": "must be a existing AWS Key Pair name current AWS region."
+        },
+        "KeyPairName": {
+            "Description": "Name of an existing EC2 key pair. This will allow you to access the Ansible Controller after it launches.",
+            "Type": "AWS::EC2::KeyPair::KeyName",
+            "MinLength": "1",
+            "ConstraintDescription": "must be a existing AWS Key Pair name current AWS region."
+        },
+        "AdminIngressLocation": {
+            "Description": "Allow inbound SSH traffic to the Ansible Controller from this CIDR block (IP address range). Must be a valid IP CIDR range of the form x.x.x.x/x.",
+            "Type": "String",
+            "MinLength": "9",
+            "MaxLength": "18",
+            "AllowedPattern": "^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\\/([0-9]|[1-2][0-9]|3[0-2]))$",
+            "ConstraintDescription": "must be a valid IP CIDR range of the form x.x.x.x/x."
+        },
+        "AdminPassword": {
+            "Description": "Password for the administrative account. Must be at least 8 characters containing letters, numbers and symbols",
+            "Type": "String",
+            "MinLength": 8,
+            "MaxLength": 32,
+            "NoEcho": true
+        },
+        "RDGWSecurityGroup": {
+            "Type": "String"
+        },
+        "DomainDNSName": {
+            "Type": "String"
+        },
+        "NumberOfOSSNodes": {
+            "Description": "Provide the number of OSS Node instances are required",
+            "Type": "Number"
+        },
+        "VPCID": {
+            "Description": "ID of an existing VPC with a public and a private subnet in the same Availability Zone.",
+            "Type": "AWS::EC2::VPC::Id",
+            "MinLength": "12",
+            "MaxLength": "21",
+            "ConstraintDescription": "must be an existing VPC ID in the current AWS region"
+        },
+        "PublicSubnetID": {
+            "Description": "ID of public subnet for the Elastic Load Balancer and Ansible Controller (e.g. subnet-1234567890abcdef0) (must be in the same AZ as PrivateSubnetID)",
+            "Type": "AWS::EC2::Subnet::Id",
+            "MinLength": "15",
+            "MaxLength": "24",
+            "ConstraintDescription": "must be an existing Subnet ID in the current AWS region"
+        },
+        "QSS3BucketName": {
+            "AllowedPattern": "^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$",
+            "ConstraintDescription": "Quick Start bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-).",
+            "Default": "aws-quickstart",
+            "Description": "S3 bucket name for the Quick Start assets. Only change this value if you customize or extend the Quick Start for your own use. This string can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-).",
+            "Type": "String"
+        },
+        "QSS3KeyPrefix": {
+            "AllowedPattern": "^[0-9a-zA-Z-/]*[/]$",
+            "ConstraintDescription": "Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/) and must terminate in a forward slash.",
+            "Default": "quickstart-sas-grid/",
+            "Description": "S3 key prefix for the Quick Start assets. Only change this value if you customize or extend the Quick Start for your own use. Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/) and must terminate in a forward slash.",
+            "Type": "String"
+        },
+        "StorageStack": {
+            "Description": "The storage stack you want to use. The two choices are Lustre or IBM Spectrum Scale (GPFS).",
+            "Type": "String",
+            "AllowedValues": [
+                "Lustre",
+                "GPFS"
+            ]
+        }
+    },
+    "Conditions": {
+        "GetLustreFile": {
+            "Fn::Equals": [
+                {
+                    "Ref": "StorageStack"
+                },
+                "Lustre"
+            ]
+        },
+        "GetGPFSFile": {
+            "Fn::Equals": [
+                {
+                    "Ref": "StorageStack"
+                },
+                "GPFS"
+            ]
+        }
+    },
+    "Mappings": {
+        "AWSAMIRegionMap": {
+            "AMI": {
+                "AMZNLINUXHVM": "amzn-ami-hvm-2017.09.1.20180115-x86_64-gp2",
+                "RHEL74HVM": "RHEL-7.4_HVM-20180122-x86_64-1-Hourly2-GP2"
+            },
+            "ap-northeast-1": {
+                "AMZNLINUXHVM": "ami-04b2d1589ab1d972c",
+                "RHEL74HVM": "ami-36f09350"
+            },
+            "ap-northeast-2": {
+                "AMZNLINUXHVM": "ami-0be3e6f84d3b968cd",
+                "RHEL74HVM": "ami-90a201fe"
+            },
+            "ap-south-1": {
+                "AMZNLINUXHVM": "ami-0b99c7725b9484f9e",
+                "RHEL74HVM": "ami-5c2f7e33"
+            },
+            "ap-southeast-1": {
+                "AMZNLINUXHVM": "ami-0fb6b6f9e81056553",
+                "RHEL74HVM": "ami-8d90e9f1"
+            },
+            "ap-southeast-2": {
+                "AMZNLINUXHVM": "ami-075caa3491def750b",
+                "RHEL74HVM": "ami-e1996783"
+            },
+            "ca-central-1": {
+                "AMZNLINUXHVM": "ami-0a67d15f2858e33cb",
+                "RHEL74HVM": "ami-71018415"
+            },
+            "eu-central-1": {
+                "AMZNLINUXHVM": "ami-026d3b3672c6e7b66",
+                "RHEL74HVM": "ami-8a21bfe5"
+            },
+            "eu-west-1": {
+                "AMZNLINUXHVM": "ami-0862aabda3fb488b5",
+                "RHEL74HVM": "ami-ccb7d2b5"
+            },
+            "eu-west-2": {
+                "AMZNLINUXHVM": "ami-0bdfa1adc3878cd23",
+                "RHEL74HVM": "ami-b4b3a8d0"
+            },
+            "eu-west-3": {
+                "AMZNLINUXHVM": "ami-05b93cd5a1b552734",
+                "RHEL74HVM": "ami-66d0661b"
+            },
+            "sa-east-1": {
+                "AMZNLINUXHVM": "ami-0bb96001cf2299257",
+                "RHEL74HVM": "ami-1a064a76"
+            },
+            "us-east-1": {
+                "AMZNLINUXHVM": "ami-035b3c7efe6d061d5",
+                "RHEL74HVM": "ami-76a3970c"
+            },
+            "us-east-2": {
+                "AMZNLINUXHVM": "ami-02f706d959cedf892",
+                "RHEL74HVM": "ami-cebe94ab"
+            },
+            "us-west-1": {
+                "AMZNLINUXHVM": "ami-0fcdcdb074d2bac5f",
+                "RHEL74HVM": "ami-c8020fa8"
+            },
+            "us-west-2": {
+                "AMZNLINUXHVM": "ami-0f2176987ee50226e",
+                "RHEL74HVM": "ami-1607ba6e"
+            }
+        },
+        "LinuxAMINameMap": {
+            "RHEL-7.4-HVM": {
+                "Code": "RHEL74HVM"
+            },
+            "Amazon-Linux-HVM": {
+                "Code": "AMZNLINUXHVM"
+            }
+        }
+    },
+    "Resources": {
+        "LinuxBastionSecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "GroupDescription": "Enables SSH Access to LinuxBastion Controller",
+                "VpcId": {
+                    "Ref": "VPCID"
+                },
+                "SecurityGroupIngress": [
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "22",
+                        "ToPort": "22",
+                        "CidrIp": {
+                            "Ref": "AdminIngressLocation"
+                        }
+                    },
+                    {
+                        "IpProtocol": "icmp",
+                        "FromPort": "-1",
+                        "ToPort": "-1",
+                        "CidrIp": {
+                            "Ref": "AdminIngressLocation"
+                        }
+                    }
+                ]
+            }
+        },
+        "LinuxBastionRole": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "Policies": [
+                    {
+                        "PolicyDocument": {
+                            "Version": "2012-10-17",
+                            "Statement": [
+                                {
+                                    "Action": [
+                                        "cloudformation:*"
+                                    ],
+                                    "Resource": [
+                                        {
+                                            "Fn::Sub": "arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/*/*"
+                                        }
+                                    ],
+                                    "Effect": "Allow"
+                                }
+                            ]
+                        },
+                        "PolicyName": "cfn-policy"
+                    },
+                    {
+                        "PolicyDocument": {
+                            "Version": "2012-10-17",
+                            "Statement": [
+                                {
+                                    "Action": [
+                                        "s3:ListBucket"
+                                    ],
+                                    "Resource": [
+                                        {
+                                            "Fn::Sub": "arn:aws:s3:::${QSS3BucketName}"
+                                        }
+                                    ],
+                                    "Effect": "Allow"
+                                },
+                                {
+                                    "Action": [
+                                        "s3:GetObject"
+                                    ],
+                                    "Resource": [
+                                        {
+                                            "Fn::Sub": "arn:aws:s3:::${QSS3BucketName}/*"
+                                        }
+                                    ],
+                                    "Effect": "Allow"
+                                }
+                            ]
+                        },
+                        "PolicyName": "aws-quick-start-s3-policy"
+                    },
+                    {
+                        "PolicyDocument": {
+                            "Version": "2012-10-17",
+                            "Statement": [
+                                {
+                                    "Action": [
+                                        "s3:GetObject"
+                                    ],
+                                    "Resource": [
+                                        {
+                                            "Fn::Sub": "arn:aws:s3:::${SASSoftwareDepot}${SASSoftwareDepotName}.tar"
+                                        },
+                                        {
+                                            "Fn::Sub": "arn:aws:s3:::${SASPlanFiles}/*"
+                                        }
+                                    ],
+                                    "Effect": "Allow"
+                                },
+                                {
+                                    "Action": [
+                                        "s3:ListBucket"
+                                    ],
+                                    "Resource": {
+                                        "Fn::Sub": [
+                                            "arn:aws:s3:::${target_bucket_name}",
+                                            {
+                                                "target_bucket_name": {
+                                                    "Fn::Select": [
+                                                        0,
+                                                        {
+                                                            "Fn::Split": [
+                                                                "/",
+                                                                {
+                                                                    "Fn::Sub": "${SASPlanFiles}"
+                                                                }
+                                                            ]
+                                                        }
+                                                    ]
+                                                }
+                                            }
+                                        ]
+                                    },
+                                    "Effect": "Allow"
+                                }
+                            ]
+                        },
+                        "PolicyName": "s3-policy"
+                    },
+                    {
+                        "PolicyDocument": {
+                            "Version": "2012-10-17",
+                            "Statement": [
+                                {
+                                    "Action": [
+                                        "ec2:*"
+                                    ],
+                                    "Resource": [
+                                        "*"
+                                    ],
+                                    "Effect": "Allow"
+                                }
+                            ]
+                        },
+                        "PolicyName": "ec2-policy"
+                    },
+                    {
+                        "PolicyDocument": {
+                            "Version": "2012-10-17",
+                            "Statement": [
+                                {
+                                    "Action": [
+                                        "cloudformation:DescribeStacks",
+                                        "cloudformation:DescribeStackEvents",
+                                        "cloudformation:DescribeStackResource",
+                                        "cloudformation:DescribeStackResources"
+                                    ],
+                                    "Resource": [
+                                        {
+                                            "Fn::Sub": "arn:aws:cloudformation:*:*:stack/*/*"
+                                        }
+                                    ],
+                                    "Effect": "Allow"
+                                }
+                            ]
+                        },
+                        "PolicyName": "CloudformationPolicy"
+                    },
+                    {
+                        "PolicyDocument": {
+                            "Version": "2012-10-17",
+                            "Statement": [
+                                {
+                                    "Action": [
+                                        "ssm:DescribeParameters"
+                                    ],
+                                    "Resource": "*",
+                                    "Effect": "Allow"
+                                },
+                                {
+                                    "Action": [
+                                        "ssm:PutParameter"
+                                    ],
+                                    "Resource": [
+                                        {
+                                            "Fn::Sub": "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/*"
+                                        }
+                                    ],
+                                    "Effect": "Allow"
+                                },
+                                {
+                                    "Action": [
+                                        "ssm:GetParameter"
+                                    ],
+                                    "Resource": [
+                                        {
+                                            "Fn::Sub": "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/*"
+                                        }
+                                    ],
+                                    "Effect": "Allow"
+                                }
+                            ]
+                        },
+                        "PolicyName": "ansible-controller-ssm-policy"
+                    }
+                ],
+                "Path": "/",
+                "AssumeRolePolicyDocument": {
+                    "Statement": [
+                        {
+                            "Action": [
+                                "sts:AssumeRole"
+                            ],
+                            "Principal": {
+                                "Service": [
+                                    "ec2.amazonaws.com"
+                                ]
+                            },
+                            "Effect": "Allow"
+                        }
+                    ],
+                    "Version": "2012-10-17"
+                }
+            }
+        },
+        "LinuxBastionProfile": {
+            "Type": "AWS::IAM::InstanceProfile",
+            "Properties": {
+                "Roles": [
+                    {
+                        "Ref": "LinuxBastionRole"
+                    }
+                ],
+                "Path": "/"
+            }
+        },
+        "LinuxBastion": {
+            "Type": "AWS::EC2::Instance",
+            "CreationPolicy": {
+                "ResourceSignal": {
+                    "Count": 1,
+                    "Timeout": "PT3H30M"
+                }
+            },
+            "Metadata": {
+                "AWS::CloudFormation::Authentication": {
+                    "S3AccessCreds": {
+                        "type": "S3",
+                        "roleName": {
+                            "Ref": "LinuxBastionRole"
+                        },
+                        "buckets": [
+                            {
+                                "Ref": "QSS3BucketName"
+                            }
+                        ]
+                    }
+                },
+                "AWS::CloudFormation::Init": {
+                    "configSets": {
+                        "quickstart": [
+                            "config"
+                        ]
+                    },
+                    "config": {
+                        "files": {
+                            "/tmp/ansible.cfg": {
+                                "source": {
+                                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}playbooks/ansible.cfg"
+                                },
+                                "mode": "000660",
+                                "owner": "ec2-user",
+                                "group": "ec2-user"
+                            },
+                            "/tmp/update_hosts.yml": {
+                                "source": {
+                                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}playbooks/update_hosts.yml"
+                                },
+                                "mode": "000660",
+                                "owner": "ec2-user",
+                                "group": "ec2-user"
+                            },
+                            "/tmp/prereqs.yml": {
+                                "source": {
+                                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}playbooks/prereqs.yml"
+                                },
+                                "mode": "000660",
+                                "owner": "ec2-user",
+                                "group": "ec2-user"
+                            },
+                            "/tmp/update_hosts_storage.yml": {
+                                "source": {
+                                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}playbooks/update_hosts_storage.yml"
+                                },
+                                "mode": "000660",
+                                "owner": "ec2-user",
+                                "group": "ec2-user"
+                            },
+                            "/tmp/prereqs_storage.yml": {
+                                "source": {
+                                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}playbooks/prereqs_storage.yml"
+                                },
+                                "mode": "000660",
+                                "owner": "ec2-user",
+                                "group": "ec2-user"
+                            },
+                            "/tmp/lsf_install.yml": {
+                                "source": {
+                                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}playbooks/lsf_install.yml"
+                                },
+                                "mode": "000660",
+                                "owner": "ec2-user",
+                                "group": "ec2-user"
+                            },
+                            "/tmp/lsf_install.config": {
+                                "source": {
+                                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}scripts/lsf_install.config"
+                                },
+                                "mode": "000660",
+                                "owner": "ec2-user",
+                                "group": "ec2-user",
+                                "context": {
+                                    "DomainDNSName": {
+                                        "Ref": "DomainDNSName"
+                                    }
+                                }
+                            },
+                            "/tmp/copy_files.yml": {
+                                "source": {
+                                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}playbooks/copy_files.yml"
+                                },
+                                "mode": "000660",
+                                "owner": "ec2-user",
+                                "group": "ec2-user"
+                            },
+                            "/tmp/sas_install_grid1.yml": {
+                                "source": {
+                                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}playbooks/sas_install_grid1.yml"
+                                },
+                                "mode": "000660",
+                                "owner": "ec2-user",
+                                "group": "ec2-user"
+                            },
+                            "/tmp/sas_install_metadata.yml": {
+                                "source": {
+                                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}playbooks/sas_install_metadata.yml"
+                                },
+                                "mode": "000660",
+                                "owner": "ec2-user",
+                                "group": "ec2-user"
+                            },
+                            "/tmp/setup.sh": {
+                                "source": {
+                                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}scripts/setup.sh"
+                                },
+                                "mode": "000770",
+                                "owner": "ec2-user",
+                                "group": "ec2-user",
+                                "authentication": "S3AccessCreds",
+                                "context": {
+                                    "AWSRegion": {
+                                        "Ref": "AWS::Region"
+                                    },
+                                    "CloudFormationStack": {
+                                        "Ref": "AWS::StackName"
+                                    }
+                                }
+                            },
+                            "/tmp/hosts.sh": {
+                                "source": {
+                                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}scripts/hosts.sh"
+                                },
+                                "mode": "000770",
+                                "owner": "ec2-user",
+                                "group": "ec2-user",
+                                "authentication": "S3AccessCreds",
+                                "context": {
+                                    "AWSRegion": {
+                                        "Ref": "AWS::Region"
+                                    },
+                                    "CloudFormationStack": {
+                                        "Ref": "AWS::StackName"
+                                    },
+                                    "DomainDNSName": {
+                                        "Ref": "DomainDNSName"
+                                    },
+                                    "NumberOfOSSNodes": {
+                                        "Ref": "NumberOfOSSNodes"
+                                    }
+                                }
+                            },
+                            "/tmp/lsf_restart.yml": {
+                                "source": {
+                                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}scripts/lsf_restart.yml"
+                                },
+                                "mode": "000770",
+                                "owner": "ec2-user",
+                                "group": "ec2-user",
+                                "authentication": "S3AccessCreds"
+                            },
+                            "/tmp/sas_servers_start.yml": {
+                                "source": {
+                                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}scripts/sas_servers_start.yml"
+                                },
+                                "mode": "000770",
+                                "owner": "ec2-user",
+                                "group": "ec2-user",
+                                "authentication": "S3AccessCreds"
+                            },
+                            "/tmp/sas_servers_stop.yml": {
+                                "source": {
+                                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}scripts/sas_servers_stop.yml"
+                                },
+                                "mode": "000770",
+                                "owner": "ec2-user",
+                                "group": "ec2-user",
+                                "authentication": "S3AccessCreds"
+                            },
+                            "/tmp/sas_servers_stop_studio.yml": {
+                                "source": {
+                                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}scripts/sas_servers_stop_studio.yml"
+                                },
+                                "mode": "000770",
+                                "owner": "ec2-user",
+                                "group": "ec2-user",
+                                "authentication": "S3AccessCreds"
+                            },
+                            "/tmp/sas_servers_start_studio.yml": {
+                                "source": {
+                                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}scripts/sas_servers_start_studio.yml"
+                                },
+                                "mode": "000770",
+                                "owner": "ec2-user",
+                                "group": "ec2-user",
+                                "authentication": "S3AccessCreds"
+                            },
+                            "/tmp/start_instances.sh": {
+                                "source": {
+                                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}scripts/start_instances.sh"
+                                },
+                                "mode": "000770",
+                                "owner": "ec2-user",
+                                "group": "ec2-user",
+                                "authentication": "S3AccessCreds",
+                                "context": {
+                                    "AWSRegion": {
+                                        "Ref": "AWS::Region"
+                                    },
+                                    "CloudFormationStack": {
+                                        "Ref": "AWS::StackName"
+                                    }
+                                }
+                            },
+                            "/tmp/stop_instances.sh": {
+                                "source": {
+                                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}scripts/stop_instances.sh"
+                                },
+                                "mode": "000770",
+                                "owner": "ec2-user",
+                                "group": "ec2-user",
+                                "authentication": "S3AccessCreds",
+                                "context": {
+                                    "AWSRegion": {
+                                        "Ref": "AWS::Region"
+                                    },
+                                    "CloudFormationStack": {
+                                        "Ref": "AWS::StackName"
+                                    }
+                                }
+                            },
+                            "/tmp/install.sh": {
+                                "source": {
+                                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}scripts/install.sh"
+                                },
+                                "mode": "000770",
+                                "owner": "ec2-user",
+                                "group": "ec2-user",
+                                "authentication": "S3AccessCreds",
+                                "context": {
+                                    "AdminPassword": {
+                                        "Ref": "AdminPassword"
+                                    },
+                                    "SASSoftwareDepot": {
+                                        "Ref": "SASSoftwareDepot"
+                                    },
+                                    "SASSoftwareDepotName": {
+                                        "Ref": "SASSoftwareDepotName"
+                                    },
+                                    "SASPlanFiles": {
+                                        "Ref": "SASPlanFiles"
+                                    },
+                                    "SASLicenseMeta": {
+                                        "Ref": "SASLicenseMeta"
+                                    },
+                                    "SASLicenseApp": {
+                                        "Ref": "SASLicenseApp"
+                                    },
+                                    "SASGridKeyPairName": {
+                                        "Ref": "SASGridKeyPairName"
+                                    },
+                                    "LustreKeyPairName": {
+                                        "Ref": "LustreKeyPairName"
+                                    },
+                                    "QSS3BucketName": {
+                                        "Ref": "QSS3BucketName"
+                                    },
+                                    "QSS3KeyPrefix": {
+                                        "Ref": "QSS3KeyPrefix"
+                                    },
+                                    "DomainDNSName": {
+                                        "Ref": "DomainDNSName"
+                                    },
+                                    "NumberOfOSSNodes": {
+                                        "Ref": "NumberOfOSSNodes"
+                                    },
+                                    "StorageStack": {
+                                        "Ref": "StorageStack"
+                                    }
+                                }
+                            }
+                        },
+                        "commands": {
+                            "01-setup": {
+                                "command": "su -l ec2-user -c \"/tmp/setup.sh &> /tmp/setup.log\""
+                            },
+                            "02-hosts": {
+                                "command": "su -l ec2-user -c \"/tmp/hosts.sh &> /tmp/hosts.log\""
+                            },
+                            "03-install": {
+                                "command": "su -l ec2-user -c \"/tmp/install.sh &> /tmp/install.log\""
+                            }
+                        }
+                    }
+                }
+            },
+            "Properties": {
+                "KeyName": {
+                    "Ref": "KeyPairName"
+                },
+                "SubnetId": {
+                    "Ref": "PublicSubnetID"
+                },
+                "IamInstanceProfile": {
+                    "Ref": "LinuxBastionProfile"
+                },
+                "ImageId": {
+                    "Fn::FindInMap": [
+                        "AWSAMIRegionMap",
+                        {
+                            "Ref": "AWS::Region"
+                        },
+                        "AMZNLINUXHVM"
+                    ]
+                },
+                "SecurityGroupIds": [
+                    {
+                        "Ref": "LinuxBastionSecurityGroup"
+                    },
+                    {
+                        "Ref": "RDGWSecurityGroup"
+                    }
+                ],
+                "InstanceType": "t2.small",
+                "BlockDeviceMappings": [
+                    {
+                        "DeviceName": "/dev/xvda",
+                        "Ebs": {
+                            "VolumeSize": 40,
+                            "VolumeType": "gp2",
+                            "DeleteOnTermination": true
+                        }
+                    }
+                ],
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": {
+                            "Fn::Sub": "${AWS::StackName} Linux Bastion"
+                        }
+                    }
+                ],
+                "UserData": {
+                    "Fn::Base64": {
+                        "Fn::Join": [
+                            "\n",
+                            [
+                              "#!/bin/bash",
+                              "export PATH=$PATH:/usr/local/bin:/opt/aws/bin",
+                              "pip install awscli --ignore-installed six &> /dev/null",
+                              "# remove pre-installed cfn bootstrap utilities",
+                              "yum -y remove aws-cfn-bootstrap",
+                              "hash -d /opt/aws/bin/cfn-init",
+                              "# install latest cfn bootstrap utilities",
+                              "easy_install https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-latest.tar.gz",
+                              { "Fn::Sub": "cfn-init --stack ${AWS::StackName} --resource LinuxBastion --configsets quickstart --region ${AWS::Region}" },
+                              "# Signal the status from cfn-init",
+                              { "Fn::Sub": "cfn-signal -e $? --stack ${AWS::StackName} --resource LinuxBastion --region ${AWS::Region}" }
+                            ]
+                        ]
+                    }
+                }
+            }
+        }
+    },
+    "Outputs": {
+        "LinuxBastionIP": {
+            "Description": "LinuxBastion IP address",
+            "Value": {
+                "Fn::GetAtt": [
+                    "LinuxBastion",
+                    "PublicIp"
+                ]
+            }
+        }
+    }
+}

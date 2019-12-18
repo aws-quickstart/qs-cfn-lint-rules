@@ -1,0 +1,790 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "This template will deploy a Talend Studio instance into an existing VPC subnet.  **WARNING** This template creates Amazon EC2 instance and related resources. You will be billed for the AWS resources used if you create a stack from this template. QS(9999)",
+    "Parameters": {
+        "QSS3URL": {
+            "Description": "Encapsulate variation in s3 root url for commercial or gov-cloud",
+            "Type": "String",
+            "Default": "s3.amazonaws.com",
+            "AllowedValues": [ "s3.amazonaws.com", "s3-us-gov-west-1.amazonaws.com" ]
+        },
+        "QSS3BucketName": {
+            "AllowedPattern": "^[0-9a-zA-Z]+([0-9a-zA-Z-.]*[0-9a-zA-Z])*$",
+            "ConstraintDescription": "Quick Start bucket name can include numbers, lowercase letters, uppercase letters, periods (.), and hyphens (-). It cannot start or end with a hyphen (-).",
+            "Description": "S3 bucket name for the Quick Start assets. Quick Start bucket name can include numbers, lowercase letters, uppercase letters, periods (.), and hyphens (-). It cannot start or end with a hyphen (-).",
+            "Type": "String"
+        },
+        "QSS3KeyPrefix": {
+            "AllowedPattern": "^[0-9a-zA-Z-/]*$",
+            "ConstraintDescription": "Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).  Prefix cannot start with a slash but must end with a slash unless it is the empty string.",
+            "Default": "",
+            "Description": "S3 key prefix for the Quick Start assets. Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).  Prefix cannot start with a slash but must end with a slash unless it is the empty string.",
+            "Type": "String"
+        },
+        "ScriptBucket": {
+            "AllowedPattern": "^[0-9a-zA-Z]+([0-9a-zA-Z-.]*[0-9a-zA-Z])*$",
+            "ConstraintDescription": "Quick Start script bucket name can include numbers, lowercase letters, uppercase letters, periods (.), and hyphens (-). It cannot start or end with a hyphen (-).",
+            "Description": "Leave this value unchanged.  It is the S3 bucket name for the Quick Start scripts. Quick Start bucket name can include numbers, lowercase letters, uppercase letters, periods (.), and hyphens (-). It cannot start or end with a hyphen (-).",
+            "Type": "String",
+            "Default": "oodle.quickstart.talend"
+        },
+        "TalendLicenseBucket": {
+            "Description": "Bucket holding Talend license",
+            "Type": "String",
+            "AllowedPattern": "^[0-9a-zA-Z]+([0-9a-zA-Z-.]*[0-9a-zA-Z])*$",
+            "ConstraintDescription": "Quick Start bucket name can include numbers, lowercase letters, uppercase letters, periods (.), and hyphens (-). It cannot start or end with a hyphen (-) or period (.)."
+        },
+        "InstanceRole": {
+            "Description": "Talend Server EC2 IAM Role",
+            "Type": "String"
+        },
+        "InstanceProfile": {
+            "Description": "Talend Server EC2 Instance Profile",
+            "Type": "String"
+        },
+        "InstanceType": {
+            "Description": "Talend Server EC2 instance type",
+            "Type": "String",
+            "Default": "m4.xlarge",
+            "AllowedValues": [
+                "t2.medium",
+                "t2.large",
+                "t2.xlarge",
+                "t2.2xlarge",
+                "m4.large",
+                "m4.xlarge",
+                "m4.2xlarge",
+                "c4.large",
+                "c4.xlarge",
+                "c4.2xlarge",
+                "c4.4xlarge"
+            ],
+            "ConstraintDescription": "must be a valid EC2 instance type."
+        },
+        "KeyName": {
+            "Description": "Name of an EC2 KeyPair to enable SSH access to the Talend Server instance.",
+            "Type": "AWS::EC2::KeyPair::KeyName",
+            "ConstraintDescription": "must be the name of an existing EC2 KeyPair."
+        },
+		"SubnetId": {
+            "Description": "Talend Server subnet id.",
+            "Type": "AWS::EC2::Subnet::Id"
+		},
+		"PrivateSubnet": {
+            "Description": "Is this is a private subnet.",
+            "Type": "String",
+			"Default": "private",
+            "AllowedValues": [ "private", "public" ]
+		},
+		"SecurityGroupIds": {
+            "Description": "Talend Server Security Group.",
+            "Type": "CommaDelimitedList"
+		},
+        "TacIp": {
+            "Description": "TAC IP address.",
+            "Type": "String"
+        },
+        "TalendResourceBucket": {
+            "Description": "Talend S3 resources bucket.",
+            "Type": "String",
+            "Default": "repo-quickstart-talend"
+        },  
+        "TalendResourceBucketRepoPath": {
+            "Description": "Path to binary repository in Talend S3 resources bucket.",
+            "Type": "String",
+            "Default": "/"
+        },
+        "TacStack": {
+            "Description": "TAC Stack handle for getting TacReady reference.",
+            "Type": "String",
+            "Default": ""
+        }
+	},
+    "Mappings": {
+        "Talend": {
+            "license": {
+                "licenseTarget": "/home/ubuntu/TUI-4.5.2/licenses/6.3.1"
+            },
+            "baseline": {
+                "baselineTarget": "/home/ubuntu/baseline",
+                "generatedTarget": "/home/ubuntu/generated"
+            },
+            "tui": {
+                "profile": "studio",
+                "tuiUrl": "https://s3.amazonaws.com/repo-quickstart-talend/tui/TUI-4.5.2.tar",
+                "tuiTarget": "/home/ubuntu/TUI-4.5.2",
+				"talendRepoDir": "/opt/repo",
+                "tuiRepo": "/opt/tui/repo"
+            },
+            "s3fs": {
+                "s3fsUrl": "https://s3.amazonaws.com/repo-quickstart-talend/s3fs/v1.82.tar.gz",
+                "s3fsTarget": "/home/ubuntu/s3fs-fuse-1.82"
+            },
+            "studio": {
+                "installDir": "/opt/talend/6.3.1/studio/studio"
+            },
+            "jobserver": {
+                "sparkJarsKeyPrefix": "spark",
+                "sparkJarsTarget": "/var/lib/spark/jars"
+            }
+        },
+        "AwsAmiRegionMap": {
+            "ap-northeast-1": {
+                "hvm": "ami-2f2d9c49"
+            },
+            "ap-northeast-2": {
+                "hvm": "ami-e49e398a"
+            },
+            "ap-south-1": {
+                "hvm": "ami-46eea129"
+            },
+            "ap-southeast-1": {
+                "hvm": "ami-84a6f3e7"
+            },
+            "ap-southeast-2": {
+                "hvm": "ami-4cc8232e"
+            },
+            "ca-central-1": {
+                "hvm": "ami-338b3057"
+            },
+            "eu-central-1": {
+                "hvm": "ami-e22aaa8d"
+            },
+            "eu-west-1": {
+                "hvm": "ami-2e832957"
+            },
+            "eu-west-2": {
+                "hvm": "ami-3fc8d75b"
+            },
+            "sa-east-1": {
+                "hvm": "ami-981550f4"
+            },
+            "us-east-1": {
+                "hvm": "ami-c29e1cb8"
+            },
+            "us-east-2": {
+                "hvm": "ami-f0f8d695"
+            },
+            "us-west-1": {
+                "hvm": "ami-8b90a9eb"
+            },
+            "us-west-2": {
+                "hvm": "ami-25cf1c5d"
+            }
+        }
+    },
+	"Conditions": {
+        "isPrivateSubnet": {
+            "Fn::Equals": [
+                { "Ref": "PrivateSubnet" },
+                "private"
+            ]
+        },
+		"isPublicSubnet": {
+			"Fn::Not": [ { "Condition": "isPrivateSubnet" } ]
+		},
+        "TacStackCondition": {
+            "Fn::Not": [
+                { 
+                    "Fn::Equals": [
+                        "",
+                        { "Ref": "TacStack" }
+                    ]
+                }
+            ]
+        }
+	},
+    "Resources": {
+        "StudioReady" : {
+            "Type" : "AWS::CloudFormation::WaitCondition",
+            "CreationPolicy" : {
+                "ResourceSignal" : {
+                    "Timeout": "PT30M",
+                    "Count"  : "1"
+                }
+            }
+        },
+        "TalendServerInstance": {
+            "Type": "AWS::EC2::Instance",
+            "Properties": {
+                "InstanceType": { "Ref": "InstanceType" },
+                "ImageId": {
+                    "Fn::FindInMap": [
+                        "AwsAmiRegionMap",
+                        { "Ref": "AWS::Region" },
+                        "hvm"
+                    ]
+                },
+                "Tags": [ { "Key": "Name", "Value": "Studio" } ],
+                "KeyName": { "Ref": "KeyName" },
+				"SecurityGroupIds": { "Ref": "SecurityGroupIds" },
+				"SubnetId": { "Ref": "SubnetId" },
+                "IamInstanceProfile": { "Ref": "InstanceProfile" },
+                "BlockDeviceMappings" : [
+                   {
+                      "DeviceName" : "/dev/sda1",
+                      "Ebs" : { "VolumeSize" : "80" }
+                   }
+                ],
+                "UserData": {
+                    "Fn::Base64": {
+                        "Fn::Join": [
+                            "\n",
+                            [
+                                "#!/bin/bash -xe",
+                                "while ! apt-get update -q ; do sleep 10; done\n",
+                                { "Fn::Sub": "wget http://${QSS3BucketName}.${QSS3URL}/${QSS3KeyPrefix}scripts/bootstrap/ec2-metadata" },
+								"chmod +x ec2-metadata",
+                                { "Fn::Sub": "wget http://${QSS3BucketName}.${QSS3URL}/${QSS3KeyPrefix}scripts/bootstrap/update_hosts_ubuntu.sh" },
+								"chmod +x update_hosts_ubuntu.sh",
+                                "./update_hosts_ubuntu.sh",
+                                "apt-get install -y python-pip",
+                                "pip install --upgrade pip",
+                                "pip install awscli",
+                                "pip install https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-latest.tar.gz",
+                                "cp /usr/local/init/ubuntu/cfn-hup /etc/init.d/cfn-hup",
+                                "chmod +x /etc/init.d/cfn-hup",
+                                "update-rc.d cfn-hup defaults",
+                                "# service cfn-hup start",
+                                { "Fn::Sub": "cfn-init -v --stack ${AWS::StackName}  --region ${AWS::Region} --resource TalendServerInstance --configsets All" },
+                                { "Fn::Sub": "cfn-signal -e $?  --stack ${AWS::StackName} --region ${AWS::Region} --resource TalendServerInstance" }
+                            ]
+                        ]
+                    }
+                }
+            },
+            "Metadata": {
+                "AWS::CloudFormation::Authentication": {
+                    "S3AccessCreds": {
+                        "type": "S3",
+                        "roleName": { "Ref": "InstanceRole" }
+                    }
+                },
+
+                "AWS::CloudFormation::Init": {
+                    "configSets": {
+                        "All": [
+                            "Download",
+                            "Configure",
+                            "Install"
+                        ]
+                    },
+                    "Download": {
+                        "files": {
+                            "/home/ubuntu/s3fs.tgz": {
+                                "source": {
+                                    "Fn::FindInMap": [
+                                        "Talend",
+                                        "s3fs",
+                                        "s3fsUrl"
+                                    ]
+                                },
+                                "owner": "ubuntu",
+                                "group": "ubuntu",
+                                "mode": "000400"
+                            },
+                            "/home/ubuntu/tui.tar": {
+                                "source": {
+                                    "Fn::FindInMap": [
+                                        "Talend",
+                                        "tui",
+                                        "tuiUrl"
+                                    ]
+                                },
+                                "owner": "ubuntu",
+                                "group": "ubuntu",
+                                "mode": "000400"
+                            },
+                            "/home/ubuntu/Talend_BigData.png": {
+                                "source": { "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}scripts/images/Talend_BigData.png" },
+                                "authentication": "S3AccessCreds",
+                                "owner": "ubuntu",
+                                "group": "ubuntu",
+                                "mode": "000444"
+                            }
+                        },
+                        "commands": {
+                            "00-copy-license": {
+                                "command": {
+                                    "Fn::Sub": "aws --region=${AWS::Region} s3 cp s3://${TalendLicenseBucket}/license /home/ubuntu/generated/licenses/license"
+                                }
+                            },
+                            "01-unzip-s3fs": {
+                                "command": "tar xzvpf s3fs.tgz",
+                                "cwd": "/home/ubuntu"
+                            },
+                            "02-unzip-tui": {
+                                "command": "tar xvpf tui.tar",
+                                "cwd": "/home/ubuntu"
+                            },
+                            "03-copy-qss3bucket": {
+                                "command": {
+                                    "Fn::Sub": "aws --region=${AWS::Region} s3 cp s3://${ScriptBucket}/modules/talend/scripts /home/ubuntu/baseline --recursive"
+                                }
+                            },
+                            "04-chmod-qss3bucket": {
+                                "command": {
+                                    "Fn::Join": [ "",
+                                        [
+                                            "find ",
+                                            { "Fn::FindInMap": [ "Talend", "baseline", "baselineTarget" ] },
+                                            " -type f -name \"*.sh\" -exec chmod u+x {} \\;"
+                                        ]
+                                    ]
+                                }
+                            },
+                            "05-chmod-ec2-metadata": {
+                                "command": {
+                                    "Fn::Join": [ "",
+                                        [
+                                            "find ",
+                                            { "Fn::FindInMap": [ "Talend", "baseline", "baselineTarget" ] },
+                                            " -type f -name \"ec2-metadata\" -exec chmod u+x {} \\;"
+                                        ]
+                                    ]
+                                }
+                            },
+                            "06-spark-jars": {
+                                "command": {
+                                    "Fn::Sub": [ 
+                                        "aws --region=${AWS::Region} s3 cp s3://${TalendResourceBucket}/${sparkJarsKeyPrefix} ${sparkJarsTarget} --recursive",
+                                        {
+                                            "sparkJarsKeyPrefix": { "Fn::FindInMap": [ "Talend", "jobserver", "sparkJarsKeyPrefix" ] },
+                                            "sparkJarsTarget": { "Fn::FindInMap": [ "Talend", "jobserver", "sparkJarsTarget" ] }
+                                        }
+                                    ]
+                                }
+                            },
+                            "07-install-jq": {
+                                "command": "apt-get install -y jq"
+                            }
+                        }
+                    },
+                    "Configure": {
+                        "files": {
+                            "/etc/cfn/cfn-hup.conf" : {
+                                "content" : { "Fn::Join" : ["", [
+                                    "[main]\n",
+                                    "stack=", { "Ref" : "AWS::StackId" }, "\n",
+                                    "region=", { "Ref" : "AWS::Region" }, "\n"
+                                ]]},
+                                "mode"    : "000400",
+                                "owner"   : "root",
+                                "group"   : "root"
+                            },
+
+                            "/etc/cfn/hooks.d/cfn-auto-reloader.conf" : {
+                                "content": { "Fn::Join" : ["", [
+                                    "[cfn-auto-reloader-hook]\n",
+                                    "triggers=post.update\n",
+                                    "path=Resources.TalendServerInstance.Metadata.AWS::CloudFormation::Init\n",
+                                    "action=/opt/aws/bin/cfn-init -v ",
+                                    "         --stack ", { "Ref" : "AWS::StackName" },
+                                    "         --resource TalendServerInstance ",
+                                    "         --region ", { "Ref" : "AWS::Region" }, "\n",
+                                    "runas=root\n"
+                                ]]},
+                                "mode"    : "000400",
+                                "owner"   : "root",
+                                "group"   : "root"
+                            },
+
+                            "/home/ubuntu/generated/setenv.sh": {
+                                "content": {
+                                    "Fn::Join": [
+                                        "\n",
+                                        [
+                                            "export TALEND_USER_HOME=/home/ubuntu",
+                                            {
+                                                "Fn::Join": [
+                                                    "",
+                                                    [
+                                                        "export TALEND_REPO=",
+                                                        {
+                                                            "Fn::FindInMap": [ "Talend", "tui", "talendRepoDir"]
+                                                        }
+                                                    ]
+                                                ]
+                                            }
+                                        ]
+                                    ]
+                                },
+                                "mode": "000400",
+								"owner": "ubuntu",
+								"group": "ubuntu"
+                            },
+
+                            "/home/ubuntu/Desktop/TalendStudio.desktop": {
+                                "content": {
+                                    "Fn::Join": [
+                                        "\n",
+                                        [
+                                            "[Desktop Entry]",
+                                            "Version=1.0",
+                                            "Type=Application",
+                                            "Name=Talend Studio",
+                                            "Comment=",
+                                            "Exec=/opt/talend/6.3.1/studio/studio/Talend-Studio-linux-gtk-x86_64 -clean",
+                                            "Icon=/home/ubuntu/Talend_BigData.png",
+                                            "Path=/opt/talend/6.3.1/studio/studio",
+                                            "Terminal=false",
+                                            "StartupNotify=false"
+                                        ]
+                                    ]
+                                },
+                                "mode": "000751",
+								"owner": "ubuntu",
+								"group": "ubuntu"
+                            }
+                        },
+                        "commands": {
+                            "01-load-baseline": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "cp -rfT ",
+                                            {
+                                                "Fn::FindInMap": [
+                                                    "Talend",
+                                                    "baseline",
+                                                    "baselineTarget"
+                                                ]
+                                            },
+											"/tui/ ",
+                                            {
+                                                "Fn::FindInMap": [
+                                                    "Talend",
+                                                    "tui",
+                                                    "tuiTarget"
+                                                ]
+                                            },
+											"/"
+                                        ]
+                                    ]
+                                }
+                            },
+                            "02-load-license": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "cp ",
+                                            {
+                                                "Fn::FindInMap": [
+                                                    "Talend",
+                                                    "baseline",
+                                                    "generatedTarget"
+                                                ]
+                                            },
+											"/licenses/* ",
+                                            {
+                                                "Fn::FindInMap": [
+                                                    "Talend",
+                                                    "license",
+                                                    "licenseTarget"
+                                                ]
+                                            }
+                                        ]
+                                    ]
+                                }
+                            },
+                            "03-load-env": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "mv ",
+                                            {
+                                                "Fn::FindInMap": [
+                                                    "Talend",
+                                                    "baseline",
+                                                    "generatedTarget"
+                                                ]
+                                            },
+											"/setenv.sh ",
+                                            {
+                                                "Fn::FindInMap": [
+                                                    "Talend",
+                                                    "tui",
+                                                    "tuiTarget"
+                                                ]
+                                            }
+                                        ]
+                                    ]
+                                }
+                            },
+                            "04-load-instance-env": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            {
+                                                "Fn::FindInMap": [
+                                                    "Talend",
+                                                    "tui",
+                                                    "tuiTarget"
+                                                ]
+                                            },
+											"/scripts/create-instance-env.sh ",
+                                            {
+                                                "Fn::FindInMap": [
+                                                    "Talend",
+                                                    "tui",
+                                                    "tuiTarget"
+                                                ]
+                                            },
+											"/instance-env.sh"
+                                        ]
+                                    ]
+                                }
+                            },
+                            "05-load-server-env": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            {
+                                                "Fn::FindInMap": [
+                                                    "Talend",
+                                                    "tui",
+                                                    "tuiTarget"
+                                                ]
+                                            },
+											"/scripts/create-",
+											{ "Fn::FindInMap": [ "Talend", "tui", "profile" ] },
+											"-env.sh ",
+                                            {
+                                                "Fn::FindInMap": [
+                                                    "Talend",
+                                                    "tui",
+                                                    "tuiTarget"
+                                                ]
+                                            },
+											"/server-env.sh"
+                                        ]
+                                    ]
+                                }
+                            },
+                            "06-update-hosts": {
+                                "command": {
+                                    "Fn::Sub": "echo \"${TacIp}    tac\" >> /etc/hosts"
+                                }
+                            }
+                        },
+                        "services" : {
+                          "sysvinit" : {
+                            "cfn-hup" : {
+                                "enabled" : "true",
+                                "ensureRunning" : "true",
+                                "files" : ["/etc/cfn/cfn-hup.conf", "/etc/cfn/hooks.d/cfn-auto-reloader.conf"]}
+                          }
+                        }
+                    },
+                    "Install": {
+                        "commands": {
+                            "01-install-s3fs": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "/bin/bash -c \"",
+                                            "set -e",
+                                            "; . ",
+                                            { "Fn::FindInMap": [ "Talend", "baseline", "baselineTarget" ] },
+                                            "/s3fs/s3fs-util.sh",
+                                            "; target_owner=ubuntu",
+                                            "; s3fs_builder apt",
+                                            "; s3fs_build ",
+                                            { "Fn::FindInMap": [ "Talend", "s3fs", "s3fsTarget" ] },
+                                            "; s3fs_config",
+                                            "; s3fs_mount",
+                                            " ", { "Ref": "TalendResourceBucket" },
+                                            " ", { "Ref": "TalendResourceBucketRepoPath" },
+                                            " ", { "Fn::FindInMap": [ "Talend", "tui", "talendRepoDir" ] },
+                                            "; ",
+                                            { "Fn::Sub":
+                                                [
+                                                    "${tuiTarget}/scripts/tui-repo.sh '${talendRepoDir}' '${tuiRepo}'",
+                                                    {
+                                                        "tuiTarget": { "Fn::FindInMap": [ "Talend", "tui", "tuiTarget" ] },
+                                                        "tuiRepo": { "Fn::FindInMap": [ "Talend", "tui", "tuiRepo" ] },
+                                                        "talendRepoDir": { "Fn::FindInMap": [ "Talend", "tui", "talendRepoDir" ] } 
+                                                    }
+                                                ]
+                                            },
+                                            "\""
+                                        ]
+                                    ]
+                                },
+                                "cwd": { "Fn::FindInMap": [ "Talend", "s3fs", "s3fsTarget" ] }
+                            },
+                            "02-install-jre": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "/bin/bash -c \"",
+                                            "set -e",
+                                            "; . ",
+                                            { "Fn::FindInMap": [ "Talend", "baseline", "baselineTarget" ] },
+                                            "/java/jre-installer.sh;",
+                                            "jre_installer_install",
+                                            "\""
+                                        ]
+                                    ]
+                                }
+                            },
+                            "03-install-talend": {
+                                "command": {
+                                    "Fn::Join": [ 
+                                        "", 
+                                        [
+                                            "/bin/bash -c \"",
+                                            "set -e; umask 037;",
+                                            ". /etc/profile.d/jre.sh; ",
+                                            ". ./setenv.sh; ",
+                                            ". ./instance-env.sh; ",
+                                            ". ./server-env.sh; ",
+                                            "./install -q ",
+                                            { "Fn::FindInMap": [ "Talend", "tui", "profile" ] },
+                                            "; chown -R ubuntu:ubuntu /opt/talend",
+                                            "; chmod u+x /opt/talend/6.3.1/studio/studio/Talend-Studio-linux-gtk-x86_64",
+                                            "\""
+                                        ] 
+                                    ]
+                                },
+                                "cwd": {
+                                    "Fn::FindInMap": [
+                                        "Talend",
+                                        "tui",
+                                        "tuiTarget"
+                                    ]
+                                }
+                            },
+                            "04-install-xfce4":  {
+                                "command": {
+                                    "Fn::Join": [
+                                        ";",
+                                        [
+                                            "apt-get -y install --upgrade --no-install-recommends xfce4"
+                                        ]
+                                    ]
+                                }
+                            },
+                            "05-install-x2go-repo":  {
+                                "command": {
+                                    "Fn::Join": [
+                                        ";",
+                                        [
+                                            "apt-get -y install --upgrade software-properties-common",
+                                            "add-apt-repository -y ppa:x2go/stable",
+                                            "apt-get -y update"
+                                        ]
+                                    ]
+                                }
+                            },
+                            "06-install-x2go":  {
+                                "command": {
+                                    "Fn::Join": [
+                                        ";",
+                                        [
+                                            "apt-get -y install --upgrade x2goserver x2goserver-xsession"
+                                        ]
+                                    ]
+                                }
+                            },
+                            "07-install-firefox-gedit":  {
+                                "command": {
+                                    "Fn::Join": [
+                                        ";",
+                                        [
+                                            "apt-get -y install firefox",
+                                            "apt-get -y install gedit"
+                                        ]
+                                    ]
+                                }
+                            },
+                            "08-tac-ready": {
+                                "command": {
+                                    "Fn::If": [
+                                        "TacStackCondition",
+                                        {
+                                            "Fn::Sub": [
+                                                "${baselineTarget}/cfn/waitForResource.sh ${TacStack} TacReady ${AWS::Region}",
+                                                {
+                                                    "baselineTarget": {
+                                                        "Fn::FindInMap": [
+                                                            "Talend",
+                                                            "baseline",
+                                                            "baselineTarget"
+                                                        ]
+                                                    }
+                                                }
+                                            ]
+                                        },
+                                        "echo Skipping waitForResource on TacStack since no TAC was provided"
+                                    ]
+                                }
+                            },
+                            "09-studio-ready": {
+                                "command": {
+                                    "Fn::Sub": "cfn-signal -e 0 --stack ${AWS::StackName} --resource StudioReady --region ${AWS::Region}"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "Outputs": {
+        "TalendServerInstanceId": {
+            "Value": { "Ref": "TalendServerInstance" },
+            "Description": "Talend Server EC2 resource Id",
+			"Export": {
+				"Name": {
+					"Fn::Sub": "${AWS::StackName}:instanceId"
+				}
+			}
+        },
+        "publicIp": {
+			"Condition": "isPublicSubnet",
+            "Value": { "Fn::GetAtt": [ "TalendServerInstance", "PublicIp" ] },
+            "Description": "Talend public IP",
+			"Export": {
+				"Name": {
+					"Fn::Sub": "${AWS::StackName}:publicIp" 
+				} 
+			}
+        },
+        "privateIp": {
+            "Value": { "Fn::GetAtt": [ "TalendServerInstance", "PrivateIp" ] },
+            "Description": "Talend private IP",
+			"Export": {
+				"Name": {
+					"Fn::Sub": "${AWS::StackName}:privateIp" 
+				}
+			}
+        },
+        "publicDnsName": {
+			"Condition": "isPublicSubnet",
+            "Value": { "Fn::GetAtt": [ "TalendServerInstance", "PublicDnsName" ] },
+            "Description": "Talend public DNS",
+			"Export": {
+				"Name": {
+					"Fn::Sub": "${AWS::StackName}:publicDnsName"
+				}
+			}
+        },
+        "privateDnsName": {
+            "Value": { "Fn::GetAtt": [ "TalendServerInstance", "PrivateDnsName" ] },
+            "Description": "Talend private DNS",
+			"Export": {
+				"Name": {
+					"Fn::Sub": "${AWS::StackName}:privateDnsName" 
+				}
+			}
+        }
+    }
+}

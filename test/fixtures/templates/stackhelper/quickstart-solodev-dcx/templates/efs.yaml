@@ -1,0 +1,81 @@
+Description: >
+    This template deploys an EFS filesystem
+
+Parameters:
+
+    EnvironmentName:
+        Description: An environment name that will be prefixed to resource names
+        Type: String
+
+    VPC:
+        Type: AWS::EC2::VPC::Id
+        Description: Choose which VPC the Application Load Balancer should be deployed to
+
+    Subnets:
+        Description: Choose which subnets the Application Load Balancer should be deployed to
+        Type: List<AWS::EC2::Subnet::Id>
+
+    LoadBalancerSecurityGroup:
+        Description: Select the Load Balancer Security Group to use for the cluster hosts
+        Type: AWS::EC2::SecurityGroup::Id
+
+    StorageEncrypted:
+        Default: 'false'
+        Description: Enable encryption for Filesystem (EFS)
+        Type: String
+        AllowedValues:
+          - 'true'
+          - 'false'
+        ConstraintDescription: must be either true or false.
+
+Resources:
+
+  EFS:
+    Type: 'AWS::EFS::FileSystem'
+    Properties:
+      Encrypted: !Ref StorageEncrypted
+      FileSystemTags:
+        - Key: Name
+          Value: !Join 
+            - '-'
+            - - !Ref 'EnvironmentName'
+              - EFS
+
+  MountTargetSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      VpcId: !Ref VPC
+      GroupDescription: Security group for mount target
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: '2049'
+          ToPort: '2049'
+          SourceSecurityGroupId: !Ref LoadBalancerSecurityGroup
+
+  MountTarget1:
+    Type: 'AWS::EFS::MountTarget'
+    Properties:
+      FileSystemId: !Ref EFS
+      SubnetId: !Select 
+        - '0'
+        - !Ref Subnets
+      SecurityGroups:
+        - !Ref MountTargetSecurityGroup
+
+  MountTarget2:
+    Type: 'AWS::EFS::MountTarget'
+    Properties:
+      FileSystemId: !Ref EFS
+      SubnetId: !Select 
+        - '1'
+        - !Ref Subnets
+      SecurityGroups:
+        - !Ref MountTargetSecurityGroup
+           
+Outputs:
+
+    EFS:
+      Description: EFS Filesystem
+      Value: !Ref EFS
+
+    

@@ -1,0 +1,232 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+
+Description: >
+
+    This template deploys Solodev Enterprise for Docker into a new VPC (qs-1ps37mqh2)
+
+Metadata: 
+  AWS::CloudFormation::Interface: 
+    ParameterGroups: 
+    - 
+      Label: 
+        default: "Network configuration"
+      Parameters: 
+        - ResourceName 
+        - AvailabilityZone
+        - InstanceType
+        - InstanceCount
+        - KeyName
+    - 
+      Label: 
+        default: "CMS configuration"
+      Parameters: 
+        - AdminUser           
+        - AdminPassword
+        - DatabaseName
+        - DatabasePassword
+        - StorageEncrypted
+        - GPGPW
+    - 
+      Label: 
+        default: "SSL configuration (optional)"
+      Parameters: 
+        - FQDN
+        - CertificateArn
+    - 
+      Label: 
+        default: "Advanced configuration (optional)"
+      Parameters: 
+        - RestoreBucketName
+        - DeletionPolicy
+    - 
+      Label:
+        default: AWS Quick Start configuration
+      Parameters:
+        - QSS3BucketName
+        - QSS3KeyPrefix
+    ParameterLabels:
+      ResourceName:
+        default: Resource name for the stack
+      AvailabilityZone:
+        default: Availability Zones
+      InstanceType:
+        default: Web server instance type
+      InstanceCount:
+        default: Number of instances
+      KeyName:
+        default: EC2 key pair name
+      GPGPW:
+        default: Encryption key
+      AdminUser:
+        default: Admin user name
+      AdminPassword:
+        default: Admin password
+      DatabaseName:
+        default: Database name
+      DatabasePassword:
+        default: Database root password
+      StorageEncrypted:
+        default: Encryption enabled
+      FQDN:
+        default: Fully qualified domain name
+      CertificateArn:
+        default: CertificateArn
+      RestoreBucketName:
+        default: S3 bucket name for restore
+      DeletionPolicy:
+        default: Experimental deletion policy
+      QSS3BucketName:
+        default: AWS Quick Start S3 bucket name
+      QSS3KeyPrefix:
+        default: AWS Quick Start S3 key prefix          
+
+
+Parameters:
+
+    ResourceName:
+        Type: String
+        Description: 'The name used to title the nested stacks.'
+        Default: "solodev-quickstart"
+
+    AvailabilityZone:
+        Description: The list of Availability Zones to use for the subnets in the VPC.
+        Type: List<AWS::EC2::AvailabilityZone::Name>
+
+    KeyName:
+        Description: Name of an existing EC2 key pair to enable SSH access to the instances.
+        Type: 'AWS::EC2::KeyPair::KeyName'
+        AllowedPattern: .+
+        ConstraintDescription: Please choose EC2 KeyPair
+
+    InstanceType:
+        Description: The size of the EC2 instance you want to deploy.
+        Type: String
+        Default: m3.medium
+        AllowedValues: [t2.micro, t2.small, t2.medium, t2.large, m3.medium, m3.large,
+        m3.xlarge, m3.2xlarge, m4.large, m4.xlarge, m4.2xlarge, m4.4xlarge, m4.10xlarge,
+        c4.large, c4.xlarge, c4.2xlarge, c4.4xlarge, c4.8xlarge, c3.large, c3.xlarge,
+        c3.2xlarge, c3.4xlarge, c3.8xlarge, r3.large, r3.xlarge, r3.2xlarge, r3.4xlarge,
+        r3.8xlarge, i2.xlarge, i2.2xlarge, i2.4xlarge, i2.8xlarge]
+        ConstraintDescription: Please choose a valid instance type.
+
+    InstanceCount:
+        Description: 'Number of instances behind the load balancer. Minimum of 2 required for high availability.'
+        Default: 2
+        AllowedValues: [1, 2, 3, 4, 5]
+        Type: Number
+
+    DeletionPolicy:
+        Default: 'Delete'
+        Type: String
+        Description: 'Experimental field specifying the deletion policy (Retain, Delete, Snapshot).'
+
+    FQDN:
+        Type: String
+        Description: (Optional) Fully qualified domain name for the backend application. After deployment, the FQDN must be pointed to the CNAME of the ALB.
+
+    CertificateArn:
+        Type: String
+        Description: (Optional) SSL Certificate ARN that matches the FQDN above. Certificates and Certificate ARN can be acquired via AWS Certificate Manager.
+
+    AdminUser:
+        Description: The Solodev administrator user name used to log in to the application.
+        Type: String
+        Default: 'solodev'
+        AllowedPattern: .+
+        ConstraintDescription: Please set admin username
+
+    AdminPassword:
+        NoEcho: true
+        Description: The Solodev administrator password used to log in to the application.
+        Type: String
+        MinLength: 1
+        MaxLength: 41
+        AllowedPattern: .+
+        ConstraintDescription: Please set admin password
+
+    DatabaseName:
+        Description: Database name used during deployment when setting up the Amazon RDS MySQL database.
+        Type: String
+        MinLength: '1'
+        MaxLength: '64'
+        AllowedPattern: '[a-zA-Z][a-zA-Z0-9]*'
+        ConstraintDescription: must begin with a letter and contain only alphanumeric characters.
+        Default: 'solodev'
+
+    DatabasePassword:
+        NoEcho: true
+        Description: Database root password used when setting up and connecting directly to the Amazon RDS MySQL database.
+        Type: String
+        MinLength: 1
+        MaxLength: 41
+        AllowedPattern: .+
+        ConstraintDescription: Please set database root password
+
+    RestoreBucketName:
+        Description: (Optional) Name of S3 bucket containing files for restore, if restoring a previous instance's backup files.
+        Type: String
+        Default: ""
+
+    StorageEncrypted:
+        Default: 'true'
+        Description: Enable encryption for both the database (RDS) and the file system (EFS).
+        Type: String
+        AllowedValues:
+        - 'true'
+        - 'false'
+        ConstraintDescription: must be either true or false.
+
+    GPGPW:
+        Description: Encryption key for backups.
+        Type: String
+        Default: "KbM7c1NVNZaN"
+
+    QSS3BucketName:
+        AllowedPattern: "^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$"
+        Description:  S3 bucket name for the Quick Start assets. Quick Start bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-).
+        Type: String
+        Default: "aws-quickstart"
+        ConstraintDescription: Quick Start bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-).
+
+    QSS3KeyPrefix:
+        AllowedPattern: "^[0-9a-zA-Z-/]*$"
+        Description:  Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).
+        Type: String
+        Default: "quickstart-solodev-dcx/"
+        ConstraintDescription: S3 key prefix for the Quick Start assets. Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).
+
+Resources:
+
+    VPC:
+        Type: AWS::CloudFormation::Stack
+        Properties:
+            TemplateURL: !Sub https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}submodules/quickstart-aws-vpc/templates/aws-vpc.template
+            Parameters:
+                AvailabilityZones:   !Join [ ",", !Ref AvailabilityZone]         
+
+    SolodevStack:
+        DependsOn: VPC
+        Type: AWS::CloudFormation::Stack
+        Properties:
+            TemplateURL: !Sub https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}templates/solodev.yaml
+            Parameters:
+                ResourceName: !Ref ResourceName
+                VPCID: !GetAtt VPC.Outputs.VPCID
+                CertificateArn: !Ref CertificateArn
+                PublicSubnets: !Join [ ",", [ !GetAtt VPC.Outputs.PublicSubnet1ID, !GetAtt VPC.Outputs.PublicSubnet2ID ] ]
+                PrivateSubnets: !Join [ ",", [ !GetAtt VPC.Outputs.PrivateSubnet1AID, !GetAtt VPC.Outputs.PrivateSubnet2AID ] ]
+                StorageEncrypted: !Ref StorageEncrypted
+                InstanceType: !Ref InstanceType
+                KeyName: !Ref KeyName
+                DeletionPolicy: !Ref DeletionPolicy
+                AdminUser: !Ref AdminUser
+                AdminPassword: !Ref AdminPassword
+                DatabaseName: !Ref DatabaseName
+                DatabasePassword: !Ref DatabasePassword
+                FQDN: !Ref FQDN
+                GPGPW: !Ref GPGPW
+                RestoreBucketName: !Ref RestoreBucketName
+                InstanceCount: !Ref InstanceCount
+                QSS3BucketName: !Ref QSS3BucketName
+                QSS3KeyPrefix: !Ref QSS3KeyPrefix            

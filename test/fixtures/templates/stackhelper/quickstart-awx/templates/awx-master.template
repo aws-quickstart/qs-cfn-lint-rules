@@ -1,0 +1,370 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: 'AWX cluster + VPC + ECS, License: Apache 2.0 (Please do not remove)'
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Network Configuration
+        Parameters:
+          - AvailabilityZones
+          - VPCCIDR
+          - PublicSubnet1CIDR
+          - PublicSubnet2CIDR
+          - PrivateSubnet1CIDR
+          - PrivateSubnet2CIDR
+          - RemoteAccessCIDR
+      - Label:
+          default: Amazon EC2 Configuration
+        Parameters:
+          - KeyPairName
+          - ClusterSize
+          - DBInstanceClass
+          - InstanceType
+      - Label:
+          default: Amazon RDS Database Configuration
+        Parameters:
+          - MasterUsername
+          - MasterUserPassword
+          - PreferredBackupWindow
+          - PreferredMaintenanceWindowDay
+          - PreferredMaintenanceWindowStartTime
+          - PreferredMaintenanceWindowEndTime
+      - Label:
+          default: AWX Configuration
+        Parameters:
+          - AWXAdminUsername
+          - AWXAdminPassword
+          - AWXGitHubRepo
+          - AWXVersion
+      - Label:
+          default: AWS Quick Start Configuration
+        Parameters:
+          - QSS3BucketName
+          - QSS3KeyPrefix
+    ParameterLabels:
+      AvailabilityZones:
+        default: Availability Zones
+      KeyPairName:
+        default: Key Pair Name
+      ClusterSize:
+        default: Cluster Size
+      DBInstanceClass:
+        default: DBInstance Class
+      InstanceType:
+        default: InstanceType
+      PrivateSubnet1CIDR:
+        default: Private Subnet 1 CIDR
+      PrivateSubnet2CIDR:
+        default: Private Subnet 2 CIDR
+      PublicSubnet1CIDR:
+        default: Public Subnet 1 CIDR
+      PublicSubnet2CIDR:
+        default: Public Subnet 2 CIDR
+      QSS3BucketName:
+        default: Quick Start S3 Bucket Name
+      QSS3KeyPrefix:
+        default: Quick Start S3 Key Prefix
+      RemoteAccessCIDR:
+        default: Allowed Bastion External Access CIDR
+      VPCCIDR:
+        default: VPC CIDR
+      MasterUsername:
+        default: Master DB Username
+      MasterUserPassword:
+        default: Master DB Password
+      PreferredBackupWindow:
+        default: Daily Backup Window
+      PreferredMaintenanceWindowDay:
+        default: Maintenance period - day of week
+      PreferredMaintenanceWindowStartTime:
+        default: Maintenance period - start time
+      PreferredMaintenanceWindowEndTime:
+        default: Maintenance period -  end time
+      AWXAdminUsername:
+        default: AWX Admin Username
+      AWXAdminPassword:
+        default: AWX Admin Password
+      AWXGitHubRepo:
+        default: AWX GitHub Repo
+      AWXVersion:
+        default: AWX Version
+Parameters:
+  AWXVersion:
+    Description: Which version of AWX to use
+    Type: String
+    Default: 6.1.0
+    AllowedValues:
+      - 4.0.0
+      - 5.0.0
+      - 6.0.0
+      - 6.1.0
+  AWXAdminPassword:
+    Description: AWX Admin Password. Required
+    Type: String
+    NoEcho: 'true'
+  AWXAdminUsername:
+    Description: AWX Admin Username. Defaults to admin
+    Type: String
+    Default: admin
+  AWXGitHubRepo:
+    Description: Which github should we use as the source for the build ?
+    Type: String
+    Default: https://github.com/ansible/awx.git
+  AvailabilityZones:
+    Description: 'List of Availability Zones to use for the subnets in the VPC. Note: The logical order is preserved'
+    Type: List<AWS::EC2::AvailabilityZone::Name>
+  ClusterSize:
+    Description: How many ECS hosts do you want to initially deploy?
+    Type: Number
+    Default: 2
+  InstanceType:
+    Description: Which instance type should we use to build the ECS cluster?
+    Type: String
+    Default: t3.large
+  DBInstanceClass:
+    Description: The compute and memory capacity of the DB instance.
+    Type: String
+    Default: db.t3.medium
+    AllowedValues:
+      - db.m1.small
+      - db.m1.medium
+      - db.m1.large
+      - db.m1.xlarge
+      - db.m2.xlarge
+      - db.m2.2xlarge
+      - db.m2.4xlarge
+      - db.m3.medium
+      - db.m3.large
+      - db.m3.xlarge
+      - db.m3.2xlarge
+      - db.m4.large
+      - db.m4.xlarge
+      - db.m4.2xlarge
+      - db.m4.4xlarge
+      - db.m4.10xlarge
+      - db.r3.large
+      - db.r3.xlarge
+      - db.r3.2xlarge
+      - db.r3.4xlarge
+      - db.r3.8xlarge
+      - db.t3.micro
+      - db.t3.small
+      - db.t3.medium
+      - db.t3.large
+  KeyPairName:
+    Description: Public/private key pairs allow you to securely connect to your instance after it launches
+    Type: AWS::EC2::KeyPair::KeyName
+  PrivateSubnet1CIDR:
+    AllowedPattern: ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/([0-9]|[1-2][0-9]|3[0-2]))$
+    Default: 10.0.0.0/19
+    Description: CIDR Block for private subnet 1 located in Availability Zone 1.
+    Type: String
+  PrivateSubnet2CIDR:
+    AllowedPattern: ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/([0-9]|[1-2][0-9]|3[0-2]))$
+    Default: 10.0.32.0/19
+    Description: CIDR Block for private subnet 2 located in Availability Zone 2.
+    Type: String
+  PublicSubnet1CIDR:
+    Default: 10.0.128.0/20
+    Description: CIDR Block for the public DMZ subnet 1 located in Availability Zone 1.
+    Type: String
+  PublicSubnet2CIDR:
+    Default: 10.0.144.0/20
+    Description: CIDR Block for the public DMZ subnet 2 located in Availability Zone 2.
+    Type: String
+  QSS3BucketName:
+    AllowedPattern: ^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$
+    ConstraintDescription: Quick Start bucket name can include numbers, lowercase
+      letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen
+      (-).
+    Default: aws-quickstart
+    Description: S3 bucket name for the Quick Start assets. Quick Start bucket name
+      can include numbers, lowercase letters, uppercase letters, and hyphens (-).
+      It cannot start or end with a hyphen (-).
+    Type: String
+  QSS3KeyPrefix:
+    AllowedPattern: ^[0-9a-zA-Z-/]*$
+    ConstraintDescription: Quick Start key prefix can include numbers, lowercase letters,
+      uppercase letters, hyphens (-), and forward slash (/).
+    Default: quickstart-awx/
+    Description: S3 key prefix for the Quick Start assets. Quick Start key prefix
+      can include numbers, lowercase letters, uppercase letters, hyphens (-), and
+      forward slash (/).
+    Type: String
+  RemoteAccessCIDR:
+    AllowedPattern: ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/([0-9]|[1-2][0-9]|3[0-2]))$
+    ConstraintDescription: CIDR block parameter must be in the form x.x.x.x/x
+    Description: The CIDR IP range that is permitted to access AWX. We recommend that
+      you set this value to a trusted IP range.
+    Type: String
+  VPCCIDR:
+    AllowedPattern: ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/(1[6-9]|2[0-8]))$
+    ConstraintDescription: CIDR block parameter must be in the form x.x.x.x/16-28
+    Default: 10.0.0.0/16
+    Description: CIDR block for the VPC
+    Type: String
+  PreferredBackupWindow:
+    Description: The daily time range in UTC during which automated backups are created
+      (if automated backups are enabled). Cannot overlap with PreferredMaintenanceWindowTime.
+    Type: String
+    Default: 00:00-02:00
+    AllowedValues:
+      - 00:00-02:00
+      - 01:00-03:00
+      - 02:00-04:00
+      - 03:00-05:00
+      - 04:00-06:00
+      - 05:00-07:00
+      - 06:00-08:00
+      - 07:00-09:00
+      - 08:00-10:00
+      - 09:00-11:00
+      - 10:00-12:00
+      - 11:00-13:00
+      - 12:00-14:00
+      - 13:00-15:00
+      - 14:00-16:00
+      - 15:00-17:00
+      - 16:00-18:00
+      - 17:00-19:00
+      - 18:00-20:00
+      - 19:00-21:00
+      - 20:00-22:00
+      - 21:00-23:00
+      - 22:00-24:00
+  PreferredMaintenanceWindowDay:
+    Description: The day of the week which RDS maintenance will be performed.
+    Type: String
+    Default: Mon
+    AllowedValues:
+      - Mon
+      - Tue
+      - Wed
+      - Thu
+      - Fri
+      - Sat
+      - Sun
+  PreferredMaintenanceWindowEndTime:
+    Description: The weekly end time in UTC for the RDS maintenance window, must be
+      more than PreferredMaintenanceWindowEndTime and cannot overlap with PreferredBackupWindow.
+    Type: String
+    Default: 06:00
+    AllowedValues:
+      - 00:00
+      - 01:00
+      - 02:00
+      - 03:00
+      - 04:00
+      - 05:00
+      - 06:00
+      - 07:00
+      - 08:00
+      - 09:00
+      - '10:00'
+      - '11:00'
+      - '12:00'
+      - '13:00'
+      - '14:00'
+      - '15:00'
+      - '16:00'
+      - '17:00'
+      - '18:00'
+      - '19:00'
+      - '20:00'
+      - '21:00'
+      - '22:00'
+  PreferredMaintenanceWindowStartTime:
+    Description: The weekly start time in UTC for the RDS maintenance window, must
+      be less than PreferredMaintenanceWindowEndTime and cannot overlap with PreferredBackupWindow.
+    Type: String
+    Default: 04:00
+    AllowedValues:
+      - 00:00
+      - 01:00
+      - 02:00
+      - 03:00
+      - 04:00
+      - 05:00
+      - 06:00
+      - 07:00
+      - 08:00
+      - 09:00
+      - '10:00'
+      - '11:00'
+      - '12:00'
+      - '13:00'
+      - '14:00'
+      - '15:00'
+      - '16:00'
+      - '17:00'
+      - '18:00'
+      - '19:00'
+      - '20:00'
+      - '21:00'
+      - '22:00'
+  MasterUserPassword:
+    Description: Master user database Password.
+    Type: String
+    NoEcho: 'true'
+  MasterUsername:
+    Description: Master database Username.
+    MinLength: 1
+    MaxLength: 63 
+    Type: String
+Conditions:
+  GovCloudCondition: !Equals [!Ref 'AWS::Region', us-gov-west-1]
+Resources:
+  VPCStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub ['https://${QSS3BucketName}.${QSS3Region}.amazonaws.com/${QSS3KeyPrefix}submodules/quickstart-aws-vpc/templates/aws-vpc.template',
+        {QSS3Region: !If [GovCloudCondition, s3-us-gov-west-1, s3]}]
+      Parameters:
+        AvailabilityZones:  !Join
+                - ','
+                - !Ref 'AvailabilityZones'
+        KeyPairName: !Ref 'KeyPairName'
+        NumberOfAZs: '2'
+        PrivateSubnet1ACIDR: !Ref 'PrivateSubnet1CIDR'
+        PrivateSubnet2ACIDR: !Ref 'PrivateSubnet2CIDR'
+        PublicSubnet1CIDR: !Ref 'PublicSubnet1CIDR'
+        PublicSubnet2CIDR: !Ref 'PublicSubnet2CIDR'
+        VPCCIDR: !Ref 'VPCCIDR'
+  WorkloadStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub ['https://${QSS3BucketName}.${QSS3Region}.amazonaws.com/${QSS3KeyPrefix}templates/awx-workload.template',
+        {QSS3Region: !If [GovCloudCondition, s3-us-gov-west-1, s3]}]
+      Parameters:
+        # ECS Instance
+        KeyPairName: !Ref 'KeyPairName'
+        InstanceType: !Ref 'InstanceType'
+        ClusterSize: !Ref 'ClusterSize'
+        # VPC Network
+        VPC: !GetAtt 'VPCStack.Outputs.VPCID'
+        RDSAccessCidr: !Ref 'VPCCIDR'
+        PrivateSubnet1ID: !GetAtt 'VPCStack.Outputs.PrivateSubnet1AID'
+        PrivateSubnet2ID: !GetAtt 'VPCStack.Outputs.PrivateSubnet2AID'
+        PublicSubnet1ID: !GetAtt 'VPCStack.Outputs.PublicSubnet1ID'
+        PublicSubnet2ID: !GetAtt 'VPCStack.Outputs.PublicSubnet2ID'
+        RemoteAccessCIDR: !Ref 'RemoteAccessCIDR'
+        # AWX Related 
+        AWXAdminUsername: !Ref 'AWXAdminUsername'
+        AWXAdminPassword: !Ref 'AWXAdminPassword'
+        AWXVersion: !Ref 'AWXVersion'
+        AWXGitHubRepo: !Ref 'AWXGitHubRepo'
+        # RDS Related
+        MasterUsername: !Ref 'MasterUsername'
+        MasterUserPassword: !Ref 'MasterUserPassword'
+        PreferredBackupWindow: !Ref 'PreferredBackupWindow'
+        PreferredMaintenanceWindowDay: !Ref 'PreferredMaintenanceWindowDay'
+        PreferredMaintenanceWindowStartTime: !Ref 'PreferredMaintenanceWindowStartTime'
+        PreferredMaintenanceWindowEndTime: !Ref 'PreferredMaintenanceWindowEndTime'
+        DBInstanceClass: !Ref 'DBInstanceClass'
+        # Quick Starts related
+        QSS3BucketName: !Ref 'QSS3BucketName'
+        QSS3KeyPrefix: !Ref 'QSS3KeyPrefix'
+Outputs:
+  AWXENDPOINT:
+    Description: "Http Endpoint for AWX Cluster"
+    Value: !GetAtt 'WorkloadStack.Outputs.ALBDNSName'

@@ -1,0 +1,998 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+Description: This Alfresco Process Services 1.9.0 template deploys a cluster of Alfresco
+  Process Services instances behind an ELB load balancer in two private subnets. The
+  cluster is configured to use a multi-AZ Amazon RDS Aurora instance for the database
+  (MySQL or PostgreSQL for non-Amazon Aurora regions). **WARNING** This template creates
+  EC2 instances and related resources. You will be billed for the AWS resources used
+  if you create a stack from this template. (qs-1o9dh5iqi)
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+    - Label:
+        default: Network Configuration
+      Parameters:
+      - VPCID
+      - PrivateSubnet1ID
+      - PrivateSubnet2ID
+      - PublicSubnet1ID
+      - PublicSubnet2ID
+    - Label:
+        default: Amazon EC2 Configuration
+      Parameters:
+      - APSInstanceType
+      - BastionSecurityGroupId
+      - KeyPairName
+    - Label:
+        default: Amazon RDS Configuration
+      Parameters:
+      - DBEngine
+      - DBUsername
+      - DBUserPassword
+      - DBInstanceClass
+    - Label:
+        default: Alfresco Process Services Configuration
+      Parameters:
+      - APSLicenseBucketName
+      - APSLicenseBucketKey
+      - AsposeLicense
+      - DesiredNumberOfAPSNodes
+      - MaxNumberOfAPSNodes
+      - MinNumberOfAPSNodes
+      - OperatorEmail
+      - UserEmailAddress
+      - UserPassword
+    - Label:
+        default: AWS Quick Start Configuration
+      Parameters:
+      - QSS3BucketName
+      - QSS3KeyPrefix
+    ParameterLabels:
+      APSLicenseBucketName:
+        default: S3 bucket where license file resides; The bucket and files should
+          be private.
+      APSLicenseBucketKey:
+        default: /Path/To/AlfrescoProcessServices.lic (Path starting with a leading
+          ‘/‘)
+      APSInstanceType:
+        default: APS instance type
+      AsposeLicense:
+        default: Aspose license location URL
+      BastionSecurityGroupId:
+        default: Bastion security group ID
+      DBEngine:
+        default: DB engine
+      DBInstanceClass:
+        default: RDS DB instance class
+      DBUsername:
+        default: Master user Name
+      DBUserPassword:
+        default: Master user password
+      DesiredNumberOfAPSNodes:
+        default: Desired number of nodes
+      KeyPairName:
+        default: Key pair name
+      MaxNumberOfAPSNodes:
+        default: Maximum number of nodes
+      MinNumberOfAPSNodes:
+        default: Minimum number of nodes
+      OperatorEmail:
+        default: Notifications email
+      PrivateSubnet1ID:
+        default: Private subnet 1 ID
+      PrivateSubnet2ID:
+        default: Private subnet 2 ID
+      PublicSubnet1ID:
+        default: Public subnet 1 ID
+      PublicSubnet2ID:
+        default: Public subnet 2 ID
+      QSS3BucketName:
+        default: Quick Start S3 bucket name
+      QSS3KeyPrefix:
+        default: Quick Start S3 key prefix
+      UserEmailAddress:
+        default: User email address
+      UserPassword:
+        default: User password
+      VPCID:
+        default: VPC ID
+Parameters:
+  APSLicenseBucketName:
+    AllowedPattern: ^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$
+    ConstraintDescription: License file bucket name can include numbers, Lowercase
+      letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen
+      (-).
+    Type: String
+    Description: Name of S3 bucket where license file resides
+    MinLength: 1
+  APSLicenseBucketKey:
+    Type: String
+    Description: Path to your AlfrescoProcessServices license file. If you don't have
+      a license, please request one from your sales representative or contact Alfresco
+      Support at http://support.alfresco.com.
+    MinLength: 1
+  APSInstanceType:
+    Type: String
+    Default: m4.large
+    Description: The type of EC2 instance to be launched for APS
+    AllowedValues:
+    - t2.nano
+    - t2.micro
+    - t2.small
+    - t2.medium
+    - t2.large
+    - t2.xlarge
+    - t2.2xlarge
+    - m3.medium
+    - m3.large
+    - m3.xlarge
+    - m3.2xlarge
+    - m4.large
+    - m4.xlarge
+    - m4.2xlarge
+    - m4.4xlarge
+    - m4.10xlarge
+    ConstraintDescription: Must contain a valid instance type
+    MinLength: 1
+  AsposeLicense:
+    Type: String
+    Default: http://dl.alfresco.com/release/enterprise/APS/licenses/transform.lic
+    Description: URL of your Aspose license. If you don't have a license, please request
+      one from your sales representative or contact Alfresco Support at http://support.alfresco.com.
+    MinLength: 1
+  BastionSecurityGroupId:
+    ConstraintDescription: Security group ID of the Bastion
+    Description: Security group ID of the Bastion
+    Type: AWS::EC2::SecurityGroup::Id
+  DBEngine:
+    Default: aurora
+    Description: The engine type for the RDS instances
+    Type: String
+    AllowedValues:
+    - mysql
+    - postgres
+    - aurora
+  DBInstanceClass:
+    Default: db.r4.large
+    Description: The RDS instance class for the DB instances
+    Type: String
+    AllowedValues:
+    - db.r4.xlarge
+    - db.r4.large
+    - db.r4.2xlarge
+    - db.r4.4xlarge
+    - db.r4.8xlarge
+    ConstraintDescription: Must contain a valid RDS DB instance class
+  DBUsername:
+    Default: activiti
+    Description: The master username for the RDS instances
+    Type: String
+    MinLength: 8
+  DBUserPassword:
+    Description: The master password for the RDS instances
+    Type: String
+    NoEcho: true
+    MinLength: 8
+    AllowedPattern: ^[^\/"@]+$
+    ConstraintDescription: The password for the master database user can be any printable
+      ASCII character except "/", """, or "@". Minimum 8 Characters
+  DesiredNumberOfAPSNodes:
+    Type: String
+    MinLength: 1
+    Description: The desired number of APS instance to run
+    Default: 2
+  KeyPairName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: Name of an existing EC2 KeyPair, all instances launch with this keypair.
+      You must also have a copy of this key
+    ConstraintDescription: Must be a valid key pair name that ALREADY exists in the
+      account this stack is launched in
+  MaxNumberOfAPSNodes:
+    Type: String
+    MinLength: 1
+    Description: The maximum number of APS instances to run
+    Default: 10
+  MinNumberOfAPSNodes:
+    Type: String
+    MinLength: 1
+    Description: The minimum number of APS instances to run
+    Default: 2
+  OperatorEmail:
+    AllowedPattern: ([a-zA-Z0-9_\-\.]+)@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.)|(([a-zA-Z0-9\-]+\.)+))([a-zA-Z]{2,4}|[0-9]{1,3})(\]?)
+    ConstraintDescription: Must be a valid email address.
+    Description: Email address that notifications of any scaling operations will be
+      sent to
+    Type: String
+    MinLength: 1
+  PrivateSubnet1ID:
+    Type: AWS::EC2::Subnet::Id
+    Description: The first private subnet id created by the VPC stack
+  PrivateSubnet2ID:
+    Type: AWS::EC2::Subnet::Id
+    Description: The second private subnet id created by the VPC stack
+  PublicSubnet1ID:
+    Type: AWS::EC2::Subnet::Id
+    Description: The first public subnet id created by the VPC stack
+  PublicSubnet2ID:
+    Type: AWS::EC2::Subnet::Id
+    Description: The second public subnet id created by the VPC stack
+  QSS3BucketName:
+    AllowedPattern: ^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$
+    ConstraintDescription: Quick Start bucket name can include numbers, lowercase
+      letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen
+      (-).
+    Default: aws-quickstart
+    Description: S3 bucket name for the Quick Start assets. This string can include
+      numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start
+      or end with a hyphen (-).
+    Type: String
+    MinLength: 1
+  QSS3KeyPrefix:
+    AllowedPattern: ^[0-9a-zA-Z-/]*$
+    ConstraintDescription: Quick Start key prefix can include numbers, lowercase letters,
+      uppercase letters, hyphens (-), and forward slash (/).
+    Default: quickstart-alfresco-process-services/
+    Description: S3 key prefix for the Quick Start assets. Quick Start key prefix
+      can include numbers, lowercase letters, uppercase letters, hyphens (-), and
+      forward slash (/).
+    Type: String
+    MinLength: 1
+  UserEmailAddress:
+    AllowedPattern: ([a-zA-Z0-9_\-\.]+)@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.)|(([a-zA-Z0-9\-]+\.)+))([a-zA-Z]{2,4}|[0-9]{1,3})(\]?)
+    ConstraintDescription: Must be a valid email address.
+    Description: Email address that is used to login to APS
+    Type: String
+    MinLength: 5
+  UserPassword:
+    Description: Password to use for accessing the APS app
+    Type: String
+    MinLength: 1
+    NoEcho: true
+    AllowedPattern: ^(?=.*[a-z])(?=.*[A-Z]).+$
+    ConstraintDescription: The Password must contain a mix of upper and lower case
+      characters
+  VPCID:
+    Type: AWS::EC2::VPC::Id
+    Description: The ID of the VPC created by the VPC stack
+Conditions:
+  IsNotAuroraRegion:
+    !Or
+    - !Equals
+      - !Ref AWS::Region
+      - ap-southeast-1
+    - !Equals
+      - !Ref AWS::Region
+      - cn-northwest-1
+    - !Equals
+      - !Ref AWS::Region
+      - sa-east-1
+  IsAuroraRegion:
+    !Not
+    - Condition: IsNotAuroraRegion
+  EngineIsAurora:
+    !Equals
+    - aurora
+    - !Ref DBEngine
+  EngineIsPostgres:
+    !Equals
+    - postgres
+    - !Ref DBEngine
+  UseAurora:
+    !And
+    - !Condition EngineIsAurora
+    - !Condition IsAuroraRegion
+  GovCloudCondition:
+    !Equals
+    - !Ref AWS::Region
+    - us-gov-west-1
+Rules:
+  SubnetsInVPC:
+    Assertions:
+    - Assert:
+        Fn::EachMemberIn:
+        - Fn::ValueOfAll:
+          - AWS::EC2::Subnet::Id
+          - VpcId
+        - Fn::RefAll: AWS::EC2::VPC::Id
+      AssertDescription: All subnets must in the VPC
+Mappings:
+  dbversion:
+    mysql:
+      number: 5.7.11
+    postgres:
+      number: 9.6.2-R1
+    aurora:
+      number: 5.7.11
+  AWSAMIRegionMap:
+    AMI:
+      ALFRESCOPS: Alfresco Process Service 1.9.0 - AWS Marketplace AMI - 1529075938-6c019ea4-d489-4d40-8b2d-7ec662c348ff-ami-7aeba905.4
+    ap-northeast-1:
+      ALFRESCOPS: ami-774b9d08
+    ap-northeast-2:
+      ALFRESCOPS: ami-08be0b66
+    ap-south-1:
+      ALFRESCOPS: ami-7c023713
+    ap-southeast-1:
+      ALFRESCOPS: ami-f5a6a489
+    ap-southeast-2:
+      ALFRESCOPS: ami-72489110
+    ca-central-1:
+      ALFRESCOPS: ami-42810326
+    eu-central-1:
+      ALFRESCOPS: ami-8577496e
+    eu-west-1:
+      ALFRESCOPS: ami-a0f4fa4a
+    eu-west-2:
+      ALFRESCOPS: ami-f8f1189f
+    sa-east-1:
+      ALFRESCOPS: ami-ff507593
+    us-east-1:
+      ALFRESCOPS: ami-a4174adb
+    us-east-2:
+      ALFRESCOPS: ami-22caf347
+    us-west-1:
+      ALFRESCOPS: ami-8a28cee9
+    us-west-2:
+      ALFRESCOPS: ami-06246c7e
+Resources:
+  NotificationTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      Subscription:
+      - Endpoint: !Ref OperatorEmail
+        Protocol: email
+  APSContentBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    Properties:
+      AccessControl: BucketOwnerFullControl
+      Tags:
+      - Key: Name
+        Value: APSContentBucket
+      - Key: VPCID
+        Value: !Ref VPCID
+  APSContentUser:
+    Type: AWS::IAM::User
+    Properties:
+      Policies:
+      - PolicyName: APSContentStoreAccess
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action: s3:*
+            Resource:
+            - !Sub arn:aws:s3:::${APSContentBucket}
+            - !Sub arn:aws:s3:::${APSContentBucket}/*
+  APSAccessKeys:
+    Type: AWS::IAM::AccessKey
+    Properties:
+      UserName: !Ref APSContentUser
+  InstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - ec2.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Path: /
+      Policies:
+      - PolicyName: APSSetup
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action: s3:GetObject
+            Resource:
+            - !Sub arn:aws:s3:::${QSS3BucketName}/${QSS3KeyPrefix}*
+            - !Sub arn:aws:s3:::${APSLicenseBucketName}
+            - !Sub arn:aws:s3:::${APSLicenseBucketName}${APSLicenseBucketKey}
+  InstanceRoleProfile:
+    Type: AWS::IAM::InstanceProfile
+    DependsOn:
+    - InstanceRole
+    Properties:
+      Path: /
+      Roles:
+      - !Ref InstanceRole
+  APSLoadBalancerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow access to the ELB
+      VpcId: !Ref VPCID
+      Tags:
+      - Key: Name
+        Value: APSELB
+      - Key: VPCID
+        Value: !Ref VPCID
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: '80'
+        ToPort: '8080'
+        CidrIp: 0.0.0.0/0
+      - IpProtocol: tcp
+        FromPort: '443'
+        ToPort: '443'
+        CidrIp: 0.0.0.0/0
+  APSLoadBalancer:
+    Type: AWS::ElasticLoadBalancing::LoadBalancer
+    DependsOn:
+    - APSLoadBalancerSecurityGroup
+    Properties:
+      Subnets:
+      - !Ref PublicSubnet1ID
+      - !Ref PublicSubnet2ID
+      SecurityGroups:
+      - !Ref APSLoadBalancerSecurityGroup
+      AppCookieStickinessPolicy:
+      - CookieName: JSESSIONID
+        PolicyName: APSSetup
+      Listeners:
+      - InstancePort: 8080
+        LoadBalancerPort: 80
+        Protocol: HTTP
+        PolicyNames:
+        - APSSetup
+      CrossZone: 'true'
+      ConnectionDrainingPolicy:
+        Enabled: 'true'
+        Timeout: '60'
+      HealthCheck:
+        Target: HTTP:8080/activiti-app/index.html
+        HealthyThreshold: 3
+        UnhealthyThreshold: 5
+        Interval: 90
+        Timeout: 60
+      Tags:
+      - Key: Name
+        Value: APSELB
+      - Key: VPCID
+        Value: !Ref VPCID
+  APSRDSSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security Group for the RDS instances
+      VpcId: !Ref VPCID
+      Tags:
+      - Key: Name
+        Value: APSRDSSG
+      - Key: VPCID
+        Value: !Ref VPCID
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort:
+          !If
+          - EngineIsPostgres
+          - '5432'
+          - '3306'
+        ToPort:
+          !If
+          - EngineIsPostgres
+          - '5432'
+          - '3306'
+        SourceSecurityGroupId: !Ref APSSecurityGroup
+  APSRDSSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: DB Subnet Group for APS
+      SubnetIds:
+      - !Ref PrivateSubnet1ID
+      - !Ref PrivateSubnet2ID
+      Tags:
+      - Key: Name
+        Value: APSRDSSubnetGroup
+      - Key: VPCID
+        Value: !Ref VPCID
+  APSRDSCluster:
+    Type: AWS::RDS::DBCluster
+    DependsOn:
+    - APSRDSSubnetGroup
+    Condition: UseAurora
+    Properties:
+      MasterUsername: !Ref DBUsername
+      MasterUserPassword: !Ref DBUserPassword
+      Engine: aurora
+      DatabaseName: process
+      VpcSecurityGroupIds:
+      - !Ref APSRDSSecurityGroup
+      DBSubnetGroupName: !Ref APSRDSSubnetGroup
+    DeletionPolicy: Snapshot
+  APSRDSInstance1:
+    Type: AWS::RDS::DBInstance
+    DependsOn:
+    - APSRDSSecurityGroup
+    Properties:
+      AllocatedStorage:
+        !If
+        - UseAurora
+        - !Ref AWS::NoValue
+        - 100
+      BackupRetentionPeriod:
+        !If
+        - UseAurora
+        - !Ref AWS::NoValue
+        - '30'
+      DBInstanceClass: !Ref DBInstanceClass
+      DBClusterIdentifier:
+        !If
+        - UseAurora
+        - !Ref APSRDSCluster
+        - !Ref AWS::NoValue
+      DBName:
+        !If
+        - UseAurora
+        - !Ref AWS::NoValue
+        - process
+      DBSubnetGroupName: !Ref APSRDSSubnetGroup
+      Engine:
+        !If
+        - EngineIsAurora
+        - !If
+          - IsAuroraRegion
+          - !Ref DBEngine
+          - mysql
+        - !Ref DBEngine
+      EngineVersion:
+        !If
+        - EngineIsAurora
+        - !Ref AWS::NoValue
+        - !FindInMap
+          - dbversion
+          - !Ref DBEngine
+          - number
+      MasterUsername:
+        !If
+        - UseAurora
+        - !Ref AWS::NoValue
+        - !Ref DBUsername
+      MasterUserPassword:
+        !If
+        - UseAurora
+        - !Ref AWS::NoValue
+        - !Ref DBUserPassword
+      MultiAZ:
+        !If
+        - UseAurora
+        - !Ref AWS::NoValue
+        - true
+      PreferredBackupWindow:
+        !If
+        - UseAurora
+        - !Ref AWS::NoValue
+        - 03:15-03:45
+      PubliclyAccessible: 'false'
+      StorageEncrypted:
+        !If
+        - UseAurora
+        - !Ref AWS::NoValue
+        - 'true'
+      Tags:
+      - Key: Name
+        Value: APSRDS1
+      - Key: VPCID
+        Value: !Ref VPCID
+      - Key: Role
+        Value: Master
+      VPCSecurityGroups:
+      - !If
+        - EngineIsAurora
+        - !Ref AWS::NoValue
+        - !Ref APSRDSSecurityGroup
+  APSRDSInstance2:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      AllocatedStorage:
+        !If
+        - UseAurora
+        - !Ref AWS::NoValue
+        - 100
+      DBClusterIdentifier:
+        !If
+        - UseAurora
+        - !Ref APSRDSCluster
+        - !Ref AWS::NoValue
+      DBInstanceClass: !Ref DBInstanceClass
+      DBSubnetGroupName:
+        !If
+        - UseAurora
+        - !Ref APSRDSSubnetGroup
+        - !Ref AWS::NoValue
+      Engine:
+        !If
+        - EngineIsAurora
+        - !If
+          - IsAuroraRegion
+          - !Ref DBEngine
+          - mysql
+        - !Ref DBEngine
+      PubliclyAccessible: 'false'
+      SourceDBInstanceIdentifier:
+        !If
+        - UseAurora
+        - !Ref AWS::NoValue
+        - !Ref APSRDSInstance1
+      StorageEncrypted:
+        !If
+        - UseAurora
+        - !Ref AWS::NoValue
+        - 'true'
+      Tags:
+      - Key: Name
+        Value: APSRDS2
+      - Key: VPCID
+        Value: !Ref VPCID
+      - Key: Role
+        Value: Replica
+      VPCSecurityGroups:
+      - !If
+        - EngineIsAurora
+        - !Ref AWS::NoValue
+        - !Ref APSRDSSecurityGroup
+  APSSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    DependsOn:
+    - APSLoadBalancerSecurityGroup
+    Properties:
+      GroupName: !Sub ${AWS::StackName}-APSSG
+      GroupDescription: Allow access to the APS instances
+      VpcId: !Ref VPCID
+      Tags:
+      - Key: Name
+        Value: LMS-APSSG
+      - Key: VPCID
+        Value: !Ref VPCID
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: '80'
+        ToPort: '8080'
+        SourceSecurityGroupId: !Ref APSLoadBalancerSecurityGroup
+      - IpProtocol: tcp
+        FromPort: '443'
+        ToPort: '443'
+        SourceSecurityGroupId: !Ref APSLoadBalancerSecurityGroup
+      - IpProtocol: tcp
+        FromPort: '22'
+        ToPort: '22'
+        SourceSecurityGroupId: !Ref BastionSecurityGroupId
+  APSLaunchConfig:
+    Type: AWS::AutoScaling::LaunchConfiguration
+    Metadata:
+      AWS::CloudFormation::Authentication:
+        S3AccessCreds:
+          type: S3
+          roleName: !Ref InstanceRole
+      AWS::CloudFormation::Init:
+        configSets:
+          InstallAndRun:
+          - Install
+          - Configure
+        Install:
+          files:
+            /etc/chef/aps-client.json:
+              source:
+                !Sub
+                - https://${QSS3BucketName}.${QSS3Region}.amazonaws.com/${QSS3KeyPrefix}scripts/aps-config.json
+                - QSS3Region:
+                    !If
+                    - GovCloudCondition
+                    - !Sub s3-gov-west-1
+                    - s3
+              mode: '000700'
+              owner: root
+              group: root
+              authentication: S3AccessCreds
+            /usr/share/tomcat/lib/activiti.lic:
+              source:
+                !Sub
+                - https://${APSLicenseBucketName}.${QSS3Region}.amazonaws.com${APSLicenseBucketKey}
+                - QSS3Region:
+                    !If
+                    - GovCloudCondition
+                    - !Sub s3-gov-west-1
+                    - s3
+              mode: '000700'
+              owner: tomcat
+              group: tomcat
+              authentication: S3AccessCreds
+            /etc/chef/replaceValues.sh:
+              content:
+                !Sub
+                - |
+                  #!/bin/bash
+                  sed -i 's/@@DB_USERNAME@@/${DBUsername}/g' /etc/chef/aps-client.json
+                  sed -i 's/@@DB_PASSWORD@@/${DBUserPassword}/g' /etc/chef/aps-client.json
+                  sed -i 's/@@EMAIL_ADDRESS@@/${UserEmailAddress}/g' /etc/chef/aps-client.json
+                  sed -i 's/@@PASSWORD@@/${UserPassword}/g' /etc/chef/aps-client.json
+                  sed -i 's/@@DB_ENGINE@@/${DB_Engine}/g' /etc/chef/aps-client.json
+                  sed -i 's/@@DB_DRIVER@@/${DBDriver}/g' /etc/chef/aps-client.json
+                  sed -i 's/@@DB_HIBERNATE@@/${Dialect}/g' /etc/chef/aps-client.json
+                  sed -i 's/@@DB_HOST@@/${DBHost}/g' /etc/chef/aps-client.json
+                  sed -i 's/@@DB_PORT@@/${DBPort}/g' /etc/chef/aps-client.json
+                  sed -i 's/@@ACCESS_KEY@@/${AccessKey}/g' /etc/chef/aps-client.json
+                  sed -i 's#@@SECRET_KEY@@#${SecretKey}#g' /etc/chef/aps-client.json
+                  sed -i 's/@@BUCKET_NAME@@/${BucketName}/g' /etc/chef/aps-client.json
+                  curl -L ${AsposeLicense} -o /usr/share/tomcat/lib/Aspose.Total.Java.lic && chown tomcat:root /usr/share/tomcat/lib/Aspose.Total.Java.lic
+                - DB_Engine:
+                    !If
+                    - EngineIsAurora
+                    - mysql
+                    - !Ref DBEngine
+                  DBDriver:
+                    !If
+                    - EngineIsPostgres
+                    - org.postgresql.Driver
+                    - com.mysql.jdbc.Driver
+                  Dialect:
+                    !If
+                    - EngineIsPostgres
+                    - org.hibernate.dialect.PostgreSQLDialect
+                    - org.hibernate.dialect.MySQLDialect
+                  DBHost:
+                    !If
+                    - UseAurora
+                    - !GetAtt APSRDSCluster.Endpoint.Address
+                    - !GetAtt APSRDSInstance1.Endpoint.Address
+                  DBPort:
+                    !If
+                    - UseAurora
+                    - !GetAtt APSRDSCluster.Endpoint.Port
+                    - !GetAtt APSRDSInstance1.Endpoint.Port
+                  AccessKey: !Ref APSAccessKeys
+                  SecretKey: !GetAtt APSAccessKeys.SecretAccessKey
+                  BucketName: !Ref APSContentBucket
+              mode: '000700'
+              owner: root
+              group: root
+            /etc/chef/run.sh:
+              source:
+                !Sub
+                - https://${QSS3BucketName}.${QSS3Region}.amazonaws.com/${QSS3KeyPrefix}scripts/run.sh
+                - QSS3Region:
+                    !If
+                    - GovCloudCondition
+                    - !Sub s3-gov-west-1
+                    - s3
+              mode: '000700'
+              owner: root
+              group: root
+              authentication: S3AccessCreds
+        Configure:
+          commands:
+            01_ReplaceValues:
+              command: /etc/chef/replaceValues.sh
+            02_RunChef:
+              command: /etc/chef/run.sh
+    Properties:
+      KeyName: !Ref KeyPairName
+      ImageId:
+        !FindInMap
+        - AWSAMIRegionMap
+        - !Ref AWS::Region
+        - ALFRESCOPS
+      InstanceType: !Ref APSInstanceType
+      SecurityGroups:
+      - !Ref APSSecurityGroup
+      IamInstanceProfile: !Ref InstanceRoleProfile
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          systemctl stop chef-boot.service
+          systemctl disable chef-boot.service
+          /usr/bin/easy_install https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-latest.tar.gz || sleep 10
+          /usr/bin/cfn-init --stack ${AWS::StackName} --resource APSLaunchConfig --configsets InstallAndRun --region ${AWS::Region}
+          echo "Waiting for APS to start..."
+          RESULT=0
+          ITERATION=0
+          TIMEOUT=45
+          COMMAND="curl -s -o /dev/null -I -w %{http_code} 127.0.0.1:8080/activiti-app/index.html"
+          while HTTPCODE=$($COMMAND); [[ $HTTPCODE != 200 ]];
+            do
+              if [[ $ITERATION -eq $TIMEOUT ]]; then
+                echo "APS timeout after $TIMEOUT minutes."
+                RESULT=1
+                break
+              fi
+              echo "HTTPCODE=$HTTPCODE Waiting for APS to start... $((ITERATION++))/$TIMEOUT"
+              if [[ $HTTPCODE != 200 ]]; then
+                sleep 1m
+              fi
+            done
+          /usr/bin/cfn-signal -e $RESULT --stack ${AWS::StackName} --resource APSAutoScalingGroup --region ${AWS::Region}
+  APSAutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    DependsOn:
+    - APSLaunchConfig
+    - APSLoadBalancer
+    - APSRDSInstance1
+    Properties:
+      DesiredCapacity: !Ref DesiredNumberOfAPSNodes
+      LaunchConfigurationName: !Ref APSLaunchConfig
+      LoadBalancerNames:
+      - !Ref APSLoadBalancer
+      MaxSize: !Ref MaxNumberOfAPSNodes
+      MinSize: !Ref MinNumberOfAPSNodes
+      NotificationConfiguration:
+        TopicARN: !Ref NotificationTopic
+        NotificationTypes:
+        - autoscaling:EC2_INSTANCE_LAUNCH
+        - autoscaling:EC2_INSTANCE_LAUNCH_ERROR
+        - autoscaling:EC2_INSTANCE_TERMINATE
+        - autoscaling:EC2_INSTANCE_TERMINATE_ERROR
+        - autoscaling:TEST_NOTIFICATION
+      Tags:
+      - Key: Name
+        Value: APSASG
+        PropagateAtLaunch: 'true'
+      - Key: VPCID
+        Value: !Ref VPCID
+        PropagateAtLaunch: 'true'
+      VPCZoneIdentifier:
+      - !Ref PrivateSubnet1ID
+      - !Ref PrivateSubnet2ID
+    CreationPolicy:
+      ResourceSignal:
+        Timeout: PT45M
+        Count: !Ref MinNumberOfAPSNodes
+    UpdatePolicy:
+      AutoScalingRollingUpdate:
+        MaxBatchSize: 1
+        MinInstancesInService: !Ref MinNumberOfAPSNodes
+        MinSuccessfulInstancesPercent: 100
+        PauseTime: PT15M
+        WaitOnResourceSignals: true
+  UpdateUserPasswordRole:
+    Type: AWS::IAM::Role
+    DependsOn:
+    - APSAutoScalingGroup
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Path: /
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+  UpdateUserPasswordLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        ZipFile: |
+          import json
+          import base64
+          import logging
+          logger = logging.getLogger()
+          logger.setLevel(logging.INFO)
+          from botocore.vendored import requests
+          import cfnresponse
+
+          def make_api_call(api, data, headers):
+              logger.info(api)
+              response = requests.post(
+                  api,
+                  data=json.dumps(data),
+                  headers=headers
+              )
+              if response.status_code == 200:
+                  logger.info("API call {} success!".format(api))
+                  return True
+              else:
+                  logger.error("API call {} error!".format(api))
+                  logger.error(response.status_code)
+                  logger.error(response.text)
+                  return False
+
+          def handler(event, context):
+              if event['RequestType'] == 'Create':
+                  api = "{}/api/enterprise/profile-password".format(event['ResourceProperties']['Url'])
+                  username = event['ResourceProperties']['Username']
+                  password = event['ResourceProperties']['OldPassword']
+                  new_password = event['ResourceProperties']['NewPassword']
+                  base64string = base64.encodestring(('%s:%s' % (username, password)).encode()).decode()
+                  base64string = base64string.replace('\n', '')
+                  headers = {
+                      "Content-Type":"application/json",
+                      "Authorization": "Basic {}".format(base64string)
+                  }
+                  data = {
+                      "oldPassword": "{}".format(password),
+                      "newPassword": "{}".format(new_password)
+                  }
+                  try:
+                      if make_api_call(api, data, headers):
+                          cfnresponse.send(event, context, cfnresponse.SUCCESS, {}, None)
+                      else:
+                          cfnresponse.send(event, context, cfnresponse.FAILED, {}, None)
+                  except requests.HTTPError as error:
+                      logger.error("Unable to update password: %s", error)
+                      cfnresponse.send(event, context, cfnresponse.FAILED, {}, None)
+              else:
+                  cfnresponse.send(event, context, cfnresponse.SUCCESS, {}, None)
+      Description: Password Updater
+      Handler: index.handler
+      Role: !GetAtt UpdateUserPasswordRole.Arn
+      Runtime: python3.6
+      Timeout: 10
+  UpdatePasswordCustomResource:
+    Type: Custom::UpdatePassword
+    DependsOn:
+    - UpdateUserPasswordLambda
+    Properties:
+      ServiceToken: !GetAtt UpdateUserPasswordLambda.Arn
+      Url: !Sub http://${APSLoadBalancer.DNSName}/activiti-app
+      Username: !Ref UserEmailAddress
+      OldPassword: admin
+      NewPassword: !Ref UserPassword
+  APSScaleUpPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    DependsOn:
+    - APSAutoScalingGroup
+    Properties:
+      AdjustmentType: ChangeInCapacity
+      AutoScalingGroupName: !Ref APSAutoScalingGroup
+      Cooldown: '300'
+      ScalingAdjustment: '1'
+  APSScaleDownPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    DependsOn:
+    - APSAutoScalingGroup
+    Properties:
+      AdjustmentType: ChangeInCapacity
+      AutoScalingGroupName: !Ref APSAutoScalingGroup
+      Cooldown: '300'
+      ScalingAdjustment: '-1'
+  APSCPUAlarmHigh:
+    Type: AWS::CloudWatch::Alarm
+    DependsOn:
+    - APSScaleUpPolicy
+    - APSAutoScalingGroup
+    Properties:
+      AlarmDescription: Scale-up if CPU > 60% for 5 minutes
+      MetricName: CPUUtilization
+      Namespace: AWS/EC2
+      Statistic: Average
+      Period: '60'
+      EvaluationPeriods: '5'
+      Threshold: '60'
+      AlarmActions:
+      - !Ref APSScaleUpPolicy
+      Dimensions:
+      - Name: AutoScalingGroupName
+        Value: !Ref APSAutoScalingGroup
+      ComparisonOperator: GreaterThanThreshold
+  APSCPUAlarmLow:
+    Type: AWS::CloudWatch::Alarm
+    DependsOn:
+    - APSScaleDownPolicy
+    - APSAutoScalingGroup
+    Properties:
+      AlarmDescription: Scale-down if CPU < 40% for 30 minutes
+      MetricName: CPUUtilization
+      Namespace: AWS/EC2
+      Statistic: Average
+      Period: '60'
+      EvaluationPeriods: '30'
+      Threshold: '40'
+      AlarmActions:
+      - !Ref APSScaleDownPolicy
+      Dimensions:
+      - Name: AutoScalingGroupName
+        Value: !Ref APSAutoScalingGroup
+      ComparisonOperator: LessThanThreshold
+Outputs:
+  APSEndPoint:
+    Description: The APS End point
+    Value: !Sub http://${APSLoadBalancer.DNSName}/activiti-app
+  APSAdminEndPoint:
+    Description: The APS Admin End Point
+    Value: !Sub http://${APSLoadBalancer.DNSName}/activiti-admin
+...

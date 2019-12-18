@@ -1,0 +1,1433 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "This template is intended to be deployed into an existing VPC. It will create Dynatrace Cluster, in the specified VPC subnets. You need to have a Dynatrace Managed license key to create the stack. **WARNING** This template creates Amazon EC2 instance and related resources. You will be billed for the AWS resources used if you create a stack from this template. (qs-1ordscss9)",
+    "Metadata": {
+        "AWS::CloudFormation::Interface": {
+            "ParameterGroups": [
+                {
+                    "Label": {
+                        "default": "Dynatrace Managed cluster configuration"
+                    },
+                    "Parameters": [
+                        "LicenseKey",
+                        "DownloadUrl",
+                        "NumNodes"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "Dynatrace Managed cluster environment configuration"
+                    },
+                    "Parameters": [
+                        "AdminPassword",
+                        "AdminEmail"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "Network configuration"
+                    },
+                    "Parameters": [
+                        "NumberOfAZs",
+                        "VPCID",
+                        "PrivateSubnet1ID",
+                        "PrivateSubnet2ID",
+                        "PrivateSubnet3ID",
+                        "PublicSubnet1ID",
+                        "PublicSubnet2ID",
+                        "PublicSubnet3ID",
+                        "BastionSecurityGroupID"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "Amazon EC2 configuration"
+                    },
+                    "Parameters": [
+                        "KeyPairName",
+                        "DynatraceInstanceType",
+                        "DynatraceInstanceTenancy"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "Amazon EBS volume sizing configuration"
+                    },
+                    "Parameters": [
+                        "BinVolumeSize",
+                        "MiscVolumeSize",
+                        "SrvVolumeSize",
+                        "CassandraVolumeSize",
+                        "ElasticSearchVolumeSize"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "AWS Quick Start configuration"
+                    },
+                    "Parameters": [
+                        "QSS3BucketName",
+                        "QSS3KeyPrefix"
+                    ]
+                }
+            ],
+            "ParameterLabels": {
+                "AdminEmail": {
+                    "default": "Contact email for the cluster."
+                },
+                "AdminPassword" : {
+                    "default": "Admin password"
+                },
+                "BastionSecurityGroupID": {
+                    "default": "Bastion Security Group ID"
+                },
+                "BinVolumeSize" : {
+                    "default": "EBS volume size - installation"
+                },
+                "CassandraVolumeSize" : {
+                    "default": "EBS volume size - long term storage"
+                },
+                "DownloadUrl": {
+                    "default": "Dynatrace Managed installer download URL"
+                },
+                "DynatraceInstanceType": {
+                    "default": "Dynatrace Managed instance type"
+                },
+                "DynatraceInstanceTenancy" : {
+                    "default": "Dynatrace Managed instance tenancy"
+                },
+                "ElasticSearchVolumeSize" : {
+                    "default": "EBS volume size - ElasticSearch"
+                },
+                "KeyPairName": {
+                    "default": "Key pair name"
+                },
+                "LicenseKey": {
+                    "default": "Dynatrace Managed license key"
+                },
+                "MiscVolumeSize" : {
+                    "default": "EBS volume size - logs and updates"
+                },
+                "NumberOfAZs": {
+                    "default": "Number of Availability Zones"
+                },
+                "NumNodes": {
+                    "default": "Number of Dynatrace Managed nodes"
+                },
+                "PublicSubnet1ID": {
+                    "default": "Public subnet 1 ID"
+                },
+                "PublicSubnet2ID": {
+                    "default": "Public subnet 2 ID"
+                },
+                "PublicSubnet3ID": {
+                    "default": "Public subnet 3 ID"
+                },
+                "PrivateSubnet1ID": {
+                    "default": "Private subnet 1 ID"
+                },
+                "PrivateSubnet2ID": {
+                    "default": "Private subnet 2 ID"
+                },
+                "PrivateSubnet3ID": {
+                    "default": "Private subnet 3 ID"
+                },
+                "QSS3BucketName": {
+                    "default": "Quick Start S3 bucket name"
+                },
+                "QSS3KeyPrefix": {
+                    "default": "Quick Start S3 key prefix"
+                },
+                "SrvVolumeSize" : {
+                    "default": "EBS volume size - transaction storage"
+                },
+                "VPCID": {
+                    "default": "VPC ID"
+                }
+            }
+        }
+    },
+    "Parameters": {
+       "AdminEmail": {
+         "Type": "String",
+         "Description": "Problem notifications will be sent to this address if an issue is detected on the cluster."
+       },
+       "AdminPassword" : {
+         "Type": "String",
+         "NoEcho" : "true",
+         "Description": "Initial password for the 'admin' user. This password is used to access the Dynatrace cluster console UI.",
+         "MinLength" : "8"
+       },
+        "BastionSecurityGroupID": {
+            "Description": "ID of the bastion host security group to enable SSH connections (e.g., sg-7f16e910).",
+            "Type": "AWS::EC2::SecurityGroup::Id"
+        },
+        "LicenseKey": {
+            "Description": "Please see the user guide for information on how to obtain a license key.",
+            "Type": "String"
+        },
+        "DownloadUrl": {
+			"Description": "Please see the user guide for information on how to obtain the download URL.",
+            "Type": "String"
+        },
+        "DynatraceInstanceType": {
+            "AllowedValues": [
+                "m4.xlarge",
+                "r4.xlarge",
+                "m4.2xlarge",
+                "m5.2xlarge",
+                "r4.2xlarge",
+                "m4.4xlarge",
+                "m5.4xlarge",
+                "r4.4xlarge",
+                "r4.8xlarge",
+                "m4.10xlarge",
+                "m5.12xlarge",
+                "r4.16xlarge",
+                "m5.24xlarge"
+            ],
+            "Default": "r4.xlarge",
+            "Description": "Amazon EC2 instance type for the Dynatrace nodes.",
+            "Type": "String"
+        },
+        "DynatraceInstanceTenancy" : {
+            "AllowedValues": ["default", "dedicated"],
+            "Default": "default",
+            "Description": "Choose whether Dynatrace nodes run on a dedicated or a multi-tenant host.",
+            "Type": "String"
+        },
+        "BinVolumeSize" : {
+            "Type" : "Number",
+            "Description" : "Dynatrace Managed volume For Binaries.",
+            "Default" : "50",
+            "MinValue" : "20",
+            "MaxValue" : "16384"
+        },
+        "MiscVolumeSize" : {
+            "Type" : "Number",
+            "Description" : "Dynatrace Managed Data Directory For Logs and Updates.",
+            "Default" : "100",
+            "MinValue" : "20",
+            "MaxValue" : "16384"
+        },
+        "SrvVolumeSize" : {
+            "Type" : "Number",
+            "Description" : "Dynatrace Managed Data Directory For Transaction Storage.",
+            "Default" : "500",
+            "MinValue" : "20",
+            "MaxValue" : "16384"
+        },
+        "CassandraVolumeSize" : {
+            "Type" : "Number",
+            "Description" : "Dynatrace Managed volume for Cassandra Long-term Metrics Repository.",
+            "Default" : "1200",
+            "MinValue" : "50",
+            "MaxValue" : "16384"
+        },
+        "ElasticSearchVolumeSize" : {
+            "Type" : "Number",
+            "Description" : "Dynatrace Managed volume for ElasticSearch Store.",
+            "Default" : "700",
+            "MinValue" : "20",
+            "MaxValue" : "16384"
+        },
+		"KeyPairName": {
+            "Description": "The name of an existing public/private key pair, which allows you to securely connect to your instance after it launches.",
+            "Type": "AWS::EC2::KeyPair::KeyName"
+        },
+        "NumberOfAZs": {
+            "AllowedValues": [
+                "2",
+                "3"
+            ],
+            "Description": "Number of Availability Zones to use in the VPC. This must match your subnet settings.",
+            "Type": "String"
+        },
+        "NumNodes": {
+            "AllowedValues": [
+                "1",
+                "2",
+                "3",
+                "4",
+                "5",
+                "6"
+            ],
+            "Default": "3",
+            "Description": "Number of Dynatrace Managed nodes to create.",
+            "Type": "String"
+        },
+        "PublicSubnet1ID": {
+            "Description": "ID of the public subnet 1 for used public-facing Network Load Balancer (e.g., subnet-a0246dcd).",
+            "Type": "AWS::EC2::Subnet::Id"
+        },
+        "PublicSubnet2ID": {
+            "Description": "ID of the public subnet 2 for used public-facing Network Load Balancer (e.g., subnet-e3246d8e).",
+            "Type": "AWS::EC2::Subnet::Id"
+        },
+        "PublicSubnet3ID": {
+            "Description": "ID of the public subnet 3 for used public-facing Network Load Balancer. Only relevant for deployments into three Availability Zones.",
+            "Type": "AWS::EC2::Subnet::Id"
+        },
+        "PrivateSubnet1ID": {
+            "Description": "ID of the private subnet 1 that you want to provision the first node into (e.g., subnet-a0246dcd).",
+            "Type": "AWS::EC2::Subnet::Id"
+        },
+        "PrivateSubnet2ID": {
+            "Description": "ID of the private subnet 2 you want to provision the second node into (e.g., subnet-e3246d8e).",
+            "Type": "AWS::EC2::Subnet::Id"
+        },
+        "PrivateSubnet3ID": {
+            "Description": "ID of the private subnet 3 you want to provision the third node into. Only relevant for deployments into three Availability Zones.",
+            "Type": "AWS::EC2::Subnet::Id"
+        },
+        "QSS3BucketName": {
+            "AllowedPattern": "^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$",
+            "ConstraintDescription": "Quick Start bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-).",
+            "Default": "aws-quickstart",
+            "Description": "S3 bucket name for the Quick Start assets. Quick Start bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-).",
+            "Type": "String"
+        },
+        "QSS3KeyPrefix": {
+            "AllowedPattern": "^[0-9a-zA-Z-/]*$",
+            "ConstraintDescription": "Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).",
+            "Default": "quickstart-dynatrace/",
+            "Description": "S3 key prefix for the Quick Start assets. Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).",
+            "Type": "String"
+        },
+        "VPCID": {
+            "Description": "ID of the VPC (e.g., vpc-0343606e).",
+            "Type": "AWS::EC2::VPC::Id"
+        }
+    },
+    "Rules": {
+        "SubnetsInVPC": {
+            "Assertions": [
+                {
+                    "Assert": {
+                        "Fn::EachMemberIn": [
+                            {
+                                "Fn::ValueOfAll": [
+                                    "AWS::EC2::Subnet::Id",
+                                    "VpcId"
+                                ]
+                            },
+                            {
+                                "Fn::RefAll": "AWS::EC2::VPC::Id"
+                            }
+                        ]
+                    },
+                    "AssertDescription": "All subnets must exist in the VPC"
+                }
+            ]
+        }
+    },
+
+    "Conditions": {
+        "3AZCondition": {
+            "Fn::Equals": [
+                {
+                    "Ref": "NumberOfAZs"
+                },
+                "3"
+            ]
+        },
+        "2NodeCondition": {
+            "Fn::Or": [
+                {
+                    "Fn::Equals": [
+                        {
+                            "Ref": "NumNodes"
+                        },
+                        "2"
+                    ]
+                },
+                {
+                    "Condition": "3NodeCondition"
+                }
+            ]
+        },
+        "3NodeCondition": {
+            "Fn::Or": [
+                {
+                    "Fn::Equals": [
+                        {
+                            "Ref": "NumNodes"
+                        },
+                        "3"
+                    ]
+                },
+                {
+                    "Condition": "4NodeCondition"
+                }
+            ]
+        },
+        "4NodeCondition": {
+            "Fn::Or": [
+                {
+                    "Fn::Equals": [
+                        {
+                            "Ref": "NumNodes"
+                        },
+                        "4"
+                    ]
+                },
+                {
+                    "Condition": "5NodeCondition"
+                }
+            ]
+        },
+        "5NodeCondition": {
+            "Fn::Or": [
+                {
+                    "Fn::Equals": [
+                        {
+                            "Ref": "NumNodes"
+                        },
+                        "5"
+                    ]
+                },
+                {
+                    "Condition": "6NodeCondition"
+                }
+            ]
+        },
+        "6NodeCondition": {
+                    "Fn::Equals": [
+                        {
+                            "Ref": "NumNodes"
+                        },
+                        "6"
+                    ]
+        },
+
+        "GovCloudCondition": {
+            "Fn::Equals": [
+                {
+                    "Ref": "AWS::Region"
+                },
+                "us-gov-west-1"
+            ]
+        }
+    },
+    "Resources": {
+
+        "DynatraceNodeRole": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "Policies": [
+                    {
+                        "PolicyDocument": {
+                            "Version": "2012-10-17",
+                            "Statement": [
+                                {
+                                    "Action": [
+                                        "s3:GetObject"
+                                    ],
+                                    "Resource": {
+                                        "Fn::Sub": [
+                                            "arn:${Partition}:s3:::${QSS3BucketName}/${QSS3KeyPrefix}*",
+                                            {
+                                                "Partition": {
+                                                    "Fn::If": [
+                                                        "GovCloudCondition",
+                                                        "aws-us-gov",
+                                                        "aws"
+                                                    ]
+                                                }
+                                            }
+                                        ]
+                                    },
+                                    "Effect": "Allow"
+                                }
+                            ]
+                        },
+                        "PolicyName": "aws-quick-start-s3-policy"
+                    },
+                    {
+                        "PolicyDocument": {
+                            "Version": "2012-10-17",
+                            "Statement": [
+                                {
+                                    "Action": [
+                                        "ssm:*"
+                                    ],
+                                    "Resource": {
+                                        "Fn::Sub": [
+                                            "arn:${Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${AWS::StackName}*",
+                                            {
+                                                "Partition": {
+                                                    "Fn::If": [
+                                                        "GovCloudCondition",
+                                                        "aws-us-gov",
+                                                        "aws"
+                                                    ]
+                                                }
+                                            }
+                                        ]
+                                    },
+                                    "Effect": "Allow"
+                                }
+                            ]
+                        },
+                        "PolicyName": "aws-quick-start-ssm-policy"
+                    }
+                ],
+                "Path": "/",
+                "AssumeRolePolicyDocument": {
+                    "Statement": [
+                        {
+                            "Action": [
+                                "sts:AssumeRole"
+                            ],
+                            "Principal": {
+                                "Service": [
+                                    "ec2.amazonaws.com"
+                                ]
+                            },
+                            "Effect": "Allow"
+                        }
+                    ],
+                    "Version": "2012-10-17"
+                }
+            }
+        },
+        "DynatraceNodeProfile": {
+            "Type": "AWS::IAM::InstanceProfile",
+            "Properties": {
+                "Roles": [
+                    {
+                        "Ref": "DynatraceNodeRole"
+                    }
+                ],
+                "Path": "/"
+            }
+        },
+
+        "EIP1" : {
+ 			"Type" : "AWS::EC2::EIP",
+ 			"Properties" : {
+                "Domain" : "vpc"
+ 			}
+		},
+
+		"EIP2" : {
+			"Type" : "AWS::EC2::EIP",
+			"Properties" : {
+                "Domain" : "vpc"
+			}
+		},
+
+        "EIP3" : {
+            "Type" : "AWS::EC2::EIP",
+            "Condition" : "3AZCondition",
+            "Properties" : {
+                "Domain" : "vpc"
+            }
+        },
+
+        "DynatraceNodeSecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "GroupDescription": "Rules for Dynatrace nodes",
+                "VpcId": {
+                    "Ref": "VPCID"
+                },
+                "SecurityGroupIngress": [
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "443",
+                        "ToPort": "443",
+                        "CidrIp": "0.0.0.0/0"
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "8443",
+                        "ToPort": "8443",
+                        "CidrIp": "0.0.0.0/0"
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "22",
+                        "ToPort": "22",
+                        "SourceSecurityGroupId": {
+                            "Ref": "BastionSecurityGroupID"
+                        }
+                    },
+                    {
+                        "IpProtocol": "icmp",
+                        "FromPort": "-1",
+                        "ToPort": "-1",
+                        "SourceSecurityGroupId": {
+                            "Ref": "BastionSecurityGroupID"
+                        }
+                    }
+                ],
+				"Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": "DynatraceNodeSecurityGroup"
+                    },
+                    {
+                        "Key": "Environment",
+                        "Value": "AWS Quick Start"
+                    }
+                ]
+            }
+        },
+
+        "DynatraceNodeIngressTcp" : {
+                 "Type" : "AWS::EC2::SecurityGroupIngress",
+                 "Properties" : {
+                     "GroupId" : { "Ref" : "DynatraceNodeSecurityGroup" },
+                     "IpProtocol" : "tcp",
+                     "ToPort" : "65535",
+                     "FromPort" : "0",
+                     "SourceSecurityGroupId" : { "Ref" : "DynatraceNodeSecurityGroup" }
+                 },
+                 "DependsOn" : "DynatraceNodeSecurityGroup"
+        },
+
+        "DynatraceNodeIngressIcmp" : {
+                         "Type" : "AWS::EC2::SecurityGroupIngress",
+                         "Properties" : {
+                             "GroupId" : { "Ref" : "DynatraceNodeSecurityGroup" },
+                             "IpProtocol" : "icmp",
+                             "ToPort" : "-1",
+                             "FromPort" : "-1",
+                             "SourceSecurityGroupId" : { "Ref" : "DynatraceNodeSecurityGroup" }
+                         },
+                         "DependsOn" : "DynatraceNodeSecurityGroup"
+        },
+        "SeedIp" : {
+            "Type": "AWS::SSM::Parameter",
+            "Properties": {
+                "Name": { "Fn::Sub": "/${AWS::StackName}/seed-ip" },
+                "Description": "Seed node ip address for Dynatrace Managed cluster setup",
+                "Type": "String",
+                "Value": "null"
+            }
+        },
+        "SeedToken" : {
+            "Type": "AWS::SSM::Parameter",
+            "Properties": {
+                "Name": { "Fn::Sub": "/${AWS::StackName}/seed-token" },
+                "Description": "Api token for Dynatrace Managed cluster setup",
+                "Type": "String",
+                "Value": "null"
+            }
+        },
+
+        "DynatraceNode1" : {
+            "Type": "AWS::CloudFormation::Stack",
+            "Properties": {
+                "TemplateURL": {
+                    "Fn::Sub": [
+                        "https://${QSS3BucketName}.${QSS3Region}.amazonaws.com/${QSS3KeyPrefix}templates/dynatrace-node.template",
+                        {
+                            "QSS3Region": {
+                                "Fn::If": [
+                                    "GovCloudCondition",
+                                    "s3-us-gov-west-1",
+                                    "s3"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                "Parameters": {
+                    "LicenseKey" : {
+                        "Ref" : "LicenseKey"
+                    },
+                    "DownloadUrl" : {
+                        "Ref" : "DownloadUrl"
+                    },
+                    "AdminEmail" : {
+                        "Ref" : "AdminEmail"
+                    },
+                    "AdminPassword" : {
+                        "Ref" : "AdminPassword"
+                    },
+                    "DynatraceInstanceType": {
+                        "Ref": "DynatraceInstanceType"
+                    },
+                    "DynatraceInstanceTenancy": {
+                        "Ref": "DynatraceInstanceTenancy"
+                    },
+                    "BinVolumeSize" : {
+                        "Ref": "BinVolumeSize"
+                    },
+                    "MiscVolumeSize" : {
+                        "Ref": "MiscVolumeSize"
+                    },
+                    "SrvVolumeSize" : {
+                        "Ref": "SrvVolumeSize"
+                    },
+                    "CassandraVolumeSize" : {
+                        "Ref": "CassandraVolumeSize"
+                    },
+                    "ElasticSearchVolumeSize" : {
+                        "Ref": "ElasticSearchVolumeSize"
+                    },
+                    "KeyPairName": {
+                        "Ref": "KeyPairName"
+                    },
+                    "NodeIndex" : "1",
+                    "PrivateSubnetID" : {
+                        "Ref" : "PrivateSubnet1ID"
+                    },
+                    "DynatraceNodeRole": {
+                        "Ref" : "DynatraceNodeRole"
+                    },
+                    "DynatraceNodeProfile" : {
+                        "Ref" : "DynatraceNodeProfile"
+                    },
+                    "DynatraceNodeSecurityGroup" : {
+                        "Ref" : "DynatraceNodeSecurityGroup"
+                    },
+                    "SeedIpName" : {
+                        "Ref" : "SeedIp"
+                    },
+                    "SeedTokenName" : {
+                        "Ref" : "SeedToken"
+                    },
+                    "QSS3BucketName": {
+                        "Ref": "QSS3BucketName"
+                    },
+                    "QSS3KeyPrefix": {
+                        "Ref": "QSS3KeyPrefix"
+                    },
+                    "VPCID": {
+                        "Ref" : "VPCID"
+                    }
+                }
+            }
+        },
+        "DynatraceNode2" : {
+            "Type": "AWS::CloudFormation::Stack",
+            "DependsOn": "DynatraceNode1",
+            "Condition" : "2NodeCondition",
+            "Properties": {
+                "TemplateURL": {
+                    "Fn::Sub": [
+                        "https://${QSS3BucketName}.${QSS3Region}.amazonaws.com/${QSS3KeyPrefix}templates/dynatrace-node.template",
+                        {
+                            "QSS3Region": {
+                                "Fn::If": [
+                                    "GovCloudCondition",
+                                    "s3-us-gov-west-1",
+                                    "s3"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                "Parameters": {
+                    "LicenseKey" : {
+                        "Ref" : "LicenseKey"
+                    },
+                    "DownloadUrl" : {
+                        "Ref" : "DownloadUrl"
+                    },
+                    "AdminEmail" : {
+                        "Ref" : "AdminEmail"
+                    },
+                    "AdminPassword" : {
+                        "Ref" : "AdminPassword"
+                    },
+                    "DynatraceInstanceType": {
+                        "Ref": "DynatraceInstanceType"
+                    },
+                    "DynatraceInstanceTenancy": {
+                        "Ref": "DynatraceInstanceTenancy"
+                    },
+                    "BinVolumeSize" : {
+                        "Ref": "BinVolumeSize"
+                    },
+                    "MiscVolumeSize" : {
+                        "Ref": "MiscVolumeSize"
+                    },
+                    "SrvVolumeSize" : {
+                        "Ref": "SrvVolumeSize"
+                    },
+                    "CassandraVolumeSize" : {
+                        "Ref": "CassandraVolumeSize"
+                    },
+                    "ElasticSearchVolumeSize" : {
+                        "Ref": "ElasticSearchVolumeSize"
+                    },
+                    "KeyPairName": {
+                        "Ref": "KeyPairName"
+                    },
+                    "NodeIndex" : "2",
+                    "PrivateSubnetID" : {
+                        "Ref" : "PrivateSubnet2ID"
+                    },
+                    "DynatraceNodeRole": {
+                        "Ref" : "DynatraceNodeRole"
+                    },
+                    "DynatraceNodeProfile" : {
+                        "Ref" : "DynatraceNodeProfile"
+                    },
+                    "DynatraceNodeSecurityGroup" : {
+                        "Ref" : "DynatraceNodeSecurityGroup"
+                    },
+                    "SeedIpName" : {
+                        "Ref" : "SeedIp"
+                    },
+                    "SeedTokenName" : {
+                        "Ref" : "SeedToken"
+                    },
+                    "QSS3BucketName": {
+                        "Ref": "QSS3BucketName"
+                    },
+                    "QSS3KeyPrefix": {
+                        "Ref": "QSS3KeyPrefix"
+                    },
+                    "VPCID": {
+                        "Ref" : "VPCID"
+                    }
+                }
+            }
+        },
+
+        "DynatraceNode3" : {
+            "Type": "AWS::CloudFormation::Stack",
+            "DependsOn": "DynatraceNode2",
+            "Condition" : "3NodeCondition",
+            "Properties": {
+                "TemplateURL": {
+                    "Fn::Sub": [
+                        "https://${QSS3BucketName}.${QSS3Region}.amazonaws.com/${QSS3KeyPrefix}templates/dynatrace-node.template",
+                        {
+                            "QSS3Region": {
+                                "Fn::If": [
+                                    "GovCloudCondition",
+                                    "s3-us-gov-west-1",
+                                    "s3"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                "Parameters": {
+                    "LicenseKey" : {
+                        "Ref" : "LicenseKey"
+                    },
+                    "DownloadUrl" : {
+                        "Ref" : "DownloadUrl"
+                    },
+                    "AdminEmail" : {
+                        "Ref" : "AdminEmail"
+                    },
+                    "AdminPassword" : {
+                        "Ref" : "AdminPassword"
+                    },
+                    "DynatraceInstanceType": {
+                        "Ref": "DynatraceInstanceType"
+                    },
+                    "DynatraceInstanceTenancy": {
+                        "Ref": "DynatraceInstanceTenancy"
+                    },
+                    "BinVolumeSize" : {
+                        "Ref": "BinVolumeSize"
+                    },
+                    "MiscVolumeSize" : {
+                        "Ref": "MiscVolumeSize"
+                    },
+                    "SrvVolumeSize" : {
+                        "Ref": "SrvVolumeSize"
+                    },
+                    "CassandraVolumeSize" : {
+                        "Ref": "CassandraVolumeSize"
+                    },
+                    "ElasticSearchVolumeSize" : {
+                        "Ref": "ElasticSearchVolumeSize"
+                    },
+                    "KeyPairName": {
+                        "Ref": "KeyPairName"
+                    },
+                    "NodeIndex" : "3",
+                    "PrivateSubnetID" :
+                    { "Fn::If" : [
+                        "3AZCondition",
+                        {
+                            "Ref" : "PrivateSubnet3ID"
+                        },
+                        {
+                            "Ref" : "PrivateSubnet1ID"
+                        }]
+                    },
+                    "DynatraceNodeRole": {
+                        "Ref" : "DynatraceNodeRole"
+                    },
+                    "DynatraceNodeProfile" : {
+                        "Ref" : "DynatraceNodeProfile"
+                    },
+                    "DynatraceNodeSecurityGroup" : {
+                        "Ref" : "DynatraceNodeSecurityGroup"
+                    },
+                    "SeedIpName" : {
+                        "Ref" : "SeedIp"
+                    },
+                    "SeedTokenName" : {
+                        "Ref" : "SeedToken"
+                    },
+                    "QSS3BucketName": {
+                        "Ref": "QSS3BucketName"
+                    },
+                    "QSS3KeyPrefix": {
+                        "Ref": "QSS3KeyPrefix"
+                    },
+                    "VPCID": {
+                        "Ref" : "VPCID"
+                    }
+                }
+            }
+        },
+
+        "DynatraceNode4" : {
+            "Type": "AWS::CloudFormation::Stack",
+            "DependsOn": "DynatraceNode3",
+            "Condition" : "4NodeCondition",
+            "Properties": {
+                "TemplateURL": {
+                    "Fn::Sub": [
+                        "https://${QSS3BucketName}.${QSS3Region}.amazonaws.com/${QSS3KeyPrefix}templates/dynatrace-node.template",
+                        {
+                            "QSS3Region": {
+                                "Fn::If": [
+                                    "GovCloudCondition",
+                                    "s3-us-gov-west-1",
+                                    "s3"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                "Parameters": {
+                    "LicenseKey" : {
+                        "Ref" : "LicenseKey"
+                    },
+                    "DownloadUrl" : {
+                        "Ref" : "DownloadUrl"
+                    },
+                    "AdminEmail" : {
+                        "Ref" : "AdminEmail"
+                    },
+                    "AdminPassword" : {
+                        "Ref" : "AdminPassword"
+                    },
+                    "DynatraceInstanceType": {
+                        "Ref": "DynatraceInstanceType"
+                    },
+                    "DynatraceInstanceTenancy": {
+                        "Ref": "DynatraceInstanceTenancy"
+                    },
+                    "BinVolumeSize" : {
+                        "Ref": "BinVolumeSize"
+                    },
+                    "MiscVolumeSize" : {
+                        "Ref": "MiscVolumeSize"
+                    },
+                    "SrvVolumeSize" : {
+                        "Ref": "SrvVolumeSize"
+                    },
+                    "CassandraVolumeSize" : {
+                        "Ref": "CassandraVolumeSize"
+                    },
+                    "ElasticSearchVolumeSize" : {
+                        "Ref": "ElasticSearchVolumeSize"
+                    },
+                    "KeyPairName": {
+                        "Ref": "KeyPairName"
+                    },
+                    "NodeIndex" : "4",
+                    "PrivateSubnetID" : {
+                        "Ref" : "PrivateSubnet1ID"
+                    },
+                    "DynatraceNodeRole": {
+                        "Ref" : "DynatraceNodeRole"
+                    },
+                    "DynatraceNodeProfile" : {
+                        "Ref" : "DynatraceNodeProfile"
+                    },
+                    "DynatraceNodeSecurityGroup" : {
+                        "Ref" : "DynatraceNodeSecurityGroup"
+                    },
+                    "SeedIpName" : {
+                        "Ref" : "SeedIp"
+                    },
+                    "SeedTokenName" : {
+                        "Ref" : "SeedToken"
+                    },
+                    "QSS3BucketName": {
+                        "Ref": "QSS3BucketName"
+                    },
+                    "QSS3KeyPrefix": {
+                        "Ref": "QSS3KeyPrefix"
+                    },
+                    "VPCID": {
+                        "Ref" : "VPCID"
+                    }
+                }
+            }
+        },
+
+        "DynatraceNode5" : {
+            "Type": "AWS::CloudFormation::Stack",
+            "DependsOn": "DynatraceNode4",
+            "Condition" : "5NodeCondition",
+            "Properties": {
+                "TemplateURL": {
+                    "Fn::Sub": [
+                        "https://${QSS3BucketName}.${QSS3Region}.amazonaws.com/${QSS3KeyPrefix}templates/dynatrace-node.template",
+                        {
+                            "QSS3Region": {
+                                "Fn::If": [
+                                    "GovCloudCondition",
+                                    "s3-us-gov-west-1",
+                                    "s3"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                "Parameters": {
+                    "LicenseKey" : {
+                        "Ref" : "LicenseKey"
+                    },
+                    "DownloadUrl" : {
+                        "Ref" : "DownloadUrl"
+                    },
+                    "AdminEmail" : {
+                        "Ref" : "AdminEmail"
+                    },
+                    "AdminPassword" : {
+                        "Ref" : "AdminPassword"
+                    },
+                    "DynatraceInstanceType": {
+                        "Ref": "DynatraceInstanceType"
+                    },
+                    "DynatraceInstanceTenancy": {
+                        "Ref": "DynatraceInstanceTenancy"
+                    },
+                    "BinVolumeSize" : {
+                        "Ref": "BinVolumeSize"
+                    },
+                    "MiscVolumeSize" : {
+                        "Ref": "MiscVolumeSize"
+                    },
+                    "SrvVolumeSize" : {
+                        "Ref": "SrvVolumeSize"
+                    },
+                    "CassandraVolumeSize" : {
+                        "Ref": "CassandraVolumeSize"
+                    },
+                    "ElasticSearchVolumeSize" : {
+                        "Ref": "ElasticSearchVolumeSize"
+                    },
+                    "KeyPairName": {
+                        "Ref": "KeyPairName"
+                    },
+                    "NodeIndex" : "5",
+                    "PrivateSubnetID" : {
+                            "Ref" : "PrivateSubnet2ID"
+                    },
+                    "DynatraceNodeRole": {
+                        "Ref" : "DynatraceNodeRole"
+                    },
+                    "DynatraceNodeProfile" : {
+                        "Ref" : "DynatraceNodeProfile"
+                    },
+                    "DynatraceNodeSecurityGroup" : {
+                        "Ref" : "DynatraceNodeSecurityGroup"
+                    },
+                    "SeedIpName" : {
+                        "Ref" : "SeedIp"
+                    },
+                    "SeedTokenName" : {
+                        "Ref" : "SeedToken"
+                    },
+                    "QSS3BucketName": {
+                        "Ref": "QSS3BucketName"
+                    },
+                    "QSS3KeyPrefix": {
+                        "Ref": "QSS3KeyPrefix"
+                    },
+                    "VPCID": {
+                        "Ref" : "VPCID"
+                    }
+                }
+            }
+        },
+
+        "DynatraceNode6" : {
+            "Type": "AWS::CloudFormation::Stack",
+            "DependsOn": "DynatraceNode5",
+            "Condition" : "6NodeCondition",
+            "Properties": {
+                "TemplateURL": {
+                    "Fn::Sub": [
+                        "https://${QSS3BucketName}.${QSS3Region}.amazonaws.com/${QSS3KeyPrefix}templates/dynatrace-node.template",
+                        {
+                            "QSS3Region": {
+                                "Fn::If": [
+                                    "GovCloudCondition",
+                                    "s3-us-gov-west-1",
+                                    "s3"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                "Parameters": {
+                    "LicenseKey" : {
+                        "Ref" : "LicenseKey"
+                    },
+                    "DownloadUrl" : {
+                        "Ref" : "DownloadUrl"
+                    },
+                    "AdminEmail" : {
+                        "Ref" : "AdminEmail"
+                    },
+                    "AdminPassword" : {
+                        "Ref" : "AdminPassword"
+                    },
+                    "DynatraceInstanceType": {
+                        "Ref": "DynatraceInstanceType"
+                    },
+                    "DynatraceInstanceTenancy": {
+                        "Ref": "DynatraceInstanceTenancy"
+                    },
+                    "BinVolumeSize" : {
+                        "Ref": "BinVolumeSize"
+                    },
+                    "MiscVolumeSize" : {
+                        "Ref": "MiscVolumeSize"
+                    },
+                    "SrvVolumeSize" : {
+                        "Ref": "SrvVolumeSize"
+                    },
+                    "CassandraVolumeSize" : {
+                        "Ref": "CassandraVolumeSize"
+                    },
+                    "ElasticSearchVolumeSize" : {
+                        "Ref": "ElasticSearchVolumeSize"
+                    },
+                    "KeyPairName": {
+                        "Ref": "KeyPairName"
+                    },
+                    "NodeIndex" : "6",
+                    "PrivateSubnetID" : { "Fn::If" : [
+                        "3AZCondition",
+                        {
+                            "Ref" : "PrivateSubnet3ID"
+                        },
+                        {
+                            "Ref" : "PrivateSubnet2ID"
+                        }]
+                    },
+                    "DynatraceNodeRole": {
+                        "Ref" : "DynatraceNodeRole"
+                    },
+                    "DynatraceNodeProfile" : {
+                        "Ref" : "DynatraceNodeProfile"
+                    },
+                    "DynatraceNodeSecurityGroup" : {
+                        "Ref" : "DynatraceNodeSecurityGroup"
+                    },
+                    "SeedIpName" : {
+                        "Ref" : "SeedIp"
+                    },
+                    "SeedTokenName" : {
+                        "Ref" : "SeedToken"
+                    },
+                    "QSS3BucketName": {
+                        "Ref": "QSS3BucketName"
+                    },
+                    "QSS3KeyPrefix": {
+                        "Ref": "QSS3KeyPrefix"
+                    },
+                    "VPCID": {
+                        "Ref" : "VPCID"
+                    }
+                }
+            }
+        },
+
+        "DynatraceNLB" : {
+            "Type" : "AWS::ElasticLoadBalancingV2::LoadBalancer",
+            "Properties" : {
+                "Scheme" : "internet-facing",
+                "SubnetMappings" : [
+                    {
+                        "SubnetId" : {"Ref": "PublicSubnet1ID"},
+                        "AllocationId" : { "Fn::GetAtt" : [ "EIP1", "AllocationId" ] }
+                    },
+                    {
+                        "SubnetId" : {"Ref" : "PublicSubnet2ID"},
+                        "AllocationId" : { "Fn::GetAtt" : [ "EIP2", "AllocationId" ] }
+                    },
+                    { "Fn::If" :
+                    [ "3AZCondition",
+                        {
+                            "SubnetId" : {"Ref" : "PublicSubnet3ID"},
+                            "AllocationId" : { "Fn::GetAtt" : [ "EIP3", "AllocationId" ] }
+                        },
+                        {
+                        "Ref" : "AWS::NoValue"
+                        }
+                    ]
+                    }
+                ],
+                "Tags" : [
+                    {
+                        "Key" : "Name",
+                        "Value" : { "Ref" : "AWS::StackName" }
+                    },
+                    {
+                        "Key": "Environment",
+                        "Value": "AWS Quick Start"
+                    }
+                ],
+                "Type" : "network"
+            }
+        },
+
+        "DynatraceNLBListener" : {
+            "Type" : "AWS::ElasticLoadBalancingV2::Listener",
+            "Properties" : {
+                "DefaultActions" : [ {
+                    "TargetGroupArn" : { "Ref" : "DynatraceNLBTargets" },
+                    "Type" : "forward"
+                }],
+                "LoadBalancerArn" : { "Ref" : "DynatraceNLB" },
+                "Port" : "443",
+                "Protocol" : "TCP"
+            }
+        },
+
+        "DynatraceNLBAgentListener" : {
+            "Type" : "AWS::ElasticLoadBalancingV2::Listener",
+            "Properties" : {
+                "DefaultActions" : [ {
+                    "TargetGroupArn" : { "Ref" : "DynatraceNLBAgentTargets" },
+                    "Type" : "forward"
+                }],
+                "LoadBalancerArn" : { "Ref" : "DynatraceNLB" },
+                "Port" : "8443",
+                "Protocol" : "TCP"
+            }
+        },
+
+        "DynatraceNLBTargets" : {
+            "Type" : "AWS::ElasticLoadBalancingV2::TargetGroup",
+            "Properties" : {
+                "HealthCheckIntervalSeconds" : "10",
+                "HealthCheckPort" : "443",
+                "HealthCheckProtocol" : "TCP",
+                "Port" : "443",
+                "Protocol" : "TCP",
+                "Tags" : [
+                    {
+                        "Key" : "Name",
+                        "Value" : { "Ref" : "AWS::StackName" }
+                    },
+                    {
+                        "Key": "Environment",
+                        "Value": "AWS Quick Start"
+                    }
+                ],
+                "Targets" : [
+                    {
+                        "Id" : {
+                            "Fn::GetAtt": [
+                                "DynatraceNode1",
+                                "Outputs.DynatraceNode"
+                            ]
+                        },
+                        "Port" : "443"
+                    },
+                    { "Fn::If" : ["2NodeCondition",
+                    {
+                        "Id" : {
+                            "Fn::GetAtt": [
+                                "DynatraceNode2",
+                                "Outputs.DynatraceNode"
+                            ]
+                        },
+                        "Port" : "443"
+                    },
+                        {"Ref": "AWS::NoValue" }
+                    ]},
+                    { "Fn::If" : ["3NodeCondition",
+                        {
+                            "Id" : {
+                                "Fn::GetAtt": [
+                                    "DynatraceNode3",
+                                    "Outputs.DynatraceNode"
+                                ]
+                            },
+                            "Port" : "443"
+                        },
+                        {"Ref": "AWS::NoValue" }
+                    ]},
+                    { "Fn::If" : ["4NodeCondition",
+                        {
+                            "Id" : {
+                                "Fn::GetAtt": [
+                                    "DynatraceNode4",
+                                    "Outputs.DynatraceNode"
+                                ]
+                            },
+                            "Port" : "443"
+                        },
+                        {"Ref": "AWS::NoValue" }
+                    ]},
+                    { "Fn::If" : ["5NodeCondition",
+                        {
+                            "Id" : {
+                                "Fn::GetAtt": [
+                                    "DynatraceNode5",
+                                    "Outputs.DynatraceNode"
+                                ]
+                            },
+                            "Port" : "443"
+                        },
+                        {"Ref": "AWS::NoValue" }
+                    ]},
+                    { "Fn::If" : ["6NodeCondition",
+                        {
+                            "Id" : {
+                                "Fn::GetAtt": [
+                                    "DynatraceNode6",
+                                    "Outputs.DynatraceNode"
+                                ]
+                            },
+                            "Port" : "443"
+                        },
+                        {"Ref": "AWS::NoValue" }
+                    ]}
+                ],
+                "TargetGroupAttributes" : [  {
+                    "Key" : "deregistration_delay.timeout_seconds",
+                    "Value" : "120"
+                }  ],
+                "VpcId": { "Ref" : "VPCID" }
+            }
+        },
+
+        "DynatraceNLBAgentTargets" : {
+            "Type" : "AWS::ElasticLoadBalancingV2::TargetGroup",
+            "Properties" : {
+                "HealthCheckIntervalSeconds" : "10",
+                "HealthCheckPort" : "8443",
+                "HealthCheckProtocol" : "TCP",
+                "Port" : "8443",
+                "Protocol" : "TCP",
+                "Tags" : [
+                    {
+                        "Key" : "Name",
+                        "Value" : { "Ref" : "AWS::StackName" }
+                    },
+                    {
+                        "Key": "Environment",
+                        "Value": "AWS Quick Start"
+                    }
+                ],
+                "Targets" : [
+                    {
+                        "Id" : {
+                            "Fn::GetAtt": [
+                                "DynatraceNode1",
+                                "Outputs.DynatraceNode"
+                            ]
+                        },
+                        "Port" : "8443"
+                    },
+                    { "Fn::If" : ["2NodeCondition",
+                        {
+                            "Id" : {
+                                "Fn::GetAtt": [
+                                    "DynatraceNode2",
+                                    "Outputs.DynatraceNode"
+                                ]
+                            },
+                            "Port" : "8443"
+                        },
+                        {"Ref": "AWS::NoValue" }
+                    ]},
+                    { "Fn::If" : ["3NodeCondition",
+                        {
+                            "Id" : {
+                                "Fn::GetAtt": [
+                                    "DynatraceNode3",
+                                    "Outputs.DynatraceNode"
+                                ]
+                            },
+                            "Port" : "8443"
+                        },
+                        {"Ref": "AWS::NoValue" }
+                    ]},
+                    { "Fn::If" : ["4NodeCondition",
+                        {
+                            "Id" : {
+                                "Fn::GetAtt": [
+                                    "DynatraceNode4",
+                                    "Outputs.DynatraceNode"
+                                ]
+                            },
+                            "Port" : "8443"
+                        },
+                        {"Ref": "AWS::NoValue" }
+                    ]},
+                    { "Fn::If" : ["5NodeCondition",
+                        {
+                            "Id" : {
+                                "Fn::GetAtt": [
+                                    "DynatraceNode5",
+                                    "Outputs.DynatraceNode"
+                                ]
+                            },
+                            "Port" : "8443"
+                        },
+                        {"Ref": "AWS::NoValue" }
+                    ]},
+                    { "Fn::If" : ["6NodeCondition",
+                        {
+                            "Id" : {
+                                "Fn::GetAtt": [
+                                    "DynatraceNode6",
+                                    "Outputs.DynatraceNode"
+                                ]
+                            },
+                            "Port" : "8443"
+                        },
+                        {"Ref": "AWS::NoValue" }
+                    ]}
+                ],
+                "TargetGroupAttributes" : [  {
+                    "Key" : "deregistration_delay.timeout_seconds",
+                    "Value" : "120"
+                }  ],
+                "VpcId": { "Ref" : "VPCID" }
+            }
+        }
+    },
+
+    "Outputs": {
+    	"ElasticIP1" : {
+    		"Value" : { "Ref" : "EIP1" }
+    	},
+		"ElasticIP2" : {
+			"Value" : { "Ref" : "EIP2" }
+		},
+        "ElasticIP3" : {
+            "Condition" : "3AZCondition",
+            "Value" : { "Ref" : "EIP3" }
+        },
+        "DynatraceNLB" : {
+             "Value" : { "Ref" : "DynatraceNLB"}
+        }
+    }
+}

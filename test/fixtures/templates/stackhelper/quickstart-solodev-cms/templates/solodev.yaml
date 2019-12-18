@@ -1,0 +1,333 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+
+Description: >
+
+    This template deploys Solodev Enterprise for Docker into an existing VPC (qsid-1ps37mqds)
+
+Metadata: 
+  AWS::CloudFormation::Interface: 
+    ParameterGroups: 
+    - Label: 
+        default: "Network configuration"
+      Parameters:
+        - ResourceName 
+        - VPCID
+        - PublicSubnets
+        - PrivateSubnets
+        - InstanceType
+        - InstanceCount
+        - KeyName
+    - Label: 
+        default: "CMS configuration"
+      Parameters: 
+          - AdminUser
+          - AdminPassword
+          - DatabaseName
+          - DatabasePassword
+          - StorageEncrypted
+          - GPGPW
+    - Label: 
+        default: "SSL configuration (optional)"
+      Parameters: 
+        - FQDN
+        - CertificateArn
+    - Label: 
+        default: "Advanced configuration (optional)"
+      Parameters: 
+        - RestoreBucketName
+        - DeletionPolicy
+    - Label:
+        default: AWS Quick Start configuration
+      Parameters:
+        - QSS3BucketName
+        - QSS3KeyPrefix
+    ParameterLabels:
+      ResourceName:
+        default: Resource name for the stack
+      VPCID:
+        default: VPC ID
+      PublicSubnets:
+        default: Public subnets
+      PrivateSubnets:
+        default: Private subnets
+      InstanceType:
+        default: Web server instance type
+      InstanceCount:
+        default: Number of instances
+      KeyName:
+        default: EC2 key pair name
+      GPGPW:
+        default: Encryption key
+      AdminUser:
+        default: Admin user name
+      AdminPassword:
+        default: Admin password
+      DatabaseName:
+        default: Database name
+      DatabasePassword:
+        default: Database root password
+      StorageEncrypted:
+        default: Encryption enabled
+      FQDN:
+        default: Fully qualified domain name
+      CertificateArn:
+        default: CertificateArn
+      RestoreBucketName:
+        default: S3 bucket name for restore
+      DeletionPolicy:
+        default: Experimental deletion policy
+      QSS3BucketName:
+        default: AWS Quick Start S3 bucket name
+      QSS3KeyPrefix:
+        default: AWS Quick Start S3 key prefix          
+
+
+Mappings:
+  ECS:
+    AMI:
+      AMZNECS: amzn-ami-2018.03.i-amazon-ecs-optimized
+    us-east-1:
+      AMZNECS: "ami-045f1b3f87ed83659"
+    us-east-2:
+      AMZNECS: "ami-0307f7ccf6ea35750"
+    us-west-1:
+      AMZNECS: "ami-0285183bbef6224bd"
+    us-west-2:
+      AMZNECS: "ami-01b70aea4161476b7"
+    eu-west-1:
+      AMZNECS: "ami-0627e141ce928067c"
+    sa-east-1:
+      AMZNECS: "ami-084b1eee100c102ee"
+    ap-southeast-1:
+      AMZNECS: "ami-050865a806e0dae53"
+    ap-southeast-2:
+      AMZNECS: "ami-02c73ee1100ce3e7a"
+    ap-northeast-1:
+      AMZNECS: "ami-05b296a384694dfa4"
+
+Parameters:
+
+    ResourceName:
+        Type: String
+        Description: 'The name used to title the nested stacks.'
+        Default: "solodev-quickstart"
+
+    VPCID: 
+        Type: AWS::EC2::VPC::Id
+        Description: The ID of the existing VPC for the deployment.
+        AllowedPattern: .+
+        ConstraintDescription: Please choose VPC
+
+    PublicSubnets:
+        Description: Choose at least two public subnets in your existing VPC.
+        Type: List<AWS::EC2::Subnet::Id>
+        AllowedPattern: .+
+        ConstraintDescription: Please choose Subnets
+
+    PrivateSubnets:
+        Description: Choose at least two private subnets in your existing VPC.
+        Type: List<AWS::EC2::Subnet::Id>
+        AllowedPattern: .+
+        ConstraintDescription: Please choose Subnets
+
+    KeyName:
+        Description: Name of an existing EC2 key pair to enable SSH access to the instances.
+        Type: 'AWS::EC2::KeyPair::KeyName'
+        AllowedPattern: .+
+        ConstraintDescription: Please choose EC2 KeyPair
+
+    InstanceType:
+        Description: The size of the EC2 instance you want to deploy.
+        Type: String
+        Default: m3.medium
+        AllowedValues: [t2.micro, t2.small, t2.medium, t2.large, m3.medium, m3.large,
+        m3.xlarge, m3.2xlarge, m4.large, m4.xlarge, m4.2xlarge, m4.4xlarge, m4.10xlarge,
+        c4.large, c4.xlarge, c4.2xlarge, c4.4xlarge, c4.8xlarge, c3.large, c3.xlarge,
+        c3.2xlarge, c3.4xlarge, c3.8xlarge, r3.large, r3.xlarge, r3.2xlarge, r3.4xlarge,
+        r3.8xlarge, i2.xlarge, i2.2xlarge, i2.4xlarge, i2.8xlarge]
+        ConstraintDescription: Please choose a valid instance type.
+
+    InstanceCount:
+        Description: 'Number of instances behind load balancer. Minimum of 2 required for high availability.'
+        Default: 2
+        AllowedValues: [1, 2, 3, 4, 5]
+        Type: Number
+
+    DeletionPolicy:
+        Default: 'Delete'
+        Type: String
+        Description: 'Experimental field specifying the deletion policy (Retain, Delete, Snapshot).'
+
+    FQDN:
+        Type: String
+        Description: (Optional) Fully qualified domain name for the backend application. After deployment, the FQDN must be pointed to the CNAME of the ALB.
+
+    CertificateArn:
+        Type: String
+        Description: (Optional) SSL Certificate ARN that matches the FQDN above. Certificates and Certificate ARN can be acquired via AWS Certificate Manager.
+
+    AdminUser:
+        Description: The Solodev administrator user name used to log in to the application.
+        Type: String
+        Default: 'solodev'
+        AllowedPattern: .+
+        ConstraintDescription: Please set admin username
+
+    AdminPassword:
+        NoEcho: true
+        Description: The Solodev administrator password used to log in to the application.
+        Type: String
+        MinLength: 1
+        MaxLength: 41
+        AllowedPattern: .+
+        ConstraintDescription: Please set admin password
+
+    DatabaseName:
+        Description: Database name used during deployment when setting up the Amazon RDS MySQL database.
+        Type: String
+        MinLength: '1'
+        MaxLength: '64'
+        AllowedPattern: '[a-zA-Z][a-zA-Z0-9]*'
+        ConstraintDescription: must begin with a letter and contain only alphanumeric characters.
+        Default: 'solodev'
+
+    DatabasePassword:
+        NoEcho: true
+        Description: Database root password used when setting up and connecting directly to the Amazon RDS MySQL database.
+        Type: String
+        MinLength: 1
+        MaxLength: 41
+        AllowedPattern: .+
+        ConstraintDescription: Please set database root password
+
+    RestoreBucketName:
+        Description: (Optional) Name of S3 bucket containing files for restore, if restoring a previous instance's backup files.
+        Type: String
+        Default: ""
+
+    StorageEncrypted:
+        Default: 'true'
+        Description: Enable encryption for both the database (RDS) and the file system (EFS).
+        Type: String
+        AllowedValues:
+        - 'true'
+        - 'false'
+        ConstraintDescription: must be either true or false.
+
+    GPGPW:
+        Description: Encryption key for backups.
+        Type: String
+        Default: "KbM7c1NVNZaN"
+
+    QSS3BucketName:
+        AllowedPattern: "^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$"
+        Description:  S3 bucket name for the Quick Start assets. Quick Start bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-).
+        Type: String
+        Default: "aws-quickstart"
+        ConstraintDescription: Quick Start bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-).
+
+    QSS3KeyPrefix:
+        AllowedPattern: "^[0-9a-zA-Z-/]*$"
+        Description:  Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).
+        Type: String
+        Default: "quickstart-solodev-cms/"
+        ConstraintDescription: S3 key prefix for the Quick Start assets. Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).
+
+Resources:     
+
+    ALB:
+        Type: AWS::CloudFormation::Stack
+        Properties:
+            TemplateURL: !Sub https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}templates/alb.yaml
+            Parameters:
+                EnvironmentName: !Ref ResourceName
+                VPC: !Ref VPCID
+                CertificateArn: !Ref CertificateArn
+                Subnets: !Join [",", [!Select [0, !Ref PublicSubnets], !Select [1, !Ref PublicSubnets]]]
+
+    EFS:
+        Type: AWS::CloudFormation::Stack
+        Properties:
+            TemplateURL: !Sub https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}templates/efs.yaml             
+            Parameters:
+                EnvironmentName: !Ref ResourceName
+                VPC: !Ref VPCID
+                LoadBalancerSecurityGroup: !GetAtt ALB.Outputs.LoadBalancerSecurityGroup
+                StorageEncrypted: !Ref StorageEncrypted
+                Subnets: !Join [",", [!Select [0, !Ref PrivateSubnets], !Select [1, !Ref PrivateSubnets]]]
+
+    ECS:
+        Type: AWS::CloudFormation::Stack
+        Properties:
+            TemplateURL: !Sub https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}templates/ecs.yaml          
+            Parameters:
+                EnvironmentName: !Ref ResourceName
+                InstanceType: !Ref InstanceType
+                AMI: !FindInMap ["ECS", !Ref "AWS::Region", AMZNECS]
+                ClusterSize: !Ref InstanceCount
+                VPC: !Ref VPCID
+                EFS: !GetAtt EFS.Outputs.EFS
+                LoadBalancerSecurityGroup: !GetAtt ALB.Outputs.LoadBalancerSecurityGroup
+                Subnets: !Join [",", [!Select [0, !Ref PrivateSubnets], !Select [1, !Ref PrivateSubnets]]]
+                KeyName: !Ref KeyName
+
+    RDS:
+        Type: AWS::CloudFormation::Stack
+        Properties:
+            TemplateURL: !Sub https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}templates/rds.yaml
+            Parameters:
+                EnvironmentName: !Ref ResourceName
+                DatabaseName: !Ref DatabaseName
+                VPC: !Ref VPCID
+                LoadBalancerSecurityGroup: !GetAtt ECS.Outputs.ECSHostSecurityGroup
+                Subnets: !Join [",", [!Select [0, !Ref PrivateSubnets], !Select [1, !Ref PrivateSubnets]]]
+                DatabasePassword: !Ref DatabasePassword
+                DeletionPolicy: !Ref DeletionPolicy
+                StorageEncrypted: !Ref StorageEncrypted
+                MultiAZDatabase: 'true'
+
+    SOLODEV:
+        Type: AWS::CloudFormation::Stack
+        DependsOn: RDS
+        Properties:
+            TemplateURL: !Sub https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}templates/ecs-solodev.yaml
+            Parameters:
+                EnvironmentName: !Ref ResourceName
+                VPC: !Ref VPCID
+                Cluster: !GetAtt ECS.Outputs.Cluster
+                ClusterArn: !GetAtt ECS.Outputs.ClusterArn
+                LoadBalancer: !GetAtt ALB.Outputs.LoadBalancer
+                LoadBalancerSecurityGroup: !GetAtt ALB.Outputs.LoadBalancerSecurityGroup
+                Subnets: !Join [",", [!Select [0, !Ref PrivateSubnets], !Select [1, !Ref PrivateSubnets]]]
+                AdminUsername: !Ref AdminUser
+                AdminPassword: !Ref AdminPassword
+                DatabaseHost: !GetAtt RDS.Outputs.DatabaseHost
+                DatabaseName: !Ref DatabaseName
+                DatabaseUsername: 'root'
+                DatabasePassword: !Ref DatabasePassword
+                FQDN: !Ref FQDN
+                GPGPW: !Ref GPGPW
+                CertificateArn: !Ref CertificateArn
+                SolodevContainer: '117940112483.dkr.ecr.us-east-1.amazonaws.com/cb5d26e2-0bcb-4e18-9526-570f3b241da1/cg-4250307103/solodev-cms:9.0-latest'
+                ApacheContainer: '117940112483.dkr.ecr.us-east-1.amazonaws.com/cb5d26e2-0bcb-4e18-9526-570f3b241da1/cg-4250307103/solodev-apache:9.0-latest'
+                MongoContainer: '117940112483.dkr.ecr.us-east-1.amazonaws.com/cb5d26e2-0bcb-4e18-9526-570f3b241da1/cg-4250307103/techcto/mongo:9.0-latest'
+                RedisContainer: '117940112483.dkr.ecr.us-east-1.amazonaws.com/cb5d26e2-0bcb-4e18-9526-570f3b241da1/cg-4250307103/redis:9.0-latest'
+                DuplicityContainer: '117940112483.dkr.ecr.us-east-1.amazonaws.com/cb5d26e2-0bcb-4e18-9526-570f3b241da1/cg-4250307103/techcto/duplicity:9.0-latest'
+                RestoreBucketName: !Ref RestoreBucketName
+                DesiredCount: !Ref InstanceCount
+                ServiceRole: !GetAtt ALB.Outputs.ServiceRole 
+                Path: / 
+                DeletionPolicy: !Ref DeletionPolicy
+
+Outputs:
+
+    AdminUrl: 
+        Description: The URL endpoint for the load balancer. Point your DNS to this CNAME.
+        Value: !GetAtt ALB.Outputs.LoadBalancerUrl
+    AdminUsername: 
+        Description: Solodev admin username.
+        Value: !Ref AdminUser
+    AdminPassword: 
+        Description: Solodev admin password.
+        Value: !Ref AdminPassword

@@ -1,0 +1,117 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Parameter Validation
+Parameters:
+  PrimarySubnetId:
+     Description : Private Subnet ID of Primary Instance
+     Type: 'AWS::EC2::Subnet::Id' 
+  SecondarySubnetId:
+     Description : Private Subnet ID of Secondary Instance
+     Type: 'AWS::EC2::Subnet::Id'
+  LambdaBucketPreFix:
+    Description: S3 Bucket prefix
+    Type: String
+  LambdaBucket:
+    Description: S3 Bucket to store temp config objects (e.g. s3://myhanabucket/temp/).
+    Type: String
+  VPCID:
+    Description: VPC ID
+    Type: String
+  VirtualIPAddress:
+    Description: Virtual/Overlay IP Address
+    Type: String
+    AllowedPattern: '(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})'
+  PaceMakerTag:
+    Description: Pacemaker Tag name
+    Type: String
+
+Metadata:
+  'AWS::CloudFormation::Interface':
+    ParameterGroups:
+      - Label:
+          default: VPC infrastructure details
+        Description:
+          default: ''
+        Parameters:
+          - VPCID
+          - PrimarySubnetId
+          - SecondarySubnetId
+      - Label:
+          default: S3 Buckets
+        Description:
+          default: ''
+        Parameters:
+          - LambdaBucket
+          - LambdaBucketPreFix
+
+    ParameterLabels:
+      PrimarySubnetId:
+        default: SubnetID Primary HANA
+      SecondarySubnetId:
+        default: SubnetID Secondary HANA
+      LambdaBucket:
+        default: S3 Bucket for temp objects
+      VirtualIPAddress:
+        default: Overlay IP Address
+      PaceMakerTag:
+        default: Pacemaker Tag Name
+      VPCID:
+        default: Existing VPC ID
+
+Resources:
+
+  ValidateParametersLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service: lambda.amazonaws.com
+          Action: sts:AssumeRole
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Path: "/"
+      Policies:
+      - PolicyName: ValidateParametersLambdaPolicy
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - ec2:DescribeRouteTables
+            - ec2:DescribeInstances
+            - ec2:DescribeVpcs
+            Resource: '*'
+
+  ValidateParametersLambdaFunction:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      Handler: ValidateParameters.handler
+      Runtime: python3.6
+      Timeout: '300'
+      Role: !GetAtt [ ValidateParametersLambdaRole, Arn ]
+      Code:
+        S3Bucket: !Ref LambdaBucket
+        S3Key: !Join ['', [!Ref LambdaBucketPreFix, '/ValidateParameters.zip']]
+
+  InvokeValidateParametersLambdaFunction:
+    Type: 'Custom::LambdaCallout'
+    DependsOn:
+      - ValidateParametersLambdaFunction
+    Properties:
+      ServiceToken: !GetAtt 
+        - ValidateParametersLambdaFunction
+        - Arn
+      PrimarySubnetId: !Ref PrimarySubnetId
+      SecondarySubnetId: !Ref SecondarySubnetId
+      PaceMakerTag: !Ref PaceMakerTag
+      VirtualIP: !Ref VirtualIPAddress
+      VPCID: !Ref VPCID
+
+Outputs:
+  ResultsParameterValidation:
+    Description: Parameter Validation Results
+    Value: !GetAtt 
+      - InvokeValidateParametersLambdaFunction
+      - Status

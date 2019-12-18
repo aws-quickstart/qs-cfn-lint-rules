@@ -1,0 +1,499 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "AWS CloudFormation template to bring Commvault Commserver EC2 Instance in AWS (qs-1p8m3lghr)",
+  "Metadata": {
+    "AWS::CloudFormation::Interface": {
+      "ParameterGroups": [
+        {
+          "Label": {
+            "default": "Network Configuration"
+          },
+          "Parameters": ["VPC", "RemoteAccessCIDR", "CommvaultInfraCIDR"]
+        },
+        {
+          "Label": {
+            "default": "Commserve EC2 Information"
+          },
+          "Parameters": [
+            "CSInstanceSubnet",
+            "CSInstanceType",
+            "KeyPairName",
+            "InstallUserPassword"
+          ]
+        },
+        {
+          "Label": {
+            "default": "Mediagent EC2 Information"
+          },
+          "Parameters": [
+            "DataManagerCount",
+            "MAInstanceSubnet",
+            "MAInstanceType"
+          ]
+        },
+        {
+          "Label": {
+            "default": "AWS Quick Start Configuration"
+          },
+          "Parameters": ["QSS3BucketName", "QSS3KeyPrefix"]
+        }
+      ],
+      "ParameterLabels": {
+        "VPC": {
+          "default": "VPC ID"
+        },
+        "KeyPairName": {
+          "default": "Key Pair Name"
+        },
+        "RemoteAccessCIDR": {
+          "default": "CIDR for admins access"
+        },
+        "CommvaultInfraCIDR": {
+          "default": "CIDR for Commvault machine access"
+        },
+        "CSInstanceSubnet": {
+          "default": "Commserve Subnet"
+        },
+        "MAInstanceSubnet": {
+          "default": "Mediaagent Subnet"
+        },
+        "CSInstanceType": {
+          "default": "Commserve Instance type"
+        },
+        "InstallUserPassword": {
+          "default": "Deployment account password"
+        },
+        "MAInstanceType": {
+          "default": "MediaAgent Instance type"
+        },
+        "DataManagerCount": {
+          "default": "Number of Data Managers"
+        },
+        "QSS3BucketName": {
+          "default": "Quick Start S3 Bucket Name"
+        },
+        "QSS3KeyPrefix": {
+          "default": "Quick Start S3 Key Prefix"
+        }
+      }
+    }
+  },
+  "Parameters": {
+    "RemoteAccessCIDR": {
+      "Type": "String",
+      "MinLength": 9,
+      "MaxLength": 18,
+      "AllowedPattern": "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})",
+      "ConstraintDescription": "must be a valid IP CIDR range of the form x.x.x.x/x.",
+      "Description": "CIDR block from which admins will access the instances"
+    },
+    "CommvaultInfraCIDR": {
+      "Type": "String",
+      "MinLength": 9,
+      "MaxLength": 18,
+      "AllowedPattern": "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})",
+      "ConstraintDescription": "must be a valid IP CIDR range of the form x.x.x.x/x.",
+      "Description": "CIDR block from which commvault infra machine will access the instances"
+    },
+    "CSInstanceType": {
+      "Type": "String",
+      "Default": "c4.2xlarge",
+      "Description": "Instance type for the commvault master server",
+      "AllowedValues": [
+        "t2.xlarge",
+        "t2.2xlarge",
+        "m4.large",
+        "m4.xlarge",
+        "m4.2xlarge",
+        "m4.4xlarge",
+        "m4.10xlarge",
+        "m5.large",
+        "m5.xlarge",
+        "m5.2xlarge",
+        "m5.4xlarge",
+        "m5.12xlarge",
+        "m5.24xlarge",
+        "c4.large",
+        "c4.xlarge",
+        "c4.2xlarge",
+        "c4.4xlarge",
+        "c4.8xlarge",
+        "c5.large",
+        "c5.xlarge",
+        "c5.2xlarge",
+        "c5.4xlarge",
+        "c5.9xlarge",
+        "c5.18xlarge"
+      ],
+      "ConstraintDescription": "must be a valid EC2 instance type."
+    },
+    "KeyPairName": {
+      "ConstraintDescription": "must be the name of an existing Key Value Pair",
+      "Type": "AWS::EC2::KeyPair::KeyName",
+      "Description": "KeyPair for access to commserver EC2 instance"
+    },
+    "InstallUserPassword": {
+      "Description": " Password to be set for inbuilt deployment account",
+      "Type": "String",
+      "NoEcho": "true"
+    },
+    "MAInstanceType": {
+      "Type": "String",
+      "Default": "c4.2xlarge",
+      "Description": "Instance type for the commvault media server",
+      "AllowedValues": [
+        "t2.xlarge",
+        "t2.2xlarge",
+        "m4.large",
+        "m4.xlarge",
+        "m4.2xlarge",
+        "m4.4xlarge",
+        "m4.10xlarge",
+        "m5.large",
+        "m5.xlarge",
+        "m5.2xlarge",
+        "m5.4xlarge",
+        "m5.12xlarge",
+        "m5.24xlarge",
+        "c4.large",
+        "c4.xlarge",
+        "c4.2xlarge",
+        "c4.4xlarge",
+        "c4.8xlarge",
+        "c5.large",
+        "c5.xlarge",
+        "c5.2xlarge",
+        "c5.4xlarge",
+        "c5.9xlarge",
+        "c5.18xlarge"
+      ],
+      "ConstraintDescription": "must be a valid EC2 instance type."
+    },
+    "VPC": {
+      "ConstraintDescription": "must be the name of an existing VPC",
+      "Type": "AWS::EC2::VPC::Id",
+      "Description": "VPC ID to deploy Commserver EC2"
+    },
+    "CSInstanceSubnet": {
+      "ConstraintDescription": "must be the name of an existing Subnet",
+      "Type": "AWS::EC2::Subnet::Id",
+      "Description": "Subnet to deploy the commvault master server"
+    },
+    "MAInstanceSubnet": {
+      "ConstraintDescription": "must be the name of an existing Subnet",
+      "Type": "AWS::EC2::Subnet::Id",
+      "Description": "Subnet to deploy the commvault data access node"
+    },
+    "DataManagerCount": {
+      "Type": "String",
+      "Default": 1,
+      "AllowedValues": [0, 1, 2, 3],
+      "ConstraintDescription": "will create between 0 and 3 Data Managers."
+    },
+    "QSS3BucketName": {
+      "AllowedPattern": "^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$",
+      "ConstraintDescription": "Quick Start bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-).",
+      "Default": "aws-quickstart",
+      "Description": "S3 bucket name for the Quick Start assets. Quick Start bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-).",
+      "Type": "String"
+    },
+    "QSS3KeyPrefix": {
+      "AllowedPattern": "^[0-9a-zA-Z-/]*$",
+      "ConstraintDescription": "Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).",
+      "Default": "quickstart-commvault-commcell/",
+      "Description": "S3 key prefix for the Quick Start assets. Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).",
+      "Type": "String"
+    }
+  },
+  "Rules": {
+    "SubnetsInVPC": {
+      "Assertions": [
+        {
+          "Assert": {
+            "Fn::EachMemberIn": [
+              {
+                "Fn::ValueOfAll": ["AWS::EC2::Subnet::Id", "VpcId"]
+              },
+              {
+                "Fn::RefAll": "AWS::EC2::VPC::Id"
+              }
+            ]
+          },
+          "AssertDescription": "All subnets must exist in the VPC"
+        }
+      ]
+    }
+  },
+
+  "Conditions": {
+    "GovCloudCondition": {
+      "Fn::Equals": [
+        {
+          "Ref": "AWS::Region"
+        },
+        "us-gov-west-1"
+      ]
+    },
+    "LaunchOne": {
+      "Fn::Or": [
+        {
+          "Fn::Equals": [
+            1,
+            {
+              "Ref": "DataManagerCount"
+            }
+          ]
+        },
+        {
+          "Fn::Equals": [
+            2,
+            {
+              "Ref": "DataManagerCount"
+            }
+          ]
+        },
+        {
+          "Fn::Equals": [
+            3,
+            {
+              "Ref": "DataManagerCount"
+            }
+          ]
+        }
+      ]
+    },
+    "LaunchTwo": {
+      "Fn::Or": [
+        {
+          "Fn::Equals": [
+            2,
+            {
+              "Ref": "DataManagerCount"
+            }
+          ]
+        },
+        {
+          "Fn::Equals": [
+            3,
+            {
+              "Ref": "DataManagerCount"
+            }
+          ]
+        }
+      ]
+    },
+    "LaunchThree": {
+      "Fn::Equals": [
+        3,
+        {
+          "Ref": "DataManagerCount"
+        }
+      ]
+    }
+  },
+
+  "Resources": {
+    "CommServeStack": {
+      "Type": "AWS::CloudFormation::Stack",
+      "Properties": {
+        "TemplateURL": {
+          "Fn::Sub": [
+            "https://${QSS3BucketName}.${QSS3Region}.amazonaws.com/${QSS3KeyPrefix}templates/quickstart-commvault-commserver.template",
+            {
+              "QSS3Region": {
+                "Fn::If": ["GovCloudCondition", "s3-us-gov-west-1", "s3"]
+              }
+            }
+          ]
+        },
+        "Parameters": {
+          "VPC": {
+            "Ref": "VPC"
+          },
+          "CSInstanceSubnet": {
+            "Ref": "CSInstanceSubnet"
+          },
+          "CSInstanceType": {
+            "Ref": "CSInstanceType"
+          },
+          "KeyPairName": {
+            "Ref": "KeyPairName"
+          },
+          "InstallUserPassword": {
+            "Ref": "InstallUserPassword"
+          },
+          "QSS3BucketName": {
+            "Ref": "QSS3BucketName"
+          },
+          "QSS3KeyPrefix": {
+            "Ref": "QSS3KeyPrefix"
+          },
+          "CommvaultInfraCIDR": {
+            "Ref": "CommvaultInfraCIDR"
+          },
+          "RemoteAccessCIDR": {
+            "Ref": "RemoteAccessCIDR"
+          }
+        }
+      }
+    },
+
+    "DataManager1": {
+      "Type": "AWS::CloudFormation::Stack",
+      "DependsOn": "CommServeStack",
+      "Condition": "LaunchOne",
+      "Properties": {
+        "TemplateURL": {
+          "Fn::Sub": [
+            "https://${QSS3BucketName}.${QSS3Region}.amazonaws.com/${QSS3KeyPrefix}templates/quickstart-commvault-mediaagent.template",
+            {
+              "QSS3Region": {
+                "Fn::If": ["GovCloudCondition", "s3-us-gov-west-1", "s3"]
+              }
+            }
+          ]
+        },
+        "Parameters": {
+          "VPC": {
+            "Ref": "VPC"
+          },
+          "MAInstanceSubnet": {
+            "Ref": "MAInstanceSubnet"
+          },
+          "MAInstanceType": {
+            "Ref": "MAInstanceType"
+          },
+          "KeyPairName": {
+            "Ref": "KeyPairName"
+          },
+
+          "QSS3BucketName": {
+            "Ref": "QSS3BucketName"
+          },
+          "QSS3KeyPrefix": {
+            "Ref": "QSS3KeyPrefix"
+          },
+          "RemoteAccessCIDR": {
+            "Ref": "RemoteAccessCIDR"
+          },
+          "CommvaultInfraCIDR": {
+            "Ref": "CommvaultInfraCIDR"
+          },
+          "CommcellUser": "quickstartdeployment",
+          "CommcellPassword": {
+            "Ref": "InstallUserPassword"
+          },
+          "SecurityGroup": "DM1-SecurityGroup",
+          "CommServeHostName": {
+            "Fn::GetAtt": ["CommServeStack", "Outputs.CSInternalDNS"]
+          }
+        }
+      }
+    },
+
+    "DataManager2": {
+      "Type": "AWS::CloudFormation::Stack",
+      "DependsOn": "CommServeStack",
+      "Condition": "LaunchTwo",
+      "Properties": {
+        "TemplateURL": {
+          "Fn::Sub": [
+            "https://${QSS3BucketName}.${QSS3Region}.amazonaws.com/${QSS3KeyPrefix}templates/quickstart-commvault-mediaagent.template",
+            {
+              "QSS3Region": {
+                "Fn::If": ["GovCloudCondition", "s3-us-gov-west-1", "s3"]
+              }
+            }
+          ]
+        },
+        "Parameters": {
+          "VPC": {
+            "Ref": "VPC"
+          },
+          "MAInstanceSubnet": {
+            "Ref": "MAInstanceSubnet"
+          },
+          "MAInstanceType": {
+            "Ref": "MAInstanceType"
+          },
+          "KeyPairName": {
+            "Ref": "KeyPairName"
+          },
+
+          "QSS3BucketName": {
+            "Ref": "QSS3BucketName"
+          },
+          "QSS3KeyPrefix": {
+            "Ref": "QSS3KeyPrefix"
+          },
+          "RemoteAccessCIDR": {
+            "Ref": "RemoteAccessCIDR"
+          },
+          "CommvaultInfraCIDR": {
+            "Ref": "CommvaultInfraCIDR"
+          },
+          "CommcellUser": "quickstartdeployment",
+          "SecurityGroup": "DM2-SecurityGroup",
+          "CommcellPassword": {
+            "Ref": "InstallUserPassword"
+          },
+          "CommServeHostName": {
+            "Fn::GetAtt": ["CommServeStack", "Outputs.CSInternalDNS"]
+          }
+        }
+      }
+    },
+
+    "DataManager3": {
+      "Type": "AWS::CloudFormation::Stack",
+      "DependsOn": "CommServeStack",
+      "Condition": "LaunchThree",
+      "Properties": {
+        "TemplateURL": {
+          "Fn::Sub": [
+            "https://${QSS3BucketName}.${QSS3Region}.amazonaws.com/${QSS3KeyPrefix}templates/quickstart-commvault-mediaagent.template",
+            {
+              "QSS3Region": {
+                "Fn::If": ["GovCloudCondition", "s3-us-gov-west-1", "s3"]
+              }
+            }
+          ]
+        },
+        "Parameters": {
+          "VPC": {
+            "Ref": "VPC"
+          },
+          "MAInstanceSubnet": {
+            "Ref": "MAInstanceSubnet"
+          },
+          "MAInstanceType": {
+            "Ref": "MAInstanceType"
+          },
+          "KeyPairName": {
+            "Ref": "KeyPairName"
+          },
+          "CommvaultInfraCIDR": {
+            "Ref": "CommvaultInfraCIDR"
+          },
+          "QSS3BucketName": {
+            "Ref": "QSS3BucketName"
+          },
+          "QSS3KeyPrefix": {
+            "Ref": "QSS3KeyPrefix"
+          },
+          "RemoteAccessCIDR": {
+            "Ref": "RemoteAccessCIDR"
+          },
+          "CommcellUser": "quickstartdeployment",
+          "SecurityGroup": "DM3-SecurityGroup",
+          "CommcellPassword": {
+            "Ref": "InstallUserPassword"
+          },
+          "CommServeHostName": {
+            "Fn::GetAtt": ["CommServeStack", "Outputs.CSInternalDNS"]
+          }
+        }
+      }
+    }
+  }
+}

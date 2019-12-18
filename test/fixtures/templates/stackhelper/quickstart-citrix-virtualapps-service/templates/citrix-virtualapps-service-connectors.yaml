@@ -1,0 +1,636 @@
+---
+AWSTemplateFormatVersion: 2010-09-09
+Description: This template deploys two Citrix Cloud Connectors.
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+    - Label:
+        default: Network Configuration
+      Parameters:
+      - PrivateInfraSubnet1
+      - PrivateInfraSubnet2
+    - Label:
+        default: Amazon EC2 Configuration
+      Parameters:
+      - KeyPairName
+      - CitrixCloudConnectorInstanceType
+      - CitrixCloudConnectorWindowsServerVersion
+    - Label:
+        default: Active Directory Configuration
+      Parameters:
+      - ADServer1PrivateIP
+      - ADServer2PrivateIP
+      - DomainDNSName
+      - DomainNetBIOSName
+      - DomainAdminPassword
+      - DomainAdminUser
+    - Label:
+        default: Citrix Cloud Configuration
+      Parameters:
+      - CitrixCustomerId
+      - CitrixAPIClientID
+      - CitrixAPIClientSecret
+      - CitrixResourceLocation
+      - CitrixCloudConnector1HostName
+      - CitrixCloudConnector2HostName
+    - Label:
+        default: AWS Quick Start Configuration
+      Parameters:
+      - QSS3BucketName
+      - QSS3KeyPrefix
+    ParameterLabels:
+      ADServer1PrivateIP:
+        default: Domain Controller 1 Private IP Address
+      ADServer2PrivateIP:
+        default: Domain Controller 2 Private IP Address
+      CitrixAPIClientID:
+        default: Citrix Cloud Secure Client ID
+      CitrixAPIClientSecret:
+        default: Citrix Cloud Secure Client Secret
+      CitrixCloudConnector1HostName:
+        default: Citrix Cloud Connector 1 Name
+      CitrixCloudConnector2HostName:
+        default: Citrix Cloud Connector 2 Name
+      CitrixCloudConnectorInstanceType:
+        default: Citrix Cloud Connector Instance Type
+      CitrixCloudConnectorWindowsServerVersion:
+        default: Windows Server Version for Citrix Cloud Connector
+      CitrixCustomerId:
+        default: Citrix Cloud Customer ID
+      DomainAdminPassword:
+        default: Domain Admin Password
+      DomainAdminUser:
+        default: Domain Admin User Name
+      DomainDNSName:
+        default: Domain DNS Name
+      DomainNetBIOSName:
+        default: Domain NetBIOS Name
+      KeyPairName:
+        default: Key Pair Name
+      PrivateInfraSubnet1:
+        default: Private Citrix Infrastructure Subnet 1 ID
+      PrivateInfraSubnet2:
+        default: Private Citrix Infrastructure Subnet 2 ID
+      QSS3BucketName:
+        default: Quick Start S3 Bucket Name
+      QSS3KeyPrefix:
+        default: Quick Start S3 Key Prefix
+      CitrixResourceLocation:
+        default: Citrix Cloud Resource Location
+      VDAInstanceType:
+        default: Citrix Server VDA Instance Type
+      VDAWindowsServerVersion:
+        default: Windows Server Version for Citrix Server VDA
+Parameters:
+  ADServer1PrivateIP:
+    Type: String
+  ADServer2PrivateIP:
+    Type: String
+  CitrixAPIClientID:
+    Type: String
+    NoEcho: 'true'
+  CitrixAPIClientSecret:
+    Type: String
+    NoEcho: 'true'
+  CitrixCloudConnector1HostName:
+    Type: String
+    Default: CTX-CC1
+  CitrixCloudConnector2HostName:
+    Type: String
+    Default: CTX-CC2
+  CitrixCloudConnectorInstanceType:
+    Description: Amazon EC2 instance type for the Remote Desktop Gateway instances
+    Type: String
+    Default: t2.large
+    AllowedValues:
+    - t2.large
+    - t3.large
+    - m4.large
+    - m5.large
+  CitrixCloudConnectorSecurityGroup:
+    Type: AWS::EC2::SecurityGroup::Id
+  CitrixCloudConnectorsWindowsServerVersion:
+    Description: Version of preferred Windows Server for the Citrix Cloud Connectors.
+    Type: String
+    Default: WS2016FULLBASE
+    AllowedValues:
+    - WS2012R2
+    - WS2016FULLBASE
+  CitrixCustomerId:
+    Type: String
+  CitrixResourceLocation:
+    Type: String
+    Default: AWS-QuickStart
+  DomainDNSName:
+    Type: String
+  DomainNetBIOSName:
+    Type: String
+  DomainAdminPassword:
+    Type: String
+    NoEcho: 'true'
+  DomainAdminUser:
+    AllowedPattern: '[a-zA-Z0-9]*'
+    Default: admin
+    Description: 'User name for the account that will be added as Domain Administrator.
+      This is separate from the default "Administrator" account. Note: Use admin if
+      using managed AD.'
+    MaxLength: '25'
+    MinLength: '5'
+    Type: String
+  KeyPairName:
+    ConstraintDescription: must be the name of an existing EC2 KeyPair.
+    Description: Name of an existing EC2 KeyPair used to get the Administrator password
+      for the instance
+    Type: AWS::EC2::KeyPair::KeyName
+  PrivateInfraSubnet1:
+    Description: ID of the private infrastructure subnet 1 in Availability Zone 1
+      (e.g., subnet-a0246dcd)
+    Type: AWS::EC2::Subnet::Id
+  PrivateInfraSubnet2:
+    Description: ID of the private infrastructure subnet 2 in Availability Zone 1
+      (e.g., subnet-a0246dcd)
+    Type: AWS::EC2::Subnet::Id
+  QSDeploymentID:
+    Type: AWS::SSM::Parameter::Value<String>
+  QSS3BucketName:
+    AllowedPattern: ^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$
+    ConstraintDescription: Quick Start bucket name can include numbers, lowercase
+      letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen
+      (-).
+    Default: aws-quickstart
+    Type: String
+  QSS3KeyPrefix:
+    AllowedPattern: ^[0-9a-zA-Z-/]*$
+    ConstraintDescription: Quick Start key prefix can include numbers, lowercase letters,
+      uppercase letters, hyphens (-), and forward slash (/).
+    Default: quickstart-citrix-virtualapps-service/
+    Type: String
+Mappings:
+  AWSAMIRegionMap:
+    AMI:
+      WS2012R2: Windows_Server-2012-R2_RTM-English-64Bit-Base-2019.07.12
+      WS2016FULLBASE: Windows_Server-2016-English-Full-Base-2019.07.12
+    ap-northeast-1:
+      WS2012R2: ami-005ee2767c33f46f6
+      WS2016FULLBASE: ami-04ae8b744a2a967ea
+    ap-northeast-2:
+      WS2012R2: ami-0a0b21dd07f1083bf
+      WS2016FULLBASE: ami-01ddd6b62296d6fca
+    ap-northeast-3:
+      WS2012R2: ami-00360a2315b53f40c
+      WS2016FULLBASE: ami-0fd4c13cf920525d8
+    ap-south-1:
+      WS2012R2: ami-0c317e1f81c5fb88c
+      WS2016FULLBASE: ami-0134ce22bbe953ecc
+    ap-southeast-1:
+      WS2012R2: ami-0364b7df071ead294
+      WS2016FULLBASE: ami-041282eb38a18fb57
+    ap-southeast-2:
+      WS2012R2: ami-0b90712bab07bff79
+      WS2016FULLBASE: ami-0daaf340f2253cd6c
+    ca-central-1:
+      WS2012R2: ami-077aa0feeb9f0276a
+      WS2016FULLBASE: ami-0c7609710809ad56e
+    eu-central-1:
+      WS2012R2: ami-0987d7897f512004d
+      WS2016FULLBASE: ami-094ce8f9bad208212
+    eu-west-1:
+      WS2012R2: ami-0927c25b5177ff0de
+      WS2016FULLBASE: ami-0bd191f9766bc39f7
+    eu-west-2:
+      WS2012R2: ami-0e90780577bc9d091
+      WS2016FULLBASE: ami-0ec497a3604c0dd5f
+    eu-west-3:
+      WS2012R2: ami-0d0feff63441edc49
+      WS2016FULLBASE: ami-032fe10f013f36846
+    sa-east-1:
+      WS2012R2: ami-03fb3b14747ca1fe6
+      WS2016FULLBASE: ami-064dc18450955d3f3
+    us-east-1:
+      WS2012R2: ami-028be67c2aa2f1ce1
+      WS2016FULLBASE: ami-027a14492d667b8f5
+    us-east-2:
+      WS2012R2: ami-09ee46c8d9abcb966
+      WS2016FULLBASE: ami-0b8b049f0ac9d6ded
+    us-west-1:
+      WS2012R2: ami-05cd4c9c42e255074
+      WS2016FULLBASE: ami-00cb62f0977a10d07
+    us-west-2:
+      WS2012R2: ami-095f164d8ca0bdbbf
+      WS2016FULLBASE: ami-0df99cdd65bce4245
+Resources:
+  CitrixCloudConnector1:
+    Type: AWS::EC2::Instance
+    Metadata:
+      AWS::CloudFormation::Authentication:
+        S3AccessCreds:
+          type: S3
+          roleName: !Ref CitrixCloudConnectorRole
+          buckets:
+          - !Ref QSS3BucketName
+      AWS::CloudFormation::Init:
+        configSets:
+          config:
+          - CFNsetup
+          - QuickStartSetup
+          - rename
+          - domainjoin
+          - installCloudConnector
+          - finalize
+        CFNsetup:
+          files:
+            c:\cfn\cfn-hup.conf:
+              content:
+                !Join
+                - ''
+                - - '[main]
+
+                    '
+                  - stack=
+                  - !Ref AWS::StackId
+                  - '
+
+                    '
+                  - region=
+                  - !Ref AWS::Region
+                  - '
+
+                    '
+            c:\cfn\hooks.d\cfn-auto-reloader.conf:
+              content:
+                !Join
+                - ''
+                - - '[cfn-auto-reloader-hook]
+
+                    '
+                  - 'triggers=post.update
+
+                    '
+                  - 'path=Resources.CitrixCloudConnector1.Metadata.AWS::CloudFormation::Init
+
+                    '
+                  - 'action=cfn-init.exe -v -s '
+                  - !Ref AWS::StackId
+                  - ' -r CitrixCloudConnector1'
+                  - ' --region '
+                  - !Ref AWS::Region
+                  - ''
+          commands:
+            a-set-execution-policy:
+              command: powershell.exe -command Set-ExecutionPolicy RemoteSigned
+              waitAfterCompletion: '0'
+        QuickStartSetup:
+          files:
+            C:\cfn\scripts\Unzip-Archive.ps1:
+              source: !Sub https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}submodules/quickstart-microsoft-utilities/scripts/Unzip-Archive.ps1
+              authentication: S3AccessCreds
+            C:\cfn\modules\AWSQuickStart.zip:
+              source: !Sub https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}submodules/quickstart-microsoft-utilities/modules/AWSQuickStart.zip
+              authentication: S3AccessCreds
+            c:\cfn\modules\Citrix.zip:
+              source: !Sub https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}modules/Citrix.zip
+              authentication: S3AccessCreds
+          commands:
+            a-unpack-quickstart-module:
+              command: powershell.exe -Command C:\cfn\scripts\Unzip-Archive.ps1 -Source
+                C:\cfn\modules\AWSQuickStart.zip -Destination C:\Windows\system32\WindowsPowerShell\v1.0\Modules\
+              waitAfterCompletion: '0'
+            b-unpack-citrix-module:
+              command: powershell.exe -Command C:\cfn\scripts\Unzip-Archive.ps1 -Source
+                C:\cfn\modules\Citrix.zip -Destination C:\Windows\system32\WindowsPowerShell\v1.0\Modules\
+              waitAfterCompletion: '0'
+        rename:
+          commands:
+            a-execute-powershell-script-RenameComputer:
+              command: !Sub |
+                powershell.exe -Command Rename-Computer -NewName '${CitrixCloudConnector1HostName}-${QSDeploymentID}' -Restart
+              waitAfterCompletion: forever
+        domainjoin:
+          files:
+            c:\cfn\scripts\Set-Dns.ps1:
+              source: !Sub https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}submodules/quickstart-microsoft-utilities/scripts/Set-Dns.ps1
+              authentication: S3AccessCreds
+            c:\cfn\scripts\Join-Domain.ps1:
+              source: !Sub https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}submodules/quickstart-microsoft-utilities/scripts/Join-Domain.ps1
+              authentication: S3AccessCreds
+          commands:
+            a-set-dns:
+              command: !Sub |
+                powershell.exe c:\cfn\scripts\Set-Dns.ps1 ${ADServer1PrivateIP} ${ADServer2PrivateIP}
+              waitAfterCompletion: '30'
+            b-join-domain:
+              command: !Sub |
+                powershell.exe c:\cfn\scripts\Join-Domain.ps1 ${DomainDNSName} ${DomainNetBIOSName}\${DomainAdminUser} '${DomainAdminPassword}'
+              waitAfterCompletion: forever
+        installCloudConnector:
+          files:
+            c:\cfn\scripts\DisableIEESC.ps1:
+              source: !Sub https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}scripts/DisableIEESC.ps1
+              authentication: S3AccessCreds
+            c:\cfn\scripts\Prep-CloudConnector.ps1:
+              source: !Sub https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}scripts/Prep-CloudConnector.ps1
+              authentication: S3AccessCreds
+            c:\cfn\scripts\Deploy-CitrixCloudConnector.ps1:
+              source: !Sub https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}scripts/Deploy-CitrixCloudConnector.ps1
+              authentication: S3AccessCreds
+            c:\cfn\scripts\Register-CitrixCloud.ps1:
+              source: !Sub https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}scripts/Register-CitrixCloud.ps1
+              authentication: S3AccessCreds
+          commands:
+            a-disableIEESC:
+              command: powershell C:\cfn\scripts\DisableIEESC.ps1
+              waitAfterCompletion: '0'
+            b-register-CitrixCloud:
+              command: !Sub |
+                powershell C:\cfn\scripts\Register-CitrixCloud.ps1 -CtxCustomerId '${CitrixCustomerId}' -CtxClientID '${CitrixAPIClientID}' -CtxClientSecret '${CitrixAPIClientSecret}' -CtxResourceLocationName '${CitrixResourceLocation}-${QSDeploymentID}'
+              waitAfterCompletion: '0'
+            c-PrepCloudConnector:
+              command: powershell -ExecutionPolicy Unrestricted C:\cfn\scripts\Prep-CloudConnector.ps1
+              waitAfterCompletion: '0'
+            d-reboot:
+              command: powershell.exe -Command Restart-Computer -Force
+              waitAfterCompletion: forever
+            e-installCloudConnector:
+              command: !Sub |
+                powershell C:\cfn\scripts\Deploy-CitrixCloudConnector.ps1 -CtxCustomerId '${CitrixCustomerId}' -CtxClientID '${CitrixAPIClientID}' -CtxClientSecret '${CitrixAPIClientSecret}' -CtxResourceLocationName '${CitrixResourceLocation}-${QSDeploymentID}'
+              waitAfterCompletion: '0'
+        finalize:
+          commands:
+            z-signal-success:
+              command: !Sub |
+                cfn-signal.exe -e 0 "${CitrixCloudConnector1WaitHandle}"
+          services:
+            windows:
+              cfn-hup:
+                enabled: 'true'
+                ensureRunning: 'true'
+                files:
+                - c:\cfn\cfn-hup.conf
+                - c:\cfn\hooks.d\cfn-auto-reloader.conf
+    Properties:
+      InstanceType: !Ref CitrixCloudConnectorInstanceType
+      ImageId:
+        !FindInMap
+        - AWSAMIRegionMap
+        - !Ref AWS::Region
+        - !Ref CitrixCloudConnectorsWindowsServerVersion
+      IamInstanceProfile: !Ref CitrixCloudConnectorProfile
+      SecurityGroupIds:
+      - !Ref CitrixCloudConnectorSecurityGroup
+      KeyName: !Ref KeyPairName
+      SubnetId: !Ref PrivateInfraSubnet1
+      UserData:
+        !Base64
+          Fn::Join:
+          - ''
+          - - '<script>
+
+              '
+            - 'cfn-init.exe -v -s '
+            - !Ref AWS::StackId
+            - ' -r CitrixCloudConnector1'
+            - ' --region '
+            - !Ref AWS::Region
+            - ' --configsets config'
+            - ''
+            - </script>
+      Tags:
+      - Key: Name
+        Value: !Sub ${CitrixCloudConnector1HostName}-${QSDeploymentID}
+      - Key: App
+        Value: Citrix
+      - Key: QSDeplomentID
+        Value: !Sub ${QSDeploymentID}
+  CitrixCloudConnector2:
+    Type: AWS::EC2::Instance
+    DependsOn: CitrixCloudConnector1
+    Metadata:
+      AWS::CloudFormation::Authentication:
+        S3AccessCreds:
+          type: S3
+          roleName: !Ref CitrixCloudConnectorRole
+          buckets:
+          - !Ref QSS3BucketName
+      AWS::CloudFormation::Init:
+        configSets:
+          config:
+          - CFNsetup
+          - QuickStartSetup
+          - rename
+          - domainjoin
+          - installCloudConnector
+          - finalize
+        CFNsetup:
+          files:
+            c:\cfn\cfn-hup.conf:
+              content:
+                !Join
+                - ''
+                - - '[main]
+
+                    '
+                  - stack=
+                  - !Ref AWS::StackId
+                  - '
+
+                    '
+                  - region=
+                  - !Ref AWS::Region
+                  - ''
+            c:\cfn\hooks.d\cfn-auto-reloader.conf:
+              content:
+                !Join
+                - ''
+                - - '[cfn-auto-reloader-hook]
+
+                    '
+                  - 'triggers=post.update
+
+                    '
+                  - 'path=Resources.CitrixCloudConnector2.Metadata.AWS::CloudFormation::Init
+
+                    '
+                  - 'action=cfn-init.exe -v -s '
+                  - !Ref AWS::StackId
+                  - ' -r CitrixCloudConnector1'
+                  - ' --region '
+                  - !Ref AWS::Region
+                  - ''
+          commands:
+            a-set-execution-policy:
+              command: powershell.exe -command Set-ExecutionPolicy Bypass
+              waitAfterCompletion: '0'
+        QuickStartSetup:
+          files:
+            C:\cfn\scripts\Unzip-Archive.ps1:
+              source: !Sub https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}submodules/quickstart-microsoft-utilities/scripts/Unzip-Archive.ps1
+              authentication: S3AccessCreds
+            C:\cfn\modules\AWSQuickStart.zip:
+              source: !Sub https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}submodules/quickstart-microsoft-utilities/modules/AWSQuickStart.zip
+              authentication: S3AccessCreds
+            c:\cfn\modules\Citrix.zip:
+              source: !Sub https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}modules/Citrix.zip
+              authentication: S3AccessCreds
+          commands:
+            a-unpack-quickstart-module:
+              command: powershell.exe -Command C:\cfn\scripts\Unzip-Archive.ps1 -Source
+                C:\cfn\modules\AWSQuickStart.zip -Destination C:\Windows\system32\WindowsPowerShell\v1.0\Modules\
+              waitAfterCompletion: '0'
+            b-unpack-citrix-module:
+              command: powershell.exe -Command C:\cfn\scripts\Unzip-Archive.ps1 -Source
+                C:\cfn\modules\Citrix.zip -Destination C:\Windows\system32\WindowsPowerShell\v1.0\Modules\
+              waitAfterCompletion: '0'
+        rename:
+          commands:
+            a-execute-powershell-script-RenameComputer:
+              command: !Sub |
+                powershell.exe -Command Rename-Computer -NewName '${CitrixCloudConnector2HostName}-${QSDeploymentID}' -Restart
+              waitAfterCompletion: forever
+        domainjoin:
+          files:
+            c:\cfn\scripts\Set-Dns.ps1:
+              source: !Sub https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}submodules/quickstart-microsoft-utilities/scripts/Set-Dns.ps1
+              authentication: S3AccessCreds
+            c:\cfn\scripts\Join-Domain.ps1:
+              source: !Sub https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}submodules/quickstart-microsoft-utilities/scripts/Join-Domain.ps1
+              authentication: S3AccessCreds
+          commands:
+            a-set-dns:
+              command: !Sub |
+                powershell.exe c:\cfn\scripts\Set-Dns.ps1 ${ADServer1PrivateIP} ${ADServer2PrivateIP}
+              waitAfterCompletion: '30'
+            b-join-domain:
+              command: !Sub |
+                powershell.exe c:\cfn\scripts\Join-Domain.ps1 ${DomainDNSName} ${DomainNetBIOSName}\${DomainAdminUser} '${DomainAdminPassword}'
+              waitAfterCompletion: forever
+        installCloudConnector:
+          files:
+            c:\cfn\scripts\DisableIEESC.ps1:
+              source: !Sub https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}scripts/DisableIEESC.ps1
+              authentication: S3AccessCreds
+            c:\cfn\scripts\Prep-CloudConnector.ps1:
+              source: !Sub https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}scripts/Prep-CloudConnector.ps1
+              authentication: S3AccessCreds
+            c:\cfn\scripts\Deploy-CitrixCloudConnector.ps1:
+              source: !Sub https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}scripts/Deploy-CitrixCloudConnector.ps1
+              authentication: S3AccessCreds
+          commands:
+            a-DisableIEESC:
+              command: powershell C:\cfn\scripts\DisableIEESC.ps1
+              waitAfterCompletion: '0'
+            b-PrepCloudConnector:
+              command: powershell -ExecutionPolicy Unrestricted C:\cfn\scripts\Prep-CloudConnector.ps1
+              waitAfterCompletion: '0'
+            c-reboot:
+              command: powershell.exe -Command Restart-Computer -Force
+              waitAfterCompletion: forever
+            d-installCloudConnector:
+              command: !Sub |
+                powershell C:\cfn\scripts\Deploy-CitrixCloudConnector.ps1 -CtxCustomerId '${CitrixCustomerId}' -CtxClientID '${CitrixAPIClientID}' -CtxClientSecret '${CitrixAPIClientSecret}' -CtxResourceLocationName '${CitrixResourceLocation}-${QSDeploymentID}'
+              waitAfterCompletion: '0'
+        finalize:
+          commands:
+            z-signal-success:
+              command: !Sub |
+                cfn-signal.exe -e 0 "${CitrixCloudConnector2WaitHandle}"
+          services:
+            windows:
+              cfn-hup:
+                enabled: 'true'
+                ensureRunning: 'true'
+                files:
+                - c:\cfn\cfn-hup.conf
+                - c:\cfn\hooks.d\cfn-auto-reloader.conf
+    Properties:
+      IamInstanceProfile: !Ref CitrixCloudConnectorProfile
+      InstanceType: !Ref CitrixCloudConnectorInstanceType
+      ImageId:
+        !FindInMap
+        - AWSAMIRegionMap
+        - !Ref AWS::Region
+        - !Ref CitrixCloudConnectorsWindowsServerVersion
+      SecurityGroupIds:
+      - !Ref CitrixCloudConnectorSecurityGroup
+      KeyName: !Ref KeyPairName
+      SubnetId: !Ref PrivateInfraSubnet2
+      UserData:
+        !Base64
+          Fn::Join:
+          - ''
+          - - '<script>
+
+              '
+            - 'cfn-init.exe -v -s '
+            - !Ref AWS::StackId
+            - ' -r CitrixCloudConnector2'
+            - ' --region '
+            - !Ref AWS::Region
+            - ' --configsets config'
+            - ''
+            - </script>
+      Tags:
+      - Key: Name
+        Value: !Sub ${CitrixCloudConnector2HostName}-${QSDeploymentID}
+      - Key: App
+        Value: Citrix
+      - Key: QSDeplomentID
+        Value: !Sub ${QSDeploymentID}
+  CitrixCloudConnector1WaitHandle:
+    Type: AWS::CloudFormation::WaitConditionHandle
+  CitrixCloudConnector1WaitCondition:
+    Type: AWS::CloudFormation::WaitCondition
+    DependsOn: CitrixCloudConnector1
+    Properties:
+      Handle: !Ref CitrixCloudConnector1WaitHandle
+      Timeout: '3600'
+  CitrixCloudConnector2WaitHandle:
+    Type: AWS::CloudFormation::WaitConditionHandle
+  CitrixCloudConnector2WaitCondition:
+    Type: AWS::CloudFormation::WaitCondition
+    DependsOn: CitrixCloudConnector2
+    Properties:
+      Handle: !Ref CitrixCloudConnector2WaitHandle
+      Timeout: '3600'
+  CitrixCloudConnectorRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Policies:
+      - PolicyDocument:
+          Version: 2012-10-17
+          Statement:
+          - Action:
+            - s3:GetObject
+            Resource: !Sub arn:aws:s3:::${QSS3BucketName}/${QSS3KeyPrefix}*
+            Effect: Allow
+        PolicyName: aws-quick-start-s3-policy
+      Path: /
+      AssumeRolePolicyDocument:
+        Statement:
+        - Action:
+          - sts:AssumeRole
+          Principal:
+            Service:
+            - ec2.amazonaws.com
+          Effect: Allow
+        Version: 2012-10-17
+  CitrixCloudConnectorProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+      - !Ref CitrixCloudConnectorRole
+      Path: /
+Outputs:
+  CitrixCloudConnector1InstanceID:
+    Description: Cloud Connector EC2 2 instance
+    Value: !Ref CitrixCloudConnector1
+  CitrixCloudConnector2InstanceID:
+    Description: Cloud Connector EC2 2 instance
+    Value: !Ref CitrixCloudConnector2
+  CitrixResourceLocation:
+    Description: Citrix Cloud Resource Location
+    Value: !Sub ${CitrixResourceLocation}-${QSDeploymentID}
+  CitrixCloudConnector1HostName:
+    Value: !Sub ${CitrixCloudConnector1HostName}-${QSDeploymentID}
+  CitrixCloudConnector2HostName:
+    Value: !Sub ${CitrixCloudConnector2HostName}-${QSDeploymentID}
+...

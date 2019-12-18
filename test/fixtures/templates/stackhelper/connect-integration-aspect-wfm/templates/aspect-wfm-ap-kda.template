@@ -1,0 +1,579 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Aspect WFM Agent Productivity Report Generator integration for Amazon
+  Connect (qs-1ohjcidec)
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+    - Label:
+        default: Aspect WFM Configuration
+      Parameters:
+      - KdaApplicationName
+      - AspectApDataS3Prefix
+    - Label:
+        default: Amazon Connect Configuration
+      Parameters:
+      - ConnectS3Bucket
+      - ConnectS3Prefix
+      - AgentEventStreamArn
+    - Label:
+        default: AWS Quick Start configuration
+      Parameters:
+      - QSS3BucketName
+      - QSS3KeyPrefix
+    ParameterLabels:
+      KdaApplicationName:
+        default: Aspect Kinesis Application Name
+      AspectApDataS3Prefix:
+        default: Aspect WFM Report Prefix
+      ConnectS3Bucket:
+        default: Amazon Connect Exported Reports Bucket
+      ConnectS3Prefix:
+        default: Amazon Connect Exported Reports Prefix
+      AgentEventStreamArn:
+        default: Agent Event Kinesis Stream ARN
+      QSS3BucketName:
+        default: QuickStart S3 bucket name
+      QSS3KeyPrefix:
+        default: QuickStart S3 key prefix
+Parameters:
+  KdaApplicationName:
+    Type: String
+    Default: aspect-wfm-ap
+    AllowedPattern: ^[0-9a-zA-Z]+([0-9a-zA-Z-.]*[0-9a-zA-Z])*$
+    Description: Enter the name of the Kinesis Data Analytics application to create.  This
+      string can include numbers, lowercase letters, uppercase letters, and hyphens
+      (-). It cannot start or end with a hyphen (-).  If you have multiple Amazon
+      Connect instances in your AWS account, you will need to create a Kinesis Data
+      Analytics application for each Amazon Connect instance and give each application
+      a unique name.  The Kinesis Firehose Data Delivery stream that writes agent
+      status reports to S3 is named based on the application name.  The name of the
+      Firehose stream determines the filenames of agent productivity report files
+      written to S3.  By default, WFM Adapter expects the report files to be named
+      based on an application name of "aspect-wfm-ap". If you specify a different
+      application name, be sure to update the WFM Adapter configuration for the corresponding
+      data source to match your application name, in the Firehose Report Mapping data
+      source parameter.  Consult the WFM Adapter help for more information.
+  AspectApDataS3Prefix:
+    Type: String
+    Default: OUTPUT/
+    Description: Enter the prefix for Aspect WFM Agent Productivity reports written
+      to S3.  You should configure the corresponding WFM Adapter data source to match
+      this value, in the Firehose Report Root Path data source parameter.
+  ConnectS3Bucket:
+    Type: String
+    Description: Enter the name of the Exported reports S3 bucket of your Amazon Connect
+      instance.
+  ConnectS3Prefix:
+    Type: String
+    Default: connect/directory/Reports/Aspect/
+    Description: Enter the prefix under which the exported reports read by WFM Adapter
+      will be exported, in the Exported reports bucket of your Amazon Connect instance.
+  AgentEventStreamArn:
+    Type: String
+    Description: Enter the Amazon Resource Name (ARN) of the Amazon Kinesis Data Stream 
+      to which Amazon Connect delivers Agent Events.
+  QSS3BucketName:
+    AllowedPattern: ^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$
+    ConstraintDescription: Quick Start bucket name can include numbers, lowercase
+      letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen
+      (-).
+    Default: aws-quickstart
+    Description: S3 bucket name for the Quick Start assets. This string can include
+      numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start
+      or end with a hyphen (-).
+    Type: String
+  QSS3KeyPrefix:
+    AllowedPattern: ^[0-9a-zA-Z-/]*$
+    ConstraintDescription: Quick Start key prefix can include numbers, lowercase letters,
+      uppercase letters, hyphens (-), and forward slash (/).
+    Default: connect-integration-aspect-wfm/
+    Description: S3 key prefix for the Quick Start assets. Quick Start key prefix
+      can include numbers, lowercase letters, uppercase letters, hyphens (-), and
+      forward slash (/).
+    Type: String
+Rules:
+  ParameterDefaults:
+    Assertions:
+    - Assert:
+        Fn::Not:
+        - Fn::Equals:
+          - Ref: ConnectS3Prefix
+          - connect/directory/Reports/Aspect/
+      AssertDescription: Replace directory with the directory name of your Amazon
+        Connect instance.
+Resources:
+  S3Bucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+  LambdaZipsBucket:
+    Type: AWS::S3::Bucket
+  CopyZips:
+    Type: Custom::CopyZips
+    Properties:
+      ServiceToken: !GetAtt 'CopyZipsFunction.Arn'
+      DestBucket: !Ref 'LambdaZipsBucket'
+      SourceBucket: !Ref 'QSS3BucketName'
+      Prefix: !Ref 'QSS3KeyPrefix'
+      Objects:
+        - functions/packages/agent-productivity/lambda.zip
+  CopyZipsRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Path: /
+      Policies:
+        - PolicyName: lambda-copier
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                Resource:
+                  - !Sub 'arn:aws:s3:::${QSS3BucketName}/${QSS3KeyPrefix}*'
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:DeleteObject
+                Resource:
+                  - !Sub 'arn:aws:s3:::${LambdaZipsBucket}/${QSS3KeyPrefix}*'
+  CopyZipsFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Description: Copies objects from a source S3 bucket to a destination
+      Handler: index.handler
+      Runtime: python2.7
+      Role: !GetAtt 'CopyZipsRole.Arn'
+      Timeout: 240
+      Code:
+        ZipFile: |
+          import json
+          import logging
+          import threading
+          import boto3
+          import cfnresponse
+          def copy_objects(source_bucket, dest_bucket, prefix, objects):
+              s3 = boto3.client('s3')
+              for o in objects:
+                  key = prefix + o
+                  copy_source = {
+                      'Bucket': source_bucket,
+                      'Key': key
+                  }
+                  print('copy_source: %s' % copy_source)
+                  print('dest_bucket = %s'%dest_bucket)
+                  print('key = %s' %key)
+                  s3.copy_object(CopySource=copy_source, Bucket=dest_bucket,
+                        Key=key)
+          def delete_objects(bucket, prefix, objects):
+              s3 = boto3.client('s3')
+              objects = {'Objects': [{'Key': prefix + o} for o in objects]}
+              s3.delete_objects(Bucket=bucket, Delete=objects)
+          def timeout(event, context):
+              logging.error('Execution is about to time out, sending failure response to CloudFormation')
+              cfnresponse.send(event, context, cfnresponse.FAILED, {}, None)
+          def handler(event, context):
+              # make sure we send a failure to CloudFormation if the function
+              # is going to timeout
+              timer = threading.Timer((context.get_remaining_time_in_millis()
+                        / 1000.00) - 0.5, timeout, args=[event, context])
+              timer.start()
+              print('Received event: %s' % json.dumps(event))
+              status = cfnresponse.SUCCESS
+              try:
+                  source_bucket = event['ResourceProperties']['SourceBucket']
+                  dest_bucket = event['ResourceProperties']['DestBucket']
+                  prefix = event['ResourceProperties']['Prefix']
+                  objects = event['ResourceProperties']['Objects']
+                  if event['RequestType'] == 'Delete':
+                      delete_objects(dest_bucket, prefix, objects)
+                  else:
+                      copy_objects(source_bucket, dest_bucket, prefix, objects)
+              except Exception as e:
+                  logging.error('Exception: %s' % e, exc_info=True)
+                  status = cfnresponse.FAILED
+              finally:
+                  timer.cancel()
+                  cfnresponse.send(event, context, status, {}, None)
+  KinesisDataAnalyticsApplication:
+    Type: AWS::KinesisAnalytics::Application
+    Properties:
+      ApplicationName: !Sub ${KdaApplicationName}
+      ApplicationDescription: "Aspect WFM Agent Productivity Report Generator"
+      ApplicationCode: "CREATE OR REPLACE STREAM \"DESTINATION_SQL_STREAM\"\n  (\"\
+        AWSAccountId\" char(12),\n  \"Username\" varchar(256),\n  \"AHGLevel1\" varchar(256),\n\
+        \  \"AHGLevel2\" varchar(256),\n  \"AHGLevel3\" varchar(256),\n  \"AHGLevel4\"\
+        \ varchar(256),\n  \"AHGLevel5\" varchar(256),\n  \"EventTimestamp\" timestamp,\n\
+        \  \"StateName\" varchar(256),\n  \"ContactState\" varchar(256),\n  \"StateType\"\
+        \ char(1));\n\nCREATE OR REPLACE STREAM \"TEMP_SQL_STREAM\"\n  (\"AWSAccountId\"\
+        \ char(12),\n  \"Username\" varchar(256),\n  \"AHGLevel1\" varchar(256),\n\
+        \  \"AHGLevel2\" varchar(256),\n  \"AHGLevel3\" varchar(256),\n  \"AHGLevel4\"\
+        \ varchar(256),\n  \"AHGLevel5\" varchar(256),\n  \"EventTimestamp\" timestamp,\n\
+        \  \"StateName\" varchar(256),\n  \"ContactState\" varchar(256),\n  \"StateType\"\
+        \ char(1));\n\nCREATE OR REPLACE PUMP \"TEMP_PUMP\" AS\n   INSERT INTO TEMP_SQL_STREAM\n\
+        \       SELECT STREAM a.\"AWSAccountId\", a.\"casUsername\", a.\"casAhgL1Name\"\
+        , a.\"casAhgL2Name\", a.\"casAhgL3Name\", a.\"casAhgL4Name\", a.\"casAhgL5Name\"\
+        , a.\"EventTimestamp\", a.\"casStateName\", a.\"casContactState\", b.\"StateType\"\
+        \n       FROM SOURCE_SQL_STREAM_001 AS a\n       LEFT OUTER JOIN AGENT_STATUS_INFO\
+        \ AS b\n       ON a.\"casStateName\" = b.\"StateName\"\n       WHERE a.\"\
+        casUsername\" IS NOT NULL;\n\nCREATE OR REPLACE PUMP \"STREAM_PUMP\" AS\n\
+        \   INSERT INTO DESTINATION_SQL_STREAM\n      SELECT STREAM \"AWSAccountId\"\
+        , \"Username\", \"AHGLevel1\", \"AHGLevel2\", \"AHGLevel3\", \"AHGLevel4\"\
+        , \"AHGLevel5\", \"EventTimestamp\", \"StateName\", \"ContactState\", COALESCE(\"\
+        StateType\", '1')\n      FROM TEMP_SQL_STREAM\n      WINDOW W1 AS (PARTITION\
+        \ BY \"AWSAccountId\" RANGE INTERVAL '15' MINUTE PRECEDING);    \n"
+      Inputs:
+      - NamePrefix: "SOURCE_SQL_STREAM"
+        InputSchema:
+          RecordColumns:
+          - Name: "AWSAccountId"
+            SqlType: "CHAR(12)"
+            Mapping: "$.AWSAccountId"
+          - Name: "casStateName"
+            SqlType: "VARCHAR(256)"
+            Mapping: "$.CurrentAgentSnapshot.AgentStatus.Name"
+          - Name: "casAhgL1Name"
+            SqlType: "VARCHAR(256)"
+            Mapping: "$.CurrentAgentSnapshot.Configuration.AgentHierarchyGroups.Level1.Name"
+          - Name: "casAhgL2Name"
+            SqlType: "VARCHAR(256)"
+            Mapping: "$.CurrentAgentSnapshot.Configuration.AgentHierarchyGroups.Level2.Name"
+          - Name: "casAhgL3Name"
+            SqlType: "VARCHAR(256)"
+            Mapping: "$.CurrentAgentSnapshot.Configuration.AgentHierarchyGroups.Level3.Name"
+          - Name: "casAhgL4Name"
+            SqlType: "VARCHAR(256)"
+            Mapping: "$.CurrentAgentSnapshot.Configuration.AgentHierarchyGroups.Level4.Name"
+          - Name: "casAhgL5Name"
+            SqlType: "VARCHAR(256)"
+            Mapping: "$.CurrentAgentSnapshot.Configuration.AgentHierarchyGroups.Level5.Name"
+          - Name: "casUsername"
+            SqlType: "VARCHAR(256)"
+            Mapping: "$.CurrentAgentSnapshot.Configuration.Username"
+          - Name: "casContactState"
+            SqlType: "VARCHAR(256)"
+            Mapping: "$.CurrentAgentSnapshot.Contacts[0:].State"
+          - Name: "EventTimestamp"
+            SqlType: "TIMESTAMP"
+            Mapping: "$.EventTimestamp"
+          - Name: "EventType"
+            SqlType: "VARCHAR(64)"
+            Mapping: "$.EventType"
+          - Name: "Version"
+            SqlType: "VARCHAR(10)"
+            Mapping: "$.Version"
+          RecordFormat:
+            RecordFormatType: "JSON"
+            MappingParameters:
+              JSONMappingParameters:
+                RecordRowPath: "$"
+        KinesisStreamsInput:
+          ResourceARN: !Ref AgentEventStreamArn
+          RoleARN: !GetAtt KinesisAnalyticsAppRole.Arn
+  KinesisAnalyticsS3Role:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service: kinesisanalytics.amazonaws.com
+          Action: sts:AssumeRole
+      Path: /
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess
+  KinesisAnalyticsAppRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service: kinesisanalytics.amazonaws.com
+          Action: sts:AssumeRole
+      Path: /service-role/
+      Policies:
+      - PolicyName: ReadInputKinesis
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - kinesis:DescribeStream
+            - kinesis:GetShardIterator
+            - kinesis:GetRecords
+            Resource:
+            - Ref: AgentEventStreamArn
+          - Effect: Allow
+            Action:
+            - kinesis:ListStreams
+            Resource: '*'
+      - PolicyName: ReadInputS3
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - s3:GetObject
+            Resource:
+            - Fn::GetAtt: S3Bucket.Arn
+            - Fn::Sub: ${S3Bucket.Arn}/*
+      - PolicyName: WriteOutputFirehose
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - firehose:DescribeDeliveryStream
+            - firehose:PutRecord
+            - firehose:PutRecordBatch
+            Resource:
+            - Fn::Sub: arn:aws:firehose:${AWS::Region}:${AWS::AccountId}:deliverystream/${OutputKinesisFirehose}
+  FirehoseRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          Effect: Allow
+          Principal:
+            Service:
+            - firehose.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Path: /
+    DependsOn: S3Bucket
+  FirehoseGluePolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: glue
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Action:
+          - glue:GetTableVersions
+          Resource:
+          - '*'
+      Roles:
+      - Ref: FirehoseRole
+  FirehoseS3Policy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: s3
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Action:
+          - s3:AbortMultipartUpload
+          - s3:GetBucketLocation
+          - s3:GetObject
+          - s3:ListBucket
+          - s3:ListBucketMultipartUploads
+          - s3:PutObject
+          Resource:
+          - Fn::Sub: arn:aws:s3:::${S3Bucket}
+          - Fn::Sub: arn:aws:s3:::${S3Bucket}/${AspectApDataS3Prefix}*
+      Roles:
+      - Ref: FirehoseRole
+  FirehoseLogsPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: logs
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Action:
+          - logs:PutLogEvents
+          - logs:CreateLogStream
+          Resource:
+          - Fn::Sub: arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/kinesisfirehose/${OutputKinesisFirehose}:log-stream:*
+      Roles:
+      - Ref: FirehoseRole
+  KinesisDataAnalyticsApplicationOutputs:
+    Type: AWS::KinesisAnalytics::ApplicationOutput
+    DependsOn: KinesisDataAnalyticsApplication
+    Properties:
+      ApplicationName: !Ref KinesisDataAnalyticsApplication
+      Output:
+        Name: 'DESTINATION_SQL_STREAM'
+        DestinationSchema:
+          RecordFormatType: 'CSV'
+        KinesisFirehoseOutput:
+          ResourceARN: !GetAtt OutputKinesisFirehose.Arn
+          RoleARN: !GetAtt KinesisAnalyticsAppRole.Arn
+  OutputKinesisFirehose:
+    Type: AWS::KinesisFirehose::DeliveryStream
+    Properties:
+      DeliveryStreamName:
+        Fn::Sub: ${KdaApplicationName}-kda-to-s3
+      DeliveryStreamType: DirectPut
+      S3DestinationConfiguration:
+        BucketARN:
+          Fn::GetAtt: S3Bucket.Arn
+        BufferingHints:
+          IntervalInSeconds: 300
+          SizeInMBs: 5
+        CompressionFormat: UNCOMPRESSED
+        Prefix:
+          Fn::Sub: ${AspectApDataS3Prefix}
+        RoleARN:
+          Fn::GetAtt: FirehoseRole.Arn
+  ApplicationReferenceDataSource:
+    Type: AWS::KinesisAnalytics::ApplicationReferenceDataSource
+    DependsOn: KinesisDataAnalyticsApplicationOutputs
+    Properties:
+      ApplicationName: !Ref KinesisDataAnalyticsApplication
+      ReferenceDataSource:
+        TableName: "AGENT_STATUS_INFO"
+        ReferenceSchema:
+          RecordColumns:
+          - Name: "StateName"
+            SqlType: "VARCHAR(128)"
+          - Name: "StateType"
+            SqlType: "CHAR(1)"
+          RecordFormat:
+            RecordFormatType: "CSV"
+            MappingParameters:
+              CSVMappingParameters:
+                RecordColumnDelimiter: ','
+                RecordRowDelimiter: '
+
+                  '
+        S3ReferenceDataSource:
+          BucketARN:
+            Fn::GetAtt: S3Bucket.Arn
+          FileKey: ASPECT_AGENT_STATUS_INFO.csv
+          ReferenceRoleARN:
+            Fn::GetAtt: KinesisAnalyticsS3Role.Arn
+  LambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service: lambda.amazonaws.com
+          Action: sts:AssumeRole
+      Path: /
+      Policies:
+      - PolicyName: CreateLogs
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - logs:CreateLogGroup
+            - logs:CreateLogStream
+            - logs:PutLogEvents
+            Resource: arn:aws:logs:*:*:*
+      - PolicyName: CheckKdaStatus
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - kinesisanalytics:DescribeApplication
+            Resource:
+            - Fn::Sub: arn:aws:kinesisanalytics:${AWS::Region}:${AWS::AccountId}:application/${KdaApplicationName}
+      - PolicyName: WriteToFirehose
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - firehose:PutRecord
+            Resource:
+            - Fn::GetAtt: OutputKinesisFirehose.Arn
+  FirehoseUpdateLambda:
+    Type: AWS::Lambda::Function
+    DependsOn:
+    - KinesisDataAnalyticsApplication
+    - OutputKinesisFirehose
+    - CopyZips
+    Properties:
+      FunctionName:
+        Fn::Sub: ${KdaApplicationName}-lambda
+      Description: Periodically write to Agent Productivity firehose stream to ensure
+        that files are created
+      Code:
+        S3Bucket: !Ref 'LambdaZipsBucket'
+        S3Key: !Sub '${QSS3KeyPrefix}functions/packages/agent-productivity/lambda.zip'
+      Environment:
+        Variables:
+          firehose_stream_name:
+            Ref: OutputKinesisFirehose
+          kda_application_name:
+            Ref: KinesisDataAnalyticsApplication
+      Handler: update.lambda_handler
+      Runtime: python3.6
+      Role:
+        Fn::GetAtt: LambdaRole.Arn
+  LambdaVersion:
+    Type: AWS::Lambda::Version
+    Properties:
+      FunctionName:
+        Ref: FirehoseUpdateLambda
+      Description: Official version of Firehose Update Lambda
+  ScheduledEvent:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Call Agent Productivity Firehose update Lambda every 5 minutes
+      ScheduleExpression: rate(5 minutes)
+      State: ENABLED
+      Targets:
+      - Arn:
+          Fn::GetAtt: FirehoseUpdateLambda.Arn
+        Id:
+          Fn::GetAtt: LambdaVersion.Version
+  PermissionForEventsToInvokeLambda:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName:
+        Fn::GetAtt: FirehoseUpdateLambda.Arn
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn:
+        Fn::GetAtt: ScheduledEvent.Arn
+  WFMAdapterUser:
+    Type: AWS::IAM::User
+    Properties:
+      Path: /
+      UserName:
+        Fn::Sub: WFMAdapter-${KdaApplicationName}
+      Policies:
+      - PolicyName: s3ReadOnlyAccess
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - s3:GetObject
+            - s3:ListBucket
+            Resource:
+            - Fn::GetAtt: S3Bucket.Arn
+            - Fn::Sub: ${S3Bucket.Arn}/${AspectApDataS3Prefix}*
+            - Fn::Sub: arn:aws:s3:::${ConnectS3Bucket}
+            - Fn::Sub: arn:aws:s3:::${ConnectS3Bucket}/${ConnectS3Prefix}*
+Outputs:
+  APS3BucketName:
+    Value: !Ref S3Bucket
+  ApplicationPhysicalResourceId:
+    Value: !Ref KinesisDataAnalyticsApplication
+  WFMAdapterUserName:
+    Value: !Ref WFMAdapterUser
+...

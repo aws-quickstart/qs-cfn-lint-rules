@@ -1,0 +1,156 @@
+Description: >
+    Sophos Outbound Proxy Stack - **WARNING** Launches a bastion host EC2 instance for remote access and a testing EC2 instance in a private subnet for testing outbound proxy functionality.
+    You will be billed for the AWS resources used if you create a stack from this template. **NOTICE** Copyright 2017 Amazon.com, Inc. or its affiliates.
+    All Rights Reserved. Licensed under the Apache License, Version 2.0 (the "License"). You may not use this file except in compliance with the License.
+    A copy of the License is located at http://www.apache.org/licenses/LICENSE-2.0 or in the "license" file accompanying this file.
+    This file is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License.
+    Setup for tester EC2 instances to verify Sophos outbound proxy is working.
+
+Parameters:
+
+    EnvironmentName:
+      Description: An environment name that will be prefixed to resource names
+      Type: String
+
+    ApplicationVPC:
+      Description: Reference to Application VPC, security group rules will need this reference
+      Type: String
+
+    PublicSubnet:
+      Description: bastion host will be launched in a public subnet
+      Type: String
+
+    PrivateSubnet:
+      Description: sample EC2 instance will be launched in a private subnet in an ApplicationVPC
+      Type: String
+
+    TrustedNetwork:
+      Description: Bastion host acess is allowed from this IP range
+      Type: String
+
+    KeyName:
+      Description: Key pair for SSH access to EC2 instances
+      Type: String
+
+    BastionInstanceSize:
+      Description: Size of instance used for bastion host
+      Type: String
+      Default: t2.micro
+
+    TesterInstanceSize:
+      Description: Size of instance used for bastion host
+      Type: String
+      Default: t2.micro
+
+    AmazonLinuxAMI:
+      Description: Image Id for Amazon Linux in this region
+      Type: String
+
+
+Resources:
+
+  # IAM role enables tester EC2 instance to list all S3 buckets
+  # this permission is used to test access to AWS APIs
+  TesterRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - ec2.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Path: /
+      Policies:
+      - PolicyName: TesterPolicy
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - s3:ListAllMyBuckets
+            Resource: 'arn:aws:s3:::*'
+          - Effect: Allow
+            Action:
+            - s3:ListBucket
+            - s3:ListObjects
+            - s3:GetObject
+            Resource:
+              - 'arn:aws:s3:::landsat-pds'
+              - 'arn:aws:s3:::landsat-pds/*'
+  TesterInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: /
+      Roles:
+      - !Ref TesterRole
+
+  BastionSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Workers security group
+      VpcId: !Ref ApplicationVPC
+      SecurityGroupIngress:
+        # SSH 22: remote access to the bastion host
+        - IpProtocol: tcp
+          FromPort: '22'
+          ToPort: '22'
+          CidrIp: !Ref TrustedNetwork
+
+  TesterSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Workers security group
+      VpcId: !Ref ApplicationVPC
+      SecurityGroupIngress:
+        # SSH 22: access from the bastion host
+        - IpProtocol: tcp
+          FromPort: '22'
+          ToPort: '22'
+          SourceSecurityGroupId:  !Ref BastionSecurityGroup
+
+  BastionHost:
+    Type: AWS::EC2::Instance
+    Properties:
+      Tags:
+      - Key: Name
+        Value: !Sub ${EnvironmentName}-BastionHost
+      ImageId: !Ref AmazonLinuxAMI
+      KeyName: !Ref KeyName
+      InstanceType: !Ref BastionInstanceSize
+      NetworkInterfaces:
+      - AssociatePublicIpAddress: 'true'
+        DeviceIndex: '0'
+        GroupSet:
+        - !Ref BastionSecurityGroup
+        SubnetId: !Ref PublicSubnet
+
+  TesterHost:
+    Type: AWS::EC2::Instance
+    Properties:
+      Tags:
+      - Key: Name
+        Value: !Sub ${EnvironmentName}-TesterHost
+      ImageId: !Ref AmazonLinuxAMI
+      KeyName: !Ref KeyName
+      InstanceType: !Ref TesterInstanceSize
+      IamInstanceProfile: !Ref TesterInstanceProfile
+      NetworkInterfaces:
+      - AssociatePublicIpAddress: 'false'
+        DeviceIndex: '0'
+        GroupSet:
+        - !Ref TesterSecurityGroup
+        SubnetId: !Ref PrivateSubnet
+
+Outputs:
+
+  BastionHostIP:
+    Value: !GetAtt BastionHost.PublicIp
+    Description: Public IP of the bastion host EC2 instance
+
+  TesterHostIP:
+    Value: !GetAtt TesterHost.PrivateIp
+    Description: Private IP of the tester host EC2 instance

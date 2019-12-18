@@ -178,7 +178,6 @@ def evaluate_fn_ref(expression):
 
 def find_in_map_lookup(mappings_map, first_key, final_key):
     global mappings
-
     step1 = mappings[mappings_map.strip("'")]
     step2 = step1[first_key.strip("'")]
     result = step2[final_key.strip("'")]
@@ -224,7 +223,7 @@ def evaluate_expression_controller(expression):
     elif "Fn::FindInMap" in expression:
         results = evaluate_fn_findinmap(expression)
 
-    elif "Fn::GettAtt" in expression:
+    elif "Fn::GetAtt" in expression:
         results = evaluate_fn_getatt(expression)
 
     elif "Fn::Split" in expression:
@@ -295,30 +294,24 @@ def _flatten_template_controller(template_url):
 def flatten_template_url(template_url):
     """Flatten template_url and return all permutations"""
     path_list = []
-    url_list = []
-    # print("TemplateURL: {}".format(template_url))
-    try:
-        url_list = _flatten_template_controller(template_url)
-    except Exception as e:
-        print("Error extracting TemplateURL: {}".format(template_url))
-        print(str(e))
 
-    # print(url_list)
+    url_list = _flatten_template_controller(template_url)
+
     # Extract the path portion from the URL
     for url in url_list:
-        # print("url: {}".format(str(url)))
         # TODO: figure where the ' is coming from
         o = urlparse(str(url.strip("'")))
         path_list.append(o.path)
 
+    path_list = list(dict.fromkeys(path_list))
     return path_list
 
 
-def remove_one_level(pathstring):
-    result = pathstring
+def remove_one_level(path_string):
+    result = path_string
 
     result = result.find("/", 0)
-    result = pathstring[result+1:len(pathstring)]
+    result = path_string[result+1:len(path_string)]
 
     return result
 
@@ -343,7 +336,7 @@ def find_local_child_template(parent_template_path, child_template_path):
             )
         )
         if final_template_path.exists() and final_template_path.is_file():
-            return final_template_path
+            return str(final_template_path)
 
     # Take the path piece by piece and try in one folder up folder
     project_root = Path(
@@ -362,7 +355,7 @@ def find_local_child_template(parent_template_path, child_template_path):
             )
         )
         if final_template_path.exists() and final_template_path.is_file():
-            return final_template_path
+            return str(final_template_path)
 
     message = "Failed to discover local path for %s."
     raise Exception(message % child_template_path)

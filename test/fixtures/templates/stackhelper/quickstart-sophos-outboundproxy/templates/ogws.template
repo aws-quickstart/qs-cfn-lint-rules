@@ -1,0 +1,357 @@
+Description: >
+    Sophos Outbound Proxy Stack - **WARNING** Setup for Sophos Outbound Gateways (OGWs).
+    This template configures IAM roles, security groups, automated recovery and restart for two OGWs.
+    You will be billed for the AWS resources used if you create a stack from this template. **NOTICE** Copyright 2017 Amazon.com, Inc. or its affiliates.
+    All Rights Reserved. Licensed under the Apache License, Version 2.0 (the "License"). You may not use this file except in compliance with the License.
+    A copy of the License is located at http://www.apache.org/licenses/LICENSE-2.0 or in the "license" file accompanying this file.
+    This file is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License.
+
+Parameters:
+
+    EnvironmentName:
+      Description: An environment name that will be prefixed to resource names
+      Type: String
+
+    ApplicationVPC:
+      Description: Reference to Application VPC
+      Type: String
+
+    ApplicationVPCRange:
+      Description: Application VPC IP range
+      Type: String
+
+    PrivateRouteTable1:
+      Description: private subnet route table to be pointed to OGW1
+      Type: String
+
+    PublicSubnet1:
+      Description: OGW1 will be launched in this subnet
+      Type: String
+
+    PrivateRouteTable2:
+      Description: private subnet route table to be pointed to OGW2
+      Type: String
+
+    PublicSubnet2:
+      Description: OGW2 will be launched in this subnet
+      Type: String
+
+    TrustedNetwork:
+      Description: Remote management is allowed from this IP range
+      Type: String
+
+    SwarmSecurityGroup:
+      Description: workers security group in Proxy VPC
+      Type: String
+
+    QueenSecurityGroup:
+      Description: Sophos UTM security group in Proxy VPC
+      Type: String
+
+    KeyName:
+      Description: Key pair for SSH access to OGW instances
+      Type: String
+
+    OGWInstanceSize:
+      Description: Size of instance used for outbound gateway
+      Type: String
+
+    AuthToken:
+      Description: AuthToken for API access. A shared secret for API communication between Outbound Gateways and Swarm UTMs.
+      Type: String
+
+    OGWAMI:
+      Description: Image Id for OGW in this region
+      Type: String
+
+    ARN:
+      Description: ARN constructor value in this region, either 'aws' or 'aws-us-gov'
+      Type: String
+
+Resources:
+
+  InstanceIAM:
+    Type: AWS::IAM::InstanceProfile
+    DependsOn:
+    - InstanceIAMRole
+    Properties:
+      Path: /
+      Roles:
+      - !Ref 'InstanceIAMRole'
+
+  InstanceIAMRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - ec2.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Path: /
+      Policies:
+      - PolicyName: Allow-Describe-EC2-And-ReplaceRoute
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - ec2:DescribeRouteTables
+            - ec2:DescribeSubnets
+            - ec2:ReplaceRoute
+            Resource: '*'
+
+  OGWSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: OGW Security Group
+      VpcId: !Ref ApplicationVPC
+      SecurityGroupIngress:
+      # http from any EC2 instance to OGWs; for proxy function
+      - IpProtocol: tcp
+        FromPort: '80'
+        ToPort: '80'
+        CidrIp: !Ref ApplicationVPCRange
+      # https from any EC2 instance to OGWs; for proxy function
+      - IpProtocol: tcp
+        FromPort: '443'
+        ToPort: '443'
+        CidrIp: !Ref ApplicationVPCRange
+      # ping/icmp from any EC2 instance to OGWs; for troubleshooting
+      - IpProtocol: icmp
+        FromPort: '-1'
+        ToPort: '-1'
+        CidrIp: !Ref ApplicationVPCRange
+      # SSH from management network to OGWs; remote management
+      - IpProtocol: tcp
+        FromPort: '22'
+        ToPort: '22'
+        CidrIp: !Ref TrustedNetwork
+      # TCP 5555: from Workers to OGW instances; OGW stats
+      - IpProtocol: tcp
+        FromPort: '5555'
+        ToPort: '5555'
+        SourceSecurityGroupId:  !Ref SwarmSecurityGroup
+      # GRE Proto from workers: from Workers to OGW instances; tunnel
+      - IpProtocol: 47
+        SourceSecurityGroupId:  !Ref SwarmSecurityGroup
+      # TCP 5555: from Queen to OGW instances; OGW stats
+      - IpProtocol: tcp
+        FromPort: '5555'
+        ToPort: '5555'
+        SourceSecurityGroupId:  !Ref QueenSecurityGroup
+      Tags:
+      - Key: Name
+        Value: !Sub ${EnvironmentName}-OGWs-SecurityGroup
+
+  OGW1:
+    Type: AWS::EC2::Instance
+    Properties:
+      Tags:
+      - Key: Name
+        Value: !Sub ${EnvironmentName}-OGW1
+      ImageId: !Ref OGWAMI
+      InstanceType: !Ref OGWInstanceSize
+      NetworkInterfaces:
+      - AssociatePublicIpAddress: 'true'
+        DeviceIndex: '0'
+        GroupSet:
+        - !Ref OGWSecurityGroup
+        SubnetId: !Ref PublicSubnet1
+      SourceDestCheck: 'false'
+      IamInstanceProfile: !Ref InstanceIAM
+      KeyName: !Ref KeyName
+      BlockDeviceMappings:
+      - DeviceName: /dev/xvda
+        Ebs:
+          VolumeSize: '100'
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          date +'UserData start %c' > /tmp/user_data.log
+          /opt/aws/bin/cfn-init -s ${AWS::StackId} -r OGW1 --region ${AWS::Region} -c InitEGW >> /tmp/user_data.log 2>&1
+          initctl start egw >> /tmp/user_data.log 2>&1
+          /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource OGW1  --region ${AWS::Region}
+          echo export AWS_DEFAULT_REGION=${AWS::Region} > /etc/profile.d/aws-egw.sh
+          echo export AWS_INSTANCE_ID=`/opt/aws/bin/ec2-metadata --instance-id | cut -d ' ' -f 2` >> /etc/profile.d/aws-egw.sh 2>> /tmp/user_data.log
+          date +'UserData end %c' >> /tmp/user_data.log
+          exit 0
+    CreationPolicy:
+      ResourceSignal:
+        Count: '1'
+        Timeout: PT7M
+    Metadata:
+      AWS::CloudFormation::Init:
+        configSets:
+          InitEGW:
+          - InitEGW
+        InitEGW:
+          files:
+            /etc/egw.conf:
+              content: !Sub |
+                {
+                  "prefix": 240,
+                  "uid": 1,
+                  "rest_auth_token": "${AuthToken}"
+                }
+  OGW1AutoRecover:
+    Type: AWS::CloudWatch::Alarm
+    DependsOn:
+    - OGW1
+    Properties:
+      AlarmDescription: Recovering OGW1 when underlying hardware fails.
+      Namespace: AWS/EC2
+      MetricName: StatusCheckFailed_System
+      Statistic: Minimum
+      Period: '60'
+      EvaluationPeriods: '1'
+      ComparisonOperator: GreaterThanThreshold
+      Threshold: '0'
+      AlarmActions:
+      - !Sub 'arn:${ARN}:automate:${AWS::Region}:ec2:recover'
+      Dimensions:
+      - Name: InstanceId
+        Value: !Ref OGW1
+
+  OGW1Restart:
+    Type: AWS::CloudWatch::Alarm
+    DependsOn:
+    - OGW1
+    Properties:
+      AlarmDescription: Restarting OGW1 when it fails to respond.
+      Namespace: AWS/EC2
+      MetricName: StatusCheckFailed_Instance
+      Statistic: Minimum
+      Period: '60'
+      EvaluationPeriods: '1'
+      ComparisonOperator: GreaterThanThreshold
+      Threshold: '0'
+      AlarmActions:
+      - !Sub 'arn:${ARN}:swf:${AWS::Region}:${AWS::AccountId}:action/actions/AWS_EC2.InstanceId.Reboot/1.0'
+      Dimensions:
+      - Name: InstanceId
+        Value: !Ref OGW1
+
+  # routes all Internet-bound traffic throuh OGW
+  DefaultPrivateRouteToOGW1:
+    Type: AWS::EC2::Route
+    DependsOn: OGW1
+    Properties:
+        RouteTableId: !Ref PrivateRouteTable1
+        DestinationCidrBlock: 0.0.0.0/0
+        InstanceId: !Ref OGW1
+
+  OGW2:
+    Type: AWS::EC2::Instance
+    Properties:
+      Tags:
+      - Key: Name
+        Value: !Sub ${EnvironmentName}-OGW2
+      ImageId: !Ref OGWAMI
+      InstanceType: !Ref OGWInstanceSize
+      NetworkInterfaces:
+      - AssociatePublicIpAddress: 'true'
+        DeviceIndex: '0'
+        GroupSet:
+        - !Ref OGWSecurityGroup
+        SubnetId: !Ref PublicSubnet2
+      SourceDestCheck: 'false'
+      IamInstanceProfile: !Ref InstanceIAM
+      KeyName: !Ref KeyName
+      BlockDeviceMappings:
+      - DeviceName: /dev/xvda
+        Ebs:
+          VolumeSize: '100'
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          date +'UserData start %c' > /tmp/user_data.log
+          /opt/aws/bin/cfn-init -s ${AWS::StackId} -r OGW2 --region ${AWS::Region} -c InitEGW >> /tmp/user_data.log 2>&1
+          initctl start egw >> /tmp/user_data.log 2>&1
+          /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource OGW2  --region ${AWS::Region}
+          echo export AWS_DEFAULT_REGION=${AWS::Region} > /etc/profile.d/aws-egw.sh
+          echo export AWS_INSTANCE_ID=`/opt/aws/bin/ec2-metadata --instance-id | cut -d ' ' -f 2` >> /etc/profile.d/aws-egw.sh 2>> /tmp/user_data.log
+          date +'UserData end %c' >> /tmp/user_data.log
+          exit 0
+    CreationPolicy:
+      ResourceSignal:
+        Count: '1'
+        Timeout: PT7M
+    Metadata:
+      AWS::CloudFormation::Init:
+        configSets:
+          InitEGW:
+          - InitEGW
+        InitEGW:
+          files:
+            /etc/egw.conf:
+              content: !Sub |
+                {
+                  "prefix": 240,
+                  "uid": 2,
+                  "rest_auth_token": "${AuthToken}"
+                }
+  OGW2AutoRecover:
+    Type: AWS::CloudWatch::Alarm
+    DependsOn:
+    - OGW2
+    Properties:
+      AlarmDescription: Recovering OGW2 when underlying hardware fails.
+      Namespace: AWS/EC2
+      MetricName: StatusCheckFailed_System
+      Statistic: Minimum
+      Period: '60'
+      EvaluationPeriods: '1'
+      ComparisonOperator: GreaterThanThreshold
+      Threshold: '0'
+      AlarmActions:
+      - !Sub 'arn:${ARN}:automate:${AWS::Region}:ec2:recover'
+      Dimensions:
+      - Name: InstanceId
+        Value: !Ref OGW2
+
+  OGW2Restart:
+    Type: AWS::CloudWatch::Alarm
+    DependsOn:
+    - OGW2
+    Properties:
+      AlarmDescription: Restarting OGW2 when it fails to respond.
+      Namespace: AWS/EC2
+      MetricName: StatusCheckFailed_Instance
+      Statistic: Minimum
+      Period: '60'
+      EvaluationPeriods: '1'
+      ComparisonOperator: GreaterThanThreshold
+      Threshold: '0'
+      AlarmActions:
+      - !Sub 'arn:${ARN}:swf:${AWS::Region}:${AWS::AccountId}:action/actions/AWS_EC2.InstanceId.Reboot/1.0'
+      Dimensions:
+      - Name: InstanceId
+        Value: !Ref OGW2
+
+  # routes all Internet-bound traffic throuh OGW
+  DefaultPrivateRouteToOGW2:
+    Type: AWS::EC2::Route
+    DependsOn: OGW2
+    Properties:
+        RouteTableId: !Ref PrivateRouteTable2
+        DestinationCidrBlock: 0.0.0.0/0
+        InstanceId: !Ref OGW2
+
+
+Outputs:
+
+  OGW1IP:
+    Value: !GetAtt OGW1.PrivateIp
+    Description: Private IP address of the OGW1 instance
+
+  OGW2IP:
+    Value: !GetAtt OGW2.PrivateIp
+    Description: Private IP address of the OGW2 instance
+
+  OGWSecurityGroup:
+    Value: !Ref OGWSecurityGroup
+    Description: Security Group for both OGW instances

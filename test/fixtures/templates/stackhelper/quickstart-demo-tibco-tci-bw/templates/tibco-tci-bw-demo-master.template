@@ -1,0 +1,349 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "TIBCO BW 2.4.2. This template builds a base TIBCO Cloud Integration - BusinessWorks docker image, creates an ECR repo with name 'tibco-tci-bw' and pushes base docker image into the ECR repo. It then deploys a VPC, with a pair of public and private subnets spread across two Availabilty Zones. It deploys an Internet Gateway, with a default route on the public subnets. It deploys a pair of NAT Gateways (one in each AZ), and default routes for them in the private subnets. It then deploys a highly available ECS cluster of EC2 instances (ECS Hosts) launched from the TIBCO Cloud Integration - BusinessWorks AMI in an AutoScaling Group,  with the EC2 instances distributed across multiple Availability Zones. This template also provides you an option to create an S3 bucket and folder structure inside the bucket required for base docker image customization. License: Apache 2.0 (Please do not remove) Apr,2,2018 (qs-1oalbg1k4)",
+    "Metadata": {
+        "AWS::CloudFormation::Interface": {
+            "ParameterGroups": [
+                {
+                    "Label": {
+                        "default": "TCI - BW Demo configuration"
+                    },
+                    "Parameters": [
+                        "AvailabilityZones",
+                        "AdminIngressLocation",
+                        "KeyName",
+                        "StudioPassword",
+                        "DBPassword"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "AWS Quickstart configuration"
+                    },
+                    "Parameters": [
+                        "QSS3BucketName",
+                        "QSS3KeyPrefix"
+                    ]
+                }
+            ],
+            "ParameterLabels": {
+                "AdminIngressLocation": {
+                    "default": "Admin ingress location"
+                },
+                "AvailabilityZones": {
+                    "default": "Availability Zones"
+                },
+                "KeyName": {
+                    "default": "Key pair name"
+                },
+                "QSS3BucketName": {
+                    "default": "Quick Start S3 bucket name"
+                },
+                "QSS3KeyPrefix": {
+                    "default": "Quick Start S3 key prefix"
+                },
+                "StudioPassword": {
+                    "default": "Studio password"
+                },
+                "DBPassword": {
+                    "default": "RDS password"
+                }
+            }
+        }
+    },
+    "Parameters": {
+        "AdminIngressLocation": {
+            "AllowedPattern": "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})",
+            "ConstraintDescription": "must be a valid IP CIDR range of the form x.x.x.x/x.",
+            "Description": "CIDR block (IP address range) to allow SSH and VNC access to your TCI-BW studio instance. Use 0.0.0.0/0 to allow access from all locations. You can always manually change this later if needed.",
+            "MaxLength": "18",
+            "MinLength": "9",
+            "Type": "String"
+        },
+        "AvailabilityZones": {
+            "Description": "List of Availability Zones to use for the subnets in the VPC. Note: The logical order is preserved. 2 AZs are used for this deployment.",
+            "Type": "List<AWS::EC2::AvailabilityZone::Name>"
+        },
+        "KeyName": {
+            "AllowedPattern": "[-_ a-zA-Z0-9]*",
+            "ConstraintDescription": "Must be the name of an existing key pair. It can contain only alphanumeric characters, spaces, dashes and underscores.",
+            "Description": "Select an existing key pair. You must provide existing key pair to be able to SSH into EC2 instances.",
+            "MaxLength": 64,
+            "MinLength": 1,
+            "Type": "AWS::EC2::KeyPair::KeyName"
+        },
+        "QSS3BucketName": {
+            "AllowedPattern": "^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$",
+            "ConstraintDescription": "Quick Start bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-).",
+            "Default": "aws-quickstart",
+            "Description": "S3 bucket name for the Quick Start assets. Quick Start bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-). Leave this as the default value if you are running the quickstart as is.",
+            "Type": "String"
+        },
+        "QSS3KeyPrefix": {
+            "AllowedPattern": "^[0-9a-zA-Z-/]*$",
+            "ConstraintDescription": "Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).",
+            "Default": "quickstart-demo-tibco-tci-bw/",
+            "Description": "S3 key prefix for the Quick Start assets. Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/). It cannot start or end with a hyphen (-). Leave this as the default value if you are running the quickstart as is.",
+            "Type": "String"
+        },
+        "StudioPassword": {
+            "ConstraintDescription": "This password needs to be set in order to access your TCI-BW studio instance. The max length of this password is 8 characters.",
+            "Description": "Password to access the TCI-BW studio via VNC.",
+            "MaxLength": 8,
+            "MinLength": 1,
+            "NoEcho": "true",
+            "Type": "String"
+        },
+        "DBPassword":{
+            "ConstraintDescription": "This password needs to be set for your RDS DB. The max length of this password is 12 characters, the min length is 8 characters",
+            "Description": "Password for the account and customer RDS instances.",
+            "MaxLength": 12,
+            "MinLength": 8,
+            "NoEcho": "true",
+            "Type": "String"
+        }
+    },
+    "Conditions": {
+        "GovCloudCondition": {
+            "Fn::Equals": [
+                {
+                    "Ref": "AWS::Region"
+                },
+                "us-gov-west-1"
+            ]
+        }
+    },
+    "Resources": {
+        "VPCStack": {
+            "Type": "AWS::CloudFormation::Stack",
+            "Properties": {
+                "TemplateURL": {
+                    "Fn::Sub": [
+                        "https://${QSS3BucketName}.${QSS3Region}.amazonaws.com/${QSS3KeyPrefix}submodules/quickstart-tibco-tci-bw/submodules/quickstart-aws-vpc/templates/aws-vpc.template",
+                        {
+                            "QSS3Region": {
+                                "Fn::If": [
+                                    "GovCloudCondition",
+                                    "s3-us-gov-west-1",
+                                    "s3"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                "Parameters": {
+                    "AvailabilityZones": {
+                        "Fn::Join": [
+                            ",",
+                            {
+                                "Ref": "AvailabilityZones"
+                            }
+                        ]
+                    },
+                    "NumberOfAZs": "2"
+                }
+            }
+        },
+        "BWCEStack": {
+            "Type": "AWS::CloudFormation::Stack",
+            "DependsOn": "VPCStack",
+            "Properties": {
+                "TemplateURL": {
+                    "Fn::Sub": [
+                        "https://${QSS3BucketName}.${QSS3Region}.amazonaws.com/${QSS3KeyPrefix}submodules/quickstart-tibco-tci-bw/templates/tibco-tci-bw.template",
+                        {
+                            "QSS3Region": {
+                                "Fn::If": [
+                                    "GovCloudCondition",
+                                    "s3-us-gov-west-1",
+                                    "s3"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                "Parameters": {
+                    "KeyName": {
+                        "Ref": "KeyName"
+                    },
+                    "PrivateSubnet1ID": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.PrivateSubnet1AID"
+                        ]
+                    },
+                    "PrivateSubnet2ID": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.PrivateSubnet2AID"
+                        ]
+                    },
+                    "PublicSubnet1ID": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.PublicSubnet1ID"
+                        ]
+                    },
+                    "PublicSubnet2ID": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.PublicSubnet2ID"
+                        ]
+                    },
+                    "VPCID": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.VPCID"
+                        ]
+                    },
+                    "AdminIngressLocation": {
+                        "Ref": "AdminIngressLocation"
+                    },
+                    "StudioPassword": {
+                        "Ref": "StudioPassword"
+                    },
+                    "PluginList": "DC"
+                }
+            }
+        },
+        "BWCEDemoStack": {
+            "Type": "AWS::CloudFormation::Stack",
+            "DependsOn": "BWCEStack",
+            "Properties": {
+                "TemplateURL": {
+                    "Fn::Sub": [
+                        "https://${QSS3BucketName}.${QSS3Region}.amazonaws.com/${QSS3KeyPrefix}templates/tibco-tci-bw-demo.template",
+                        {
+                            "QSS3Region": {
+                                "Fn::If": [
+                                    "GovCloudCondition",
+                                    "s3-us-gov-west-1",
+                                    "s3"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                "Parameters": {
+                    "AdminIngressLocation": {
+                        "Ref": "AdminIngressLocation"
+                    },
+                    "PublicSubnet1ID": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.PublicSubnet1ID"
+                        ]
+                    },
+                    "PublicSubnet2ID": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.PublicSubnet2ID"
+                        ]
+                    },
+                    "VPCID": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.VPCID"
+                        ]
+                    },
+                    "DBPassword": {
+                        "Ref": "DBPassword"
+                    },
+                    "CIDRBlockCluster": "10.0.0.0/16",
+                    "LoadBalancer": {
+                        "Fn::GetAtt": [
+                            "BWCEStack",
+                            "Outputs.LoadBalancerARN"
+                        ]
+                    },
+                    "ECSCluster": {
+                        "Fn::GetAtt": [
+                            "BWCEStack",
+                            "Outputs.ECSClusterName"
+                        ]
+                    },
+                    "ECSHostSecurityGroup": {
+                        "Fn::GetAtt": [
+                            "BWCEStack",
+                            "Outputs.ECSHostSecurityGroup"
+                        ]
+                    },
+                    "LoadBalancerSecurityGroup": {
+                        "Fn::GetAtt": [
+                            "BWCEStack",
+                            "Outputs.LoadBalancerSecurityGroup"
+                        ]
+                    },
+                    "NAT1EIP": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.NAT1EIP"
+                        ]
+                    },
+                    "NAT2EIP": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.NAT2EIP"
+                        ]
+                    }
+                }
+            }
+        }
+    },
+    "Outputs": {
+        "LoadBalancerDNS": {
+            "Value": { "Fn::GetAtt": ["BWCEStack", "Outputs.LoadBalancer"] },
+            "Description": "Load Balancer DNS"
+        },
+        "ConsulServiceUrl": {
+            "Value": {
+                "Fn::Sub": [
+                    "http://${ALB_DNS}:8500/ui",
+                    {
+                        "ALB_DNS":  { "Fn::GetAtt": ["BWCEStack", "Outputs.LoadBalancer"] }
+                    }
+                ]
+            },
+            "Description": "Consul service url"
+        },
+        "OpenTracingUrl": {
+            "Value": {
+                "Fn::Sub": [
+                    "http://${ALB_DNS}:16686",
+                    {
+                        "ALB_DNS":  { "Fn::GetAtt": ["BWCEStack", "Outputs.LoadBalancer"] }
+                    }
+                ]
+            },
+            "Description": "Jaeger open-tracing url"
+        },
+        "StudioEC2Instance": {
+            "Value": { "Fn::GetAtt": ["BWCEStack", "Outputs.StudioEC2Instance"] },
+            "Description": "IP address of the TCIBW Studio Instance"
+        },
+        "AWSAccountId": {
+            "Value": { "Ref": "AWS::AccountId" },
+            "Description": "AWS Account ID"
+        },
+        "DeployRegion": {
+            "Value": { "Ref": "AWS::Region" },
+            "Description": "AWS Region"
+        },
+        "EcrRepository": {
+            "Value": { "Fn::GetAtt": ["BWCEStack", "Outputs.TCIBWEcrRepository"] },
+            "Description": "DB user name"
+        },
+        "AccountDBUrl": {
+            "Value": { "Fn::GetAtt": ["BWCEDemoStack", "Outputs.AccountDBUrl"] },
+            "Description": "Account DB Url"
+        },
+        "CustomerDBUrl": {
+            "Value": { "Fn::GetAtt": ["BWCEDemoStack", "Outputs.CustomerDBUrl"] },
+            "Description": "Customer DB Url"
+        },
+        "DBUserName": {
+            "Value": { "Fn::GetAtt": ["BWCEDemoStack", "Outputs.DBUserName"] },
+            "Description": "DB user name"
+        }
+    }
+}

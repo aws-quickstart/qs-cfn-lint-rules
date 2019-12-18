@@ -1,0 +1,280 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "This template creates a CloudFront distribution for an ALB origin. This template supports both HTTP and HTTPS for CloudFront. In case of SSL, you can use either an ACM Certificate or CloudFront's default certificate. A valid Route53 HostedZone is required as an input to generate the CNAME and ALB custom origin name. **WARNING** This template creates AWS resources. You will be billed for the AWS resources used if you create a stack from this template.",
+    "Metadata": {
+        "AWS::CloudFormation::Interface": {
+            "ParameterGroups": [
+                {
+                    "Label": {
+                        "default": "SSL Configuration"
+                    },
+                    "Parameters": [
+                        "UseSSL",
+                        "CloudFrontACMCertificateARN",
+                        "HostedZoneName"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "Application Load Balancer DNS"
+                    },
+                    "Parameters": [
+                        "ALBDNSName"
+                    ]
+                }
+            ],
+            "ParameterLabels": {
+                "UseSSL": {
+                    "default": "SSL Required?"
+                },
+                "CloudFrontACMCertificateARN": {
+                    "default": "ARN of ACM Certificate for CloudFront"
+                },
+                "CNAMEAlias": {
+                    "default": "CloudFront Alternate Domain"
+                },
+                "HostedZoneName": {
+                    "default": "Hosted Zone Name in Route53"
+                },
+                "ALBDNSName": {
+                    "default": "DNS Name of Application Load Balancer"
+                }
+            }
+        }
+    },
+    "Parameters": {
+        "ALBDNSName": {
+            "Description": "The DNS of the Application Load Balancer.",
+            "Type": "String"
+        },
+        "CloudFrontACMCertificateARN": {
+            "AllowedPattern": "^$|(arn:aws:acm:)([a-z0-9/:-])*([a-z0-9])$",
+            "Description": "[ Optional ] The AWS Certification Manager certificate ARN for the CloudFront distribution certificate - this certificate should be created in the us-east-1 (N. Virginia) region and must reference the main domain name you use below.",
+            "Type": "String"
+        },
+        "CNAMEAlias": {
+            "Default": "",
+            "Description": "CloudFront CNAME alias to be used e.g. my-cf.xyz.example.com",
+            "Type": "String"
+        },
+        "HostedZoneName": {
+            "AllowedPattern": "^$|(([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\\-]*[a-zA-Z0-9])\\.)*([A-Za-z0-9]|[A-Za-z0-9][A-Za-z0-9\\-]*[A-Za-z0-9])$",
+            "Default": "",
+            "Description": "[ Optional ] The domain name (e.g. example.com) of a valid Hosted Zone on AWS. Leave empty if SSL is not required.",
+            "Type": "String"
+        },
+        "UseSSL": {
+            "Default": "No",
+            "Description": "[Optional] If SSL is required  [Yes or No]",
+            "Type": "String"
+        }
+    },
+    "Conditions": {
+        "UseCloudFrontACMCert": {
+            "Fn::Not": [
+                {
+                    "Fn::Equals": [
+                        {
+                            "Ref": "CloudFrontACMCertificateARN"
+                        },
+                        ""
+                    ]
+                }
+            ]
+        },
+        "UseALBSSL": {
+            "Fn::Equals": [
+                {
+                    "Ref": "UseSSL"
+                },
+                "Yes"
+            ]
+        },
+        "UseHostedZone": {
+            "Fn::Not": [
+                {
+                    "Fn::Equals": [
+                        {
+                            "Ref": "HostedZoneName"
+                        },
+                        ""
+                    ]
+                }
+            ]
+        }
+    },
+    "Resources": {
+        "LibertyCloudFrontDistribution": {
+            "Type": "AWS::CloudFront::Distribution",
+            "Properties": {
+                "DistributionConfig": {
+                    "Aliases": [
+                        {
+                            "Fn::If": [
+                                "UseCloudFrontACMCert",
+                                {
+                                    "Ref": "CNAMEAlias"
+                                },
+                                {
+                                    "Ref": "AWS::NoValue"
+                                }
+                            ]
+                        }
+                    ],
+                    "Origins": [
+                        {
+                            "Fn::If": [
+                                "UseALBSSL",
+                                {
+                                    "DomainName": {
+                                        "Fn::Join": [
+                                            "",
+                                            [
+                                                {
+                                                    "Fn::Select": [
+                                                        "0",
+                                                        {
+                                                            "Fn::Split": [
+                                                                ".",
+                                                                {
+                                                                    "Ref": "ALBDNSName"
+                                                                }
+                                                            ]
+                                                        }
+                                                    ]
+                                                },
+                                                ".",
+                                                {
+                                                    "Ref": "HostedZoneName"
+                                                }
+                                            ]
+                                        ]
+                                    },
+                                    "Id": "LibertyCustomOrigin",
+                                    "CustomOriginConfig": {
+                                        "HTTPPort": "80",
+                                        "HTTPSPort": "443",
+                                        "OriginProtocolPolicy": {
+                                            "Fn::If": [
+                                                "UseALBSSL",
+                                                "https-only",
+                                                "http-only"
+                                            ]
+                                        }
+                                    }
+                                },
+                                {
+                                    "DomainName": {
+                                        "Ref": "ALBDNSName"
+                                    },
+                                    "Id": "LibertyCustomOrigin",
+                                    "CustomOriginConfig": {
+                                        "HTTPPort": "80",
+                                        "HTTPSPort": "443",
+                                        "OriginProtocolPolicy": "http-only"
+                                    }
+                                }
+                            ]
+                        }
+                    ],
+                    "Enabled": "true",
+                    "DefaultCacheBehavior": {
+                        "TargetOriginId": "LibertyCustomOrigin",
+                        "SmoothStreaming": "false",
+                        "ForwardedValues": {
+                            "QueryString": "true",
+                            "Cookies": {
+                                "Forward": "all"
+                            }
+                        },
+                        "ViewerProtocolPolicy": {
+                            "Fn::If": [
+                                "UseALBSSL",
+                                "https-only",
+                                "allow-all"
+                            ]
+                        }
+                    },
+                    "ViewerCertificate": {
+                        "Fn::If": [
+                            "UseCloudFrontACMCert",
+                            {
+                                "AcmCertificateArn": {
+                                    "Ref": "CloudFrontACMCertificateARN"
+                                },
+                                "SslSupportMethod": "sni-only",
+                                "MinimumProtocolVersion": "TLSv1"
+                            },
+                            {
+                                "CloudFrontDefaultCertificate": "true"
+                            }
+                        ]
+                    },
+                    "PriceClass": "PriceClass_100"
+                }
+            }
+        }
+    },
+    "Outputs": {
+        "CloudFrontURL": {
+            "Description": "URL for Cloudfront domain",
+            "Value": {
+                "Fn::Join": [
+                    "",
+                    [
+                        {
+                            "Fn::If": [
+                                "UseALBSSL",
+                                {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "https://",
+                                            {
+                                                "Fn::If": [
+                                                    "UseCloudFrontACMCert",
+                                                    {
+                                                        "Ref": "CNAMEAlias"
+                                                    },
+                                                    {
+                                                        "Fn::GetAtt": [
+                                                            "LibertyCloudFrontDistribution",
+                                                            "DomainName"
+                                                        ]
+                                                    }
+                                                ]
+                                            }
+                                        ]
+                                    ]
+                                },
+                                {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "http://",
+                                            {
+                                                "Fn::GetAtt": [
+                                                    "LibertyCloudFrontDistribution",
+                                                    "DomainName"
+                                                ]
+                                            }
+                                        ]
+                                    ]
+                                }
+                            ]
+                        }
+                    ]
+                ]
+            }
+        },
+        "CloudFrontDomainName": {
+            "Description": "Cloudfront domain name",
+            "Value": {
+                "Fn::GetAtt": [
+                    "LibertyCloudFrontDistribution",
+                    "DomainName"
+                ]
+            }
+        }
+    }
+}

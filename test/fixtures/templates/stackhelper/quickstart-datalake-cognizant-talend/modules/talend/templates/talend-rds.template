@@ -1,0 +1,139 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "This template creates RDS resources. **WARNING** This template creates AWS resources. You will be billed for the AWS resources used if you create a stack from this template. QS(0027)",
+
+    "Parameters": {
+        "MasterDbUser": {
+            "Description": "The database master or root user.",
+            "Type": "String",
+            "Default": ""
+        },
+        "MasterDbPassword": {
+            "Description": "Master user database password.",
+            "Type": "String",
+            "Default": "",
+            "NoEcho": "true"
+        },
+		"Port": {
+            "Description": "Database port",
+            "Type": "Number",
+            "MinValue": "0",
+            "MaxValue": "65535",
+            "Default": "0"
+        },
+        "Engine": {
+            "Description": "Database type",
+            "Type": "String",
+            "Default": "mysql",
+            "AllowedValues": [ "mysql" ]
+        },
+        "DbClass": {
+            "Description": "Instance class of RDS instance",
+            "Type": "String",
+            "Default": "db.t2.medium",
+            "AllowedValues": [
+                "db.t2.micro",
+                "db.t2.small",
+                "db.t2.medium",
+                "db.t2.large",
+                "db.m4.large",
+                "db.m4.xlarge",
+                "db.m4.2xlarge",
+                "db.m4.4xlarge",
+                "db.m4.10xlarge",
+                "db.r3.large",
+                "db.r3.xlarge",
+                "db.r3.2xlarge",
+                "db.r3.4xlarge",
+                "db.r3.8xlarge"
+            ]
+        },
+        "DbAllocatedStorage": {
+            "Description": "Allocated Storage (in GB) for RDS instance",
+            "Type": "Number",
+            "Default": "20"
+        },
+        "Subnets": {
+            "Description": "Subnets to which the database and replicas may belong",
+            "Type": "List<AWS::EC2::Subnet::Id>"
+        },
+        "SecurityGroups": {
+            "Description": "SecurityGroups to which the database belongs",
+            "Type": "List<AWS::EC2::SecurityGroup::Id>"
+        }
+    },
+
+    "Mappings": {
+        "Engine": {
+            "mysql": {
+                "port": "3306"
+            }
+        }
+    },
+
+    "Conditions": {
+        "isPortSpecified": {
+            "Fn::Not": [
+                { "Fn::Equals": [ "0", { "Ref": "Port" } ] } 
+            ]
+        }
+    },
+
+    "Resources": {
+
+        "DbSubnetGroup": {
+            "Type": "AWS::RDS::DBSubnetGroup",
+            "Properties": {
+                "DBSubnetGroupDescription": "MySQL RDS Subnet Group",
+                "SubnetIds": { "Ref": "Subnets" }
+            }
+        },
+
+        "DatabaseInstance": {
+            "Type": "AWS::RDS::DBInstance",
+            "DependsOn": [ "DbSubnetGroup" ],
+            "Properties": {
+                "Engine": { "Ref": "Engine" },
+                "Port": {
+                    "Fn::If": [
+                        "isPortSpecified",
+                        { "Ref": "Port" },
+                        { "Fn::FindInMap": [ "Engine", { "Ref": "Engine" }, "port" ] }
+                    ]
+                },
+                "AllocatedStorage": { "Ref": "DbAllocatedStorage" },
+                "DBInstanceClass": { "Ref": "DbClass" },
+                "DBSubnetGroupName": { "Ref": "DbSubnetGroup" },
+                "VPCSecurityGroups": { "Ref": "SecurityGroups" } ,
+                "MasterUsername": { "Ref": "MasterDbUser" },
+                "MasterUserPassword": { "Ref": "MasterDbPassword" }
+            }
+        }
+    },
+    
+    "Outputs":{
+        "DatabaseInstance": {
+            "Value": { "Ref": "DatabaseInstance" },
+            "Description": "RDS Instance",
+			"Export": {
+				"Name": { "Fn::Sub": "${AWS::StackName}:DatabaseInstance" } 
+			}
+        },
+        "EndpointAddress": {
+            "Value": { "Fn::GetAtt": [ "DatabaseInstance", "Endpoint.Address" ] },
+            "Description": "Database endpoint hostname",
+            "Export": {
+				"Name": { "Fn::Sub": "${AWS::StackName}:EndpointAddress" } 
+            }
+        },
+        "EndpointPort": {
+            "Value": { "Fn::GetAtt": [ "DatabaseInstance", "Endpoint.Port" ] },
+            "Description": "Database endpoint  port",
+            "Export": {
+				"Name": { "Fn::Sub": "${AWS::StackName}:EndpointPort" } 
+            }
+        }
+
+    }
+}
+

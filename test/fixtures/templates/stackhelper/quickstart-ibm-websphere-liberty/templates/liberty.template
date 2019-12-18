@@ -1,0 +1,1204 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "This Liberty template deploys an ASG behind an ELB load balancer in two private subnets. The cluster is configured to use an S3 bucket for storage **WARNING** This template creates EC2 instances and related resources. You will be billed for the AWS resources used if you create a stack from this template. (qs-1o2sf5bg5)",
+    "Metadata": {
+        "AWS::CloudFormation::Interface": {
+            "ParameterGroups": [
+                {
+                    "Label": {
+                        "default": "Network Configuration"
+                    },
+                    "Parameters": [
+                        "VPCID",
+                        "PrivateSubnet1ID",
+                        "PrivateSubnet2ID",
+                        "PublicSubnet1ID",
+                        "PublicSubnet2ID"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "Bastion Host Details"
+                    },
+                    "Parameters": [
+                        "KeyPairName",
+                        "BastionSecurityGroupID"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "Liberty Nodes Configuration"
+                    },
+                    "Parameters": [
+                        "LibertyInstanceType",
+                        "LibertyNodesMinSize",
+                        "LibertyNodesMaxSize",
+                        "LibertyNodesDesiredCapacity",
+                        "OperatorEmail",
+                        "DeploySampleApp"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "SSL Configuration"
+                    },
+                    "Parameters": [
+                        "ALBSSLCertificateARN",
+                        "CloudFrontACMCertificateARN",
+                        "HostedZoneName",
+                        "CreateCloudFrontDistribution",
+                        "LibertyCloudFrontCNAME"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "AWS Quick Start Configuration"
+                    },
+                    "Parameters": [
+                        "QSS3BucketName",
+                        "QSS3KeyPrefix"
+                    ]
+                }
+            ],
+            "ParameterLabels": {
+                "ALBSSLCertificateARN": {
+                    "default": "ARN of ACM certificate for Application Load Balancer"
+                },
+                "BastionSecurityGroupID": {
+                    "default": "Bastion Security Group ID"
+                },
+                "CloudFrontACMCertificateARN": {
+                    "default": "ARN of ACM Certificate for CloudFront"
+                },
+                "CreateCloudFrontDistribution": {
+                    "default": "Create a CloudFront Distribution?"
+                },
+                "DeploySampleApp": {
+                    "default": "Deploy Sample Application?"
+                },
+                "HostedZoneName": {
+                    "default": "Hosted Zone Name in Route 53 corresponding to the domain name of the web site"
+                },
+                "KeyPairName": {
+                    "default": "SSH Key Name"
+                },
+                "LibertyCloudFrontCNAME": {
+                    "default": "CloudFront CNAME Alias"
+                },
+                "LibertyInstanceType": {
+                    "default": "Liberty Servers Instance Type"
+                },
+                "LibertyNodesDesiredCapacity": {
+                    "default": "Liberty Nodes Desired Capacity"
+                },
+                "LibertyNodesMaxSize": {
+                    "default": "Liberty Nodes Max Size"
+                },
+                "LibertyNodesMinSize": {
+                    "default": "Liberty Nodes Min Size"
+                },
+                "OperatorEmail": {
+                    "default": "Operator Email"
+                },
+                "PrivateSubnet1ID": {
+                    "default": "Private Subnet 1 ID"
+                },
+                "PrivateSubnet2ID": {
+                    "default": "Private Subnet 2 ID"
+                },
+                "PublicSubnet1ID": {
+                    "default": "Public Subnet 1 ID"
+                },
+                "PublicSubnet2ID": {
+                    "default": "Public Subnet 2 ID"
+                },
+                "QSS3BucketName": {
+                    "default": "Quick Start S3 Bucket Name"
+                },
+                "QSS3KeyPrefix": {
+                    "default": "Quick Start S3 Key Prefix"
+                },
+                "VPCID": {
+                    "default": "VPC ID"
+                }
+            }
+        }
+    },
+    "Parameters": {
+        "ALBSSLCertificateARN": {
+            "Default": "",
+            "Description": "[Optional] The ARN of the SSL certificate to be used for the Application Load Balancer",
+            "Type": "String"
+        },
+        "BastionSecurityGroupID": {
+            "Description": "ID of the bastion host security group to enable SSH connections (e.g., sg-7f16e910)",
+            "Type": "AWS::EC2::SecurityGroup::Id"
+        },
+        "CloudFrontACMCertificateARN": {
+            "AllowedPattern": "^$|(arn:aws:acm:)([a-z0-9/:-])*([a-z0-9])$",
+            "Default": "",
+            "Description": "[ Optional ] The AWS Certification Manager certificate ARN for the CloudFront distribution certificate - this certificate should be created in the us-east-1 (N. Virginia) region and must reference the main domain name you use below.",
+            "Type": "String"
+        },
+        "CreateCloudFrontDistribution": {
+            "AllowedValues": [
+                "Yes",
+                "No"
+            ],
+            "ConstraintDescription": "Select yes to create a CloudFront distribution",
+            "Default": "Yes",
+            "Description": "Select \"Yes\" to create a CloudFront distribution (default), \"No\" to skip.",
+            "Type": "String"
+        },
+        "DeploySampleApp": {
+            "AllowedValues": [
+                "Yes",
+                "No"
+            ],
+            "ConstraintDescription": "Select Yes to create a deploy sample app",
+            "Default": "No",
+            "Description": "Select \"Yes\" to deploy a sample app, \"No\" to skip (default).",
+            "Type": "String"
+        },
+        "HostedZoneName": {
+            "AllowedPattern": "^$|(([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\\-]*[a-zA-Z0-9])\\.)*([A-Za-z0-9]|[A-Za-z0-9][A-Za-z0-9\\-]*[A-Za-z0-9])$",
+            "Default": "",
+            "Description": "The domain name of a valid Hosted Zone on AWS.",
+            "Type": "String"
+        },
+        "KeyPairName": {
+            "Description": "Name of an existing EC2 key pair. All instances will launch with this key pair.",
+            "Type": "AWS::EC2::KeyPair::KeyName"
+        },
+        "LibertyCloudFrontCNAME": {
+            "AllowedPattern": "^$|(([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\\-]*[a-zA-Z0-9])\\.)*([A-Za-z0-9]|[A-Za-z0-9][A-Za-z0-9\\-]*[A-Za-z0-9])$",
+            "Default": "",
+            "Type": "String",
+            "Description": "Alternate Domain Name for CloudFront Distribution e.g. 'my-liberty-cf.example.com'. Required if CreateCloudFrontDistribution is set to yes. The provided cname alias must match the specified HostedZoneName."
+        },
+        "LibertyInstanceType": {
+            "AllowedValues": [
+                "t2.nano",
+                "t2.micro",
+                "t2.small",
+                "t2.medium",
+                "t2.large",
+                "m4.large",
+                "m4.xlarge",
+                "m4.2xlarge",
+                "m4.4xlarge",
+                "m4.10xlarge",
+                "m3.medium",
+                "m3.large",
+                "m3.xlarge",
+                "m3.2xlarge",
+                "c4.large",
+                "c4.xlarge",
+                "c4.2xlarge",
+                "c4.4xlarge",
+                "c4.8xlarge",
+                "c3.large",
+                "c3.xlarge",
+                "c3.2xlarge",
+                "c3.4xlarge",
+                "c3.8xlarge",
+                "r3.large",
+                "r3.xlarge"
+            ],
+            "ConstraintDescription": "Must contain valid instance type",
+            "Default": "t2.micro",
+            "Description": "Type of EC2 instance for the Liberty instances",
+            "Type": "String"
+        },
+        "LibertyNodesDesiredCapacity": {
+            "Default": "2",
+            "Description": "The desired capacity for the Liberty nodes Auto Scaling group",
+            "Type": "String"
+        },
+        "LibertyNodesMaxSize": {
+            "Default": "4",
+            "Description": "The maximum size of the Auto Scaling group",
+            "Type": "String"
+        },
+        "LibertyNodesMinSize": {
+            "Default": "2",
+            "Description": "The minimum size of the Auto Scaling group",
+            "Type": "String"
+        },
+        "OperatorEmail": {
+            "AllowedPattern": "([a-zA-Z0-9_\\-\\.]+)@((\\[[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}\\.)|(([a-zA-Z0-9\\-]+\\.)+))([a-zA-Z]{2,4}|[0-9]{1,3})(\\]?)",
+            "ConstraintDescription": "Must be a valid email address.",
+            "Description": "Email address that notifications of any scaling operations will be sent to",
+            "Type": "String"
+        },
+        "PrivateSubnet1ID": {
+            "Description": "ID of private subnet 1 in Availability Zone 1 for the Liberty (e.g., subnet-a0246dcd)",
+            "Type": "AWS::EC2::Subnet::Id"
+        },
+        "PrivateSubnet2ID": {
+            "Description": "ID of private subnet 2 in Availability Zone 2 for the Liberty (e.g., subnet-b1f432cd)",
+            "Type": "AWS::EC2::Subnet::Id"
+        },
+        "PublicSubnet1ID": {
+            "Description": "ID of public subnet 1 in Availability Zone 1 for the ELB load balancer (e.g., subnet-9bc642ac)",
+            "Type": "AWS::EC2::Subnet::Id"
+        },
+        "PublicSubnet2ID": {
+            "Description": "ID of public subnet 2 in Availability Zone 2 for the ELB load balancer (e.g., subnet-e3246d8e)",
+            "Type": "AWS::EC2::Subnet::Id"
+        },
+        "QSS3BucketName": {
+            "AllowedPattern": "^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$",
+            "ConstraintDescription": "Quick Start bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-).",
+            "Default": "aws-quickstart",
+            "Description": "S3 bucket name for the Quick Start assets. This string can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-).",
+            "Type": "String"
+        },
+        "QSS3KeyPrefix": {
+            "AllowedPattern": "^[0-9a-zA-Z-/]*$",
+            "ConstraintDescription": "Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).",
+            "Default": "quickstart-ibm-websphere-liberty/",
+            "Description": "S3 key prefix for the Quick Start assets. Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).",
+            "Type": "String"
+        },
+        "VPCID": {
+            "Description": "ID of your existing VPC for deployment",
+            "Type": "AWS::EC2::VPC::Id"
+        }
+    },
+    "Conditions": {
+        "CreateCloudFrontDistribution": {
+            "Fn::Equals": [
+                {
+                    "Ref": "CreateCloudFrontDistribution"
+                },
+                "Yes"
+            ]
+        },
+        "DeploySampleApp": {
+            "Fn::Equals": [
+                {
+                    "Ref": "DeploySampleApp"
+                },
+                "Yes"
+            ]
+        },
+        "UseALBSSL": {
+            "Fn::Not": [
+                {
+                    "Fn::Equals": [
+                        {
+                            "Ref": "ALBSSLCertificateARN"
+                        },
+                        ""
+                    ]
+                }
+            ]
+        },
+        "UseCustomCloudFrontSSL": {
+            "Fn::Not": [
+                {
+                    "Fn::Equals": [
+                        {
+                            "Ref": "CloudFrontACMCertificateARN"
+                        },
+                        ""
+                    ]
+                }
+            ]
+        }
+    },
+    "Rules": {
+        "KeyPairsNotEmpty": {
+            "Assertions": [
+                {
+                    "Assert": {
+                        "Fn::Not": [
+                            {
+                                "Fn::EachMemberEquals": [
+                                    {
+                                        "Fn::RefAll": "AWS::EC2::KeyPair::KeyName"
+                                    },
+                                    ""
+                                ]
+                            }
+                        ]
+                    },
+                    "AssertDescription": "All key pair parameters must not be empty"
+                }
+            ]
+        },
+        "SubnetsInVPC": {
+            "Assertions": [
+                {
+                    "Assert": {
+                        "Fn::EachMemberIn": [
+                            {
+                                "Fn::ValueOfAll": [
+                                    "AWS::EC2::Subnet::Id",
+                                    "VpcId"
+                                ]
+                            },
+                            {
+                                "Fn::RefAll": "AWS::EC2::VPC::Id"
+                            }
+                        ]
+                    },
+                    "AssertDescription": "All subnets must in the VPC"
+                }
+            ]
+        },
+        "ValidateHostedZone": {
+            "RuleCondition": {
+                "Fn::Not": [
+                    {
+                        "Fn::Equals": [
+                            {
+                                "Ref": "ALBSSLCertificateARN"
+                            },
+                            ""
+                        ]
+                    }
+                ]
+            },
+            "Assertions": [
+                {
+                    "Assert": {
+                        "Fn::Not": [
+                            {
+                                "Fn::Equals": [
+                                    {
+                                        "Ref": "HostedZoneName"
+                                    },
+                                    ""
+                                ]
+                            }
+                        ]
+                    },
+                    "AssertDescription": "Route53 Hosted Zone Name is mandatory when ACM certificate is used"
+                }
+            ]
+        },
+        "ValidateCloudFrontSSL": {
+            "RuleCondition": {
+                "Fn::Not": [
+                    {
+                        "Fn::Equals": [
+                            {
+                                "Ref": "CloudFrontACMCertificateARN"
+                            },
+                            ""
+                        ]
+                    }
+                ]
+            },
+            "Assertions": [
+                {
+                    "Assert": {
+                        "Fn::Not": [
+                            {
+                                "Fn::Equals": [
+                                    {
+                                        "Ref": "ALBSSLCertificateARN"
+                                    },
+                                    ""
+                                ]
+                            }
+                        ]
+                    },
+                    "AssertDescription": "ACM Certificate is mandatory for Application Load Balancer when ACM certificate is used for CloudFront"
+                },
+                {
+                    "Assert": {
+                        "Fn::Not": [
+                            {
+                                "Fn::Equals": [
+                                    {
+                                        "Ref": "LibertyCloudFrontCNAME"
+                                    },
+                                    ""
+                                ]
+                            }
+                        ]
+                    },
+                    "AssertDescription": "LibertyCloudFrontCNAME is mandatory when ACM certificate is used for CloudFront"
+                }
+            ]
+        }
+    },
+    "Mappings": {
+        "AWSAMIRegionMap": {
+            "AMI": {
+                "AMZNLINUXHVM": "amzn-ami-hvm-2018.03.0.20190611-x86_64-gp2"
+            },
+            "ap-northeast-1": {
+                "AMZNLINUXHVM": "ami-0ab3e16f9c414dee7"
+            },
+            "ap-northeast-2": {
+                "AMZNLINUXHVM": "ami-0e1e385b0a934254a"
+            },
+            "ap-south-1": {
+                "AMZNLINUXHVM": "ami-02913db388613c3e1"
+            },
+            "ap-southeast-1": {
+                "AMZNLINUXHVM": "ami-05c859630889c79c8"
+            },
+            "ap-southeast-2": {
+                "AMZNLINUXHVM": "ami-07cc15c3ba6f8e287"
+            },
+            "ca-central-1": {
+                "AMZNLINUXHVM": "ami-04070f04f450607dc"
+            },
+            "eu-central-1": {
+                "AMZNLINUXHVM": "ami-010fae13a16763bb4"
+            },
+            "eu-west-1": {
+                "AMZNLINUXHVM": "ami-028188d9b49b32a80"
+            },
+            "eu-west-2": {
+                "AMZNLINUXHVM": "ami-04de2b60dd25fbb2e"
+            },
+            "sa-east-1": {
+                "AMZNLINUXHVM": "ami-0e2c2c29d8017dd99"
+            },
+            "us-east-1": {
+                "AMZNLINUXHVM": "ami-00eb20669e0990cb4"
+            },
+            "us-east-2": {
+                "AMZNLINUXHVM": "ami-0c64dd618a49aeee8"
+            },
+            "us-west-1": {
+                "AMZNLINUXHVM": "ami-0bce08e823ed38bdd"
+            },
+            "us-west-2": {
+                "AMZNLINUXHVM": "ami-08d489468314a58df"
+            }
+        }
+    },
+    "Resources": {
+        "NotificationTopic": {
+            "Type": "AWS::SNS::Topic",
+            "Properties": {
+                "Subscription": [
+                    {
+                        "Endpoint": {
+                            "Ref": "OperatorEmail"
+                        },
+                        "Protocol": "email"
+                    }
+                ]
+            }
+        },
+        "ELBSecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "GroupDescription": "Allow access to the ELB",
+                "VpcId": {
+                    "Ref": "VPCID"
+                },
+                "SecurityGroupIngress": [
+                    {
+                        "Fn::If": [
+                            "UseALBSSL",
+                            {
+                                "IpProtocol": "tcp",
+                                "FromPort": "443",
+                                "ToPort": "443",
+                                "CidrIp": "0.0.0.0/0"
+                            },
+                            {
+                                "IpProtocol": "tcp",
+                                "FromPort": "80",
+                                "ToPort": "80",
+                                "CidrIp": "0.0.0.0/0"
+                            }
+                        ]
+                    }
+                ]
+            }
+        },
+        "ApplicationLoadBalancer": {
+            "Type": "AWS::ElasticLoadBalancingV2::LoadBalancer",
+            "Properties": {
+                "Subnets": [
+                    {
+                        "Ref": "PublicSubnet1ID"
+                    },
+                    {
+                        "Ref": "PublicSubnet2ID"
+                    }
+                ],
+                "SecurityGroups": [
+                    {
+                        "Ref": "ELBSecurityGroup"
+                    }
+                ]
+            }
+        },
+        "ALBListener": {
+            "Type": "AWS::ElasticLoadBalancingV2::Listener",
+            "Properties": {
+                "DefaultActions": [
+                    {
+                        "Type": "forward",
+                        "TargetGroupArn": {
+                            "Ref": "ALBTargetGroup"
+                        }
+                    }
+                ],
+                "LoadBalancerArn": {
+                    "Ref": "ApplicationLoadBalancer"
+                },
+                "Port": {
+                    "Fn::If": [
+                        "UseALBSSL",
+                        443,
+                        80
+                    ]
+                },
+                "Protocol": {
+                    "Fn::If": [
+                        "UseALBSSL",
+                        "HTTPS",
+                        "HTTP"
+                    ]
+                },
+                "Certificates": [
+                    {
+                        "Fn::If": [
+                            "UseALBSSL",
+                            {
+                                "CertificateArn": {
+                                    "Ref": "ALBSSLCertificateARN"
+                                }
+                            },
+                            {
+                                "Ref": "AWS::NoValue"
+                            }
+                        ]
+                    }
+                ]
+            }
+        },
+        "ALBTargetGroup": {
+            "Type": "AWS::ElasticLoadBalancingV2::TargetGroup",
+            "Properties": {
+                "HealthCheckIntervalSeconds": 30,
+                "HealthCheckTimeoutSeconds": 5,
+                "HealthyThresholdCount": 2,
+                "Port": {
+                    "Fn::If": [
+                        "UseALBSSL",
+                        9443,
+                        9080
+                    ]
+                },
+                "Protocol": {
+                    "Fn::If": [
+                        "UseALBSSL",
+                        "HTTPS",
+                        "HTTP"
+                    ]
+                },
+                "UnhealthyThresholdCount": 5,
+                "VpcId": {
+                    "Ref": "VPCID"
+                },
+                "TargetGroupAttributes": [
+                    {
+                        "Key": "stickiness.enabled",
+                        "Value": "true"
+                    },
+                    {
+                        "Key": "stickiness.type",
+                        "Value": "lb_cookie"
+                    },
+                    {
+                        "Key": "stickiness.lb_cookie.duration_seconds",
+                        "Value": "30"
+                    }
+                ]
+            }
+        },
+        "LibertyRole": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "AssumeRolePolicyDocument": {
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Principal": {
+                                "Service": [
+                                    "ec2.amazonaws.com"
+                                ]
+                            },
+                            "Action": [
+                                "sts:AssumeRole"
+                            ]
+                        }
+                    ]
+                },
+                "Path": "/",
+                "Policies": [
+                    {
+                        "PolicyDocument": {
+                            "Version": "2012-10-17",
+                            "Statement": [
+                                {
+                                    "Action": [
+                                        "s3:GetObject"
+                                    ],
+                                    "Resource": {
+                                        "Fn::Sub": "arn:aws:s3:::${QSS3BucketName}/${QSS3KeyPrefix}*"
+                                    },
+                                    "Effect": "Allow"
+                                }
+                            ]
+                        },
+                        "PolicyName": "aws-quick-start-s3-policy"
+                    }
+                ]
+            }
+        },
+        "LibertyProfile": {
+            "Type": "AWS::IAM::InstanceProfile",
+            "Properties": {
+                "Path": "/",
+                "Roles": [
+                    {
+                        "Ref": "LibertyRole"
+                    }
+                ]
+            }
+        },
+        "LibertySecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "GroupDescription": "Allow access to the Liberty instances",
+                "VpcId": {
+                    "Ref": "VPCID"
+                },
+                "SecurityGroupIngress": [
+                    {
+                        "Fn::If": [
+                            "UseALBSSL",
+                            {
+                                "IpProtocol": "tcp",
+                                "FromPort": "9443",
+                                "ToPort": "9443",
+                                "SourceSecurityGroupId": {
+                                    "Ref": "ELBSecurityGroup"
+                                }
+                            },
+                            {
+                                "IpProtocol": "tcp",
+                                "FromPort": "9080",
+                                "ToPort": "9080",
+                                "SourceSecurityGroupId": {
+                                    "Ref": "ELBSecurityGroup"
+                                }
+                            }
+                        ]
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "22",
+                        "ToPort": "22",
+                        "SourceSecurityGroupId": {
+                            "Ref": "BastionSecurityGroupID"
+                        }
+                    }
+                ]
+            }
+        },
+        "LibertyASLaunchConfig": {
+            "Type": "AWS::AutoScaling::LaunchConfiguration",
+            "Metadata": {
+                "AWS::CloudFormation::Authentication": {
+                    "S3AccessCreds": {
+                        "type": "S3",
+                        "roleName": {
+                            "Ref": "LibertyRole"
+                        },
+                        "buckets": [
+                            {
+                                "Ref": "QSS3BucketName"
+                            }
+                        ]
+                    }
+                },
+                "AWS::CloudFormation::Init": {
+                    "configSets": {
+                        "quickstart": [
+                            "install",
+                            "configure",
+                            "startServer"
+                        ],
+                        "quickstartwithSSL": [
+                            "install",
+                            "configureSSL",
+                            "startServer"
+                        ],
+                        "quickstartwithSampleapp": [
+                            "install",
+                            "configure",
+                            "deploySampleApp",
+                            "startServer"
+                        ],
+                        "quickstartwithSSLandSampleapp": [
+                            "install",
+                            "configureSSL",
+                            "deploySampleApp",
+                            "startServer"
+                        ]
+                    },
+                    "install": {
+                        "sources": {
+                            "/opt/websphere": "http://repo1.maven.org/maven2/com/ibm/websphere/appserver/runtime/wlp-webProfile7/17.0.0.2/wlp-webProfile7-17.0.0.2.zip"
+                        },
+                        "files": {
+                            "/etc/profile.d/wlp.sh": {
+                                "source": {
+                                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}scripts/wlp.sh"
+                                },
+                                "mode": "000755",
+                                "owner": "root",
+                                "group": "root",
+                                "authentication": "S3AccessCreds"
+                            },
+                            "/etc/init.d/wlp": {
+                                "source": {
+                                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}scripts/wlp"
+                                },
+                                "mode": "000700",
+                                "owner": "root",
+                                "group": "root",
+                                "authentication": "S3AccessCreds"
+                            },
+                            "/tmp/01_create_liberty_server.sh": {
+                                "source": {
+                                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}scripts/createServer.sh"
+                                },
+                                "mode": "000755",
+                                "owner": "root",
+                                "group": "root",
+                                "authentication": "S3AccessCreds"
+                            }
+                        },
+                        "commands": {
+                            "01_create_Server": {
+                                "command": "/tmp/01_create_liberty_server.sh"
+                            }
+                        }
+                    },
+                    "configure": {
+                        "files": {
+                            "/tmp/02_configureServer.sh": {
+                                "source": {
+                                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}scripts/configureServer.sh"
+                                },
+                                "mode": "000755",
+                                "owner": "root",
+                                "group": "root",
+                                "authentication": "S3AccessCreds"
+                            }
+                        },
+                        "commands": {
+                            "02_configure_Server": {
+                                "command": "/tmp/02_configureServer.sh"
+                            }
+                        }
+                    },
+                    "configureSSL": {
+                        "files": {
+                            "/tmp/02_configureServerSSL.sh": {
+                                "source": {
+                                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}scripts/configureServerSSL.sh"
+                                },
+                                "mode": "000755",
+                                "owner": "root",
+                                "group": "root",
+                                "authentication": "S3AccessCreds"
+                            }
+                        },
+                        "commands": {
+                            "02_configure_Server": {
+                                "command": "/tmp/02_configureServerSSL.sh"
+                            }
+                        }
+                    },
+                    "deploySampleApp": {
+                        "files": {
+                            "/tmp/ferret-1.0.war": {
+                                "source": "http://repo1.maven.org/maven2/net/wasdev/wlp/sample/ferret/1.0/ferret-1.0.war",
+                                "mode": "000544",
+                                "owner": "root",
+                                "group": "root"
+                            },
+                            "/tmp/03_deploySampleApp.sh": {
+                                "source": {
+                                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}scripts/deploySampleApp.sh"
+                                },
+                                "mode": "000755",
+                                "owner": "root",
+                                "group": "root",
+                                "authentication": "S3AccessCreds"
+                            }
+                        },
+                        "commands": {
+                            "03_deploy_sample_app": {
+                                "command": "/tmp/03_deploySampleApp.sh"
+                            }
+                        }
+                    },
+                    "startServer": {
+                        "files": {
+                            "/tmp/04_startServer.sh": {
+                                "source": {
+                                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}scripts/startServer.sh"
+                                },
+                                "mode": "000755",
+                                "owner": "root",
+                                "group": "root",
+                                "authentication": "S3AccessCreds"
+                            }
+                        },
+                        "commands": {
+                            "04_start_Server": {
+                                "command": "/tmp/04_startServer.sh"
+                            }
+                        }
+                    },
+                    "cleanup": {}
+                }
+            },
+            "Properties": {
+                "KeyName": {
+                    "Ref": "KeyPairName"
+                },
+                "ImageId": {
+                    "Fn::FindInMap": [
+                        "AWSAMIRegionMap",
+                        {
+                            "Ref": "AWS::Region"
+                        },
+                        "AMZNLINUXHVM"
+                    ]
+                },
+                "InstanceMonitoring": "true",
+                "IamInstanceProfile": {
+                    "Ref": "LibertyProfile"
+                },
+                "InstanceType": {
+                    "Ref": "LibertyInstanceType"
+                },
+                "SecurityGroups": [
+                    {
+                        "Ref": "LibertySecurityGroup"
+                    }
+                ],
+                "UserData": {
+                    "Fn::Base64": {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "#!/bin/bash\n",
+                                "export PATH=$PATH:/usr/local/bin\n",
+                                "which pip &> /dev/null\n",
+                                "if [ $? -ne 0 ] ; then\n",
+                                "    echo \"PIP NOT INSTALLED\"\n",
+                                "    [ `which yum` ] && $(yum install -y epel-release; yum install -y python-pip) && echo \"PIP INSTALLED\"\n",
+                                "    [ `which apt-get` ] && apt-get -y update && apt-get -y install python-pip && echo \"PIP INSTALLED\"\n",
+                                "fi\n",
+                                "pip install --upgrade pip &> /dev/null\n",
+                                "pip install awscli --ignore-installed six &> /dev/null\n",
+                                "easy_install https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-latest.tar.gz\n",
+                                "cfn-init --stack ",
+                                {
+                                    "Ref": "AWS::StackName"
+                                },
+                                " --resource LibertyASLaunchConfig --configsets ",
+                                {
+                                    "Fn::If": [
+                                        "UseALBSSL",
+                                        {
+                                            "Fn::If": [
+                                                "DeploySampleApp",
+                                                "quickstartwithSSLandSampleapp",
+                                                "quickstartwithSSL"
+                                            ]
+                                        },
+                                        {
+                                            "Fn::If": [
+                                                "DeploySampleApp",
+                                                "quickstartwithSampleapp",
+                                                "quickstart"
+                                            ]
+                                        }
+                                    ]
+                                },
+                                " --region ",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                "\n",
+                                "# Signal the status from cfn-init\n",
+                                "cfn-signal -e $? --stack ",
+                                {
+                                    "Ref": "AWS::StackName"
+                                },
+                                " --resource LibertyAutoScalingGroup --region ",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                "\n"
+                            ]
+                        ]
+                    }
+                }
+            }
+        },
+        "LibertyTargetTrackingScalingPolicy": {
+            "Type": "AWS::AutoScaling::ScalingPolicy",
+            "Properties": {
+                "AutoScalingGroupName": {
+                    "Ref": "LibertyAutoScalingGroup"
+                },
+                "Cooldown": "60",
+                "PolicyType": "TargetTrackingScaling",
+                "TargetTrackingConfiguration": {
+                    "PredefinedMetricSpecification": {
+                        "PredefinedMetricType": "ASGAverageCPUUtilization"
+                    },
+                    "TargetValue": 75
+                }
+            }
+        },
+        "LibertyAutoScalingGroup": {
+            "Type": "AWS::AutoScaling::AutoScalingGroup",
+            "Properties": {
+                "VPCZoneIdentifier": [
+                    {
+                        "Ref": "PrivateSubnet1ID"
+                    },
+                    {
+                        "Ref": "PrivateSubnet2ID"
+                    }
+                ],
+                "Cooldown": "300",
+                "DesiredCapacity": {
+                    "Ref": "LibertyNodesDesiredCapacity"
+                },
+                "TargetGroupARNs": [
+                    {
+                        "Ref": "ALBTargetGroup"
+                    }
+                ],
+                "HealthCheckGracePeriod": "300",
+                "HealthCheckType": "EC2",
+                "LaunchConfigurationName": {
+                    "Ref": "LibertyASLaunchConfig"
+                },
+                "MaxSize": {
+                    "Ref": "LibertyNodesMaxSize"
+                },
+                "MinSize": {
+                    "Ref": "LibertyNodesMinSize"
+                },
+                "NotificationConfiguration": {
+                    "TopicARN": {
+                        "Ref": "NotificationTopic"
+                    },
+                    "NotificationTypes": [
+                        "autoscaling:EC2_INSTANCE_LAUNCH",
+                        "autoscaling:EC2_INSTANCE_LAUNCH_ERROR",
+                        "autoscaling:EC2_INSTANCE_TERMINATE",
+                        "autoscaling:EC2_INSTANCE_TERMINATE_ERROR",
+                        "autoscaling:TEST_NOTIFICATION"
+                    ]
+                },
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": "Liberty Server cluster node",
+                        "PropagateAtLaunch": "true"
+                    }
+                ]
+            },
+            "CreationPolicy": {
+                "ResourceSignal": {
+                    "Count": {
+                        "Ref": "LibertyNodesDesiredCapacity"
+                    },
+                    "Timeout": "PT2H"
+                }
+            }
+        },
+        "CloudFrontStack": {
+            "Type": "AWS::CloudFormation::Stack",
+            "Condition": "CreateCloudFrontDistribution",
+            "Properties": {
+                "TemplateURL": {
+                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}templates/cloudfront.template"
+                },
+                "Parameters": {
+                    "UseSSL": {
+                        "Fn::If": [
+                            "UseALBSSL",
+                            "Yes",
+                            ""
+                        ]
+                    },
+                    "CloudFrontACMCertificateARN": {
+                        "Ref": "CloudFrontACMCertificateARN"
+                    },
+                    "HostedZoneName": {
+                        "Ref": "HostedZoneName"
+                    },
+                    "ALBDNSName": {
+                        "Fn::GetAtt": [
+                            "ApplicationLoadBalancer",
+                            "DNSName"
+                        ]
+                    },
+                    "CNAMEAlias": {
+                        "Ref": "LibertyCloudFrontCNAME"
+                    }
+                }
+            }
+        },
+        "Route53Stack": {
+            "Type": "AWS::CloudFormation::Stack",
+            "Condition": "UseALBSSL",
+            "Properties": {
+                "TemplateURL": {
+                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}templates/route53.template"
+                },
+                "Parameters": {
+                    "UseACMCertificate": {
+                        "Fn::If": [
+                            "UseCustomCloudFrontSSL",
+                            "Yes",
+                            "No"
+                        ]
+                    },
+                    "LibertyCloudFrontDistribution": {
+                        "Fn::If": [
+                            "CreateCloudFrontDistribution",
+                            {
+                                "Fn::GetAtt": [
+                                    "CloudFrontStack",
+                                    "Outputs.CloudFrontDomainName"
+                                ]
+                            },
+                            ""
+                        ]
+                    },
+                    "HostedZoneName": {
+                        "Ref": "HostedZoneName"
+                    },
+                    "ALBDNSName": {
+                        "Fn::GetAtt": [
+                            "ApplicationLoadBalancer",
+                            "DNSName"
+                        ]
+                    },
+                    "CanonicalHostedZoneID": {
+                        "Fn::GetAtt": [
+                            "ApplicationLoadBalancer",
+                            "CanonicalHostedZoneID"
+                        ]
+                    },
+                    "CloudFrontCNAMEAlias": {
+                        "Ref": "LibertyCloudFrontCNAME"
+                    }
+                }
+            }
+        }
+    },
+    "Outputs": {
+        "WebsiteURL": {
+            "Description": "URL for newly created Liberty stack",
+            "Value": {
+                "Fn::Join": [
+                    "",
+                    [
+                        {
+                            "Fn::If": [
+                                "CreateCloudFrontDistribution",
+                                {
+                                    "Fn::GetAtt": [
+                                        "CloudFrontStack",
+                                        "Outputs.CloudFrontURL"
+                                    ]
+                                },
+                                {
+                                    "Fn::If": [
+                                        "UseALBSSL",
+                                        {
+                                            "Fn::Join": [
+                                                "",
+                                                [
+                                                    "https://",
+                                                    {
+                                                        "Fn::Join": [
+                                                            "",
+                                                            [
+                                                                {
+                                                                    "Fn::Select": [
+                                                                        "0",
+                                                                        {
+                                                                            "Fn::Split": [
+                                                                                ".",
+                                                                                {
+                                                                                    "Fn::GetAtt": [
+                                                                                        "ApplicationLoadBalancer",
+                                                                                        "DNSName"
+                                                                                    ]
+                                                                                }
+                                                                            ]
+                                                                        }
+                                                                    ]
+                                                                },
+                                                                ".",
+                                                                {
+                                                                    "Ref": "HostedZoneName"
+                                                                },
+                                                                "."
+                                                            ]
+                                                        ]
+                                                    }
+                                                ]
+                                            ]
+                                        },
+                                        {
+                                            "Fn::Join": [
+                                                "",
+                                                [
+                                                    "http://",
+                                                    {
+                                                        "Fn::GetAtt": [
+                                                            "ApplicationLoadBalancer",
+                                                            "DNSName"
+                                                        ]
+                                                    }
+                                                ]
+                                            ]
+                                        }
+                                    ]
+                                }
+                            ]
+                        },
+                        {
+                            "Fn::If": [
+                                "DeploySampleApp",
+                                "/ferret",
+                                ""
+                            ]
+                        }
+                    ]
+                ]
+            }
+        }
+    }
+}

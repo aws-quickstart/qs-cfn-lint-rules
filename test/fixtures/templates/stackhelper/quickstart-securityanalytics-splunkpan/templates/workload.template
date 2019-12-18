@@ -1,0 +1,1545 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "Workload template to launch Splunk and Palo Alto Networks Security Infrastructure and Analytics solution in an existing VPC. **WARNING** This template creates AWS resources. You will be billed for the AWS resources used if you create a stack from this template.(qs-1nq18dd9j)",
+    "Parameters": {
+        "AvailabilityZones": {
+            "Description": "Enter the list of Availability Zones (Based on Number of AZs above)",
+            "Type": "List<AWS::EC2::AvailabilityZone::Name>"
+        },
+        "ELBName": {
+            "Default": "public-elb",
+            "Description": "Enter the name of the External Classic Load Balancer",
+            "MaxLength": "12",
+            "MinLength": "3",
+            "Type": "String"
+        },
+        "FWInstanceType": {
+            "AllowedValues": [
+                "m4.xlarge",
+                "m4.2xlarge",
+                "m4.4xlarge",
+                "m3.xlarge",
+                "m3.2xlarge",
+                "c4.xlarge",
+                "c4.2xlarge",
+                "c4.4xlarge",
+                "c3.xlarge",
+                "c3.2xlarge",
+                "c3.4xlarge"
+            ],
+            "Default": "m4.xlarge",
+            "Description": "Enter the instance type and size that you want for VM-Series firewall",
+            "Type": "String"
+        },
+        "HECClientLocation": {
+            "AllowedPattern": "^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\\/([0-9]|[1-2][0-9]|3[0-2]))$",
+            "ConstraintDescription": "Must be a valid IP range in x.x.x.x/x notation.  Use 0.0.0.0/0 for no restrictions.",
+            "Description": "The IP address range that is allowed to send data to Splunk HTTP Event Collector. Note: a value of 0.0.0.0/0 will allow access from ANY ip address",
+            "MaxLength": "19",
+            "MinLength": "9",
+            "Type": "String"
+        },
+        "HTTPLocation": {
+            "AllowedPattern": "^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\\/([0-9]|[1-2][0-9]|3[0-2]))$",
+            "ConstraintDescription": "Must be a valid IP range in x.x.x.x/x notation.  Use 0.0.0.0/0 for no restrictions.",
+            "Description": "The IP address range that is allowed to connect to the Splunk web interface. Note: a value of 0.0.0.0/0 will allow access from ANY ip address",
+            "MaxLength": "19",
+            "MinLength": "9",
+            "Type": "String"
+        },
+        "ILBName": {
+            "Default": "private-ilb",
+            "Description": "Enter the name of the Internal Load Balancer",
+            "MaxLength": "12",
+            "MinLength": "3",
+            "Type": "String"
+        },
+        "IndexerApps": {
+            "Default": "",
+            "Description": "Comma separated list of URLs of Splunk App (or Add-on) tarballs (.spl) to pre-install on indexer(s)",
+            "Type": "CommaDelimitedList"
+        },
+        "IndexerInstanceType": {
+            "AllowedValues": [
+                "c4.large",
+                "c4.xlarge",
+                "c4.2xlarge",
+                "c4.4xlarge",
+                "c4.8xlarge",
+                "m4.large",
+                "m4.xlarge",
+                "m4.2xlarge",
+                "m4.4xlarge",
+                "m4.10xlarge"
+            ],
+            "ConstraintDescription": "must be a valid EC2 instance type.",
+            "Default": "c4.xlarge",
+            "Description": "EC2 instance type for Splunk Indexers",
+            "Type": "String"
+        },
+        "InstanceType": {
+            "AllowedValues": [
+                "t2.micro",
+                "t2.small",
+                "t2.medium",
+                "m3.medium",
+                "m3.large",
+                "m3.xlarge",
+                "m3.2xlarge",
+                "c3.xlarge",
+                "c3.2xlarge",
+                "c3.4xlarge",
+                "c3.8xlarge",
+                "c4.large",
+                "c4.xlarge",
+                "c4.2xlarge",
+                "c4.4xlarge",
+                "c4.8xlarge",
+                "r3.large",
+                "r3.xlarge",
+                "r3.2xlarge",
+                "r3.4xlarge",
+                "r3.8xlarge",
+                "i2.xlarge",
+                "i2.2xlarge",
+                "i2.4xlarge"
+            ],
+            "ConstraintDescription": "must be a valid EC2 instance type.",
+            "Default": "t2.medium",
+            "Description": "WebServer EC2 instance type",
+            "Type": "String"
+        },
+        "KeyDeLicense": {
+            "Default": "",
+            "Description": "Key used to de-license the PAN FW",
+            "NoEcho": "true",
+            "Type": "String"
+        },
+        "KeyName": {
+            "Description": "Amazon EC2 Key Pair",
+            "Type": "AWS::EC2::KeyPair::KeyName"
+        },
+        "KeyPANWFirewall": {
+            "AllowedPattern": "[\\S0-9a-zA-Z]+",
+            "ConstraintDescription": "The PAN FW API key is required.",
+            "Default": "LUFRPT1Zd2pYUGpkMUNrVEZlb3hROEQyUm95dXNGRkU9N0d4RGpTN2VZaVZYMVVoS253U0p6dlk3MkM0SDFySEh2UUR4Y3hzK2g3ST0=",
+            "Description": "API Key associated to username/password of the VM-Series Firewall. By default it is pandemo/demopassword",
+            "MaxLength": "128",
+            "MinLength": "3",
+            "NoEcho": "true",
+            "Type": "String"
+        },
+        "KeyPANWPanorama": {
+            "Description": "API Key associated to username/password (by default it is admin/admin) of the Panorama, if you are using Panorama for centralized management. Otherwise leave blank.",
+            "NoEcho": "true",
+            "Type": "String"
+        },
+        "LambdaSubnet1": {
+            "Description": "First subnet to use for the lambda functions",
+            "Type": "AWS::EC2::Subnet::Id"
+        },
+        "LambdaSubnet2": {
+            "Description": "Second subnet to use for the lambda functions",
+            "Type": "AWS::EC2::Subnet::Id"
+        },
+        "LambdaSubnet3": {
+            "Default": "",
+            "Description": "Third subnet to use for the lambda functions. Optional, used only if 3 availability zones are selected.",
+            "Type": "String"
+        },
+        "MGMTSubnet1": {
+            "Description": "Subnet to use for first Management interface",
+            "Type": "AWS::EC2::Subnet::Id"
+        },
+        "MGMTSubnet2": {
+            "Description": "Subnet to use for second Management interface",
+            "Type": "AWS::EC2::Subnet::Id"
+        },
+        "MGMTSubnet3": {
+            "Default": "",
+            "Description": "Subnet to use for third Management interface. Optional, used only if 3 availability zones are selected.",
+            "Type": "AWS::EC2::Subnet::Id"
+        },
+        "MaximumInstancesASG": {
+            "Default": "3",
+            "Description": "Maximum number of VM-Series firewalls in the ASG",
+            "Type": "Number"
+        },
+        "MinInstancesASG": {
+            "Default": "1",
+            "Description": "Minimum number of VM-Series firewalls in the ASG",
+            "Type": "Number"
+        },
+        "NATGateway": {
+            "AllowedValues": [
+                "Yes",
+                "No"
+            ],
+            "Default": "No",
+            "Description": "Yes = create AWS NAT Gateway in each AZ, No = Use EIPs (skip subnet CIDR for NAT/Lambda)",
+            "Type": "String"
+        },
+        "NATSubnet1": {
+            "Description": "Subnet to use for first NAT Gateway",
+            "Type": "AWS::EC2::Subnet::Id"
+        },
+        "NATSubnet2": {
+            "Description": "Subnet to use for second NAT Gateway",
+            "Type": "AWS::EC2::Subnet::Id"
+        },
+        "NATSubnet3": {
+            "Default": "",
+            "Description": "Subnet to use for third NAT Gateway. Optional, used only if 3 availability zones are selected.",
+            "Type": "String"
+        },
+        "NumberOfAZs": {
+            "Default": "2",
+            "Description": "Total Number of AZs which will be used in this deployment (Min 2 and Max 3)",
+            "MaxValue": "3",
+            "MinValue": "2",
+            "Type": "Number"
+        },
+        "PanFWLicenseType": {
+            "AllowedValues": [
+                "Bring-your-own-license",
+                "Pay-as-you-go-bundle-2"
+            ],
+            "Default": "Pay-as-you-go-bundle-2",
+            "Description": "PANOS 8.0 License Type to select AMI Id",
+            "Type": "String"
+        },
+        "QSS3BucketName": {
+            "AllowedPattern": "^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$",
+            "ConstraintDescription": "Quick Start bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-).",
+            "Default": "aws-quickstart",
+            "Description": "S3 bucket name for the Quick Start assets. Quick Start bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-).",
+            "Type": "String"
+        },
+        "QSS3KeyPrefix": {
+            "AllowedPattern": "^[0-9a-zA-Z-/]*$",
+            "ConstraintDescription": "Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).",
+            "Default": "quickstart-paloaltonetworks-vmsfirewall/",
+            "Description": "S3 key prefix for the Quick Start assets. Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).",
+            "Type": "String"
+        },
+        "SHCEnabled": {
+            "AllowedValues": [
+                "yes",
+                "no"
+            ],
+            "Default": "no",
+            "Description": "Do you want to build a Splunk search head cluster?",
+            "Type": "String"
+        },
+        "SSHLocation": {
+            "AllowedPattern": "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})",
+            "ConstraintDescription": "must be a valid CIDR range of the form x.x.x.x/x.",
+            "Description": "Restrict SSH access to the VM-Series firewall (by default can be accessed from anywhere)",
+            "MaxLength": "18",
+            "MinLength": "9",
+            "Type": "String"
+        },
+        "ScaleDownThreshold": {
+            "Default": "20",
+            "Description": "Value at which ScaleDown event would take place",
+            "Type": "Number"
+        },
+        "ScaleUpThreshold": {
+            "Default": "80",
+            "Description": "Value at which ScaleUp event would take place",
+            "Type": "Number"
+        },
+        "ScalingParameter": {
+            "AllowedValues": [
+                "DataPlaneCPUUtilization",
+                "ActiveSessions",
+                "DataPlaneBufferUtilization"
+            ],
+            "Default": "ActiveSessions",
+            "Description": "Refer to guide for recommended values for ScaleUp and ScaleDown",
+            "Type": "String"
+        },
+        "ScalingPeriod": {
+            "Default": "900",
+            "Description": "The period in seconds over which the average statistic is applied. Must be multiple of 60",
+            "Type": "String"
+        },
+        "SearchHeadApps": {
+            "Default": "",
+            "Description": "Comma separated list of URLs of Splunk App (or Add-on) tarballs (.spl) to pre-install on search head(s)",
+            "Type": "CommaDelimitedList"
+        },
+        "SearchHeadInstanceType": {
+            "AllowedValues": [
+                "c4.large",
+                "c4.xlarge",
+                "c4.2xlarge",
+                "c4.4xlarge",
+                "c4.8xlarge",
+                "r4.large",
+                "r4.xlarge",
+                "r4.2xlarge",
+                "r4.4xlarge",
+                "r4.8xlarge"
+            ],
+            "ConstraintDescription": "must be a valid EC2 instance type.",
+            "Default": "c4.xlarge",
+            "Description": "EC2 instance type for Splunk Search Heads",
+            "Type": "String"
+        },
+        "SplunkAdminPassword": {
+            "AllowedPattern": "(?=^.{6,255}$)((?=.*\\d)(?=.*[A-Z])(?=.*[a-z])|(?=.*\\d)(?=.*[^A-Za-z0-9])(?=.*[a-z])|(?=.*[^A-Za-z0-9])(?=.*[A-Z])(?=.*[a-z])|(?=.*\\d)(?=.*[A-Z])(?=.*[^A-Za-z0-9]))^.*",
+            "ConstraintDescription": "Must be at least 8 characters containing letters, numbers and symbols.",
+            "Description": "Admin password for Splunk. Must be at least 8 characters containing letters, numbers and symbols.",
+            "MaxLength": "32",
+            "MinLength": "6",
+            "NoEcho": "true",
+            "Type": "String"
+        },
+        "SplunkIndexerCount": {
+            "ConstraintDescription": "must be a valid number, 3-10",
+            "Default": "3",
+            "Description": "How many Splunk indexers to launch.  [3-10]",
+            "MaxValue": "10",
+            "MinValue": "3",
+            "Type": "Number"
+        },
+        "SplunkIndexerDiskSize": {
+            "ConstraintDescription": "must be a valid number, 50-16000",
+            "Default": "200",
+            "Description": "The size of the attached EBS volume to the Splunk indexers.  (in GB)",
+            "MaxValue": "16000",
+            "MinValue": "50",
+            "Type": "Number"
+        },
+        "SplunkInstanceType": {
+            "AllowedValues": [
+                "c4.large",
+                "c4.2xlarge",
+                "c4.4xlarge",
+                "c4.8xlarge",
+                "m4.10xlarge",
+                "r4.8xlarge"
+            ],
+            "ConstraintDescription": "must be a valid EC2 instance type.",
+            "Default": "c4.large",
+            "Description": "Splunk Instance Type",
+            "Type": "String"
+        },
+        "SplunkLicenseBucket": {
+            "Default": "",
+            "Description": "Name of private S3 bucket with licenses to be accessed via authenticated requests",
+            "Type": "String"
+        },
+        "SplunkLicensePath": {
+            "Default": "",
+            "Description": "Path to license file in S3 Bucket (without leading '/')",
+            "Type": "String"
+        },
+        "SplunkReplicationFactor": {
+            "ConstraintDescription": "must be a valid number, 2-5",
+            "Default": "3",
+            "Description": "How many copies of data should be stored in the Splunk clusters",
+            "MaxValue": "5",
+            "MinValue": "2",
+            "Type": "Number"
+        },
+        "SplunkSecret": {
+            "AllowedPattern": "(?=^.{6,255}$)((?=.*\\d)(?=.*[A-Z])(?=.*[a-z])|(?=.*\\d)(?=.*[^A-Za-z0-9])(?=.*[a-z])|(?=.*[^A-Za-z0-9])(?=.*[A-Z])(?=.*[a-z])|(?=.*\\d)(?=.*[A-Z])(?=.*[^A-Za-z0-9]))^.*",
+            "ConstraintDescription": "Must be at least 8 characters containing letters, numbers and symbols.",
+            "Description": "Shared cluster secret for Search Head and Indexer clusters. Must be at least 8 characters containing letters, numbers and symbols.",
+            "MaxLength": "32",
+            "MinLength": "6",
+            "NoEcho": "true",
+            "Type": "String"
+        },
+        "SplunkSubnet1": {
+            "Description": "First subnet to provision Splunk instances.",
+            "Type": "AWS::EC2::Subnet::Id"
+        },
+        "SplunkSubnet2": {
+            "Description": "Second subnet to provision Splunk instances.",
+            "Type": "AWS::EC2::Subnet::Id"
+        },
+        "SplunkSubnet3": {
+            "Default": "",
+            "Description": "Third subnet to provision Splunk instances. Used only when 3 availability zones are selected.",
+            "Type": "AWS::EC2::Subnet::Id"
+        },
+        "SplunkSyslogDiskSize": {
+            "ConstraintDescription": "must be a valid number320-16000",
+            "Default": "320",
+            "Description": "The size of the attached EBS volume to the Splunk syslog aggregator s.  (in GB)",
+            "MaxValue": "16000",
+            "MinValue": "320",
+            "Type": "Number"
+        },
+        "SplunkSyslogInstanceCount": {
+            "ConstraintDescription": "must be a valid number, 2-10",
+            "Default": "2",
+            "Description": "How many Splunk syslog-ng servers to launch.  [2-10]",
+            "MaxValue": "10",
+            "MinValue": "2",
+            "Type": "Number"
+        },
+        "SplunkSyslogInstanceType": {
+            "AllowedValues": [
+                "c4.large",
+                "c4.2xlarge",
+                "c4.4xlarge",
+                "c4.8xlarge",
+                "m4.10xlarge",
+                "r4.8xlarge"
+            ],
+            "ConstraintDescription": "must be a valid EC2 instance type.",
+            "Default": "c4.large",
+            "Description": "Splunk Syslog Instance Type",
+            "Type": "String"
+        },
+        "SplunkUFLocation": {
+            "Description": "S3 location for Splunk Universal Forwarder (e.g. https://s3.amazonaws.com/splunk-uf-bucket/splunk-uf.rpm",
+            "Type": "String"
+        },
+        "TRUSTSubnet1": {
+            "Description": "Subnet to use for the first Trust interface",
+            "Type": "AWS::EC2::Subnet::Id"
+        },
+        "TRUSTSubnet2": {
+            "Description": "Subnet to use for the second Trust interface",
+            "Type": "AWS::EC2::Subnet::Id"
+        },
+        "TRUSTSubnet3": {
+            "Default": "",
+            "Description": "Subnet to use for the third Trust interface. Used only 3 availability zones are selected.",
+            "Type": "AWS::EC2::Subnet::Id"
+        },
+        "UNTRUSTSubnet1": {
+            "Description": "Subnet to use for the first Untrust interface. ",
+            "Type": "AWS::EC2::Subnet::Id"
+        },
+        "UNTRUSTSubnet2": {
+            "Description": "Subnet to use for the second Untrust interface. ",
+            "Type": "AWS::EC2::Subnet::Id"
+        },
+        "UNTRUSTSubnet3": {
+            "Default": "",
+            "Description": "Subnet to use for the third Untrust interface. Used only 3 availability zones are selected.",
+            "Type": "AWS::EC2::Subnet::Id"
+        },
+        "VPCCIDR": {
+            "AllowedPattern": "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})",
+            "ConstraintDescription": "must be a valid CIDR range of the form x.x.x.x/x.",
+            "Description": "Enter the VPC CIDR that you want to use",
+            "Type": "String"
+        },
+        "VPCID": {
+            "Description": "VPC ID",
+            "Type": "AWS::EC2::VPC::Id"
+        }
+    },
+    "Metadata": {
+        "AWS::CloudFormation::Interface": {
+            "ParameterGroups": [
+                {
+                    "Label": {
+                        "default": "VPC Configuration"
+                    },
+                    "Parameters": [
+                        "VPCCIDR",
+                        "NATGateway",
+                        "NumberOfAZs",
+                        "AvailabilityZones",
+                        "VPCID"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "Subnet Configuration"
+                    },
+                    "Parameters": [
+                        "LambdaSubnet1",
+                        "LambdaSubnet2",
+                        "LambdaSubnet3",
+                        "MGMTSubnet1",
+                        "MGMTSubnet2",
+                        "MGMTSubnet3",
+                        "NATSubnet1",
+                        "NATSubnet2",
+                        "NATSubnet3",
+                        "SplunkSubnet1",
+                        "SplunkSubnet2",
+                        "SplunkSubnet3",
+                        "TRUSTSubnet1",
+                        "TRUSTSubnet2",
+                        "TRUSTSubnet3",
+                        "UNTRUSTSubnet1",
+                        "UNTRUSTSubnet2",
+                        "UNTRUSTSubnet3"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "VM-Series Firewall Instance Configuration"
+                    },
+                    "Parameters": [
+                        "FWInstanceType",
+                        "PanFWLicenseType",
+                        "KeyDeLicense",
+                        "KeyName",
+                        "SSHLocation"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "VM-Series API Key"
+                    },
+                    "Parameters": [
+                        "KeyPANWFirewall",
+                        "KeyPANWPanorama"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "Firewall Auto Scaling Configuration"
+                    },
+                    "Parameters": [
+                        "ScalingParameter",
+                        "ScalingPeriod",
+                        "MaximumInstancesASG",
+                        "MinInstancesASG",
+                        "ScaleDownThreshold",
+                        "ScaleUpThreshold"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "Splunk Configuration"
+                    },
+                    "Parameters": [
+                        "SplunkInstanceType",
+                        "HTTPLocation",
+                        "SHCEnabled",
+                        "SplunkAdminPassword",
+                        "SplunkIndexerCount",
+                        "SplunkIndexerDiskSize",
+                        "SplunkLicenseBucket",
+                        "SplunkLicensePath",
+                        "SplunkReplicationFactor",
+                        "SplunkSecret",
+                        "HECClientLocation",
+                        "IndexerApps",
+                        "SearchHeadApps",
+                        "SplunkUFLocation",
+                        "IndexerInstanceType",
+                        "SearchHeadInstanceType",
+                        "SplunkSyslogDiskSize",
+                        "SplunkSyslogInstanceCount",
+                        "SplunkSyslogInstanceType"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "Web Server Configuration"
+                    },
+                    "Parameters": [
+                        "InstanceType",
+                        "ELBName",
+                        "ILBName"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "AWS Quick Start Configuration"
+                    },
+                    "Parameters": [
+                        "QSS3BucketName",
+                        "QSS3KeyPrefix"
+                    ]
+                }
+            ],
+            "ParameterLabels": {
+                "AvailabilityZones": {
+                    "default": "Select list of AZ:"
+                },
+                "ELBName": {
+                    "default": "External Load Balancer Name"
+                },
+                "FWInstanceType": {
+                    "default": "Firewall Instance size"
+                },
+                "HECClientLocation": {
+                    "default": "HEC Client Location CIDR Block"
+                },
+                "HTTPLocation": {
+                    "default": "HTTP CIDR Block"
+                },
+                "ILBName": {
+                    "default": "Internal Load Balancer Name"
+                },
+                "IndexerApps": {
+                    "default": "Splunk Indexer Apps S3 URL"
+                },
+                "IndexerInstanceType": {
+                    "default": "Splunk Indexer Instance Type"
+                },
+                "InstanceType": {
+                    "default": "Web Servers Instance Type"
+                },
+                "KeyDeLicense": {
+                    "default": "Key used to de-license the Firewall (Optional)"
+                },
+                "KeyName": {
+                    "default": "Key Name"
+                },
+                "KeyPANWFirewall": {
+                    "default": "API Key for Firewall"
+                },
+                "KeyPANWPanorama": {
+                    "default": "API Key for Panorama"
+                },
+                "MaximumInstancesASG": {
+                    "default": "Maximum Firewall Instances"
+                },
+                "MinInstancesASG": {
+                    "default": "Minimum Firewall Instances"
+                },
+                "NATGateway": {
+                    "default": "Do you want to create AWS NAT Gateway in each Availability Zone (AZ)?"
+                },
+                "NumberOfAZs": {
+                    "default": "Number of Availability Zones for deployment"
+                },
+                "PanFWLicenseType": {
+                    "default": "Firewall License Type"
+                },
+                "QSS3BucketName": {
+                    "default": "Quick Start S3 Bucket Name"
+                },
+                "QSS3KeyPrefix": {
+                    "default": "Quick Start S3 Key Prefix"
+                },
+                "SHCEnabled": {
+                    "default": "Enable Splunk Search Head Cluster"
+                },
+                "SSHLocation": {
+                    "default": "SSH Location"
+                },
+                "ScaleDownThreshold": {
+                    "default": "ScaleDown threshold value in percentage/value"
+                },
+                "ScaleUpThreshold": {
+                    "default": "ScaleUp threshold value in percentage/value"
+                },
+                "ScalingParameter": {
+                    "default": "Scaling Parameter"
+                },
+                "ScalingPeriod": {
+                    "default": "Time in seconds for Scaling Period"
+                },
+                "SearchHeadApps": {
+                    "default": "Splunk Search Head Apps S3 URL"
+                },
+                "SearchHeadInstanceType": {
+                    "default": "Splunk Search Head Instance Type"
+                },
+                "SplunkAdminPassword": {
+                    "default": "Splunk Enterprise Admin Password"
+                },
+                "SplunkIndexerCount": {
+                    "default": "Number of Indexers"
+                },
+                "SplunkIndexerDiskSize": {
+                    "default": "Splunk Indexer Disk Size"
+                },
+                "SplunkInstanceType": {
+                    "default": "Splunk Enterprise Instance Type"
+                },
+                "SplunkLicenseBucket": {
+                    "default": "Splunk License S3 Bucket (Optional)"
+                },
+                "SplunkLicensePath": {
+                    "default": "Splunk License file path (Optional)"
+                },
+                "SplunkReplicationFactor": {
+                    "default": "Splunk Index Replication Factor"
+                },
+                "SplunkSecret": {
+                    "default": "Splunk secret"
+                },
+                "SplunkSyslogDiskSize": {
+                    "default": "Splunk Syslog Server Disk Size"
+                },
+                "SplunkSyslogInstanceCount": {
+                    "default": "Number of Syslog Servers"
+                },
+                "SplunkSyslogInstanceType": {
+                    "default": "Syslog Server Instance Type"
+                },
+                "SplunkUFLocation": {
+                    "default": "Splunk Universal Forwarder location"
+                },
+                "VPCCIDR": {
+                    "default": "CIDR Block for the VPC:"
+                },
+                "VPCID": {
+                    "default": "VPC ID"
+                },
+                "LambdaSubnet1": {
+                    "default": "Lambda Function Subnet 1"
+                },
+                "LambdaSubnet2": {
+                    "default": "Lambda Function Subnet 2"
+                },
+                "LambdaSubnet3": {
+                    "default": "Lambda Function Subnet 3"
+                },
+                "MGMTSubnet1": {
+                    "default": "Management Subnet 1"
+                },
+                "MGMTSubnet2": {
+                    "default": "Management Subnet 2"
+                },
+                "MGMTSubnet3": {
+                    "default": "Management Subnet 3"
+                },
+                "NATSubnet1": {
+                    "default": "NAT Gateway Subnet 1"
+                },
+                "NATSubnet2": {
+                    "default": "NAT Gateway Subnet 2"
+                },
+                "NATSubnet3": {
+                    "default": "NAT Gateway Subnet 3"
+                },
+                "SplunkSubnet1": {
+                    "default": "Splunk Subnet 1"
+                },
+                "SplunkSubnet2": {
+                    "default": "Splunk Subnet 2"
+                },
+                "SplunkSubnet3": {
+                    "default": "Splunk Subnet 3"
+                },
+                "TRUSTSubnet1": {
+                    "default": "TRUST Subnet 1"
+                },
+                "TRUSTSubnet2": {
+                    "default": "TRUST Subnet 2"
+                },
+                "TRUSTSubnet3": {
+                    "default": "TRUST Subnet 3"
+                },
+                "UNTRUSTSubnet1": {
+                    "default": "UNTRUST Subnet 1"
+                },
+                "UNTRUSTSubnet2": {
+                    "default": "UNTRUST Subnet 2"
+                },
+                "UNTRUSTSubnet3": {
+                    "default": "UNTRUST Subnet 3"
+                }
+            }
+        }
+    },
+    "Conditions": {
+        "GovCloudCondition": {
+            "Fn::Equals": [
+                {
+                    "Ref": "AWS::Region"
+                },
+                "us-gov-west-1"
+            ]
+        },
+        "CreateSubnetAz3": {
+            "Fn::Equals": [
+                {
+                    "Ref": "NumberOfAZs"
+                },
+                "3"
+            ]
+        },
+        "NATGatewayRequired": {
+            "Fn::Equals": [
+                {
+                    "Ref": "NATGateway"
+                },
+                "Yes"
+            ]
+        }
+    },
+    "Resources": {
+        "CreateBootstrapBucketStack": {
+            "Type": "AWS::CloudFormation::Stack",
+            "Properties": {
+                "TemplateURL": {
+                    "Fn::Sub": [
+                        "https://${QSS3BucketName}.${QSS3Region}.amazonaws.com/${QSS3KeyPrefix}templates/s3-bucket.template",
+                        {
+                            "QSS3Region": {
+                                "Fn::If": [
+                                    "GovCloudCondition",
+                                    "s3-us-gov-west-1",
+                                    "s3"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                "Parameters": {
+                    "MasterS3Bucket": "pan",
+                    "QSS3BucketName": {
+                        "Ref": "QSS3BucketName"
+                    },
+                    "QSS3KeyPrefix": {
+                        "Ref": "QSS3KeyPrefix"
+                    }
+                }
+            }
+        },
+        "PanBootstrapBucketStack": {
+            "Type": "AWS::CloudFormation::Stack",
+            "Properties": {
+                "TemplateURL": {
+                    "Fn::Sub": [
+                        "https://${QSS3BucketName}.${QSS3Region}.amazonaws.com/${QSS3KeyPrefix}templates/bootstrap-bucket.template",
+                        {
+                            "QSS3Region": {
+                                "Fn::If": [
+                                    "GovCloudCondition",
+                                    "s3-us-gov-west-1",
+                                    "s3"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                "Parameters": {
+                    "MasterS3Bucket": {
+                        "Fn::GetAtt": [
+                            "CreateBootstrapBucketStack",
+                            "Outputs.BootstrapS3Bucket"
+                        ]
+                    },
+                    "QSS3BucketName": {
+                        "Ref": "QSS3BucketName"
+                    },
+                    "QSS3KeyPrefix": {
+                        "Ref": "QSS3KeyPrefix"
+                    },
+                    "SplunkHostname": {
+                        "Fn::GetAtt": [
+                            "SyslogStack",
+                            "Outputs.PANSyslogTarget"
+                        ]
+                    },
+                    "SplunkPort": "514",
+                    "SplunkTransport": "TCP"
+                }
+            },
+            "DependsOn": [
+                "CreateBootstrapBucketStack",
+                "SyslogStack"
+            ]
+        },
+        "DelayStack": {
+            "Type": "AWS::CloudFormation::Stack",
+            "Properties": {
+                "TemplateURL": {
+                    "Fn::Sub": [
+                        "https://${QSS3BucketName}.${QSS3Region}.amazonaws.com/${QSS3KeyPrefix}templates/delay-download.template",
+                        {
+                            "QSS3Region": {
+                                "Fn::If": [
+                                    "GovCloudCondition",
+                                    "s3-us-gov-west-1",
+                                    "s3"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                "Parameters": {
+                    "SourceS3Bucket": {
+                        "Fn::GetAtt": [
+                            "CreateBootstrapBucketStack",
+                            "Outputs.BootstrapS3Bucket"
+                        ]
+                    }
+                }
+            },
+            "DependsOn": [
+                "CreateBootstrapBucketStack",
+                "PanBootstrapBucketStack"
+            ]
+        },
+        "SyslogStack": {
+            "Type": "AWS::CloudFormation::Stack",
+            "Properties": {
+                "TemplateURL": {
+                    "Fn::Sub": [
+                        "https://${QSS3BucketName}.${QSS3Region}.amazonaws.com/${QSS3KeyPrefix}templates/syslog.template",
+                        {
+                            "QSS3Region": {
+                                "Fn::If": [
+                                    "GovCloudCondition",
+                                    "s3-us-gov-west-1",
+                                    "s3"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                "Parameters": {
+                    "VPCID": {
+                        "Ref": "VPCID"
+                    },
+                    "VPCCIDR": {
+                        "Ref": "VPCCIDR"
+                    },
+                    "PublicSubnet1ID": {
+                        "Ref": "SplunkSubnet1"
+                    },
+                    "PublicSubnet2ID": {
+                        "Ref": "SplunkSubnet2"
+                    },
+                    "PublicSubnet3ID": {
+                        "Fn::If": [
+                            "CreateSubnetAz3",
+                            {
+                                "Ref": "SplunkSubnet3"
+                            },
+                            {
+                                "Ref": "SplunkSubnet2"
+                            }
+                        ]
+                    },
+                    "NumberOfAZs": {
+                        "Ref": "NumberOfAZs"
+                    },
+                    "SplunkSyslogInstanceType": {
+                        "Ref": "SplunkSyslogInstanceType"
+                    },
+                    "SplunkIndexerDiscoverySecret": {
+                        "Ref": "SplunkSecret"
+                    },
+                    "ClusterMasterManagementURL": {
+                        "Fn::GetAtt": [
+                            "SplunkStack",
+                            "Outputs.ClusterMasterManagementURL"
+                        ]
+                    },
+                    "QSS3BucketName": {
+                        "Ref": "QSS3BucketName"
+                    },
+                    "QSS3KeyPrefix": {
+                        "Ref": "QSS3KeyPrefix"
+                    },
+                    "SSHClientLocation": {
+                        "Ref": "SSHLocation"
+                    },
+                    "KeyName": {
+                        "Ref": "KeyName"
+                    },
+                    "SplunkAdminPassword": {
+                        "Ref": "SplunkAdminPassword"
+                    },
+                    "SplunkSyslogInstanceCount": {
+                        "Ref": "SplunkSyslogInstanceCount"
+                    },
+                    "SplunkSyslogDiskSize": {
+                        "Ref": "SplunkSyslogDiskSize"
+                    },
+                    "SplunkUFLocation": {
+                        "Ref": "SplunkUFLocation"
+                    }
+                }
+            }
+        },
+        "SplunkStack": {
+            "Type": "AWS::CloudFormation::Stack",
+            "Properties": {
+                "TemplateURL": {
+                    "Fn::Sub": [
+                        "https://${QSS3BucketName}.${QSS3Region}.amazonaws.com/${QSS3KeyPrefix}submodules/quickstart-splunk-enterprise/templates/splunk-enterprise.template",
+                        {
+                            "QSS3Region": {
+                                "Fn::If": [
+                                    "GovCloudCondition",
+                                    "s3-us-gov-west-1",
+                                    "s3"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                "Parameters": {
+                    "VPCID": {
+                        "Ref": "VPCID"
+                    },
+                    "VPCCIDR": {
+                        "Ref": "VPCCIDR"
+                    },
+                    "PublicSubnet1ID": {
+                        "Ref": "SplunkSubnet1"
+                    },
+                    "PublicSubnet2ID": {
+                        "Ref": "SplunkSubnet2"
+                    },
+                    "PublicSubnet3ID": {
+                        "Fn::If": [
+                            "CreateSubnetAz3",
+                            {
+                                "Ref": "SplunkSubnet3"
+                            },
+                            {
+                                "Ref": "SplunkSubnet2"
+                            }
+                        ]
+                    },
+                    "NumberOfAZs": {
+                        "Ref": "NumberOfAZs"
+                    },
+                    "IndexerInstanceType": {
+                        "Ref": "IndexerInstanceType"
+                    },
+                    "SearchHeadInstanceType": {
+                        "Ref": "SearchHeadInstanceType"
+                    },
+                    "SplunkAdminPassword": {
+                        "Ref": "SplunkAdminPassword"
+                    },
+                    "SplunkClusterSecret": {
+                        "Ref": "SplunkSecret"
+                    },
+                    "SplunkIndexerDiscoverySecret": {
+                        "Ref": "SplunkSecret"
+                    },
+                    "SplunkLicenseBucket": {
+                        "Ref": "SplunkLicenseBucket"
+                    },
+                    "SplunkLicensePath": {
+                        "Ref": "SplunkLicensePath"
+                    },
+                    "KeyName": {
+                        "Ref": "KeyName"
+                    },
+                    "SSHClientLocation": {
+                        "Ref": "SSHLocation"
+                    },
+                    "HECClientLocation": {
+                        "Ref": "HECClientLocation"
+                    },
+                    "WebClientLocation": {
+                        "Ref": "HTTPLocation"
+                    },
+                    "SplunkIndexerCount": {
+                        "Ref": "SplunkIndexerCount"
+                    },
+                    "SHCEnabled": {
+                        "Ref": "SHCEnabled"
+                    },
+                    "SplunkIndexerDiskSize": {
+                        "Ref": "SplunkIndexerDiskSize"
+                    },
+                    "SplunkReplicationFactor": {
+                        "Ref": "SplunkReplicationFactor"
+                    },
+                    "IndexerApps": {
+                        "Fn::Join": [
+                            ",",
+                            {
+                                "Ref": "IndexerApps"
+                            }
+                        ]
+                    },
+                    "SearchHeadApps": {
+                        "Fn::Join": [
+                            ",",
+                            {
+                                "Ref": "SearchHeadApps"
+                            }
+                        ]
+                    },
+                    "QSS3BucketName": {
+                        "Ref": "QSS3BucketName"
+                    },
+                    "QSS3KeyPrefix": {
+                        "Ref": "QSS3KeyPrefix"
+                    }
+                },
+                "TimeoutInMinutes": "60"
+            }
+        },
+        "WebserverStack": {
+            "Type": "AWS::CloudFormation::Stack",
+            "Properties": {
+                "TemplateURL": {
+                    "Fn::Sub": [
+                        "https://${QSS3BucketName}.${QSS3Region}.amazonaws.com/${QSS3KeyPrefix}submodules/quickstart-paloaltonetworks-vmsfirewall/templates/webserver.template",
+                        {
+                            "QSS3Region": {
+                                "Fn::If": [
+                                    "GovCloudCondition",
+                                    "s3-us-gov-west-1",
+                                    "s3"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                "Parameters": {
+                    "AvailabilityZones": {
+                        "Fn::Join": [
+                            ",",
+                            {
+                                "Ref": "AvailabilityZones"
+                            }
+                        ]
+                    },
+                    "NumberOfAZs": {
+                        "Ref": "NumberOfAZs"
+                    },
+                    "VPCCIDR": {
+                        "Ref": "VPCCIDR"
+                    },
+                    "ILBName": {
+                        "Ref": "ILBName"
+                    },
+                    "ELBName": {
+                        "Ref": "ELBName"
+                    },
+                    "SSHLocation": {
+                        "Ref": "SSHLocation"
+                    },
+                    "VPCID": {
+                        "Ref": "VPCID"
+                    },
+                    "AZSubnetIDUntrust": {
+                        "Fn::If": [
+                            "CreateSubnetAz3",
+                            {
+                                "Fn::Join": [
+                                    ",",
+                                    [
+                                        {
+                                            "Ref": "UNTRUSTSubnet1"
+                                        },
+                                        {
+                                            "Ref": "UNTRUSTSubnet2"
+                                        },
+                                        {
+                                            "Ref": "UNTRUSTSubnet3"
+                                        }
+                                    ]
+                                ]
+                            },
+                            {
+                                "Fn::Join": [
+                                    ",",
+                                    [
+                                        {
+                                            "Ref": "UNTRUSTSubnet1"
+                                        },
+                                        {
+                                            "Ref": "UNTRUSTSubnet2"
+                                        }
+                                    ]
+                                ]
+                            }
+                        ]
+                    },
+                    "AZSubnetIDTrust": {
+                        "Fn::If": [
+                            "CreateSubnetAz3",
+                            {
+                                "Fn::Join": [
+                                    ",",
+                                    [
+                                        {
+                                            "Ref": "TRUSTSubnet1"
+                                        },
+                                        {
+                                            "Ref": "TRUSTSubnet2"
+                                        },
+                                        {
+                                            "Ref": "TRUSTSubnet3"
+                                        }
+                                    ]
+                                ]
+                            },
+                            {
+                                "Fn::Join": [
+                                    ",",
+                                    [
+                                        {
+                                            "Ref": "TRUSTSubnet1"
+                                        },
+                                        {
+                                            "Ref": "TRUSTSubnet2"
+                                        }
+                                    ]
+                                ]
+                            }
+                        ]
+                    },
+                    "KeyName": {
+                        "Ref": "KeyName"
+                    },
+                    "NATGateway": {
+                        "Ref": "NATGateway"
+                    },
+                    "InstanceType": {
+                        "Ref": "InstanceType"
+                    }
+                }
+            }
+        },
+        "FirewallMasterStack": {
+            "Type": "AWS::CloudFormation::Stack",
+            "Properties": {
+                "TemplateURL": {
+                    "Fn::Sub": [
+                        "https://${QSS3BucketName}.${QSS3Region}.amazonaws.com/${QSS3KeyPrefix}submodules/quickstart-paloaltonetworks-vmsfirewall/templates/firewall.template",
+                        {
+                            "QSS3Region": {
+                                "Fn::If": [
+                                    "GovCloudCondition",
+                                    "s3-us-gov-west-1",
+                                    "s3"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                "Parameters": {
+                    "VPCCIDR": {
+                        "Ref": "VPCCIDR"
+                    },
+                    "ILBName": {
+                        "Ref": "ILBName"
+                    },
+                    "ELBName": {
+                        "Ref": "ELBName"
+                    },
+                    "MasterS3Bucket": {
+                        "Fn::GetAtt": [
+                            "CreateBootstrapBucketStack",
+                            "Outputs.BootstrapS3Bucket"
+                        ]
+                    },
+                    "SSHLocation": {
+                        "Ref": "SSHLocation"
+                    },
+                    "FWInstanceType": {
+                        "Ref": "FWInstanceType"
+                    },
+                    "PanFWLicenseType": {
+                        "Ref": "PanFWLicenseType"
+                    },
+                    "VPCID": {
+                        "Ref": "VPCID"
+                    },
+                    "AZSubnetIDMgmt": {
+                        "Fn::If": [
+                            "CreateSubnetAz3",
+                            {
+                                "Fn::Join": [
+                                    ",",
+                                    [
+                                        {
+                                            "Ref": "MGMTSubnet1"
+                                        },
+                                        {
+                                            "Ref": "MGMTSubnet2"
+                                        },
+                                        {
+                                            "Ref": "MGMTSubnet3"
+                                        }
+                                    ]
+                                ]
+                            },
+                            {
+                                "Fn::Join": [
+                                    ",",
+                                    [
+                                        {
+                                            "Ref": "MGMTSubnet1"
+                                        },
+                                        {
+                                            "Ref": "MGMTSubnet2"
+                                        }
+                                    ]
+                                ]
+                            }
+                        ]
+                    },
+                    "AZSubnetIDUntrust": {
+                        "Fn::If": [
+                            "CreateSubnetAz3",
+                            {
+                                "Fn::Join": [
+                                    ",",
+                                    [
+                                        {
+                                            "Ref": "UNTRUSTSubnet1"
+                                        },
+                                        {
+                                            "Ref": "UNTRUSTSubnet2"
+                                        },
+                                        {
+                                            "Ref": "UNTRUSTSubnet3"
+                                        }
+                                    ]
+                                ]
+                            },
+                            {
+                                "Fn::Join": [
+                                    ",",
+                                    [
+                                        {
+                                            "Ref": "UNTRUSTSubnet1"
+                                        },
+                                        {
+                                            "Ref": "UNTRUSTSubnet2"
+                                        }
+                                    ]
+                                ]
+                            }
+                        ]
+                    },
+                    "AZSubnetIDTrust": {
+                        "Fn::If": [
+                            "CreateSubnetAz3",
+                            {
+                                "Fn::Join": [
+                                    ",",
+                                    [
+                                        {
+                                            "Ref": "TRUSTSubnet1"
+                                        },
+                                        {
+                                            "Ref": "TRUSTSubnet2"
+                                        },
+                                        {
+                                            "Ref": "TRUSTSubnet3"
+                                        }
+                                    ]
+                                ]
+                            },
+                            {
+                                "Fn::Join": [
+                                    ",",
+                                    [
+                                        {
+                                            "Ref": "TRUSTSubnet1"
+                                        },
+                                        {
+                                            "Ref": "TRUSTSubnet2"
+                                        }
+                                    ]
+                                ]
+                            }
+                        ]
+                    },
+                    "KeyName": {
+                        "Ref": "KeyName"
+                    },
+                    "MinInstancesASG": {
+                        "Ref": "MinInstancesASG"
+                    },
+                    "MaximumInstancesASG": {
+                        "Ref": "MaximumInstancesASG"
+                    },
+                    "ScaleUpThreshold": {
+                        "Ref": "ScaleUpThreshold"
+                    },
+                    "ScaleDownThreshold": {
+                        "Ref": "ScaleDownThreshold"
+                    },
+                    "ScalingParameter": {
+                        "Ref": "ScalingParameter"
+                    },
+                    "ScalingPeriod": {
+                        "Ref": "ScalingPeriod"
+                    },
+                    "QSS3BucketName": {
+                        "Ref": "QSS3BucketName"
+                    },
+                    "QSS3KeyPrefix": {
+                        "Fn::Sub": "${QSS3KeyPrefix}submodules/quickstart-paloaltonetworks-vmsfirewall/"
+                    },
+                    "KeyPANWFirewall": {
+                        "Ref": "KeyPANWFirewall"
+                    },
+                    "KeyPANWPanorama": {
+                        "Ref": "KeyPANWPanorama"
+                    },
+                    "NATGateway": {
+                        "Ref": "NATGateway"
+                    },
+                    "AZSubnetIDNATGW": {
+                        "Fn::If": [
+                            "NATGatewayRequired",
+                            {
+                                "Fn::If": [
+                                    "CreateSubnetAz3",
+                                    {
+                                        "Fn::Join": [
+                                            ",",
+                                            [
+                                                {
+                                                    "Ref": "NATSubnet1"
+                                                },
+                                                {
+                                                    "Ref": "NATSubnet2"
+                                                },
+                                                {
+                                                    "Ref": "NATSubnet3"
+                                                }
+                                            ]
+                                        ]
+                                    },
+                                    {
+                                        "Fn::Join": [
+                                            ",",
+                                            [
+                                                {
+                                                    "Ref": "NATSubnet1"
+                                                },
+                                                {
+                                                    "Ref": "NATSubnet2"
+                                                }
+                                            ]
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "Ref": "AWS::NoValue"
+                            }
+                        ]
+                    },
+                    "AZSubnetIDLambda": {
+                        "Fn::If": [
+                            "NATGatewayRequired",
+                            {
+                                "Fn::If": [
+                                    "CreateSubnetAz3",
+                                    {
+                                        "Fn::Join": [
+                                            ",",
+                                            [
+                                                {
+                                                    "Ref": "LambdaSubnet1"
+                                                },
+                                                {
+                                                    "Ref": "LambdaSubnet2"
+                                                },
+                                                {
+                                                    "Ref": "LambdaSubnet3"
+                                                }
+                                            ]
+                                        ]
+                                    },
+                                    {
+                                        "Fn::Join": [
+                                            ",",
+                                            [
+                                                {
+                                                    "Ref": "LambdaSubnet1"
+                                                },
+                                                {
+                                                    "Ref": "LambdaSubnet2"
+                                                }
+                                            ]
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "Ref": "AWS::NoValue"
+                            }
+                        ]
+                    },
+                    "KeyDeLicense": {
+                        "Ref": "KeyDeLicense"
+                    }
+                }
+            },
+            "DependsOn": [
+                "WebserverStack",
+                "PanBootstrapBucketStack",
+                "CreateBootstrapBucketStack",
+                "DelayStack"
+            ]
+        }
+    },
+    "Outputs": {
+        "BootstrapBucket": {
+            "Description": "Your Bootstrap bucket being used for this deployment",
+            "Value": {
+                "Fn::GetAtt": [
+                    "CreateBootstrapBucketStack",
+                    "Outputs.BootstrapS3Bucket"
+                ]
+            }
+        },
+        "DNSNamePublicELB": {
+            "Description": "DNS Name for Elastic Load Balancer (Public)",
+            "Value": {
+                "Fn::GetAtt": [
+                    "WebserverStack",
+                    "Outputs.DNSNamePublicELB"
+                ]
+            }
+        },
+        "ELBName": {
+            "Description": "Elastic Load Balancer (Public)",
+            "Value": {
+                "Ref": "ELBName"
+            }
+        },
+        "ILBName": {
+            "Description": "Internal Load Balancer (Private)",
+            "Value": {
+                "Ref": "ILBName"
+            }
+        },
+        "KeyName": {
+            "Description": "Key Pair you have selected for SSH",
+            "Value": {
+                "Ref": "KeyName"
+            }
+        },
+        "SSHLocation": {
+            "Description": "Make sure you SSH from this IP address",
+            "Value": {
+                "Ref": "SSHLocation"
+            }
+        },
+        "ScalingParameter": {
+            "Description": "Scaling Parameter you have selected",
+            "Value": {
+                "Ref": "ScalingParameter"
+            }
+        },
+        "SearchHeadURL": {
+            "Description": "Splunk Enterprise - Search Head URL",
+            "Value": {
+                "Fn::GetAtt": [
+                    "SplunkStack",
+                    "Outputs.SearchHeadURL"
+                ]
+            }
+        },
+        "ClusterMasterURL": {
+            "Description": "Splunk Enterprise - Cluster Master URL",
+            "Value": {
+                "Fn::GetAtt": [
+                    "SplunkStack",
+                    "Outputs.ClusterMasterURL"
+                ]
+            }
+        }
+    }
+}

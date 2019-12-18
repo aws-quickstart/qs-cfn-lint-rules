@@ -1,0 +1,417 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+Description: AWS CloudFormation Template to setup and deploy vSBC HA instances and
+  2 PKTART instances to test vSBC. This template creates required vpc, subnet and
+  other routing elements required IAM role to performce IP movement betweenn two vSBC
+  instances. (qs-1pkktcfnj)
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Network configuration
+        Parameters:
+          - VPCCIDR
+          - SBCAvailabilityZone
+          - HFEPublicCIDR1
+          - HFEPublicCIDR2
+          - ManagementSubnetCIDR
+          - SBCHASubnetCIDR
+          - SBCAccessVoipCIDR
+          - SBCCoreVoipCIDR          
+      - Label:
+          default: Bastion configuration
+        Parameters:
+          - BastionAMIOS
+          - BastionInstanceType
+          - RemoteAccessCIDR
+      - Label:
+          default: SBC configuration
+        Parameters:
+          - KeyPairName
+          - SBCInstanceType
+          - AsteriskInstanceType
+          - SBCCLIPassword
+      - Label:
+          default: SBC options
+        Parameters:
+          - SBCPersonalityType
+          - SBCActiveInstanceName
+          - SBCPassiveInstanceName
+          - SBCSystemName
+          - Tenancy
+          - PlacementId
+          - SBCVolumeType
+          - SBCVolumeIOPS
+          - SBCVolumeSize
+      - Label:
+          default: AWS Quick Start configuration
+        Parameters:
+          - QSS3BucketName
+          - QSS3KeyPrefix
+    ParameterLabels:
+      KeyPairName:
+        default: SSH key name
+      SBCAccessVoipCIDR:
+        default: SBC access subnet CIDR
+      SBCCoreVoipCIDR:
+        default: SBC core subnet CIDR
+      SBCCLIPassword:
+        default: SBC CLI password
+      HFEPublicCIDR1:
+        default: HFE public subnet 1 CIDR
+      HFEPublicCIDR2:
+        default: HFE public subnet 2 CIDR
+      BastionAMIOS:
+        default: Bastion AMI operating system
+      BastionInstanceType:
+        default: Bastion instance type
+      ManagementSubnetCIDR:
+        default: SBC management subnet CIDR
+      SBCHASubnetCIDR:
+        default: SBC HA subnet CIDR
+      RemoteAccessCIDR:
+        default: Bastion remote access CIDR
+      SBCAvailabilityZone:
+        default: Availability Zone
+      VPCCIDR:
+        default: VPC CIDR
+      SBCInstanceType:
+        default: SBC instance type
+      AsteriskInstanceType:
+        default: Asterisk instance type
+      SBCPersonalityType:
+        default: SBC personality Type
+      SBCActiveInstanceName:
+        default: SBC active instance type
+      SBCPassiveInstanceName:
+        default: SBC passive instance type
+      SBCSystemName:
+        default: SBC system name
+      Tenancy:
+        default: EC2 placement tenancy
+      PlacementId:
+        default: EC2 placement ID
+      SBCVolumeType:
+        default: SBC volume type
+      SBCVolumeIOPS:
+        default: SBC volume IOPS
+      SBCVolumeSize:
+        default: SBC volume size
+      QSS3BucketName:
+        default: QuickStart S3 bucket name
+      QSS3KeyPrefix:
+        default: QuickStart S3 key prefix
+Parameters:
+  # VPC.
+  KeyPairName:
+    Description: 'Name of an existing EC2 key pair to enable SSH access to the SBC
+      and HFE instance.'
+    Type: AWS::EC2::KeyPair::KeyName
+    ConstraintDescription: must be the name of an existing EC2 key pair.
+  SBCCLIPassword:
+    Type: String
+    Description: Password used on the SBC CLI.
+    AllowedPattern: (^.*(?=.{8,})((?=.*[!@#$%^&*()\-_=+{};:,<.>]){1})(?=.*\d)((?=.*[a-z]){1})((?=.*[A-Z]){1}).*$)
+    ConstraintDescription: Must contain one uppercase letter, one lowercase letter, one number, and one special character. Must be 8chars or more.  
+  BastionAMIOS:
+    Default: "Amazon-Linux-HVM"
+    AllowedValues:
+      - Amazon-Linux-HVM
+      - CentOS-7-HVM
+      - Ubuntu-Server-14.04-LTS-HVM
+      - Ubuntu-Server-16.04-LTS-HVM
+    Type: String
+    Description: "The Linux distribution for the AMI to be used for the bastion instances."
+  BastionInstanceType:
+    AllowedValues:
+      - t2.nano
+      - t2.micro
+      - t2.small
+      - t2.medium
+      - t2.large
+      - m3.large
+      - m3.xlarge
+      - m3.2xlarge
+      - m4.large
+      - m4.xlarge
+      - m4.2xlarge
+      - m4.4xlarge
+    Default: t2.micro
+    Description: "Amazon EC2 instance type for the bastion instances."
+    Type: String
+  VPCCIDR:
+    Description: VPC CIDR block for new VPC that will be used to create SBC and PKTART
+      test tool.
+    Type: String
+    Default: 10.74.0.0/16
+    AllowedPattern: '^((\d|[1-9]\d|1\d{2}|2[0-4]\d|25[0-5])\.){3}(\d|[1-9]\d|1\d{2}|2[0-4]\d|25[0-5])(\/(\d|[1-2]\d|3[0-2]))$'
+    ConstraintDescription: Must be a valid IP CIDR range of the form x.x.x.x/x.
+  HFEPublicCIDR1:
+    Description: Enter a CIDR for public subnet for SBC; this new subnet will be
+      served by HFE instance.
+    Type: String
+    MinLength: '1'
+    Default: 10.74.12.0/24
+    AllowedPattern: '^((\d|[1-9]\d|1\d{2}|2[0-4]\d|25[0-5])\.){3}(\d|[1-9]\d|1\d{2}|2[0-4]\d|25[0-5])(\/(\d|[1-2]\d|3[0-2]))$'
+    ConstraintDescription: Must be a valid IP CIDR range of the form x.x.x.x/x and
+      subnet of VPC.
+  HFEPublicCIDR2:
+    Description: Enter a CIDR for public subnet for SBC; this new subnet will be
+      served by HFE instance.
+    Type: String
+    MinLength: '1'
+    Default: 10.74.13.0/24
+    AllowedPattern: '^((\d|[1-9]\d|1\d{2}|2[0-4]\d|25[0-5])\.){3}(\d|[1-9]\d|1\d{2}|2[0-4]\d|25[0-5])(\/(\d|[1-2]\d|3[0-2]))$'
+    ConstraintDescription: Must be a valid IP CIDR range of the form x.x.x.x/x and
+      subnet of VPC.
+  Tenancy:
+    Description: Tenancy attribute for SBC instances.
+    Type: String
+    Default: default
+    AllowedValues:
+      - default
+      - dedicated
+  PlacementId:
+    Description: Placement group to launch SBC instances.
+    Type: String
+    Default: ''
+  ManagementSubnetCIDR:
+    Description: CIDR used within the management subnet.
+    Type: String
+    MinLength: '1'
+    Default: 10.74.15.0/24
+    AllowedPattern: '^((\d|[1-9]\d|1\d{2}|2[0-4]\d|25[0-5])\.){3}(\d|[1-9]\d|1\d{2}|2[0-4]\d|25[0-5])(\/(\d|[1-2]\d|3[0-2]))$'
+    ConstraintDescription: Must be a valid IP CIDR range of the form x.x.x.x/x and
+      subnet of VPC.
+  SBCHASubnetCIDR:
+    Description: CIDR used within the SBC high availability subnet.
+    Type: String
+    MinLength: '1'
+    Default: 10.74.16.0/28
+    AllowedPattern: '^((\d|[1-9]\d|1\d{2}|2[0-4]\d|25[0-5])\.){3}(\d|[1-9]\d|1\d{2}|2[0-4]\d|25[0-5])(\/(\d|[1-2]\d|3[0-2]))$'
+    ConstraintDescription: Must be a valid IP CIDR range of the form x.x.x.x/x and
+      subnet of VPC.
+  SBCAccessVoipCIDR:
+    Description: CIDR used within the SBC external Voip (public-facing) subnet.
+    Type: String
+    MinLength: '1'
+    Default: 10.74.17.0/24
+    AllowedPattern: '^((\d|[1-9]\d|1\d{2}|2[0-4]\d|25[0-5])\.){3}(\d|[1-9]\d|1\d{2}|2[0-4]\d|25[0-5])(\/(\d|[1-2]\d|3[0-2]))$'
+    ConstraintDescription: Must be a valid IP CIDR range of the form x.x.x.x/x and
+      subnet of VPC.
+  SBCCoreVoipCIDR:
+    Description: CIDR used within the SBC internal Voip (private) subnet.
+      Served by HFE instance.
+    Type: String
+    MinLength: '1'
+    Default: 10.74.18.0/24
+    AllowedPattern: '^((\d|[1-9]\d|1\d{2}|2[0-4]\d|25[0-5])\.){3}(\d|[1-9]\d|1\d{2}|2[0-4]\d|25[0-5])(\/(\d|[1-2]\d|3[0-2]))$'
+    ConstraintDescription: Must be a valid IP CIDR range of the form x.x.x.x/x and
+      subnet of VPC.
+  RemoteAccessCIDR:
+    Description: CIDR used to access the bastion instance.
+    Type: String
+    Default: 0.0.0.0/0
+    AllowedPattern: '^((\d|[1-9]\d|1\d{2}|2[0-4]\d|25[0-5])\.){3}(\d|[1-9]\d|1\d{2}|2[0-4]\d|25[0-5])(\/(\d|[1-2]\d|3[0-2]))$'
+    ConstraintDescription: Must be a valid IP CIDR range of the form x.x.x.x/x.
+  SBCAvailabilityZone:
+    Description: Enter Availability Zone for SBC. New subnets for SBC will be created
+      here.
+    Type: AWS::EC2::AvailabilityZone::Name
+  SBCInstanceType:
+    Description: Instance type for the SBC HFE.
+    Type: String
+    Default: m5.xlarge
+    AllowedValues:
+      - m4.xlarge
+      - m5.xlarge
+      - c3.2xlarge
+      - c3.4xlarge
+      - c3.8xlarge
+      - c4.2xlarge
+      - c4.4xlarge
+      - c4.8xlarge
+      - c5.2xlarge
+      - c5.4xlarge
+      - c5.8xlarge
+    ConstraintDescription: Must be a valid EC2 instance type.
+  SBCPersonalityType:
+    Description: SBC Personality Type. Currently only supports 'isbc' (Integrated). Distributed is currently not supported.
+    Type: String
+    Default: isbc
+    AllowedValues:
+      - isbc
+    ConstraintDescription: Must be a valid SBC personality type.
+  SBCActiveInstanceName:
+    Description: CE name of the active instance.
+    Type: String
+    Default: vsbc1
+    MaxLength: '63'
+    AllowedPattern: ^[A-Za-z]{1}[-A-Za-z0-9.]*[A-Za-z0-9]{1}$
+    ConstraintDescription: 'Enter valid ceName(instance name).  Regex: ^[A-Za-z]{1}[-A-Za-z0-9.]*[A-Za-z0-9]{1}$'
+  SBCPassiveInstanceName:
+    Description: CE name of the standby instance.
+    Type: String
+    Default: vsbc2
+    MaxLength: '63'
+    AllowedPattern: ^[A-Za-z]{1}[-A-Za-z0-9.]*[A-Za-z0-9]{1}$
+    ConstraintDescription: 'Enter valid ceName(instance name).  Regex: ^[A-Za-z]{1}[-A-Za-z0-9.]*[A-Za-z0-9]{1}$'
+  SBCSystemName:
+    Description: System name.
+    Type: String
+    Default: vsbcSystem
+    MaxLength: '26'
+    AllowedPattern: ^[A-Za-z]{1}[-A-Za-z0-9]*[A-Za-z0-9]{1}$
+    ConstraintDescription: 'Enter valid system name.  Regex: ^[A-Za-z]{1}[-A-Za-z0-9]*[A-Za-z0-9]{1}$ '
+  SBCVolumeType:
+    Description: Volume type for SBC instances.
+    Type: String
+    Default: io1
+    AllowedValues:
+      - gp2
+      - io1
+  SBCVolumeIOPS:
+    Description: IOPS reservation for io1 type EBS volume [<= 1950]. This value is ignored for GP2 type volumes.
+    Type: Number
+    Default: '600'
+    MaxValue: '1950'
+  SBCVolumeSize:
+    Description: Size of disk, in GiB. Minimum disk required is 65 GiB.
+    Type: Number
+    Default: '65'
+    MinValue: '65'
+    MaxValue: '1000'
+  QSS3BucketName:
+    AllowedPattern: ^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$
+    ConstraintDescription: Quick Start bucket name can include numbers, lowercase
+      letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen
+      (-).
+    Default: aws-quickstart
+    Description: S3 bucket name for the Quick Start assets. This string can include
+      numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start
+      or end with a hyphen (-).
+    Type: String
+  QSS3KeyPrefix:
+    AllowedPattern: ^[0-9a-zA-Z-/]*$
+    ConstraintDescription: Quick Start key prefix can include numbers, lowercase letters,
+      uppercase letters, hyphens (-), and forward slash (/).
+    Default: quickstart-ribbon-sbc/
+    Description: S3 key prefix for the Quick Start assets. Quick Start key prefix
+      can include numbers, lowercase letters, uppercase letters, hyphens (-), and
+      forward slash (/).
+    Type: String
+  AsteriskInstanceType:
+    Description: Instance type for the Asterisk instance.
+    Type: String
+    Default: m5.xlarge
+    AllowedValues:
+      - m4.xlarge
+      - m5.xlarge
+      - c3.2xlarge
+      - c3.4xlarge
+      - c3.8xlarge
+      - c4.2xlarge
+      - c4.4xlarge
+      - c4.8xlarge
+      - c5.2xlarge
+      - c5.4xlarge
+      - c5.9xlarge
+    ConstraintDescription: Must be a valid EC2 instance type.
+Rules:
+  NameMismatch:
+    Assertions:
+      - Assert:
+          Fn::Not:
+          - Fn::Equals:
+            - !Ref 'SBCActiveInstanceName'
+            - !Ref 'SBCPassiveInstanceName'
+        AssertionDescription: "SBCActiveInstanceName and SBCPassiveInstanceName must be unique"
+      - Assert:
+          Fn::Not:
+          - Fn::Equals:
+            - !Ref 'SBCActiveInstanceName'
+            - !Ref 'SBCSystemName'
+        AssertionDescription: "SBCActiveInstanceName and SBCSystemName cannot be the same."
+      - Assert:
+          Fn::Not:
+          - Fn::Equals:
+            - !Ref 'SBCPassiveInstanceName'
+            - !Ref 'SBCSystemName'
+        AssertionDescription: "SBCPassiveInstanceName and SBCSystemName cannot be the same."
+Resources:
+  VPCStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL:
+        Fn::Sub: "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}templates/ribbon-custom-vpc.template.yaml"
+      Parameters:
+        AvailabilityZone: !Ref 'SBCAvailabilityZone'
+        PublicSubnet1CIDR: !Ref 'HFEPublicCIDR1'
+        PublicSubnet2CIDR: !Ref 'HFEPublicCIDR2'
+        PrivateSubnet1CIDR: !Ref 'SBCHASubnetCIDR'
+        PrivateSubnet2CIDR: !Ref 'SBCAccessVoipCIDR'
+        PrivateSubnet3CIDR: !Ref 'SBCCoreVoipCIDR'
+        PrivateSubnet4CIDR: !Ref 'ManagementSubnetCIDR'
+        PublicSubnetTag1: 'Name=Quickstart-Ribbon-SBC'
+        PrivateSubnetTag1: 'Name=Quickstart-Ribbon-SBC'
+        VPCCIDR: !Ref 'VPCCIDR'
+  BastionStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub 'https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}submodules/quickstart-linux-bastion/templates/linux-bastion.template'
+      Parameters:
+        BastionAMIOS: !Ref BastionAMIOS
+        BastionInstanceType: !Ref BastionInstanceType
+        KeyPairName: !Ref KeyPairName
+        PublicSubnet1ID: !GetAtt
+          - VPCStack
+          - Outputs.PublicSubnet1ID
+        QSS3BucketName: !Ref QSS3BucketName
+        QSS3KeyPrefix: !Sub "${QSS3KeyPrefix}submodules/quickstart-linux-bastion/"
+        VPCID: !GetAtt
+          - VPCStack
+          - Outputs.VPCID
+        RemoteAccessCIDR: !Ref RemoteAccessCIDR
+        PublicSubnet2ID: !GetAtt
+          - VPCStack
+          - Outputs.PublicSubnet2ID
+  SBCStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}templates/ribbon-sbc.template.yaml"
+      Parameters:
+        QSS3BucketName: !Ref QSS3BucketName
+        QSS3KeyPrefix: !Ref QSS3KeyPrefix
+        PublicSubnetID: !GetAtt
+          - VPCStack
+          - Outputs.PublicSubnet1ID
+        KeyPairName: !Ref KeyPairName
+        BastionSecurityGroupID: !GetAtt
+          - BastionStack
+          - Outputs.BastionSecurityGroupID
+        SBCAccessVoipSubnetID: !GetAtt
+          - VPCStack
+          - Outputs.PrivateSubnet2ID
+        SBCCoreVoipSubnetID: !GetAtt
+          - VPCStack
+          - Outputs.PrivateSubnet3ID
+        SBCManagementSubnetID: !GetAtt
+          - VPCStack
+          - Outputs.PrivateSubnet4ID
+        SBCHASubnetID: !GetAtt
+          - VPCStack
+          - Outputs.PrivateSubnet1ID
+        VPCID: !GetAtt
+          - VPCStack
+          - Outputs.VPCID
+        SBCCLIPassword: !Ref SBCCLIPassword
+        Tenancy: !Ref Tenancy
+        PlacementId: !Ref PlacementId
+        SBCInstanceType: !Ref SBCInstanceType
+        SBCPersonalityType: !Ref SBCPersonalityType
+        SBCVolumeType: !Ref SBCVolumeType
+        SBCVolumeIOPS: !Ref SBCVolumeIOPS
+        SBCVolumeSize: !Ref SBCVolumeSize
+        AsteriskInstanceType: !Ref AsteriskInstanceType
+        SBCAccessVoipCIDR: !Ref SBCAccessVoipCIDR
+        SBCCoreVoipCIDR:  !Ref SBCCoreVoipCIDR

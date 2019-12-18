@@ -1,0 +1,187 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Pre Execution Taks - S3 Bucket and Lambda Copy
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+    - Label:
+        default: General Settings
+      Parameters:
+      - MyS3Bucket
+    - Label:
+        default: AWS Quick Start Configuration
+      Parameters:
+      - QSS3BucketName
+      - QSS3KeyPrefix
+
+    ParameterLabels:
+      MyS3Bucket:
+        default: Output S3 Bucket Name
+      QSS3BucketName:
+        default: Quick Start S3 Bucket Name
+      QSS3KeyPrefix:
+        default: Quick Start S3 Key Prefix
+
+Parameters:
+  MyS3Bucket:
+    Description: 'OPTIONAL: Bucket Name where the zip file output should be placed, if left blank a bucket name will be automatically generated.'
+    Type: String
+    Default: ''
+  QSS3BucketName:
+    AllowedPattern: "^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$"
+    ConstraintDescription: Quick Start bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-)
+    Default: hanaqs
+    Description: S3 bucket name for the Quick Start assets. Quick Start bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-).
+    Type: String
+  QSS3KeyPrefix:
+    AllowedPattern: "^[0-9a-zA-Z-/]*$"
+    ConstraintDescription: Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).
+    Default: 'hanaha'
+    Description: S3 key prefix for the Quick Start assets. 
+    Type: String
+
+Conditions:
+  AutoGenOutputBucketName:
+    Fn::Not:
+    - Fn::Equals:
+      - Ref: MyS3Bucket
+      - ''
+
+Resources:
+  CreateNewMyS3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName:
+        Fn::If:
+        - AutoGenOutputBucketName
+        - Ref: MyS3Bucket
+        - Ref: AWS::NoValue
+      VersioningConfiguration:
+        Status: Suspended
+      Tags: []
+
+  InvokePreTasksLambda:
+    Type: AWS::CloudFormation::CustomResource
+    Properties:
+      ServiceToken:
+        Fn::GetAtt:
+        - PreTasksLambdaFunction
+        - Arn
+      DestBucket:
+        Ref: CreateNewMyS3Bucket
+      SourceBucket:
+        Ref: QSS3BucketName
+      Prefix: 
+        Ref: QSS3KeyPrefix
+      Objects:
+      - /ValidateParameters.zip
+      - /HAConfig.zip
+      - /PreHAConfig.zip
+  
+  PreTasksLambdaRole:
+    Type: AWS::IAM::Role
+    DependsOn: CreateNewMyS3Bucket
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service: lambda.amazonaws.com
+          Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole
+      Path: "/"
+      Policies:
+      - PolicyName: preTasksLambdaPolicy
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - s3:GetObject
+            Resource:
+            - Fn::Sub: arn:aws:s3:::${QSS3BucketName}/${QSS3KeyPrefix}/*
+          - Effect: Allow
+            Action:
+            - s3:PutObject
+            - s3:DeleteObject
+            Resource:
+            - Fn::Sub: arn:aws:s3:::${CreateNewMyS3Bucket}/${QSS3KeyPrefix}/*
+          - Effect: Allow
+            Action:
+            - s3:DeleteBucket
+            Resource:
+            - Fn::Sub: arn:aws:s3:::${CreateNewMyS3Bucket}
+  
+  PreTasksLambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Description: PreTasks Function
+      Handler: index.handler
+      Runtime: python3.6
+      Role:
+        Fn::GetAtt:
+        - PreTasksLambdaRole
+        - Arn
+      Timeout: 240
+      Code:
+        ZipFile: !Sub |
+           import json
+           import logging
+           import threading
+           import boto3
+           import cfnresponse
+
+           responseStr = {'Status' : {}}
+           routeTableID = ""
+
+           def copy_objects(source_bucket, dest_bucket, prefix, objects):
+               s3 = boto3.client('s3')
+               for o in objects:
+                   key = prefix + o
+                   copy_source = {'Bucket': source_bucket,'Key': key}
+                   s3.copy_object(CopySource=copy_source, Bucket=dest_bucket,Key=key)
+
+           def delete_objects(bucket, prefix, objects):
+               s3 = boto3.client('s3')
+               objects = {'Objects': [{'Key': prefix + o} for o in objects]}
+               s3.delete_objects(Bucket=bucket, Delete=objects)
+               s3.delete_bucket(Bucket=bucket)
+
+           def timeout(event, context):
+               logging.error('Execution is about to time out, sending failure response to CloudFormation')
+               cfnresponse.send(event, context, cfnresponse.FAILED, {}, None)
+           
+           def handler(event, context):
+               # make sure we send a failure to CloudFormation if the function is going to timeout
+               timer = threading.Timer((context.get_remaining_time_in_millis() / 1000.00) - 0.5, timeout, args=[event, context])
+               timer.start()
+           
+               #print('Received event: %s' % json.dumps(event))
+               status = cfnresponse.SUCCESS
+               try:
+                   source_bucket = event['ResourceProperties']['SourceBucket']
+                   dest_bucket = event['ResourceProperties']['DestBucket']
+                   prefix = event['ResourceProperties']['Prefix']
+                   objects = event['ResourceProperties']['Objects']
+                   if event['RequestType'] == 'Delete':
+                       delete_objects(dest_bucket, prefix, objects)
+                   else:
+                       copy_objects(source_bucket, dest_bucket, prefix, objects)
+                       responseStr['Status']['PreTasksLambdaFunction'] = "Sucess"
+               except Exception as e:
+                   logging.error('Exception: %s' % e, exc_info=True)
+                   responseStr['Status']['PreTasksLambdaFunction'] = str(e)
+                   status = cfnresponse.FAILED
+               finally:
+                   timer.cancel()
+                   cfnresponse.send(event, context, status, {'Status':json.dumps(responseStr)}, None)
+           
+Outputs:
+  MyS3Bucket:
+    Value:
+      Ref: CreateNewMyS3Bucket
+  ResultInvokePreTasksLambda:
+    Value: !GetAtt 
+        - InvokePreTasksLambda
+        - Status

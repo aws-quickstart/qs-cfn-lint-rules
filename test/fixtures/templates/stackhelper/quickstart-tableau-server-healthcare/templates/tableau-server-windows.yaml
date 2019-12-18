@@ -1,0 +1,477 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'CloudFormation Template for TSM-based Tableau Server on Windows. (qs-1oui27s21)'
+Parameters:
+  AcceptEULA:
+    AllowedValues:
+    - 'Yes'
+    - 'No'
+    Default: 'No'
+    Description: 'View the EULA at the Link: https://www.tableau.com/eula'
+    Type: String
+  InstanceType:
+    AllowedValues:
+    - c5.4xlarge
+    - c5d.4xlarge
+    - c4.4xlarge
+    - m4.4xlarge
+    - m5.4xlarge
+    - r5d.4xlarge
+    ConstraintDescription: must be a valid EC2 instance type.
+    Default: m5.4xlarge
+    Description: Amazon EC2 instance type
+    Type: String
+  KeyPairName:
+    ConstraintDescription: The name of an existing EC2 KeyPair.
+    Description: Public/private key pairs allow you to securely connect to your instance
+      after it launches
+    Type: AWS::EC2::KeyPair::KeyName
+  InstanceSecurityGroup:
+    Description: The Security Group Id for the instance
+    Type: AWS::EC2::SecurityGroup::Id
+  PrivateSubnetIds:
+    Description: Private Subnet Ids to launch Tableau Server in
+    Type: List<AWS::EC2::Subnet::Id>
+  Username:
+    Description: Tableau Services Manager (TSM) administrator username (cannot be
+      Administrator)
+    Type: String
+    AllowedPattern: "[A-Za-z0-9]+"
+    MaxLength: '30'
+  Password:
+    Description: Tableau Services Manager (TSM) administrator password
+    Type: String
+    NoEcho: 'true'
+    AllowedPattern: "^(?=[a-zA-Z0-9#@$?!]{8,}$)(?=.*?[a-z])(?=.*?[A-Z])(?=.*?[0-9]).*"
+    MinLength: '8'
+  TableauServerAdminUser:
+    Description: The name of the initial administrator for Tableau Server
+    Type: String
+    MinLength: '1'
+  TableauServerAdminPassword:
+    Description: The password of the initial administrator for Tableau Server
+    Type: String
+    MinLength: '1'
+    NoEcho: 'true'
+  TableauServerLicenseKey:
+    Description: License Key (leave blank for trial)
+    Type: String
+  ElbTargetGroups:
+    Description: ELB target groups for the ASG
+    Type: CommaDelimitedList
+  RegFirstName:
+    Description: First Name
+    Type: String
+    MinLength: '1'
+  RegLastName:
+    Description: Last Name
+    Type: String
+    MinLength: '1'
+  RegEmail:
+    Description: Email
+    Type: String
+    MinLength: '1'
+  RegCompany:
+    Description: Company
+    Type: String
+    MinLength: '1'
+  RegTitle:
+    Description: Title
+    Type: String
+    MinLength: '1'
+  RegDepartment:
+    Description: Department
+    Type: String
+    MinLength: '1'
+  RegIndustry:
+    Description: Industry
+    Type: String
+    MinLength: '1'
+  RegPhone:
+    Description: Phone
+    Type: String
+    MinLength: '1'
+  RegCity:
+    Description: City
+    Type: String
+    MinLength: '1'
+  RegState:
+    Description: State
+    Type: String
+    MinLength: '1'
+  RegZip:
+    Description: ZIP/Postal Code
+    Type: String
+    MinLength: '1'
+  RegCountry:
+    Description: Country
+    Type: String
+    MinLength: '1'
+  ImageId:
+    Type: AWS::EC2::Image::Id
+    Description: AmiId
+  QSTagKey:
+    Type: String
+    Description: Tag key to identify resources from this Quick Start
+  QSTagValue:
+    Type: String
+    Description: Tag value to identify resources from this Quick Start
+  TableauServerInstanceProfile:
+    Type: String
+    Description: Tableau Server Instance Role. Used for tagging EBS volumes
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+    - Label:
+        default: AWS Environment and Machine Configuration
+      Parameters:
+      - InstanceType
+      - ImageId
+      - KeyPairName
+      - ExistingSecurityGroup
+      - IPAddress
+    - Label:
+        default: Secrets
+      Parameters:
+      - Username
+      - Password
+      - TableauServerAdminUser
+      - TableauServerAdminPassword
+    - Label:
+        default: Registration
+      Parameters:
+      - TableauServerLicenseKey
+      - RegFirstName
+      - RegLastName
+      - RegEmail
+      - RegCompany
+      - RegTitle
+      - RegDepartment
+      - RegIndustry
+      - RegPhone
+      - RegCity
+      - RegState
+      - RegZip
+      - RegCountry
+    ParameterLabels:
+      InstanceType:
+        default: Tableau Amazon EC2 instance type
+      KeyPairName:
+        default: Key Pair Name
+      InstanceSecurityGroup:
+        default: Instance Security Group
+      IPAddress:
+        default: EIP address for the node
+      Username:
+        default: Tableau Services Manager (TSM) administrator username
+      Password:
+        default: Tableau Services Manager (TSM) administrator password
+      TableauServerAdminUser:
+        default: Tableau Server administrator username
+      TableauServerAdminPassword:
+        default: Tableau Server administrator password
+      TableauServerLicenseKey:
+        default: Tableau Activation Key
+      AcceptEULA:
+        default: Accept Tableau End User License Agreement
+      ImageId:
+        default: Amazon Machine Image ID
+      RegFirstName:
+        default: First Name
+      RegLastName:
+        default: Last name
+      RegEmail:
+        default: Email Address
+      RegCompany:
+        default: Company
+      RegTitle:
+        default: Title
+      RegDepartment:
+        default: Department
+      RegIndustry:
+        default: Industry
+      RegPhone:
+        default: Phone
+      RegCity:
+        default: City
+      RegState:
+        default: State
+      RegZip:
+        default: Zip/Postal Code
+      RegCountry:
+        default: Country
+      SSLCertificateArn:
+        default: ACM Certificate ARN
+Mappings:
+  DefaultConfiguration:
+    InstallationConfig:
+      InstallationBucket: tableau-healthcare-quickstart
+      InstallationExecutable: TableauServer-64bit.exe
+    MachineConfiguration:
+      SystemVolumeSize: 50
+      DataVolumeSize: 100
+      WindowsVersion: WS2012R2
+
+Conditions:
+  IsTrial: !Equals [ '', !Ref TableauServerLicenseKey ]
+
+Resources:
+  TableauASG:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      DesiredCapacity: 1
+      HealthCheckGracePeriod: 6000
+      HealthCheckType: ELB
+      LaunchConfigurationName: !Ref TableauLaunchConfig
+      MaxSize: 1
+      MinSize: 1
+      Tags:
+      - Key: !Ref QSTagKey
+        Value: !Ref QSTagValue
+        PropagateAtLaunch: true
+      TargetGroupARNs: !Ref ElbTargetGroups
+      VPCZoneIdentifier: !Ref PrivateSubnetIds
+    CreationPolicy:
+      ResourceSignal:
+        Count: 1
+        Timeout: PT2H
+
+  TableauLaunchConfig:
+    Type:  AWS::AutoScaling::LaunchConfiguration
+    Metadata:
+      AWS::CloudFormation::Init:
+        config:
+          files:
+            c:\tabsetup\secrets.json:
+              content: !Sub 
+                - |
+                  {
+                    "local_admin_user": "${Username}",
+                    "local_admin_pass": "${Password}",
+                    "content_admin_user": "${TableauServerAdminUser}",
+                    "content_admin_pass": "${TableauServerAdminPassword}",
+                    "product_keys": ["${TrialOrLicenseKey}"]
+                  }
+                - TrialOrLicenseKey: !If [ IsTrial, trial, !Ref TableauServerLicenseKey ]
+            c:\tabsetup\registration.json:
+              content: !Sub |
+                {
+                  "first_name": "${RegFirstName}",
+                  "last_name": "${RegLastName}",
+                  "email": "${RegEmail}",
+                  "company": "${RegCompany};AWSQuickStart-WinHealthcare",
+                  "title": "${RegTitle}",
+                  "department": "${RegDepartment}",
+                  "industry": "${RegIndustry}",
+                  "phone": "${RegPhone}",
+                  "city": "${RegCity}",
+                  "state": "${RegState}",
+                  "zip": "${RegZip}",
+                  "country": "${RegCountry}"
+                }
+            c:\tabsetup\SilentInstaller.py:
+              source:
+                Fn::Join:
+                - ''
+                - - https://
+                  - Fn::FindInMap:
+                    - DefaultConfiguration
+                    - InstallationConfig
+                    - InstallationBucket
+                  - ".s3-us-west-2.amazonaws.com/SilentInstaller.py"
+            c:\tabsetup\config.json:
+              content: 
+                {
+                  "configEntities": {
+                    "identityStore": {
+                      "_type": "identityStoreType",
+                      "type": "local"
+                    }
+                  },
+                  "topologyVersion": {}
+                }
+            c:\tabsetup\python-install.exe:
+              source: https://www.python.org/ftp/python/3.6.6/python-3.6.6-amd64.exe
+            c:\tabsetup\tag_ebs_volumes.py:
+              content: !Sub | 
+                import urllib.request
+                import boto3
+
+                ec2 = boto3.client('ec2', region_name='${AWS::Region}')
+                def main():
+                  instance_id = urllib.request.urlopen('http://169.254.169.254/latest/meta-data/instance-id').read().decode()
+                  volumes = [ _['VolumeId'] for _ in ec2.describe_volumes(
+                    Filters = [{'Name':'attachment.instance-id','Values':[instance_id]}])['Volumes'] ]
+                
+                  tag_response = ec2.create_tags(Resources=volumes, Tags=[{'Key': '${QSTagKey}', 'Value':'${QSTagValue}'}])
+                
+                if __name__ == "__main__":
+                  main()
+            c:\tabsetup\enable_ssl.py:
+              content: !Sub |
+                import os
+                import subprocess
+                import shlex
+                import argparse
+                def get_version(version_folder):
+                  version_path = [ os.path.join(version_folder,_) for _ in os.listdir(version_folder) if os.path.isfile(os.path.join(version_folder,_)) and 'TableauServerInstallerVersion' in _][0]
+
+                  with open(version_path, 'r') as f:
+                    version = f.readline().strip().split()[-1]
+                    print (version)
+                  return version
+
+                def generate_key(openssl_path, openssl_conf_path, private_key_name, bit_length=4096):
+                  cmd = '"%s" genrsa -out "%s" "%s"' % (openssl_path, private_key_name, bit_length)
+                  print (cmd)
+                  subprocess.run(shlex.split(cmd), env={'OPENSSL_CONF': openssl_conf_path})
+
+                def generate_csr(openssl_path, openssl_conf_path, private_key_name, csr_name):
+                  cmd = '"%s" req -new -key "%s" -out "%s" -subj "/C=US/ST=Washington/L=Seattle/O=MyOrg/OU=MyDept/CN=example.com"' % (openssl_path, private_key_name, csr_name)
+                  print (cmd)
+                  subprocess.run(shlex.split(cmd), env={'OPENSSL_CONF': openssl_conf_path})
+
+                def sign_cert(openssl_path, openssl_conf_path, private_key_name, csr_name, cert_name):
+                  cmd = '"%s" x509 -req -days 365 -in "%s" -signkey "%s" -out "%s"' % (openssl_path, csr_name, private_key_name, cert_name)
+                  print (cmd)
+                  subprocess.run(shlex.split(cmd), env={'OPENSSL_CONF': openssl_conf_path})
+
+                def update_tsm(tsm_path, cert_name, private_key_name):
+                  cmd = '"%s" security external-ssl enable --cert-file "%s" --key-file "%s"' % (tsm_path, cert_name, private_key_name)
+                  print (cmd)
+                  subprocess.run(shlex.split(cmd))
+
+                def apply_changes(tsm_path):
+                  cmd = '"%s" pending-changes apply --ignore-prompt' % tsm_path
+                  print (cmd)
+                  subprocess.run(shlex.split(cmd))
+
+                def main():
+                  parser = argparse.ArgumentParser()
+                  parser.add_argument('--version_folder', type=str, required=True)
+                  parser.add_argument('--install_dir', type=str, required=True)
+                  parser.add_argument('--ssl_prefix', type=str, default='tableau_quickstart')
+                  args = parser.parse_args()
+                  version_folder = args.version_folder
+                  install_dir = args.install_dir
+                  ssl_prefix = args.ssl_prefix
+
+                  # First get the version
+                  version = get_version(version_folder)
+
+                  # Next create a ssl directory
+                  ssl_dir = os.path.join(install_dir, 'ssl')
+                  os.mkdir(ssl_dir)
+
+                  # Get paths for openssl conf, openssl binary, and tsm
+                  openssl_conf_path = os.path.join(install_dir, 'packages', 'apache.%s' % version, 'conf', 'openssl.cnf')
+                  openssl_path = os.path.join(install_dir, 'packages', 'apache.%s' % version, 'bin', 'openssl.exe')
+                  tsm_path = os.path.join(install_dir, 'packages', 'bin.%s' % version , 'tsm.cmd')
+
+                  # generate key
+                  print ('Generating Key...')
+                  private_key_name = os.path.join(ssl_dir, ssl_prefix + '.key')
+                  generate_key(openssl_path, openssl_conf_path, private_key_name)
+
+                  # generate csr
+                  print ('Generating Certificate Request...')
+                  csr_name = os.path.join(ssl_dir, ssl_prefix + '.csr')
+                  generate_csr(openssl_path, openssl_conf_path, private_key_name, csr_name)
+
+                  # sign cert
+                  print ('Signing Certificate...')
+                  cert_name = os.path.join(ssl_dir, ssl_prefix + '.crt')
+                  sign_cert(openssl_path, openssl_conf_path, private_key_name, csr_name, cert_name)
+
+                  # enable tsm
+                  print ('Updating TSM with SSL...')
+                  update_tsm(tsm_path, cert_name, private_key_name)
+                  
+                  # apply changes to tsm
+                  print ('Applying TSM changes...')
+                  apply_changes(tsm_path)
+
+                  print ("SSL cert setup successful")
+                if __name__ == "__main__":
+                  main()
+            c:\tabsetup\tableau-server-webapp-installer.exe:
+              source:
+                Fn::Join:
+                - ''
+                - - https://
+                  - Fn::FindInMap:
+                    - DefaultConfiguration
+                    - InstallationConfig
+                    - InstallationBucket
+                  - ".s3-us-west-2.amazonaws.com/"
+                  - Fn::FindInMap:
+                    - DefaultConfiguration
+                    - InstallationConfig
+                    - InstallationExecutable
+          commands:
+            00-disable-firewall:
+              cwd: c:\Windows\System32
+              command: netsh advfirewall set allprofiles state off
+            01-install-python:
+              command: c:\tabsetup\python-install.exe /quiet InstallAllUsers=1 PrependPath=1
+              cwd: c:\tabsetup
+              waitAfterCompletion: 0
+            02-install-awscli:
+              command: '"C:\Program Files\Python36\Scripts\pip.exe" install awscli boto3'
+              cwd: c:\tabsetup
+              waitAfterCompletion: 0
+            03-tag-instance:
+              command: '"C:\Program Files\Python36\python.exe" tag_ebs_volumes.py 1> c:\tabsetup\tag-volumes-output.txt 2>&1'
+              cwd: c:\tabsetup
+              waitAfterCompletion: 0
+            03-create-user:
+              command: !Sub net user ${Username} ${Password} /add /y
+              cwd: c:\tabsetup
+              waitAfterCompletion: 0
+            04-add-admin:
+              command: !Sub net localgroup Administrators ${Username} /add /y
+              cwd: c:\tabsetup
+              waitAfterCompletion: 0
+            05-run-installer:
+              cwd: c:\tabsetup
+              command: '"C:\Program Files\Python36\python.exe" SilentInstaller.py install --secretsFile c:\tabsetup\secrets.json --registrationFile c:\tabsetup\registration.json --configFile c:\tabsetup\config.json --installDir d:\tableau --dataDir d:\tableau c:\tabsetup\tableau-server-webapp-installer.exe 1> c:\tabsetup\tsm_installer-output.txt 2>&1'
+              waitAfterCompletion: 0
+            06-enable-ssl:
+              cwd: c:\tabsetup
+              command: '"C:\Program Files\Python36\python.exe" enable_ssl.py --install_dir d:\tableau --version_folder c:\Users\Administrator\AppData\Local\Temp\ --ssl_prefix tableau_quickstart > c:\tabsetup\enable_ssl.txt 2>&1'
+              waitAfterCompletion: 0
+            07-cleanup-secrets:
+              cwd: c:\tabsetup
+              command: del c:\tabsetup\secrets.json
+              waitAfterCompletion: 0
+    Properties:
+      AssociatePublicIpAddress: false
+      BlockDeviceMappings:
+      - DeviceName: /dev/sda1
+        Ebs:
+          VolumeSize: !FindInMap [ DefaultConfiguration, MachineConfiguration, SystemVolumeSize ]
+          VolumeType: gp2
+      - DeviceName: xvdc
+        Ebs:
+          Encrypted: true
+          VolumeSize: !FindInMap [ DefaultConfiguration, MachineConfiguration, DataVolumeSize ]
+          VolumeType: gp2
+      ImageId: !Ref ImageId
+      InstanceType: !Ref InstanceType
+      IamInstanceProfile: !Ref TableauServerInstanceProfile
+      KeyName: !Ref KeyPairName
+      SecurityGroups:
+      - !Ref InstanceSecurityGroup
+      UserData:
+        Fn::Base64: !Sub |
+          <script>
+          cfn-init.exe -v -s ${AWS::StackId} -r TableauLaunchConfig --region ${AWS::Region}
+          cfn-signal.exe -e %ERRORLEVEL% --stack ${AWS::StackName} --resource TableauASG --region ${AWS::Region}
+          </script>
+
+Outputs:
+  TableauASG: 
+    Value: !Ref TableauASG
+
+
+

@@ -1,0 +1,1073 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "Creates VPC, Subnets, Route Tables, SG, Classic ELBs, ASG for Webservers and Lambda Infrastructure for the VM-Series firewall (qs-1ndtndsom)",
+    "Parameters": {
+        "AZSubnetIDTrust": {
+            "Description": "Enter Subnet ID for the trust interface for all the AZs",
+            "Type": "List<AWS::EC2::Subnet::Id>"
+        },
+        "AZSubnetIDUntrust": {
+            "Description": "Enter Subnet ID for the untrust interface for all the AZs",
+            "Type": "List<AWS::EC2::Subnet::Id>"
+        },
+        "AvailabilityZones": {
+            "Description": "Enter the list of Availability Zones (Based on Number of AZs above)",
+            "Type": "List<AWS::EC2::AvailabilityZone::Name>"
+        },
+        "ELBName": {
+            "Default": "public-elb",
+            "Description": "Enter the name of the External Classic Load Balancer",
+            "MaxLength": "12",
+            "MinLength": "3",
+            "Type": "String"
+        },
+        "ILBName": {
+            "Default": "private-ilb",
+            "Description": "Enter the name of the Internal Load Balancer",
+            "MaxLength": "12",
+            "MinLength": "3",
+            "Type": "String"
+        },
+        "InstanceType": {
+            "AllowedValues": [
+                "t2.micro",
+                "t2.small",
+                "t2.medium",
+                "m3.medium",
+                "m3.large",
+                "m3.xlarge",
+                "m3.2xlarge",
+                "c3.xlarge",
+                "c3.2xlarge",
+                "c3.4xlarge",
+                "c3.8xlarge",
+                "c4.large",
+                "c4.xlarge",
+                "c4.2xlarge",
+                "c4.4xlarge",
+                "c4.8xlarge",
+                "r3.large",
+                "r3.xlarge",
+                "r3.2xlarge",
+                "r3.4xlarge",
+                "r3.8xlarge",
+                "i2.xlarge",
+                "i2.2xlarge",
+                "i2.4xlarge"
+            ],
+            "ConstraintDescription": "must be a valid EC2 instance type.",
+            "Default": "t2.medium",
+            "Description": "WebServer EC2 instance type",
+            "Type": "String"
+        },
+        "KeyName": {
+            "Description": "Amazon EC2 Key Pair",
+            "Type": "AWS::EC2::KeyPair::KeyName"
+        },
+        "NATGateway": {
+            "AllowedValues": [
+                "Yes",
+                "No"
+            ],
+            "Default": "Yes",
+            "Description": "Yes = create AWS NAT Gateway in each AZ, No = Use EIPs (skip subnet CIDR for NAT/Lambda)",
+            "Type": "String"
+        },
+        "NumberOfAZs": {
+            "Default": "2",
+            "Description": "Total Number of AZs which will be used in this deployment (Min 2 and Max 3)",
+            "MaxValue": "3",
+            "MinValue": "2",
+            "Type": "Number"
+        },
+        "SSHLocation": {
+            "AllowedPattern": "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})",
+            "ConstraintDescription": "must be a valid CIDR range of the form x.x.x.x/x.",
+            "Default": "0.0.0.0/0",
+            "Description": "Restrict SSH access to the VM-Series firewall (by default can be accessed from anywhere)",
+            "MaxLength": "18",
+            "MinLength": "9",
+            "Type": "String"
+        },
+        "VPCCIDR": {
+            "AllowedPattern": "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})",
+            "ConstraintDescription": "must be a valid CIDR range of the form x.x.x.x/x.",
+            "Default": "192.168.0.0/16",
+            "Description": "Enter the VPC CIDR that you want to use",
+            "Type": "String"
+        },
+        "VPCID": {
+            "Description": "VPC ID",
+            "Type": "AWS::EC2::VPC::Id"
+        }
+    },
+    "Metadata": {
+        "AWS::CloudFormation::Interface": {
+            "ParameterGroups": [
+                {
+                    "Label": {
+                        "default": "VPC Configuration"
+                    },
+                    "Parameters": [
+                        "NumberOfAZs",
+                        "AvailabilityZones",
+                        "VPCID",
+                        "VPCCIDR",
+                        "AZSubnetIDTrust",
+                        "AZSubnetIDUntrust",
+                        "NATGateway"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "Web Server Configuration"
+                    },
+                    "Parameters": [
+                        "InstanceType",
+                        "ELBName",
+                        "ILBName",
+                        "KeyName",
+                        "SSHLocation"
+                    ]
+                }
+            ],
+            "ParameterLabels": {
+                "AZSubnetIDTrust": {
+                    "default": "Select list of trust subnets"
+                },
+                "AZSubnetIDUntrust": {
+                    "default": "Select list of untrust subnets:"
+                },
+                "AvailabilityZones": {
+                    "default": "Select list of AZ:"
+                },
+                "ELBName": {
+                    "default": "Name of External Load Balancer:"
+                },
+                "ILBName": {
+                    "default": "Name of Internal Load Balancer:"
+                },
+                "InstanceType": {
+                    "default": "Instance Type of Web Servers behind ILB:"
+                },
+                "KeyName": {
+                    "default": "Key pair:"
+                },
+                "NATGateway": {
+                    "default": "Do you want to create AWS NAT Gateway in each Availability Zones (AZ)?"
+                },
+                "NumberOfAZs": {
+                    "default": "Number of AZ for deployment:"
+                },
+                "SSHLocation": {
+                    "default": "SSH From:"
+                },
+                "VPCCIDR": {
+                    "default": "CIDR Block for the VPC:"
+                },
+                "VPCID": {
+                    "default": "VPC Id:"
+                }
+            }
+        }
+    },
+    "Mappings": {
+        "AWSAMIRegionMap": {
+            "AMI": {
+                "AMZNLINUXHVM": "amzn-ami-hvm-2018.03.0.20190611-x86_64-gp2"
+            },
+            "ap-northeast-1": {
+                "AMZNLINUXHVM": "ami-0ab3e16f9c414dee7"
+            },
+            "ap-southeast-1": {
+                "AMZNLINUXHVM": "ami-05c859630889c79c8"
+            },
+            "ap-southeast-2": {
+                "AMZNLINUXHVM": "ami-07cc15c3ba6f8e287"
+            },
+            "eu-central-1": {
+                "AMZNLINUXHVM": "ami-010fae13a16763bb4"
+            },
+            "eu-west-1": {
+                "AMZNLINUXHVM": "ami-028188d9b49b32a80"
+            },
+            "us-east-1": {
+                "AMZNLINUXHVM": "ami-00eb20669e0990cb4"
+            },
+            "us-east-2": {
+                "AMZNLINUXHVM": "ami-0c64dd618a49aeee8"
+            },
+            "us-west-1": {
+                "AMZNLINUXHVM": "ami-0bce08e823ed38bdd"
+            },
+            "us-west-2": {
+                "AMZNLINUXHVM": "ami-08d489468314a58df"
+            }
+        }
+    },
+    "Conditions": {
+        "CreateSubnet2": {
+            "Fn::Equals": [
+                {
+                    "Ref": "NumberOfAZs"
+                },
+                "2"
+            ]
+        },
+        "CreateSubnet3": {
+            "Fn::Or": [
+                {
+                    "Fn::Equals": [
+                        {
+                            "Ref": "NumberOfAZs"
+                        },
+                        "3"
+                    ]
+                },
+                {
+                    "Fn::Equals": [
+                        {
+                            "Ref": "NumberOfAZs"
+                        },
+                        "4"
+                    ]
+                }
+            ]
+        },
+        "NATGatewayRequired": {
+            "Fn::Equals": [
+                {
+                    "Ref": "NATGateway"
+                },
+                "Yes"
+            ]
+        }
+    },
+    "Resources": {
+        "PublicLoadBalancerSecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "GroupDescription": "Public ELB Security Group with HTTP access on port 80 from the internet",
+                "VpcId": {
+                    "Ref": "VPCID"
+                },
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": {
+                            "Fn::Join": [
+                                "-",
+                                [
+                                    {
+                                        "Ref": "AWS::StackName"
+                                    },
+                                    "PublicLoadBalancerSecurityGroup"
+                                ]
+                            ]
+                        }
+                    }
+                ],
+                "SecurityGroupIngress": [
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": 80,
+                        "ToPort": 80,
+                        "CidrIp": "0.0.0.0/0"
+                    }
+                ],
+                "SecurityGroupEgress": [
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": 80,
+                        "ToPort": 80,
+                        "CidrIp": "0.0.0.0/0"
+                    }
+                ]
+            }
+        },
+        "PublicElasticLoadBalancer": {
+            "Type": "AWS::ElasticLoadBalancing::LoadBalancer",
+            "Condition": "CreateSubnet2",
+            "Properties": {
+                "LoadBalancerName": {
+                    "Ref": "ELBName"
+                },
+                "SecurityGroups": [
+                    {
+                        "Ref": "PublicLoadBalancerSecurityGroup"
+                    }
+                ],
+                "Subnets": [
+                    {
+                        "Fn::Select": [
+                            "0",
+                            {
+                                "Ref": "AZSubnetIDUntrust"
+                            }
+                        ]
+                    },
+                    {
+                        "Fn::Select": [
+                            "1",
+                            {
+                                "Ref": "AZSubnetIDUntrust"
+                            }
+                        ]
+                    }
+                ],
+                "Listeners": [
+                    {
+                        "LoadBalancerPort": "80",
+                        "InstancePort": "80",
+                        "Protocol": "HTTP"
+                    }
+                ],
+                "ConnectionDrainingPolicy": {
+                    "Enabled": true,
+                    "Timeout": 300
+                },
+                "ConnectionSettings": {
+                    "IdleTimeout": 300
+                },
+                "CrossZone": true,
+                "HealthCheck": {
+                    "Target": "HTTP:80/index.html",
+                    "HealthyThreshold": "3",
+                    "UnhealthyThreshold": "5",
+                    "Interval": "30",
+                    "Timeout": "5"
+                }
+            }
+        },
+        "PublicElasticLoadBalancer3": {
+            "Type": "AWS::ElasticLoadBalancing::LoadBalancer",
+            "Condition": "CreateSubnet3",
+            "Properties": {
+                "LoadBalancerName": {
+                    "Ref": "ELBName"
+                },
+                "SecurityGroups": [
+                    {
+                        "Ref": "PublicLoadBalancerSecurityGroup"
+                    }
+                ],
+                "Subnets": [
+                    {
+                        "Fn::Select": [
+                            "0",
+                            {
+                                "Ref": "AZSubnetIDUntrust"
+                            }
+                        ]
+                    },
+                    {
+                        "Fn::Select": [
+                            "1",
+                            {
+                                "Ref": "AZSubnetIDUntrust"
+                            }
+                        ]
+                    },
+                    {
+                        "Fn::Select": [
+                            "2",
+                            {
+                                "Ref": "AZSubnetIDUntrust"
+                            }
+                        ]
+                    }
+                ],
+                "Listeners": [
+                    {
+                        "LoadBalancerPort": "80",
+                        "InstancePort": "80",
+                        "Protocol": "HTTP"
+                    }
+                ],
+                "ConnectionDrainingPolicy": {
+                    "Enabled": true,
+                    "Timeout": 300
+                },
+                "ConnectionSettings": {
+                    "IdleTimeout": 300
+                },
+                "CrossZone": true,
+                "HealthCheck": {
+                    "Target": "HTTP:80/index.html",
+                    "HealthyThreshold": "3",
+                    "UnhealthyThreshold": "5",
+                    "Interval": "30",
+                    "Timeout": "5"
+                }
+            }
+        },
+        "PrivateLoadBalancerSecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "GroupDescription": "Private ELB Security Group with HTTP access on port 80 from the VM-Series firewall fleet ",
+                "VpcId": {
+                    "Ref": "VPCID"
+                },
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": {
+                            "Fn::Join": [
+                                "-",
+                                [
+                                    {
+                                        "Ref": "AWS::StackName"
+                                    },
+                                    "PrivateLoadBalancerSecurityGroup"
+                                ]
+                            ]
+                        }
+                    }
+                ],
+                "SecurityGroupIngress": [
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": 80,
+                        "ToPort": 80,
+                        "CidrIp": {
+                            "Ref": "VPCCIDR"
+                        }
+                    }
+                ],
+                "SecurityGroupEgress": [
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": 80,
+                        "ToPort": 80,
+                        "CidrIp": "0.0.0.0/0"
+                    }
+                ]
+            }
+        },
+        "PrivateElasticLoadBalancer": {
+            "Type": "AWS::ElasticLoadBalancing::LoadBalancer",
+            "Condition": "CreateSubnet2",
+            "Properties": {
+                "LoadBalancerName": {
+                    "Ref": "ILBName"
+                },
+                "SecurityGroups": [
+                    {
+                        "Ref": "PrivateLoadBalancerSecurityGroup"
+                    }
+                ],
+                "Subnets": [
+                    {
+                        "Fn::Select": [
+                            "0",
+                            {
+                                "Ref": "AZSubnetIDTrust"
+                            }
+                        ]
+                    },
+                    {
+                        "Fn::Select": [
+                            "1",
+                            {
+                                "Ref": "AZSubnetIDTrust"
+                            }
+                        ]
+                    }
+                ],
+                "Listeners": [
+                    {
+                        "LoadBalancerPort": "80",
+                        "InstancePort": "80",
+                        "Protocol": "HTTP"
+                    }
+                ],
+                "Scheme": "internal",
+                "ConnectionDrainingPolicy": {
+                    "Enabled": true,
+                    "Timeout": 300
+                },
+                "ConnectionSettings": {
+                    "IdleTimeout": 300
+                },
+                "HealthCheck": {
+                    "Target": "HTTP:80/index.html",
+                    "HealthyThreshold": "3",
+                    "UnhealthyThreshold": "5",
+                    "Interval": "30",
+                    "Timeout": "5"
+                }
+            }
+        },
+        "PrivateElasticLoadBalancer3": {
+            "Type": "AWS::ElasticLoadBalancing::LoadBalancer",
+            "Condition": "CreateSubnet3",
+            "Properties": {
+                "LoadBalancerName": {
+                    "Ref": "ILBName"
+                },
+                "SecurityGroups": [
+                    {
+                        "Ref": "PrivateLoadBalancerSecurityGroup"
+                    }
+                ],
+                "Subnets": [
+                    {
+                        "Fn::Select": [
+                            "0",
+                            {
+                                "Ref": "AZSubnetIDTrust"
+                            }
+                        ]
+                    },
+                    {
+                        "Fn::Select": [
+                            "1",
+                            {
+                                "Ref": "AZSubnetIDTrust"
+                            }
+                        ]
+                    },
+                    {
+                        "Fn::Select": [
+                            "2",
+                            {
+                                "Ref": "AZSubnetIDTrust"
+                            }
+                        ]
+                    }
+                ],
+                "Listeners": [
+                    {
+                        "LoadBalancerPort": "80",
+                        "InstancePort": "80",
+                        "Protocol": "HTTP"
+                    }
+                ],
+                "Scheme": "internal",
+                "ConnectionDrainingPolicy": {
+                    "Enabled": true,
+                    "Timeout": 300
+                },
+                "ConnectionSettings": {
+                    "IdleTimeout": 300
+                },
+                "HealthCheck": {
+                    "Target": "HTTP:80/index.html",
+                    "HealthyThreshold": "3",
+                    "UnhealthyThreshold": "5",
+                    "Interval": "30",
+                    "Timeout": "5"
+                }
+            }
+        },
+        "WebServerSecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "VPCID"
+                },
+                "GroupDescription": "Allow access from HTTP and SSH traffic",
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": {
+                            "Fn::Join": [
+                                "-",
+                                [
+                                    {
+                                        "Ref": "AWS::StackName"
+                                    },
+                                    "WebServerSecurityGroup"
+                                ]
+                            ]
+                        }
+                    }
+                ],
+                "SecurityGroupIngress": [
+                    {
+                        "IpProtocol": "-1",
+                        "FromPort": -1,
+                        "ToPort": -1,
+                        "CidrIp": {
+                            "Ref": "SSHLocation"
+                        }
+                    },
+                    {
+                        "IpProtocol": "-1",
+                        "FromPort": -1,
+                        "ToPort": -1,
+                        "CidrIp": {
+                            "Ref": "VPCCIDR"
+                        }
+                    }
+                ]
+            }
+        },
+        "WebServerGroup": {
+            "Type": "AWS::AutoScaling::AutoScalingGroup",
+            "Condition": "CreateSubnet2",
+            "Properties": {
+                "AvailabilityZones": [
+                    {
+                        "Fn::Select": [
+                            "0",
+                            {
+                                "Ref": "AvailabilityZones"
+                            }
+                        ]
+                    },
+                    {
+                        "Fn::Select": [
+                            "1",
+                            {
+                                "Ref": "AvailabilityZones"
+                            }
+                        ]
+                    }
+                ],
+                "LaunchConfigurationName": {
+                    "Ref": "WebServerLaunchConfig"
+                },
+                "MinSize": "2",
+                "MaxSize": "6",
+                "LoadBalancerNames": [
+                    {
+                        "Ref": "PrivateElasticLoadBalancer"
+                    }
+                ],
+                "VPCZoneIdentifier": [
+                    {
+                        "Fn::Select": [
+                            "0",
+                            {
+                                "Ref": "AZSubnetIDTrust"
+                            }
+                        ]
+                    },
+                    {
+                        "Fn::Select": [
+                            "1",
+                            {
+                                "Ref": "AZSubnetIDTrust"
+                            }
+                        ]
+                    }
+                ],
+                "Tags": [
+                    {
+                        "PropagateAtLaunch": true,
+                        "Value": {
+                            "Fn::Join": [
+                                "-",
+                                [
+                                    {
+                                        "Ref": "AWS::StackName"
+                                    },
+                                    "WebServerGroup"
+                                ]
+                            ]
+                        },
+                        "Key": "Name"
+                    }
+                ]
+            }
+        },
+        "WebServerGroup3": {
+            "Type": "AWS::AutoScaling::AutoScalingGroup",
+            "Condition": "CreateSubnet3",
+            "Properties": {
+                "AvailabilityZones": [
+                    {
+                        "Fn::Select": [
+                            "0",
+                            {
+                                "Ref": "AvailabilityZones"
+                            }
+                        ]
+                    },
+                    {
+                        "Fn::Select": [
+                            "1",
+                            {
+                                "Ref": "AvailabilityZones"
+                            }
+                        ]
+                    },
+                    {
+                        "Fn::Select": [
+                            "2",
+                            {
+                                "Ref": "AvailabilityZones"
+                            }
+                        ]
+                    }
+                ],
+                "LaunchConfigurationName": {
+                    "Ref": "WebServerLaunchConfig"
+                },
+                "MinSize": "3",
+                "MaxSize": "9",
+                "LoadBalancerNames": [
+                    {
+                        "Ref": "PrivateElasticLoadBalancer3"
+                    }
+                ],
+                "VPCZoneIdentifier": [
+                    {
+                        "Fn::Select": [
+                            "0",
+                            {
+                                "Ref": "AZSubnetIDTrust"
+                            }
+                        ]
+                    },
+                    {
+                        "Fn::Select": [
+                            "1",
+                            {
+                                "Ref": "AZSubnetIDTrust"
+                            }
+                        ]
+                    },
+                    {
+                        "Fn::Select": [
+                            "2",
+                            {
+                                "Ref": "AZSubnetIDTrust"
+                            }
+                        ]
+                    }
+                ],
+                "Tags": [
+                    {
+                        "PropagateAtLaunch": true,
+                        "Value": {
+                            "Fn::Join": [
+                                "-",
+                                [
+                                    {
+                                        "Ref": "AWS::StackName"
+                                    },
+                                    "WebServerGroup3"
+                                ]
+                            ]
+                        },
+                        "Key": "Name"
+                    }
+                ]
+            }
+        },
+        "WebServerLaunchConfig": {
+            "Type": "AWS::AutoScaling::LaunchConfiguration",
+            "Metadata": {
+                "Comment": "Install a simple application",
+                "AWS::CloudFormation::Init": {
+                    "config": {
+                        "packages": {
+                            "yum": {
+                                "httpd": []
+                            }
+                        },
+                        "files": {
+                            "/var/www/html/index.html": {
+                                "content": {
+                                    "Fn::Join": [
+                                        "\n",
+                                        [
+                                            "<img src=\"https://www.paloaltonetworks.com/content/dam/pan/en_US/images/logos/brand/pan-logo-badge-blue-medium-kick-up.png\" alt=\"VM-Series CloudFormation\"/>",
+                                            "<h1>Congratulations, you have successfully launched VM-Series ASG CloudFormation. This file is coming from Webserver Region:",
+                                            {
+                                                "Ref": "AWS::Region"
+                                            },
+                                            "</h1>",
+                                            "<h1>StackID: ",
+                                            {
+                                                "Ref": "AWS::StackId"
+                                            },
+                                            "</h1>",
+                                            "<h1>StackName: ",
+                                            {
+                                                "Ref": "AWS::StackName"
+                                            },
+                                            "</h1>",
+                                            "<h1>AccountID: ",
+                                            {
+                                                "Ref": "AWS::AccountId"
+                                            },
+                                            "</h1>",
+                                            "<h1>This templates creates - VPC, Subnets, Route Tables, Webservers ASG, Lambda Infra </h1>"
+                                        ]
+                                    ]
+                                },
+                                "mode": "000644",
+                                "owner": "root",
+                                "group": "root"
+                            }
+                        },
+                        "services": {
+                            "sysvinit": {
+                                "httpd": {
+                                    "enabled": "true",
+                                    "ensureRunning": "true"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "Properties": {
+                "KeyName": {
+                    "Ref": "KeyName"
+                },
+                "AssociatePublicIpAddress": {
+                    "Fn::If": [
+                        "NATGatewayRequired",
+                        false,
+                        true
+                    ]
+                },
+                "ImageId": {
+                    "Fn::FindInMap": [
+                        "AWSAMIRegionMap",
+                        {
+                            "Ref": "AWS::Region"
+                        },
+                        "AMZNLINUXHVM"
+                    ]
+                },
+                "SecurityGroups": [
+                    {
+                        "Ref": "WebServerSecurityGroup"
+                    }
+                ],
+                "InstanceType": {
+                    "Ref": "InstanceType"
+                },
+                "UserData": {
+                    "Fn::Base64": {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "#!/bin/bash \n",
+                                "yum update -y aws-cfn-bootstrap\n",
+                                "/opt/aws/bin/cfn-init -v ",
+                                "         --stack ",
+                                {
+                                    "Ref": "AWS::StackName"
+                                },
+                                "         --resource WebServerLaunchConfig",
+                                "         --region ",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                "\n",
+                                "# Signal completion\n",
+                                "/opt/aws/bin/cfn-signal -e $? ",
+                                "  --stack ",
+                                {
+                                    "Ref": "AWS::StackName"
+                                },
+                                "  --resource WebServerGroup",
+                                "  --region ",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                "\n"
+                            ]
+                        ]
+                    }
+                }
+            }
+        },
+        "WebServerScaleUpPolicy": {
+            "Type": "AWS::AutoScaling::ScalingPolicy",
+            "Condition": "CreateSubnet2",
+            "Properties": {
+                "AdjustmentType": "ChangeInCapacity",
+                "AutoScalingGroupName": {
+                    "Ref": "WebServerGroup"
+                },
+                "Cooldown": "60",
+                "ScalingAdjustment": 1
+            }
+        },
+        "WebServerScaleDownPolicy": {
+            "Type": "AWS::AutoScaling::ScalingPolicy",
+            "Condition": "CreateSubnet2",
+            "Properties": {
+                "AdjustmentType": "ChangeInCapacity",
+                "AutoScalingGroupName": {
+                    "Ref": "WebServerGroup"
+                },
+                "Cooldown": "60",
+                "ScalingAdjustment": -1
+            }
+        },
+        "WebServerScaleUpPolicy3": {
+            "Type": "AWS::AutoScaling::ScalingPolicy",
+            "Condition": "CreateSubnet3",
+            "Properties": {
+                "AdjustmentType": "ChangeInCapacity",
+                "AutoScalingGroupName": {
+                    "Ref": "WebServerGroup3"
+                },
+                "Cooldown": "60",
+                "ScalingAdjustment": 1
+            }
+        },
+        "WebServerScaleDownPolicy3": {
+            "Type": "AWS::AutoScaling::ScalingPolicy",
+            "Condition": "CreateSubnet3",
+            "Properties": {
+                "AdjustmentType": "ChangeInCapacity",
+                "AutoScalingGroupName": {
+                    "Ref": "WebServerGroup3"
+                },
+                "Cooldown": "60",
+                "ScalingAdjustment": -1
+            }
+        },
+        "CPUAlarmHigh": {
+            "Type": "AWS::CloudWatch::Alarm",
+            "Condition": "CreateSubnet2",
+            "Properties": {
+                "AlarmDescription": "Scale-up if CPU > 90% for 10 minutes",
+                "MetricName": "CPUUtilization",
+                "Namespace": "AWS/EC2",
+                "Statistic": "Average",
+                "Period": 300,
+                "EvaluationPeriods": 2,
+                "Threshold": 90.0,
+                "AlarmActions": [
+                    {
+                        "Ref": "WebServerScaleUpPolicy"
+                    }
+                ],
+                "Dimensions": [
+                    {
+                        "Name": "AutoScalingGroupName",
+                        "Value": {
+                            "Ref": "WebServerGroup"
+                        }
+                    }
+                ],
+                "ComparisonOperator": "GreaterThanThreshold"
+            }
+        },
+        "CPUAlarmLow": {
+            "Type": "AWS::CloudWatch::Alarm",
+            "Condition": "CreateSubnet2",
+            "Properties": {
+                "AlarmDescription": "Scale-down if CPU < 70% for 10 minutes",
+                "MetricName": "CPUUtilization",
+                "Namespace": "AWS/EC2",
+                "Statistic": "Average",
+                "Period": 300,
+                "EvaluationPeriods": 2,
+                "Threshold": 70.0,
+                "AlarmActions": [
+                    {
+                        "Ref": "WebServerScaleDownPolicy"
+                    }
+                ],
+                "Dimensions": [
+                    {
+                        "Name": "AutoScalingGroupName",
+                        "Value": {
+                            "Ref": "WebServerGroup"
+                        }
+                    }
+                ],
+                "ComparisonOperator": "LessThanThreshold"
+            }
+        },
+        "CPUAlarmHigh3": {
+            "Type": "AWS::CloudWatch::Alarm",
+            "Condition": "CreateSubnet3",
+            "Properties": {
+                "AlarmDescription": "Scale-up if CPU > 90% for 10 minutes",
+                "MetricName": "CPUUtilization",
+                "Namespace": "AWS/EC2",
+                "Statistic": "Average",
+                "Period": 300,
+                "EvaluationPeriods": 2,
+                "Threshold": 90.0,
+                "AlarmActions": [
+                    {
+                        "Ref": "WebServerScaleUpPolicy3"
+                    }
+                ],
+                "Dimensions": [
+                    {
+                        "Name": "AutoScalingGroupName",
+                        "Value": {
+                            "Ref": "WebServerGroup3"
+                        }
+                    }
+                ],
+                "ComparisonOperator": "GreaterThanThreshold"
+            }
+        },
+        "CPUAlarmLow3": {
+            "Type": "AWS::CloudWatch::Alarm",
+            "Condition": "CreateSubnet3",
+            "Properties": {
+                "AlarmDescription": "Scale-down if CPU < 70% for 10 minutes",
+                "MetricName": "CPUUtilization",
+                "Namespace": "AWS/EC2",
+                "Statistic": "Average",
+                "Period": 300,
+                "EvaluationPeriods": 2,
+                "Threshold": 70.0,
+                "AlarmActions": [
+                    {
+                        "Ref": "WebServerScaleDownPolicy3"
+                    }
+                ],
+                "Dimensions": [
+                    {
+                        "Name": "AutoScalingGroupName",
+                        "Value": {
+                            "Ref": "WebServerGroup3"
+                        }
+                    }
+                ],
+                "ComparisonOperator": "LessThanThreshold"
+            }
+        }
+    },
+    "Outputs": {
+        "DNSNamePublicELB": {
+            "Description": "DNS Name for Elastic Load Balancer (Public)",
+            "Value": {
+                "Fn::If": [
+                    "CreateSubnet2",
+                    {
+                        "Fn::GetAtt": [
+                            "PublicElasticLoadBalancer",
+                            "CanonicalHostedZoneName"
+                        ]
+                    },
+                    {
+                        "Fn::GetAtt": [
+                            "PublicElasticLoadBalancer3",
+                            "CanonicalHostedZoneName"
+                        ]
+                    }
+                ]
+            }
+        },
+        "ELBName": {
+            "Description": "Elastic Load Balancer (Public)",
+            "Value": {
+                "Ref": "ELBName"
+            }
+        },
+        "ILBName": {
+            "Description": "Internal Load Balancer (Private)",
+            "Value": {
+                "Ref": "ILBName"
+            }
+        }
+    }
+}

@@ -1,0 +1,2108 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "This template will create a Windows build server that has MSBuild pre-installed and configures CodeDeploy deployments through S3 to 1 or more CodeDeploy servers. **WARNING** This template creates AWS resources. You will be billed for the AWS resources used if you create a stack. QS(0032)",
+    "Metadata": {
+        "AWS::CloudFormation::Interface": {
+            "ParameterGroups": [
+                {
+                    "Label": {
+                        "default": "Network Configuration"
+                    },
+                    "Parameters": [
+                        "VPCID",
+                        "VPCCIDR",
+                        "PrivateSubnet1ID",
+                        "PrivateSubnet2ID",
+                        "PublicSubnet1ID",
+                        "PublicSubnet2ID"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "Amazon EC2 Configuration"
+                    },
+                    "Parameters": [
+                        "KeyPairName",
+                        "RDGWSecurityGroupID"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "CodeDeploy and DemoApp Configuration"
+                    },
+                    "Parameters": [
+                        "CodeDeployAppName",
+                        "CodeDeployDeploymentGroupName",
+                        "CodeDeployNumberOfServers",
+                        "DemoAppInclude",
+                        "DemoAppDBUserName",
+                        "DemoAppDBPassword",
+                        "CodePackageFileName"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "Jenkins Build Configuration"
+                    },
+                    "Parameters": [
+                        "JenkinsCustomActionVersionNumber",
+                        "ELBServerCertificateName",
+                        "JenkinsUserName",
+                        "JenkinsPassword",
+                        "SourceFolder",
+                        "ReleaseFolder",
+                        "MSBuildProjectOrSolutionFileName"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "AWS Quick Start Configuration"
+                    },
+                    "Parameters": [
+                        "QSS3BucketName",
+                        "QSS3KeyPrefix"
+                    ]
+                }
+            ],
+            "ParameterLabels": {
+                "CodeDeployAppName": {
+                    "default": "Application name"
+                },
+                "CodeDeployDeploymentGroupName": {
+                    "default": "DeploymentGroup name"
+                },
+                "CodeDeployNumberOfServers": {
+                    "default": "Number of CodeDeploy servers"
+                },
+                "CodePackageFileName": {
+                    "default": "Code Package Filename"
+                },
+                "DemoAppDBPassword": {
+                    "default": "Password for demo app db"
+                },
+                "DemoAppDBUserName": {
+                    "default": "Username for demo app db"
+                },
+                "DemoAppInclude": {
+                    "default": "Deploy the demo application"
+                },
+                "ELBServerCertificateName": {
+                    "default": "Certificate Name for ELBs"
+                },
+                "JenkinsCustomActionVersionNumber": {
+                    "default": "Jenkins Custom Action Version Number"
+                },
+                "JenkinsPassword": {
+                    "default": "Jenkins Password"
+                },
+                "JenkinsUserName": {
+                    "default": "Jenkins User"
+                },
+                "KeyPairName": {
+                    "default": "Key Pair Name"
+                },
+                "MSBuildProjectOrSolutionFileName": {
+                    "default": ".proj or .sln"
+                },
+                "PrivateSubnet1ID": {
+                    "default": "Private Subnet 1 ID"
+                },
+                "PrivateSubnet2ID": {
+                    "default": "Private Subnet 2 ID"
+                },
+                "PublicSubnet1ID": {
+                    "default": "Public Subnet 1 ID"
+                },
+                "PublicSubnet2ID": {
+                    "default": "Public Subnet 2 ID"
+                },
+                "QSS3BucketName": {
+                    "default": "Quick Start S3 Bucket Name"
+                },
+                "QSS3KeyPrefix": {
+                    "default": "Quick Start S3 Key Prefix"
+                },
+                "RDGWSecurityGroupID": {
+                    "default": "Remote Desktop Gateway 1 NetBIOS Name"
+                },
+                "ReleaseFolder": {
+                    "default": "Release Folder"
+                },
+                "SourceFolder": {
+                    "default": "Path to Source Code"
+                },
+                "VPCID": {
+                    "default": "VPC ID"
+                },
+                "VPCCIDR": {
+                    "default": "VPC CIDR"
+                }
+            }
+        }
+    },
+    "Parameters": {
+        "CodeDeployAppName": {
+            "AllowedPattern": "[-_a-zA-Z0-9]*",
+            "ConstraintDescription": "can contain only alphanumeric characters, dashes, and underscores.",
+            "Default": "DemoApp",
+            "Description": "Application name that will be used by AWS CodeDeploy.",
+            "MaxLength": "100",
+            "MinLength": "1",
+            "Type": "String"
+        },
+        "CodeDeployDeploymentGroupName": {
+            "AllowedPattern": "[-_a-zA-Z0-9]*",
+            "ConstraintDescription": "can contain only alphanumeric lower case characters, dashes, and underscores.",
+            "Default": "DemoApp-DG",
+            "Description": "Deployment group name that will be used by AWS CodeDeploy. This group name can be used to modify how the application is deployed after the stack is deployed.",
+            "MaxLength": "100",
+            "MinLength": "1",
+            "Type": "String"
+        },
+        "CodeDeployNumberOfServers": {
+            "AllowedValues": [
+                "1",
+                "2"
+            ],
+            "Default": "1",
+            "Description": "The number of test servers you want to deploy with AWS CodeDeploy. An ELB load balancer is put in front of these servers so you can deploy the application to multiple servers to test a load-balanced configuration or rolling upgrades. You can choose one or two servers.",
+            "Type": "String"
+        },
+        "CodePackageFileName": {
+            "AllowedPattern": "^[\\w,\\s-]+\\.zip$",
+            "ConstraintDescription": "must be alphanumeric with dashes(-) or underscores(_) and end with .zip",
+            "Description": "Use this option if you are bringing your own code package to deploy through the pipeline. The package you specify must be found in the S3 bucket created by this template. This must be a .zip file with .NET source code inside. If you are deploying the sample application provided with this Quick Start, this value is ignored.",
+            "MaxLength": "50",
+            "MinLength": "0",
+            "Default": "DemoApp-Source.zip",
+            "Type": "String"
+        },
+        "DemoAppDBPassword": {
+            "AllowedPattern": "[!#$%^&*a-zA-Z0-9]*",
+            "ConstraintDescription": "Minimum of 8 alphanumeric characters and any of the following special characters (!,#,$,%,^,&,*)",
+            "Description": "The password for the database administrator account in the sample application. This parameter is necessary only if you choose to deploy the sample application. You'll use the credentials to validate the deployment.",
+            "MaxLength": "128",
+            "MinLength": "0",
+            "NoEcho": "true",
+            "Type": "String"
+        },
+        "DemoAppDBUserName": {
+            "AllowedPattern": "[a-zA-Z][a-zA-Z0-9]*",
+            "ConstraintDescription": "must begin with a letter and contain only alphanumeric characters.",
+            "Default": "awsuser",
+            "Description": "The user name for the database administrator account in the sample application. This parameter is necessary only if you choose to deploy the sample application. You'll use the credentials to validate the deployment.",
+            "MaxLength": "16",
+            "MinLength": "0",
+            "Type": "String"
+        },
+        "DemoAppInclude": {
+            "AllowedValues": [
+                "true",
+                "false"
+            ],
+            "Default": "true",
+            "Description": "Keep this setting to include a sample application that will be built and deployed for testing. This will download a simple two-tier ASP.NET web application that includes a custom MSBuild project that works with AWS CodeDeploy. If you set this parameter to false, you should upload your own source code package to the S3 bucket created by this template. Otherwise, the CI/CD pipeline will be broken. For details, see deployment scenario 2 in the deployment guide.",
+            "Type": "String"
+        },
+        "ELBServerCertificateName": {
+            "AllowedPattern": "[-a-zA-Z0-9]*",
+            "Default": "QuickStartCICDCert",
+            "ConstraintDescription": "can only contain alphanumeric characters and dashes.",
+            "Description": "The name of the certificate that will be created and used by the ELB for the web application deployed to the build and test servers. Choose a unique name so the self-signed certificate for *.<region>.elb.amazonaws.com can be generated without any conflicts. If a certificate already exists with the same name, the AWS CloudFormation template will try and use the existing certificate, which might create an error if the certificate doesn't support ELB CNAMEs. This resource is not controlled by the CloudFormation template and will need to be cleaned up manually.",
+            "MaxLength": "64",
+            "MinLength": "1",
+            "Type": "String"
+        },
+        "JenkinsCustomActionVersionNumber": {
+            "AllowedPattern": "[0-9]*",
+            "ConstraintDescription": "can only contain a numeric between 1 and 999999999.",
+            "Description": "The version number for the custom action that is created for AWS CodePipeline. If you redeploy the stack, you must increment the version number or change the application name. The combination of the application name and version number creates a provider for the custom action that must be unique even after you delete the custom action. For details, see the API documentation.",
+            "MaxLength": "9",
+            "MinLength": "1",
+            "Type": "String"
+        },
+        "JenkinsPassword": {
+            "ConstraintDescription": "Minimum of 8 characters",
+            "Description": "The password for the Jenkins user account you created. You'll use the credentials to access the Jenkins dashboard.",
+            "MaxLength": "41",
+            "MinLength": "8",
+            "NoEcho": "true",
+            "Type": "String"
+        },
+        "JenkinsUserName": {
+            "AllowedPattern": "[a-zA-Z][a-zA-Z0-9]*",
+            "ConstraintDescription": "must begin with a letter and contain only alphanumeric characters.",
+            "Default": "JenkinsUser",
+            "Description": "The user account that should be given access to Jenkins to configure and run builds. You'll use the credentials to access the Jenkins dashboard.",
+            "MaxLength": "16",
+            "MinLength": "1",
+            "Type": "String"
+        },
+        "KeyPairName": {
+            "Description": "Name of an existing Amazon EC2 public/private key pair to enable remote access to instances.",
+            "Type": "AWS::EC2::KeyPair::KeyName"
+        },
+        "MSBuildProjectOrSolutionFileName": {
+            "Description": "The name of the .proj or .sln file used to drive the MSBuild step in Jenkins. This will be concatenated to the MSBuild plugin for Jenkins to run the build task. If you make a mistake when typing the name, you can modify the configuration in your Jenkins project.",
+            "Default": "SoccerTeamWeb.csproj",
+            "MaxLength": "100",
+            "MinLength": "1",
+            "Type": "String"
+        },
+        "PrivateSubnet1ID": {
+            "Description": "ID of the private subnet you want to provision resources to that can only be accessed through a gateway",
+            "Type": "AWS::EC2::Subnet::Id"
+        },
+        "PrivateSubnet2ID": {
+            "Description": "ID of the private subnet you want to provision resources to that can only be accessed through a gateway",
+            "Type": "AWS::EC2::Subnet::Id"
+        },
+        "PublicSubnet1ID": {
+            "Description": "ID of the public subnet you want to provision resources to that can be accessed from the public internet",
+            "Type": "AWS::EC2::Subnet::Id"
+        },
+        "PublicSubnet2ID": {
+            "Description": "ID of the public subnet you want to provision resources to that can be accessed from the public internet",
+            "Type": "AWS::EC2::Subnet::Id"
+        },
+        "QSS3BucketName": {
+            "AllowedPattern": "^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$",
+            "ConstraintDescription": "Quick Start bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-).",
+            "Default": "aws-quickstart",
+            "Description": "Quick Start bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-).",
+            "Type": "String"
+        },
+        "QSS3KeyPrefix": {
+            "AllowedPattern": "^[0-9a-zA-Z-/]*$",
+            "ConstraintDescription": "Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).",
+            "Default": "quickstart-cicd-windows/",
+            "Description": "S3 key prefix for the Quick Start assets. Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).",
+            "Type": "String"
+        },
+        "RDGWSecurityGroupID": {
+            "Description": "ID of the security group for remote access gateways that can access the build server and code deploy servers",
+            "Type": "AWS::EC2::SecurityGroup::Id"
+        },
+        "ReleaseFolder": {
+            "Description": "The release folder that can be used by the Jenkins job to copy the binaries to the test server. All content copied into this folder will be zipped and shipped via AWS CodeDeploy. This is a unique option available in the AWS CodePipeline for Jenkins and is not required. The default setting is for the sample application and can be used as an example for your own MSBuild jobs. The .csproj or .sln file must include steps to copy the binaries from the source folders into this release folder, and must include the same parameters as the sample application if you want to use the same technique.",
+            "Default": "Release",
+            "MaxLength": "100",
+            "MinLength": "0",
+            "Type": "String"
+        },
+        "SourceFolder": {
+            "Description": "The path to the source code to build after your sample application package is unzipped. Note    You must include the root folder from the .zip file in your path and use a backslash between folders. The default setting specifies the sample application and can be used as an example if you are trying to set the parameter for your own source package.",
+            "Default": "DemoApp\\SoccerTeamWeb",
+            "MaxLength": "100",
+            "MinLength": "1",
+            "Type": "String"
+        },
+        "VPCID": {
+            "Description": "ID of the VPC (e.g., vpc-0343606e)",
+            "Type": "AWS::EC2::VPC::Id"
+        },
+        "VPCCIDR": {
+            "Description": "CIDR block for the VPC",
+            "Type": "String"
+        }
+    },
+    "Conditions": {
+        "DemoAppIncluded": {
+            "Fn::Equals": [
+                {
+                    "Ref": "DemoAppInclude"
+                },
+                "true"
+            ]
+        },
+        "DemoAppNotIncluded": {
+            "Fn::Equals": [
+                {
+                    "Ref": "DemoAppInclude"
+                },
+                "false"
+            ]
+        },
+        "CreateOneCodeDeployServer": {
+            "Fn::Equals": [
+                {
+                    "Ref": "CodeDeployNumberOfServers"
+                },
+                "1"
+            ]
+        },
+        "CreateMultipleCodeDeployServers": {
+            "Fn::Equals": [
+                {
+                    "Ref": "CodeDeployNumberOfServers"
+                },
+                "2"
+            ]
+        }
+    },
+    "Rules": {
+        "SubnetsInVPC": {
+            "Assertions": [
+                {
+                    "Assert": {
+                        "Fn::EachMemberIn": [
+                            {
+                                "Fn::ValueOfAll": [
+                                    "AWS::EC2::Subnet::Id",
+                                    "VpcId"
+                                ]
+                            },
+                            {
+                                "Fn::RefAll": "AWS::EC2::VPC::Id"
+                            }
+                        ]
+                    },
+                    "AssertDescription": "All subnets must be in the VPC"
+                }
+            ]
+        }
+    },
+    "Mappings": {
+        "AWSAMIRegionMap": {
+            "AMI": {
+                "WS2012R2": "Windows_Server-2012-R2_RTM-English-64Bit-Base-2019.06.12"
+            },
+            "ap-northeast-1": {
+                "WS2012R2": "ami-005ee2767c33f46f6"
+            },
+            "ap-northeast-2": {
+                "WS2012R2": "ami-0a0b21dd07f1083bf"
+            },
+            "ap-northeast-3": {
+                "WS2012R2": "ami-00360a2315b53f40c"
+            },
+            "ap-south-1": {
+                "WS2012R2": "ami-0c317e1f81c5fb88c"
+            },
+            "ap-southeast-1": {
+                "WS2012R2": "ami-0364b7df071ead294"
+            },
+            "ap-southeast-2": {
+                "WS2012R2": "ami-0b90712bab07bff79"
+            },
+            "eu-central-1": {
+                "WS2012R2": "ami-0987d7897f512004d"
+            },
+            "eu-west-1": {
+                "WS2012R2": "ami-0927c25b5177ff0de"
+            },
+            "eu-west-2": {
+                "WS2012R2": "ami-0e90780577bc9d091"
+            },
+            "eu-west-3": {
+                "WS2012R2": "ami-0d0feff63441edc49"
+            },
+            "sa-east-1": {
+                "WS2012R2": "ami-03fb3b14747ca1fe6"
+            },
+            "us-east-1": {
+                "WS2012R2": "ami-028be67c2aa2f1ce1"
+            },
+            "us-east-2": {
+                "WS2012R2": "ami-09ee46c8d9abcb966"
+            },
+            "us-west-1": {
+                "WS2012R2": "ami-05cd4c9c42e255074"
+            },
+            "us-west-2": {
+                "WS2012R2": "ami-095f164d8ca0bdbbf"
+            },
+            "ca-central-1": {
+                "WS2012R2": "ami-077aa0feeb9f0276a"
+            }
+        }
+    },
+    "Resources": {
+        "S3BucketForPipeline": {
+            "DeletionPolicy": "Retain",
+            "Type": "AWS::S3::Bucket",
+            "Properties": {
+                "VersioningConfiguration": {
+                    "Status": "Enabled"
+                },
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": "QuickStart-Windows-CICD"
+                    }
+                ]
+            }
+        },
+        "MyDBVPCSecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Condition": "DemoAppIncluded",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "VPCID"
+                },
+                "GroupDescription": "Security group for Quickstart RDS DB Instance",
+                "SecurityGroupIngress": {
+                    "IpProtocol": "tcp",
+                    "FromPort": "1433",
+                    "ToPort": "1433",
+                    "SourceSecurityGroupId": {
+                        "Ref": "CodeDeployServerSecurityGroup"
+                    }
+                }
+            }
+        },
+        "MyDBSubnetGroup": {
+            "Type": "AWS::RDS::DBSubnetGroup",
+            "Condition": "DemoAppIncluded",
+            "Properties": {
+                "DBSubnetGroupDescription": "Subnets available for the RDS DB Instance",
+                "SubnetIds": [
+                    {
+                        "Ref": "PrivateSubnet1ID"
+                    },
+                    {
+                        "Ref": "PrivateSubnet2ID"
+                    }
+                ]
+            }
+        },
+        "MyDB": {
+            "Type": "AWS::RDS::DBInstance",
+            "Condition": "DemoAppIncluded",
+            "Properties": {
+                "AllocatedStorage": "50",
+                "DBInstanceClass": "db.t2.micro",
+                "Engine": "sqlserver-ex",
+                "EngineVersion": "12.00.5000.0.v1",
+                "MultiAZ": "false",
+                "MasterUsername": {
+                    "Ref": "DemoAppDBUserName"
+                },
+                "MasterUserPassword": {
+                    "Ref": "DemoAppDBPassword"
+                },
+                "DBSubnetGroupName": {
+                    "Ref": "MyDBSubnetGroup"
+                },
+                "VPCSecurityGroups": [
+                    {
+                        "Ref": "MyDBVPCSecurityGroup"
+                    }
+                ]
+            }
+        },
+        "BuildServerSecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "VPCID"
+                },
+                "GroupDescription": "Enable RDP access via port 3389",
+                "SecurityGroupIngress": [
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "3389",
+                        "ToPort": "3389",
+                        "SourceSecurityGroupId": {
+                            "Ref": "RDGWSecurityGroupID"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "8080",
+                        "ToPort": "8080",
+                        "SourceSecurityGroupId": {
+                            "Ref": "BuildServerELBSG"
+                        }
+                    }
+                ]
+            }
+        },
+        "CodeDeployServerSecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "VPCID"
+                },
+                "GroupDescription": "Enable RDP access via port 3389 and port 80 for web site access",
+                "SecurityGroupIngress": [
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "3389",
+                        "ToPort": "3389",
+                        "SourceSecurityGroupId": {
+                            "Ref": "RDGWSecurityGroupID"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "80",
+                        "ToPort": "80",
+                        "SourceSecurityGroupId": {
+                            "Ref": "CodeDeployELBSG"
+                        }
+                    }
+                ]
+            }
+        },
+        "CodeDeployELBSG": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "GroupDescription": "Security Group for Windows Test Server ELB",
+                "VpcId": {
+                    "Ref": "VPCID"
+                },
+                "SecurityGroupIngress": [
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "443",
+                        "ToPort": "443",
+                        "CidrIp": "0.0.0.0/0"
+                    }
+                ]
+            }
+        },
+        "BuildServerELBSG": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "GroupDescription": "Security Group for Windows Build Server ELB",
+                "VpcId": {
+                    "Ref": "VPCID"
+                },
+                "SecurityGroupIngress": [
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "443",
+                        "ToPort": "443",
+                        "CidrIp": "0.0.0.0/0"
+                    }
+                ]
+            }
+        },
+        "BuildServerRole": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "AssumeRolePolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Principal": {
+                                "Service": [
+                                    "ec2.amazonaws.com"
+                                ]
+                            },
+                            "Action": [
+                                "sts:AssumeRole"
+                            ]
+                        }
+                    ]
+                },
+                "Path": "/",
+                "Policies": [
+                    {
+                        "PolicyName": "aws-quick-start-s3-policy",
+                        "PolicyDocument": {
+                            "Version": "2012-10-17",
+                            "Statement": [
+                                {
+                                    "Action": [
+                                        "s3:GetObject"
+                                    ],
+                                    "Resource": {
+                                        "Fn::Sub": "arn:aws:s3:::${QSS3BucketName}/${QSS3KeyPrefix}*"
+                                    },
+                                    "Effect": "Allow"
+                                }
+                            ]
+                        }
+                    },
+                    {
+                        "PolicyName": "buildserverpolicy",
+                        "PolicyDocument": {
+                            "Version": "2012-10-17",
+                            "Statement": [
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "codepipeline:AcknowledgeJob",
+                                        "codepipeline:GetJobDetails",
+                                        "codepipeline:PollForJobs",
+                                        "codepipeline:PutJobFailureResult",
+                                        "codepipeline:PutJobSuccessResult",
+                                        "iam:UploadServerCertificate",
+                                        "iam:GetServerCertificate"
+                                    ],
+                                    "Resource": "*"
+                                },
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "s3:PutObject"
+                                    ],
+                                    "Resource": {
+                                        "Fn::Sub": "arn:aws:s3:::${S3BucketForPipeline}/*"
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        "BuildServerInstanceProfile": {
+            "Type": "AWS::IAM::InstanceProfile",
+            "Properties": {
+                "Path": "/",
+                "Roles": [
+                    {
+                        "Ref": "BuildServerRole"
+                    }
+                ]
+            }
+        },
+        "CodeDeployServerRole": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "AssumeRolePolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Principal": {
+                                "Service": [
+                                    "ec2.amazonaws.com",
+                                    {
+                                        "Fn::Join": [
+                                            "",
+                                            [
+                                                "codedeploy.",
+                                                {
+                                                    "Ref": "AWS::Region"
+                                                },
+                                                ".amazonaws.com"
+                                            ]
+                                        ]
+                                    }
+                                ]
+                            },
+                            "Action": [
+                                "sts:AssumeRole"
+                            ]
+                        }
+                    ]
+                },
+                "Path": "/",
+                "Policies": [
+                    {
+                        "PolicyName": "aws-quick-start-s3-policy",
+                        "PolicyDocument": {
+                            "Version": "2012-10-17",
+                            "Statement": [
+                                {
+                                    "Action": [
+                                        "s3:GetObject"
+                                    ],
+                                    "Resource": {
+                                        "Fn::Sub": "arn:aws:s3:::${QSS3BucketName}/${QSS3KeyPrefix}*"
+                                    },
+                                    "Effect": "Allow"
+                                }
+                            ]
+                        }
+                    },
+                    {
+                        "PolicyName": "codedeployserverpolicy",
+                        "PolicyDocument": {
+                            "Version": "2012-10-17",
+                            "Statement": [
+                                {
+                                    "Effect": "Allow",
+                                    "Action": "codedeploy:*",
+                                    "Resource": [
+                                        {
+                                            "Fn::Sub": "arn:aws:codedeploy:${AWS::Region}:${AWS::AccountId}:application:${CodeDeployAppName}"
+                                        }
+                                    ]
+                                },
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "s3:Get*",
+                                        "s3:List*"
+                                    ],
+                                    "Resource": [
+                                        {
+                                            "Fn::Sub": "arn:aws:s3:::${S3BucketForPipeline}/*"
+                                        },
+                                        {
+                                            "Fn::Sub": "arn:aws:s3:::aws-codedeploy-${AWS::Region}/*"
+                                        }
+                                    ]
+                                },
+                                {
+                                    "Action": [
+                                        "ec2:DescribeInstances",
+                                        "ec2:DescribeInstanceStatus"
+                                    ],
+                                    "Resource": "*",
+                                    "Effect": "Allow"
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        "CodeDeployTargetServerProfile": {
+            "Type": "AWS::IAM::InstanceProfile",
+            "Properties": {
+                "Path": "/",
+                "Roles": [
+                    {
+                        "Ref": "CodeDeployServerRole"
+                    }
+                ]
+            }
+        },
+        "CodePipelineTrustRole": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "AssumeRolePolicyDocument": {
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Principal": {
+                                "Service": [
+                                    "codepipeline.amazonaws.com"
+                                ]
+                            },
+                            "Action": "sts:AssumeRole"
+                        }
+                    ]
+                },
+                "Path": "/"
+            }
+        },
+        "CodePipelineRolePolicies": {
+            "Type": "AWS::IAM::Policy",
+            "Properties": {
+                "PolicyName": "CodePipelinePolicy",
+                "PolicyDocument": {
+                    "Statement": [
+                        {
+                            "Action": [
+                                "s3:GetObject",
+                                "s3:GetObjectVersion",
+                                "s3:GetBucketVersioning",
+                                "s3:PutObject"
+                            ],
+                            "Resource": [
+                                {
+                                    "Fn::Sub": "arn:aws:s3:::${S3BucketForPipeline}/*"
+                                },
+                                {
+                                    "Fn::Sub": "arn:aws:s3:::${S3BucketForPipeline}"
+                                }
+                            ],
+                            "Effect": "Allow"
+                        },
+                        {
+                            "Action": [
+                                "codedeploy:CreateDeployment",
+                                "codedeploy:GetApplicationRevision",
+                                "codedeploy:GetDeployment",
+                                "codedeploy:GetDeploymentConfig",
+                                "codedeploy:RegisterApplicationRevision"
+                            ],
+                            "Resource": [
+                                {
+                                    "Fn::Sub": "arn:aws:codedeploy:${AWS::Region}:${AWS::AccountId}:application:${CodeDeployAppName}"
+                                },
+                                {
+                                    "Fn::Sub": "arn:aws:codedeploy:${AWS::Region}:${AWS::AccountId}:deploymentgroup:${CodeDeployAppName}/${CodeDeployDeploymentGroupName}"
+                                },
+                                {
+                                    "Fn::Sub": "arn:aws:codedeploy:${AWS::Region}:${AWS::AccountId}:deploymentconfig:*"
+                                }
+                            ],
+                            "Effect": "Allow"
+                        }
+                    ]
+                },
+                "Roles": [
+                    {
+                        "Ref": "CodePipelineTrustRole"
+                    }
+                ]
+            }
+        },
+        "S3BucketForPipelinePolicy": {
+            "Type": "AWS::S3::BucketPolicy",
+            "Properties": {
+                "Bucket": {
+                    "Ref": "S3BucketForPipeline"
+                },
+                "PolicyDocument": {
+                    "Statement": [
+                        {
+                            "Sid": "DenyUnEncryptedObjectUploads",
+                            "Effect": "Deny",
+                            "Principal": "*",
+                            "Action": "s3:PutObject",
+                            "Resource": {
+                                "Fn::Sub": "arn:aws:s3:::${S3BucketForPipeline}/*"
+                            },
+                            "Condition": {
+                                "StringNotEquals": {
+                                    "s3:x-amz-server-side-encryption": "aws:kms"
+                                }
+                            }
+                        },
+                        {
+                            "Sid": "DenyInsecureConnections",
+                            "Effect": "Deny",
+                            "Principal": "*",
+                            "Action": "s3:*",
+                            "Resource": {
+                                "Fn::Sub": "arn:aws:s3:::${S3BucketForPipeline}/*"
+                            },
+                            "Condition": {
+                                "Bool": {
+                                    "aws:SecureTransport": false
+                                }
+                            }
+                        }
+                    ]
+                }
+            }
+        },
+        "MSBuildWithJenkinsInstance": {
+            "Type": "AWS::EC2::Instance",
+            "DependsOn": "S3BucketForPipeline",
+            "Metadata": {
+                "AWS::CloudFormation::Authentication": {
+                    "S3AccessCreds": {
+                        "type": "S3",
+                        "roleName": {
+                            "Ref": "BuildServerRole"
+                        },
+                        "buckets": [
+                            {
+                                "Ref": "QSS3BucketName"
+                            }
+                        ]
+                    }
+                },
+                "AWS::CloudFormation::Init": {
+                    "config": {
+                        "files": {
+                            "C:\\cfn\\scripts\\Unzip-Archive.ps1": {
+                                "source": {
+                                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}submodules/quickstart-microsoft-utilities/scripts/Unzip-Archive.ps1"
+                                },
+                                "authentication": "S3AccessCreds"
+                            },
+                            "C:\\cfn\\modules\\AWSQuickStart.zip": {
+                                "source": {
+                                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}submodules/quickstart-microsoft-utilities/modules/AWSQuickStart.zip"
+                                },
+                                "authentication": "S3AccessCreds"
+                            },
+                            "C:\\cfn\\scripts\\Download-File.ps1": {
+                                "source": {
+                                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}submodules/quickstart-microsoft-utilities/scripts/Download-File.ps1"
+                                },
+                                "authentication": "S3AccessCreds"
+                            },
+                            "C:\\cfn\\scripts\\Upload-FileToS3.ps1": {
+                                "source": {
+                                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}scripts/Upload-FileToS3.ps1"
+                                },
+                                "authentication": "S3AccessCreds"
+                            },
+                            "c:\\cfn\\scripts\\Install-DotNetBuildServer-Jenkins.ps1": {
+                                "source": {
+                                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}scripts/Install-DotNetBuildServer-Jenkins.ps1"
+                                },
+                                "authentication": "S3AccessCreds"
+                            },
+                            "c:\\cfn\\scripts\\New-ServerCertificateForELB.ps1": {
+                                "source": {
+                                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}scripts/New-ServerCertificateForELB.ps1"
+                                },
+                                "authentication": "S3AccessCreds"
+                            },
+                            "c:\\cfn\\downloads\\DemoApp.zip": {
+                                "source": {
+                                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}demo-assets/DemoApp.zip"
+                                },
+                                "authentication": "S3AccessCreds"
+                            },
+                            "c:\\cfn\\scripts\\create-jenkins-user.groovy": {
+                                "content": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "import jenkins.model.*\n\n",
+                                            "jenkins.model.Jenkins.instance.securityRealm.createAccount('",
+                                            {
+                                                "Ref": "JenkinsUserName"
+                                            },
+                                            "','",
+                                            {
+                                                "Ref": "JenkinsPassword"
+                                            },
+                                            "')\n"
+                                        ]
+                                    ]
+                                }
+                            },
+                            "c:\\cfn\\config\\hudson.plugins.msbuild.MsBuildBuilder.xml": {
+                                "content": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n",
+                                            "<hudson.plugins.msbuild.MsBuildBuilder_-DescriptorImpl plugin=\"msbuild@1.26\">\n",
+                                            "<installations>\n",
+                                            "<hudson.plugins.msbuild.MsBuildInstallation>\n",
+                                            "<name>14.0</name>\n",
+                                            "<home>C:\\Program Files (x86)\\MSBuild\\14.0\\Bin</home>\n",
+                                            "<properties/>\n",
+                                            "</hudson.plugins.msbuild.MsBuildInstallation>\n",
+                                            "</installations>\n",
+                                            "</hudson.plugins.msbuild.MsBuildBuilder_-DescriptorImpl>\n"
+                                        ]
+                                    ]
+                                }
+                            },
+                            "c:\\cfn\\config\\config.xml": {
+                                "content": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n",
+                                            "<project>\n",
+                                            "<actions/><description/><keepDependencies>false</keepDependencies><properties/>\n",
+                                            "<scm plugin=\"aws-codepipeline@0.27\" class=\"com.amazonaws.codepipeline.jenkinsplugin.AWSCodePipelineSCM\">",
+                                            "<clearWorkspace>true</clearWorkspace>\n",
+                                            "<projectName>",
+                                            {
+                                                "Ref": "CodeDeployAppName"
+                                            },
+                                            "</projectName>",
+                                            "<actionTypeCategory>Build</actionTypeCategory>",
+                                            "<actionTypeProvider>",
+                                            {
+                                                "Ref": "CodeDeployAppName"
+                                            },
+                                            "-Jenkins</actionTypeProvider>",
+                                            "<actionTypeVersion>",
+                                            {
+                                                "Ref": "JenkinsCustomActionVersionNumber"
+                                            },
+                                            "</actionTypeVersion>",
+                                            "<region>",
+                                            {
+                                                "Ref": "AWS::Region"
+                                            },
+                                            "</region>",
+                                            "<awsAccessKey/>",
+                                            "<awsSecretKey/>",
+                                            "<proxyHost/>",
+                                            "<proxyPort>0</proxyPort>",
+                                            "<awsClientFactory/>",
+                                            "</scm>\n",
+                                            "<canRoam>true</canRoam>",
+                                            "<disabled>false</disabled>",
+                                            "<blockBuildWhenDownstreamBuilding>false</blockBuildWhenDownstreamBuilding>",
+                                            "<blockBuildWhenUpstreamBuilding>false</blockBuildWhenUpstreamBuilding>\n",
+                                            "<triggers>",
+                                            "<hudson.triggers.SCMTrigger>",
+                                            "<spec>* * * * *</spec>",
+                                            "<ignorePostCommitHooks>false</ignorePostCommitHooks>",
+                                            "</hudson.triggers.SCMTrigger>",
+                                            "</triggers>",
+                                            "<concurrentBuild>false</concurrentBuild>\n",
+                                            "<builders>",
+                                            "<hudson.plugins.msbuild.MsBuildBuilder plugin=\"msbuild@1.26\">",
+                                            "<msBuildName>14.0</msBuildName>",
+                                            "<msBuildFile>C:\\Program Files (x86)\\Jenkins\\workspace\\",
+                                            {
+                                                "Ref": "CodeDeployAppName"
+                                            },
+                                            "\\",
+                                            {
+                                                "Ref": "SourceFolder"
+                                            },
+                                            "\\",
+                                            {
+                                                "Ref": "MSBuildProjectOrSolutionFileName"
+                                            },
+                                            "</msBuildFile>",
+                                            "<cmdLineArgs>/p:SourceFolder=",
+                                            {
+                                                "Ref": "CodeDeployAppName"
+                                            },
+                                            "\\",
+                                            {
+                                                "Ref": "SourceFolder"
+                                            },
+                                            " /p:ReleaseFolder=",
+                                            {
+                                                "Ref": "CodeDeployAppName"
+                                            },
+                                            "\\",
+                                            {
+                                                "Ref": "ReleaseFolder"
+                                            },
+                                            " /t:Build",
+                                            "</cmdLineArgs>",
+                                            "<buildVariablesAsProperties>false</buildVariablesAsProperties>",
+                                            "<continueOnBuildFailure>false</continueOnBuildFailure>",
+                                            "<unstableIfWarnings>false</unstableIfWarnings>",
+                                            "</hudson.plugins.msbuild.MsBuildBuilder>",
+                                            "</builders>\n",
+                                            "<publishers>",
+                                            "<com.amazonaws.codepipeline.jenkinsplugin.AWSCodePipelinePublisher plugin=\"aws-codepipeline@0.16\">",
+                                            "<outputArtifacts>",
+                                            "<com.amazonaws.codepipeline.jenkinsplugin.OutputArtifact>",
+                                            "<location>C:\\Program Files (x86)\\Jenkins\\workspace\\",
+                                            {
+                                                "Ref": "CodeDeployAppName"
+                                            },
+                                            "\\",
+                                            {
+                                                "Ref": "ReleaseFolder"
+                                            },
+                                            "</location>",
+                                            "</com.amazonaws.codepipeline.jenkinsplugin.OutputArtifact>",
+                                            "</outputArtifacts>",
+                                            "<awsClientFactory/>",
+                                            "</com.amazonaws.codepipeline.jenkinsplugin.AWSCodePipelinePublisher>",
+                                            "</publishers>",
+                                            "<buildWrappers/>\n",
+                                            "</project>"
+                                        ]
+                                    ]
+                                }
+                            }
+                        },
+                        "commands": {
+                            "a-set-execution-policy": {
+                                "command": "powershell.exe -Command \"Set-ExecutionPolicy RemoteSigned -Force\"",
+                                "waitAfterCompletion": "0"
+                            },
+                            "b-unpack-quickstart-module": {
+                                "command": "powershell.exe -Command C:\\cfn\\scripts\\Unzip-Archive.ps1 -Source C:\\cfn\\modules\\AWSQuickStart.zip -Destination C:\\Windows\\system32\\WindowsPowerShell\\v1.0\\Modules\\",
+                                "waitAfterCompletion": "0"
+                            },
+                            "c-init-quickstart-module": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "powershell.exe -Command \"",
+                                            "New-AWSQuickStartResourceSignal -Stack '",
+                                            {
+                                                "Ref": "AWS::StackName"
+                                            },
+                                            "' -Resource 'MSBuildWithJenkinsInstance' -Region '",
+                                            {
+                                                "Ref": "AWS::Region"
+                                            },
+                                            "'\""
+                                        ]
+                                    ]
+                                },
+                                "waitAfterCompletion": "0"
+                            },
+                            "d-download-jenkins": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "powershell.exe -Command \"C:\\cfn\\scripts\\Download-File.ps1 -Source '",
+                                            "http://mirrors.jenkins-ci.org/windows-stable/jenkins-2.46.2.zip",
+                                            "' -Destination 'C:\\cfn\\downloads\\jenkins.zip'\""
+                                        ]
+                                    ]
+                                },
+                                "waitAfterCompletion": "0"
+                            },
+                            "e-unpack-jenkins": {
+                                "command": "powershell.exe -Command C:\\cfn\\scripts\\Unzip-Archive.ps1 -Source C:\\cfn\\downloads\\jenkins.zip -Destination C:\\cfn\\downloads\\",
+                                "waitAfterCompletion": "0"
+                            },
+                            "f-download-jenkins-structs-plugin": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "powershell.exe -Command \"C:\\cfn\\scripts\\Download-File.ps1 -Source '",
+                                            "http://updates.jenkins-ci.org/download/plugins/structs/1.6/structs.hpi",
+                                            "' -Destination 'C:\\cfn\\downloads\\structs.hpi'\""
+                                        ]
+                                    ]
+                                },
+                                "waitAfterCompletion": "0"
+                            },
+                            "g-download-jenkins-msbuild-plugin": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "powershell.exe -Command \"C:\\cfn\\scripts\\Download-File.ps1 -Source '",
+                                            "http://updates.jenkins-ci.org/download/plugins/msbuild/1.27/msbuild.hpi",
+                                            "' -Destination 'C:\\cfn\\downloads\\msbuild.hpi'\""
+                                        ]
+                                    ]
+                                },
+                                "waitAfterCompletion": "0"
+                            },
+                            "h-download-jenkins-code-pipeline-plugin": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "powershell.exe -Command \"C:\\cfn\\scripts\\Download-File.ps1 -Source '",
+                                            "http://updates.jenkins-ci.org/download/plugins/aws-codepipeline/0.27/aws-codepipeline.hpi",
+                                            "' -Destination 'C:\\cfn\\downloads\\aws-codepipeline.hpi'\""
+                                        ]
+                                    ]
+                                },
+                                "waitAfterCompletion": "0"
+                            },
+                            "i-download-jenkins-groovy-plugin": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "powershell.exe -Command \"C:\\cfn\\scripts\\Download-File.ps1 -Source '",
+                                            "http://updates.jenkins-ci.org/download/plugins/script-security/1.27/script-security.hpi",
+                                            "' -Destination 'C:\\cfn\\downloads\\script-security.hpi'\""
+                                        ]
+                                    ]
+                                },
+                                "waitAfterCompletion": "0"
+                            },
+                            "j-download-jenkins-groovy-plugin": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "powershell.exe -Command \"C:\\cfn\\scripts\\Download-File.ps1 -Source '",
+                                            "http://updates.jenkins-ci.org/download/plugins/groovy/2.0/groovy.hpi",
+                                            "' -Destination 'C:\\cfn\\downloads\\groovy.hpi'\""
+                                        ]
+                                    ]
+                                },
+                                "waitAfterCompletion": "0"
+                            },
+                            "k-download-msbuild": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "powershell.exe -Command \"C:\\cfn\\scripts\\Download-File.ps1 -Source '",
+                                            "https://download.microsoft.com/download/E/E/D/EEDF18A8-4AED-4CE0-BEBE-70A83094FC5A/BuildTools_Full.exe",
+                                            "' -Destination 'C:\\cfn\\downloads\\BuildTools_Full.exe'\""
+                                        ]
+                                    ]
+                                },
+                                "waitAfterCompletion": "0"
+                            },
+                            "l-install-dotnet-build-server-components": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "powershell.exe -Command \"C:\\cfn\\Scripts\\Install-DotNetBuildServer-Jenkins.ps1 -JobName '",
+                                            {
+                                                "Ref": "CodeDeployAppName"
+                                            },
+                                            "'\""
+                                        ]
+                                    ]
+                                },
+                                "waitAfterCompletion": 0
+                            },
+                            "m-download-bouncycastle": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "powershell.exe -Command \"C:\\cfn\\scripts\\Download-File.ps1 -Source '",
+                                            "https://www.bouncycastle.org/csharp/download/bccrypto-csharp-1.8.1-bin.zip",
+                                            "' -Destination 'C:\\cfn\\downloads\\BouncyCastle.Crypto.zip'\""
+                                        ]
+                                    ]
+                                },
+                                "waitAfterCompletion": "0"
+                            },
+                            "n-unpack-bouncycastle": {
+                                "command": "powershell.exe -Command C:\\cfn\\scripts\\Unzip-Archive.ps1 -Source C:\\cfn\\downloads\\BouncyCastle.Crypto.zip -Destination C:\\cfn\\downloads\\",
+                                "waitAfterCompletion": "0"
+                            },
+                            "o-create-server-certificate-for-elb": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "powershell.exe -Command \"C:\\cfn\\Scripts\\New-ServerCertificateForELB.ps1 -ServerCertificateName '",
+                                            {
+                                                "Ref": "ELBServerCertificateName"
+                                            },
+                                            "' -RegionForELB '",
+                                            {
+                                                "Ref": "AWS::Region"
+                                            },
+                                            "'\""
+                                        ]
+                                    ]
+                                },
+                                "waitAfterCompletion": 0
+                            },
+                            "p-upload-demo-application-source": {
+                                "command": {
+                                    "Fn::If": [
+                                        "DemoAppIncluded",
+                                        {
+                                            "Fn::Join": [
+                                                "",
+                                                [
+                                                    "powershell.exe -Command \"C:\\cfn\\Scripts\\Upload-FileToS3.ps1 -Source 'C:\\cfn\\downloads\\DemoApp.zip'",
+                                                    " -Destination 's3://",
+                                                    {
+                                                        "Ref": "S3BucketForPipeline"
+                                                    },
+                                                    "//DemoApp.zip' -ServerSideEncryptionMethod 'aws:kms'"
+                                                ]
+                                            ]
+                                        },
+                                        ""
+                                    ]
+                                }
+                            },
+                            "q-signal-success": {
+                                "command": "powershell.exe -Command \"Write-AWSQuickStartStatus\"",
+                                "waitAfterCompletion": 0
+                            }
+                        }
+                    }
+                }
+            },
+            "Properties": {
+                "InstanceType": "t3.large",
+                "SecurityGroupIds": [
+                    {
+                        "Ref": "BuildServerSecurityGroup"
+                    }
+                ],
+                "ImageId": {
+                    "Fn::FindInMap": [
+                        "AWSAMIRegionMap",
+                        {
+                            "Ref": "AWS::Region"
+                        },
+                        "WS2012R2"
+                    ]
+                },
+                "IamInstanceProfile": {
+                    "Ref": "BuildServerInstanceProfile"
+                },
+                "SubnetId": {
+                    "Ref": "PrivateSubnet1ID"
+                },
+                "KeyName": {
+                    "Ref": "KeyPairName"
+                },
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": "QuickStart-WindowsBuildServer"
+                    }
+                ],
+                "UserData": {
+                    "Fn::Base64": {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "<script>\n",
+                                "cfn-init.exe -v -s ",
+                                {
+                                    "Ref": "AWS::StackId"
+                                },
+                                " -r MSBuildWithJenkinsInstance",
+                                " --region ",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                "\n",
+                                "</script>\n"
+                            ]
+                        ]
+                    }
+                }
+            },
+            "CreationPolicy": {
+                "ResourceSignal": {
+                    "Count": "1",
+                    "Timeout": "PT90M"
+                }
+            }
+        },
+        "CodeDeployServerInstance": {
+            "Type": "AWS::EC2::Instance",
+            "Metadata": {
+                "AWS::CloudFormation::Authentication": {
+                    "S3AccessCreds": {
+                        "type": "S3",
+                        "roleName": {
+                            "Ref": "CodeDeployServerRole"
+                        },
+                        "buckets": [
+                            {
+                                "Ref": "QSS3BucketName"
+                            }
+                        ]
+                    }
+                },
+                "AWS::CloudFormation::Init": {
+                    "config": {
+                        "files": {
+                            "C:\\cfn\\scripts\\Unzip-Archive.ps1": {
+                                "source": {
+                                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}submodules/quickstart-microsoft-utilities/scripts/Unzip-Archive.ps1"
+                                },
+                                "authentication": "S3AccessCreds"
+                            },
+                            "C:\\cfn\\modules\\AWSQuickStart.zip": {
+                                "source": {
+                                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}submodules/quickstart-microsoft-utilities/modules/AWSQuickStart.zip"
+                                },
+                                "authentication": "S3AccessCreds"
+                            },
+                            "c:\\cfn\\scripts\\Download-File.ps1": {
+                                "source": {
+                                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}submodules/quickstart-microsoft-utilities/scripts/Download-File.ps1"
+                                },
+                                "authentication": "S3AccessCreds"
+                            },
+                            "c:\\cfn\\scripts\\Install-CodeDeploy.ps1": {
+                                "source": {
+                                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}scripts/Install-CodeDeploy.ps1"
+                                },
+                                "authentication": "S3AccessCreds"
+                            }
+                        },
+                        "commands": {
+                            "a-set-execution-policy": {
+                                "command": "powershell.exe -Command \"Set-ExecutionPolicy RemoteSigned -Force\"",
+                                "waitAfterCompletion": "0"
+                            },
+                            "b-unpack-quickstart-module": {
+                                "command": "powershell.exe -Command C:\\cfn\\scripts\\Unzip-Archive.ps1 -Source C:\\cfn\\modules\\AWSQuickStart.zip -Destination C:\\Windows\\system32\\WindowsPowerShell\\v1.0\\Modules\\",
+                                "waitAfterCompletion": "0"
+                            },
+                            "c-init-quickstart-module": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "powershell.exe -Command \"",
+                                            "New-AWSQuickStartResourceSignal -Stack '",
+                                            {
+                                                "Ref": "AWS::StackName"
+                                            },
+                                            "' -Resource 'CodeDeployServerInstance' -Region '",
+                                            {
+                                                "Ref": "AWS::Region"
+                                            },
+                                            "'\""
+                                        ]
+                                    ]
+                                },
+                                "waitAfterCompletion": "0"
+                            },
+                            "d-install-iis-aspnet-45": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "powershell.exe -Command Install-WindowsFeature Web-Server,Web-Asp-Net45 -IncludeManagementTools"
+                                        ]
+                                    ]
+                                },
+                                "waitAfterCompletion": "0"
+                            },
+                            "e-download-code-deploy-agent": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "powershell.exe -Command \"C:\\cfn\\scripts\\Download-File.ps1 -Source '",
+                                            "https://s3.amazonaws.com/aws-codedeploy-us-east-1/latest/codedeploy-agent.msi",
+                                            "' -Destination 'C:\\cfn\\downloads\\codedeploy-agent.msi'\""
+                                        ]
+                                    ]
+                                },
+                                "waitAfterCompletion": "0"
+                            },
+                            "f-install-code-deploy-agent": {
+                                "command": "powershell.exe -Command \"C:\\cfn\\scripts\\Install-CodeDeploy.ps1\"",
+                                "waitAfterCompletion": "0"
+                            },
+                            "g-signal-success": {
+                                "command": "powershell.exe -Command \"Write-AWSQuickStartStatus\"",
+                                "waitAfterCompletion": "0"
+                            }
+                        }
+                    }
+                }
+            },
+            "Properties": {
+                "InstanceType": "t2.medium",
+                "SecurityGroupIds": [
+                    {
+                        "Ref": "CodeDeployServerSecurityGroup"
+                    }
+                ],
+                "SubnetId": {
+                    "Ref": "PrivateSubnet1ID"
+                },
+                "ImageId": {
+                    "Fn::FindInMap": [
+                        "AWSAMIRegionMap",
+                        {
+                            "Ref": "AWS::Region"
+                        },
+                        "WS2012R2"
+                    ]
+                },
+                "IamInstanceProfile": {
+                    "Ref": "CodeDeployTargetServerProfile"
+                },
+                "KeyName": {
+                    "Ref": "KeyPairName"
+                },
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": "QuickStart-WindowsTestServer"
+                    }
+                ],
+                "UserData": {
+                    "Fn::Base64": {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "<script>\n",
+                                "cfn-init.exe -v -s ",
+                                {
+                                    "Ref": "AWS::StackId"
+                                },
+                                " -r CodeDeployServerInstance",
+                                " --region ",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                "\n",
+                                "</script>\n"
+                            ]
+                        ]
+                    }
+                }
+            },
+            "CreationPolicy": {
+                "ResourceSignal": {
+                    "Count": "1",
+                    "Timeout": "PT25M"
+                }
+            }
+        },
+        "CodeDeployServerInstance2": {
+            "Type": "AWS::EC2::Instance",
+            "Condition": "CreateMultipleCodeDeployServers",
+            "Metadata": {
+                "AWS::CloudFormation::Authentication": {
+                    "S3AccessCreds": {
+                        "type": "S3",
+                        "roleName": {
+                            "Ref": "CodeDeployServerRole"
+                        },
+                        "buckets": [
+                            {
+                                "Ref": "QSS3BucketName"
+                            }
+                        ]
+                    }
+                },
+                "AWS::CloudFormation::Init": {
+                    "config": {
+                        "files": {
+                            "C:\\cfn\\scripts\\Unzip-Archive.ps1": {
+                                "source": {
+                                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}submodules/quickstart-microsoft-utilities/scripts/Unzip-Archive.ps1"
+                                },
+                                "authentication": "S3AccessCreds"
+                            },
+                            "C:\\cfn\\modules\\AWSQuickStart.zip": {
+                                "source": {
+                                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}submodules/quickstart-microsoft-utilities/modules/AWSQuickStart.zip"
+                                },
+                                "authentication": "S3AccessCreds"
+                            },
+                            "c:\\cfn\\scripts\\Download-File.ps1": {
+                                "source": {
+                                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}submodules/quickstart-microsoft-utilities/scripts/Download-File.ps1"
+                                },
+                                "authentication": "S3AccessCreds"
+                            },
+                            "c:\\cfn\\scripts\\Install-CodeDeploy.ps1": {
+                                "source": {
+                                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}scripts/Install-CodeDeploy.ps1"
+                                },
+                                "authentication": "S3AccessCreds"
+                            }
+                        },
+                        "commands": {
+                            "a-set-execution-policy": {
+                                "command": "powershell.exe -Command \"Set-ExecutionPolicy RemoteSigned -Force\"",
+                                "waitAfterCompletion": "0"
+                            },
+                            "b-unpack-quickstart-module": {
+                                "command": "powershell.exe -Command C:\\cfn\\scripts\\Unzip-Archive.ps1 -Source C:\\cfn\\modules\\AWSQuickStart.zip -Destination C:\\Windows\\system32\\WindowsPowerShell\\v1.0\\Modules\\",
+                                "waitAfterCompletion": "0"
+                            },
+                            "c-init-quickstart-module": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "powershell.exe -Command \"",
+                                            "New-AWSQuickStartResourceSignal -Stack '",
+                                            {
+                                                "Ref": "AWS::StackName"
+                                            },
+                                            "' -Resource 'CodeDeployServerInstance2' -Region '",
+                                            {
+                                                "Ref": "AWS::Region"
+                                            },
+                                            "'\""
+                                        ]
+                                    ]
+                                },
+                                "waitAfterCompletion": "0"
+                            },
+                            "d-install-iis-aspnet-45": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "powershell.exe -Command Install-WindowsFeature Web-Server,Web-Asp-Net45 -IncludeManagementTools"
+                                        ]
+                                    ]
+                                },
+                                "waitAfterCompletion": "0"
+                            },
+                            "e-download-code-deploy-agent": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "powershell.exe -Command \"C:\\cfn\\scripts\\Download-File.ps1 -Source '",
+                                            "https://s3.amazonaws.com/aws-codedeploy-us-east-1/latest/codedeploy-agent.msi",
+                                            "' -Destination 'C:\\cfn\\downloads\\codedeploy-agent.msi'\""
+                                        ]
+                                    ]
+                                },
+                                "waitAfterCompletion": "0"
+                            },
+                            "f-install-code-deploy-agent": {
+                                "command": "powershell.exe -Command \"C:\\cfn\\scripts\\Install-CodeDeploy.ps1\"",
+                                "waitAfterCompletion": "0"
+                            },
+                            "g-signal-success": {
+                                "command": "powershell.exe -Command \"Write-AWSQuickStartStatus\"",
+                                "waitAfterCompletion": "0"
+                            }
+                        }
+                    }
+                }
+            },
+            "Properties": {
+                "InstanceType": "t2.medium",
+                "SecurityGroupIds": [
+                    {
+                        "Ref": "CodeDeployServerSecurityGroup"
+                    }
+                ],
+                "SubnetId": {
+                    "Ref": "PrivateSubnet2ID"
+                },
+                "ImageId": {
+                    "Fn::FindInMap": [
+                        "AWSAMIRegionMap",
+                        {
+                            "Ref": "AWS::Region"
+                        },
+                        "WS2012R2"
+                    ]
+                },
+                "IamInstanceProfile": {
+                    "Ref": "CodeDeployTargetServerProfile"
+                },
+                "KeyName": {
+                    "Ref": "KeyPairName"
+                },
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": "QuickStart-WindowsTestServer"
+                    }
+                ],
+                "UserData": {
+                    "Fn::Base64": {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "<script>\n",
+                                "cfn-init.exe -v -s ",
+                                {
+                                    "Ref": "AWS::StackId"
+                                },
+                                " -r CodeDeployServerInstance2",
+                                " --region ",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                "\n",
+                                "</script>\n"
+                            ]
+                        ]
+                    }
+                }
+            },
+            "CreationPolicy": {
+                "ResourceSignal": {
+                    "Count": "1",
+                    "Timeout": "PT25M"
+                }
+            }
+        },
+        "CodeDeployTestingELB": {
+            "Type": "AWS::ElasticLoadBalancing::LoadBalancer",
+            "DependsOn": [
+                "CodeDeployServerInstance",
+                "MSBuildWithJenkinsInstance"
+            ],
+            "Properties": {
+                "Subnets": [
+                    {
+                        "Ref": "PublicSubnet1ID"
+                    },
+                    {
+                        "Ref": "PublicSubnet2ID"
+                    }
+                ],
+                "Scheme": "internet-facing",
+                "Instances": {
+                    "Fn::If": [
+                        "CreateMultipleCodeDeployServers",
+                        [
+                            {
+                                "Ref": "CodeDeployServerInstance"
+                            },
+                            {
+                                "Ref": "CodeDeployServerInstance2"
+                            }
+                        ],
+                        [
+                            {
+                                "Ref": "CodeDeployServerInstance"
+                            }
+                        ]
+                    ]
+                },
+                "Listeners": [
+                    {
+                        "LoadBalancerPort": "443",
+                        "InstancePort": "80",
+                        "Protocol": "HTTPS",
+                        "InstanceProtocol": "HTTP",
+                        "SSLCertificateId": {
+                            "Fn::Sub": "arn:aws:iam::${AWS::AccountId}:server-certificate/${ELBServerCertificateName}-${AWS::Region}"
+                        }
+                    }
+                ],
+                "SecurityGroups": [
+                    {
+                        "Ref": "CodeDeployELBSG"
+                    }
+                ],
+                "HealthCheck": {
+                    "Target": "TCP:80",
+                    "HealthyThreshold": "3",
+                    "UnhealthyThreshold": "5",
+                    "Interval": "10",
+                    "Timeout": "5"
+                }
+            }
+        },
+        "BuildServerELB": {
+            "Type": "AWS::ElasticLoadBalancing::LoadBalancer",
+            "DependsOn": "MSBuildWithJenkinsInstance",
+            "Properties": {
+                "Subnets": [
+                    {
+                        "Ref": "PublicSubnet1ID"
+                    },
+                    {
+                        "Ref": "PublicSubnet2ID"
+                    }
+                ],
+                "Scheme": "internet-facing",
+                "Instances": [
+                    {
+                        "Ref": "MSBuildWithJenkinsInstance"
+                    }
+                ],
+                "Listeners": [
+                    {
+                        "LoadBalancerPort": "443",
+                        "InstancePort": "8080",
+                        "Protocol": "HTTPS",
+                        "InstanceProtocol": "HTTP",
+                        "SSLCertificateId": {
+                            "Fn::Sub": "arn:aws:iam::${AWS::AccountId}:server-certificate/${ELBServerCertificateName}-${AWS::Region}"
+                        }
+                    }
+                ],
+                "SecurityGroups": [
+                    {
+                        "Ref": "BuildServerELBSG"
+                    }
+                ],
+                "HealthCheck": {
+                    "Target": "TCP:8080",
+                    "HealthyThreshold": "3",
+                    "UnhealthyThreshold": "5",
+                    "Interval": "10",
+                    "Timeout": "5"
+                }
+            }
+        },
+        "CustomJenkinsActionType": {
+            "Type": "AWS::CodePipeline::CustomActionType",
+            "DependsOn": "BuildServerELB",
+            "Properties": {
+                "Category": "Build",
+                "Provider": {
+                    "Fn::Join": [
+                        "",
+                        [
+                            {
+                                "Ref": "CodeDeployAppName"
+                            },
+                            "-Jenkins"
+                        ]
+                    ]
+                },
+                "Version": {
+                    "Ref": "JenkinsCustomActionVersionNumber"
+                },
+                "ConfigurationProperties": [
+                    {
+                        "Key": "true",
+                        "Name": "ProjectName",
+                        "Queryable": "true",
+                        "Required": "true",
+                        "Secret": "false",
+                        "Type": "String"
+                    }
+                ],
+                "InputArtifactDetails": {
+                    "MaximumCount": 5,
+                    "MinimumCount": 0
+                },
+                "OutputArtifactDetails": {
+                    "MaximumCount": 5,
+                    "MinimumCount": 0
+                },
+                "Settings": {
+                    "EntityUrlTemplate": {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "https://",
+                                {
+                                    "Fn::GetAtt": [
+                                        "BuildServerELB",
+                                        "DNSName"
+                                    ]
+                                },
+                                "/job/{Config:ProjectName}"
+                            ]
+                        ]
+                    },
+                    "ExecutionUrlTemplate": {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "https://",
+                                {
+                                    "Fn::GetAtt": [
+                                        "BuildServerELB",
+                                        "DNSName"
+                                    ]
+                                },
+                                "/job/{Config:ProjectName}/{ExternalExecutionId}"
+                            ]
+                        ]
+                    }
+                }
+            }
+        },
+        "MyPipeline": {
+            "Type": "AWS::CodePipeline::Pipeline",
+            "DependsOn": "CustomJenkinsActionType",
+            "Properties": {
+                "Name": {
+                    "Fn::Join": [
+                        "",
+                        [
+                            {
+                                "Ref": "CodeDeployAppName"
+                            },
+                            "-Pipeline"
+                        ]
+                    ]
+                },
+                "RoleArn": {
+                    "Fn::GetAtt": [
+                        "CodePipelineTrustRole",
+                        "Arn"
+                    ]
+                },
+                "Stages": [
+                    {
+                        "Name": "Source",
+                        "Actions": [
+                            {
+                                "Name": "ApplicationSource",
+                                "InputArtifacts": [],
+                                "ActionTypeId": {
+                                    "Version": "1",
+                                    "Category": "Source",
+                                    "Owner": "AWS",
+                                    "Provider": "S3"
+                                },
+                                "OutputArtifacts": [
+                                    {
+                                        "Name": {
+                                            "Fn::Join": [
+                                                "",
+                                                [
+                                                    {
+                                                        "Ref": "CodeDeployAppName"
+                                                    },
+                                                    "-SourceArtifact"
+                                                ]
+                                            ]
+                                        }
+                                    }
+                                ],
+                                "Configuration": {
+                                    "S3Bucket": {
+                                        "Ref": "S3BucketForPipeline"
+                                    },
+                                    "S3ObjectKey": {
+                                        "Fn::If": [
+                                            "DemoAppIncluded",
+                                            "DemoApp.zip",
+                                            {
+                                                "Ref": "CodePackageFileName"
+                                            }
+                                        ]
+                                    }
+                                },
+                                "RunOrder": 1
+                            }
+                        ]
+                    },
+                    {
+                        "Name": "Build",
+                        "Actions": [
+                            {
+                                "Name": "ApplicationBuild",
+                                "InputArtifacts": [
+                                    {
+                                        "Name": {
+                                            "Fn::Join": [
+                                                "",
+                                                [
+                                                    {
+                                                        "Ref": "CodeDeployAppName"
+                                                    },
+                                                    "-SourceArtifact"
+                                                ]
+                                            ]
+                                        }
+                                    }
+                                ],
+                                "ActionTypeId": {
+                                    "Category": "Build",
+                                    "Owner": "Custom",
+                                    "Version": {
+                                        "Ref": "JenkinsCustomActionVersionNumber"
+                                    },
+                                    "Provider": {
+                                        "Fn::Join": [
+                                            "",
+                                            [
+                                                {
+                                                    "Ref": "CodeDeployAppName"
+                                                },
+                                                "-Jenkins"
+                                            ]
+                                        ]
+                                    }
+                                },
+                                "OutputArtifacts": [
+                                    {
+                                        "Name": {
+                                            "Fn::Join": [
+                                                "",
+                                                [
+                                                    {
+                                                        "Ref": "CodeDeployAppName"
+                                                    },
+                                                    "-BuiltArtifact"
+                                                ]
+                                            ]
+                                        }
+                                    }
+                                ],
+                                "Configuration": {
+                                    "ProjectName": {
+                                        "Ref": "CodeDeployAppName"
+                                    }
+                                },
+                                "RunOrder": 1
+                            }
+                        ]
+                    },
+                    {
+                        "Name": "Test",
+                        "Actions": [
+                            {
+                                "Name": "DeployToTest",
+                                "InputArtifacts": [
+                                    {
+                                        "Name": {
+                                            "Fn::Join": [
+                                                "",
+                                                [
+                                                    {
+                                                        "Ref": "CodeDeployAppName"
+                                                    },
+                                                    "-BuiltArtifact"
+                                                ]
+                                            ]
+                                        }
+                                    }
+                                ],
+                                "ActionTypeId": {
+                                    "Category": "Deploy",
+                                    "Owner": "AWS",
+                                    "Version": "1",
+                                    "Provider": "CodeDeploy"
+                                },
+                                "Configuration": {
+                                    "ApplicationName": {
+                                        "Ref": "CodeDeployAppName"
+                                    },
+                                    "DeploymentGroupName": {
+                                        "Ref": "CodeDeployDeploymentGroupName"
+                                    }
+                                },
+                                "RunOrder": 1
+                            }
+                        ]
+                    }
+                ],
+                "ArtifactStore": {
+                    "Type": "S3",
+                    "Location": {
+                        "Ref": "S3BucketForPipeline"
+                    }
+                }
+            }
+        },
+        "MyApplication": {
+            "Type": "AWS::CodeDeploy::Application",
+            "Properties": {
+                "ApplicationName": {
+                    "Ref": "CodeDeployAppName"
+                }
+            }
+        },
+        "MyDeploymentGroup": {
+            "Type": "AWS::CodeDeploy::DeploymentGroup",
+            "DependsOn": "CodeDeployServerInstance",
+            "Properties": {
+                "ApplicationName": {
+                    "Ref": "CodeDeployAppName"
+                },
+                "DeploymentConfigName": "CodeDeployDefault.AllAtOnce",
+                "DeploymentGroupName": {
+                    "Ref": "CodeDeployDeploymentGroupName"
+                },
+                "Ec2TagFilters": [
+                    {
+                        "Key": "Name",
+                        "Value": "QuickStart-WindowsTestServer",
+                        "Type": "KEY_AND_VALUE"
+                    }
+                ],
+                "ServiceRoleArn": {
+                    "Fn::GetAtt": [
+                        "CodeDeployServerRole",
+                        "Arn"
+                    ]
+                }
+            }
+        }
+    },
+    "Outputs": {
+        "CodeDeployELBDNSName": {
+            "Value": {
+                "Fn::GetAtt": [
+                    "CodeDeployTestingELB",
+                    "DNSName"
+                ]
+            },
+            "Description": "Address of the Elastic Load Balancer for accessing a web service deployed to the Code Deploy servers."
+        },
+        "BuildServerELBDNSName": {
+            "Value": {
+                "Fn::GetAtt": [
+                    "BuildServerELB",
+                    "DNSName"
+                ]
+            },
+            "Description": "Address of the Elastic Load Balancer for accessing the build server."
+        },
+        "S3BucketForPipelineAndCodeUpload": {
+            "Value": {
+                "Fn::GetAtt": [
+                    "S3BucketForPipeline",
+                    "DomainName"
+                ]
+            },
+            "Description": "This S3 Bucket was generated by the template and will be used by CodePipeline and can be used to upload new code revisions or your own custom code package."
+        }
+    }
+}

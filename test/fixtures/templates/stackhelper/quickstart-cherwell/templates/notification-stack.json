@@ -1,0 +1,145 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "Create the event resouces.",
+    "Parameters": {
+        "IncidentFunction": {
+            "Description": "The arn for the Lambda function that will send incidents to Cherwell.",
+            "Type": "String"
+        },
+        "CMDBFunction": {
+            "Description": "The arn for the CMDB Lambda function.",
+            "Type": "String"
+        }
+    },
+    "Resources": {
+        "ComplianceEventRule": {
+            "Type": "AWS::Events::Rule",
+            "Properties": {
+                "Description": "Cherwell CMDB",
+                "EventPattern": {
+                    "source": [
+                        "aws.config"
+                    ],
+                    "detail-type": [
+                        "Config Rules Compliance Change"
+                    ]
+                },
+                "State": "ENABLED",
+                "Targets": [
+                    {
+                        "Arn": {
+                            "Ref": "CMDBFunction"
+                        },
+                        "Id": "EventFunction"
+                    }
+                ]
+            }
+        },
+        "PermissionForComplianceEventsToInvokeLam": {
+            "Type": "AWS::Lambda::Permission",
+            "Properties": {
+                "FunctionName": {
+                    "Ref": "CMDBFunction"
+                },
+                "Action": "lambda:InvokeFunction",
+                "Principal": "events.amazonaws.com",
+                "SourceArn": {
+                    "Fn::GetAtt": [
+                        "CMDBEventRule",
+                        "Arn"
+                    ]
+                }
+            }
+        },
+        "CMDBEventRule": {
+            "Type": "AWS::Events::Rule",
+            "Properties": {
+                "Description": "Cherwell CMDB",
+                "EventPattern": {
+                    "source": [
+                        "aws.config"
+                    ],
+                    "detail-type": [
+                        "Config Configuration Item Change"
+                    ],
+                    "detail": {
+                        "messageType": [
+                            "ConfigurationItemChangeNotification"
+                        ],
+                        "configurationItem": {
+                            "resourceType": [
+                                "AWS::EC2::Instance",
+                                "AWS::S3::Bucket",
+                                "AWS::EC2::Volume",
+                                "AWS::RDS::DBInstance"
+                            ]
+                        }
+                    }
+                },
+                "State": "ENABLED",
+                "Targets": [
+                    {
+                        "Arn": {
+                            "Ref": "CMDBFunction"
+                        },
+                        "Id": "EventFunction"
+                    }
+                ]
+            }
+        },
+        "PermissionForEventsToInvokeLambda": {
+            "Type": "AWS::Lambda::Permission",
+            "Properties": {
+                "FunctionName": {
+                    "Ref": "CMDBFunction"
+                },
+                "Action": "lambda:InvokeFunction",
+                "Principal": "events.amazonaws.com",
+                "SourceArn": {
+                    "Fn::GetAtt": [
+                        "CMDBEventRule",
+                        "Arn"
+                    ]
+                }
+            }
+        },
+        "IncidentSNSTopic": {
+            "Type": "AWS::SNS::Topic",
+            "Properties": {
+                "DisplayName": "Cherwell",
+                "Subscription": [
+                    {
+                        "Endpoint": {
+                            "Ref": "IncidentFunction"
+                        },
+                        "Protocol": "lambda"
+                    }
+                ]
+            }
+        },
+        "LambdaInvokePermission": {
+            "Type": "AWS::Lambda::Permission",
+            "Properties": {
+                "Action": "lambda:InvokeFunction",
+                "Principal": "sns.amazonaws.com",
+                "SourceArn": {
+                    "Ref": "IncidentSNSTopic"
+                },
+                "FunctionName": {
+                    "Ref": "IncidentFunction"
+                }
+            }
+        }
+    },
+    "Outputs": {
+        "IncidentSNSTopicName": {
+            "Description": "The name of the SNS incident topic.",
+            "Value": {
+                "Fn::GetAtt": [
+                    "IncidentSNSTopic",
+                    "TopicName"
+                ]
+            }
+        }
+    }
+}

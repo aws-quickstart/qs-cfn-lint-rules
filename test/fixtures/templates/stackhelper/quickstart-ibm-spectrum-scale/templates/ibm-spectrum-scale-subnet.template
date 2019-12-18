@@ -1,0 +1,288 @@
+        {
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "This template creates a private subnet and NAT Gateway in a single Availability Zone. If you deploy this template in a region that doesn't support NAT gateways, NAT instances are deployed instead. This template is used only when dataReplica=1.",
+    "Parameters": {
+        "VPCCIDR": {
+            "Description": "CIDR block for the VPC.",
+            "Type": "String",
+            "Default": "10.0.0.0/16",
+            "AllowedPattern": "^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\\/(1[6-9]|2[0-8]))$",
+            "ConstraintDescription": "CIDR block parameter must be in the form x.x.x.x/16-28."
+        },
+        "VpcId": {
+            "AllowedPattern": "vpc-[a-z0-9]*",
+            "Description": "Id of your existing VPC (e.g. vpc-0343606e).",
+            "MaxLength": "64",
+            "MinLength": "1",
+            "Type": "AWS::EC2::VPC::Id",
+            "ConstraintDescription": "Must be valid VPC id."
+        },
+        "PrivateSubnet1ACIDR": {
+            "Description": "CIDR block for the private subnet located in Availability Zone 1.",
+            "Type": "String",
+            "Default": "10.0.1.0/24",
+            "AllowedPattern": "^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\\/(1[6-9]|2[0-8]))$",
+            "ConstraintDescription": "CIDR block parameter must be in the form x.x.x.x/16-28."
+        },
+        "PublicSubnet1ID": {
+            "AllowedPattern": "subnet-[a-z0-9]*",
+            "Description": "Id of your existing Public Subnet (e.g. subnet-0343606e).",
+            "MaxLength": "64",
+            "MinLength": "1",
+            "Type": "AWS::EC2::Subnet::Id",
+            "ConstraintDescription": "Must be valid Public Subnet id."
+        },
+        "KeyPairName": {
+            "Description": "Name of an existing EC2 Key Pair.",
+            "Type": "AWS::EC2::KeyPair::KeyName",
+            "MinLength": "1",
+            "ConstraintDescription": "must be the name of an existing EC2 KeyPair."
+        },
+        "AvailabilityZones": {
+            "Description": "List of Availability Zones to use for the subnets in the VPC. Only two Availability Zones are used for this deployment, and the logical order of your selections is preserved.",
+            "Type": "List<AWS::EC2::AvailabilityZone::Name>",
+            "AllowedPattern": "(([a-zA-Z]+)-([a-zA-Z]+)-([0-9a-z]+))",
+            "ConstraintDescription": "Two Availability Zones must be added."
+        }
+    },
+    "Mappings": {
+        "AWSAMIRegionMap": {
+            "AMI": {
+                "AWSNATHVM": "amzn-ami-vpc-nat-hvm-2017.03.0.20170401-x86_64-ebs"
+            },
+            "us-gov-west-1": {
+                "AWSNATHVM": "ami-3f0a8f5e"
+            }
+        }
+    },
+    "Conditions":{
+        "GovCloudCondition": {
+            "Fn::Equals": [
+                {
+                    "Ref": "AWS::Region"
+                },
+                "us-gov-west-1"
+            ]
+        },
+        "NATGatewayCondition": {
+            "Fn::Not": [
+                 {
+                     "Condition": "GovCloudCondition"
+                 }
+            ]
+        }
+    },
+    "Resources": {
+        "PrivateSubnet": {
+            "Type": "AWS::EC2::Subnet",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "VpcId"
+                },
+                "CidrBlock": {
+                    "Ref": "PrivateSubnet1ACIDR"
+                },
+                "AvailabilityZone": {
+                    "Fn::Select": [
+                        "0",
+                        {
+                            "Ref": "AvailabilityZones"
+                        }
+                    ]
+                },
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": "Private subnet 1"
+                    },
+                    {
+                        "Key": "Network",
+                        "Value": "Private"
+                    }
+                ]
+            }
+        },
+        "PrivateSubnet1RouteTable": {
+            "Type": "AWS::EC2::RouteTable",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "VpcId"
+                },
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": "Private subnet 1"
+                    },
+                    {
+                        "Key": "Network",
+                        "Value": "Private"
+                    }
+                ]
+            }
+        },
+        "PrivateSubnet1Route": {
+            "Type": "AWS::EC2::Route",
+            "Properties": {
+                "RouteTableId": {
+                    "Ref": "PrivateSubnet1RouteTable"
+                },
+                "DestinationCidrBlock": "0.0.0.0/0",
+                "InstanceId": {
+                    "Fn::If": [
+                        "GovCloudCondition",
+                        {
+                            "Ref": "NATInstance1"
+                        },
+                        {
+                            "Ref": "AWS::NoValue"
+                        }
+                    ]
+                },
+                "NatGatewayId": {
+                    "Fn::If": [
+                        "NATGatewayCondition",
+                        {
+                            "Ref": "NATGateway1"
+                        },
+                        {
+                            "Ref": "AWS::NoValue"
+                        }
+                    ]
+                }
+            }
+        },
+        "PrivateSubnet1RouteTableAssociation": {
+            "Type": "AWS::EC2::SubnetRouteTableAssociation",
+            "Properties": {
+                "SubnetId": {
+                    "Ref": "PrivateSubnet"
+                },
+                "RouteTableId": {
+                    "Ref": "PrivateSubnet1RouteTable"
+                }
+            }
+        },
+        "NAT1EIP": {
+            "Type": "AWS::EC2::EIP",
+            "Properties": {
+                "Domain": "vpc",
+                "InstanceId": {
+                    "Fn::If": [
+                        "GovCloudCondition",
+                        {
+                            "Ref": "NATInstance1"
+                        },
+                        {
+                            "Ref": "AWS::NoValue"
+                        }
+                    ]
+                }
+            }
+        },
+        "NATGateway1": {
+            "Condition": "NATGatewayCondition",
+            "Type": "AWS::EC2::NatGateway",
+            "Properties": {
+                "AllocationId": {
+                    "Fn::GetAtt": [
+                        "NAT1EIP",
+                        "AllocationId"
+                    ]
+                },
+                "SubnetId": {
+                        "Ref": "PublicSubnet1ID"
+                    }
+            }
+        },
+        "NATInstance1": {
+            "Condition": "GovCloudCondition",
+            "Type": "AWS::EC2::Instance",
+            "Properties": {
+                "ImageId": {
+                    "Fn::FindInMap": [
+                        "AWSAMIRegionMap",
+                        {
+                            "Ref": "AWS::Region"
+                        },
+                        "AWSNATHVM"
+                    ]
+                },
+                "InstanceType": "t2.micro",
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": "NAT1"
+                    }
+                ],
+                "NetworkInterfaces": [
+                    {
+                        "GroupSet": [
+                            {
+                                "Ref": "NATInstanceSecurityGroup"
+                            }
+                        ],
+                        "AssociatePublicIpAddress": "true",
+                        "DeviceIndex": "0",
+                        "DeleteOnTermination": "true",
+                        "SubnetId": {
+                            "Ref": "PublicSubnet1ID"
+                        }
+                    }
+                ],
+                "KeyName": {
+                    "Fn::If": [
+                        "GovCloudCondition",
+                        {
+                            "Ref": "KeyPairName"
+                        },
+                        {
+                            "Ref": "AWS::NoValue"
+                        }
+                    ]
+                },
+                "SourceDestCheck": "false"
+            }
+        },
+        "NATInstanceSecurityGroup": {
+            "Condition": "GovCloudCondition",
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "GroupDescription": "Enables outbound internet access for the VPC via the NAT instances",
+                "VpcId": {
+                    "Ref": "VpcId"
+                },
+                "SecurityGroupIngress": [
+                    {
+                        "IpProtocol": "-1",
+                        "FromPort": "1",
+                        "ToPort": "65535",
+                        "CidrIp": {
+                            "Ref": "VPCCIDR"
+                        }
+                    }
+                ]
+            }
+        }
+    },
+    "Outputs" : {
+        "Version": {
+            "Value": "v1.3",
+            "Description": "Template version"
+        },
+        "PrivateSubnetID": {
+            "Value": {
+                "Ref": "PrivateSubnet"
+            },
+            "Description": "Private Subnet ID",
+            "Export": {
+                "Name": {
+                    "Fn::Sub": "${AWS::StackName}-PrivateSubnetID"
+                }
+            }
+        },
+        "SpectrumScaleVersion":{
+           "Value": "4.2.3.7",
+           "Description": "Spectrum Scale version included with this release"
+        }
+    }
+}

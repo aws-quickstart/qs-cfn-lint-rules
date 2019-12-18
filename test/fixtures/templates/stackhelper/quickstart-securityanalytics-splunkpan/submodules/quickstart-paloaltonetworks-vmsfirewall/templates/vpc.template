@@ -1,0 +1,3041 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "Creates VPC, Subnets, Route Tables, SG, Classic ELBs, ASG for Webservers and Lambda Infrastructure for the VM-Series firewall (qs-1ndtndsoh)",
+    "Parameters": {
+        "AvailabilityZones": {
+            "Description": "Enter the list of Availability Zones (Based on Number of AZs above)",
+            "Type": "List<AWS::EC2::AvailabilityZone::Name>"
+        },
+        "LambdaSubnetIpBlocks": {
+            "Default": "192.168.200.0/24, 192.168.201.0/24, 192.168.202.0/24",
+            "Description": "Lambda Funcion Subnets for AZ: Comma-delimited list of CIDR blocks only if NAT Gateway is needed",
+            "Type": "CommaDelimitedList"
+        },
+        "MasterS3Bucket": {
+            "Description": "Enter the name of the Bootstrap S3 bucket for the VM-Series firewall",
+            "MaxLength": "63",
+            "MinLength": "3",
+            "Type": "String"
+        },
+        "MgmtSubnetIpBlocks": {
+            "Default": "192.168.0.0/24, 192.168.10.0/24, 192.168.20.0/24",
+            "Description": "Management subnet comma-delimited list of CIDR blocks",
+            "Type": "CommaDelimitedList"
+        },
+        "NATGWSubnetIpBlocks": {
+            "Default": "192.168.100.0/24, 192.168.101.0/24, 192.168.102.0/24",
+            "Description": "AWS NAT Gateway Comma-delimited list of CIDR blocks",
+            "Type": "CommaDelimitedList"
+        },
+        "NATGateway": {
+            "AllowedValues": [
+                "Yes",
+                "No"
+            ],
+            "Default": "Yes",
+            "Description": "Yes = create AWS NAT Gateway in each AZ, No = Use EIPs (skip subnet CIDR for NAT/Lambda)",
+            "Type": "String"
+        },
+        "NumberOfAZs": {
+            "Default": "2",
+            "Description": "Total Number of AZs which will be used in this deployment (Min 2 and Max 3)",
+            "MaxValue": "3",
+            "MinValue": "2",
+            "Type": "Number"
+        },
+        "TrustSubnetIpBlocks": {
+            "Default": "192.168.2.0/24, 192.168.12.0/24, 192.168.22.0/24",
+            "Description": "Trust subnet comma-delimited list of CIDR blocks",
+            "Type": "CommaDelimitedList"
+        },
+        "UntrustSubnetIpBlocks": {
+            "Default": "192.168.1.0/24, 192.168.11.0/24, 192.168.21.0/24",
+            "Description": "Untrust subnet comma-delimited list of CIDR blocks",
+            "Type": "CommaDelimitedList"
+        },
+        "VPCCIDR": {
+            "AllowedPattern": "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})",
+            "ConstraintDescription": "must be a valid CIDR range of the form x.x.x.x/x.",
+            "Default": "192.168.0.0/16",
+            "Description": "Enter the VPC CIDR that you want to use",
+            "Type": "String"
+        },
+        "VPCName": {
+            "Default": "panwVPC",
+            "Description": "Name of the newly created VPC",
+            "MaxLength": "24",
+            "MinLength": "6",
+            "Type": "String"
+        }
+    },
+    "Metadata": {
+        "AWS::CloudFormation::Interface": {
+            "ParameterGroups": [
+                {
+                    "Label": {
+                        "default": "VPC Configuration"
+                    },
+                    "Parameters": [
+                        "VPCName",
+                        "VPCCIDR",
+                        "MasterS3Bucket",
+                        "MgmtSubnetIpBlocks",
+                        "UntrustSubnetIpBlocks",
+                        "TrustSubnetIpBlocks",
+                        "NATGateway",
+                        "NATGWSubnetIpBlocks",
+                        "LambdaSubnetIpBlocks",
+                        "NumberOfAZs",
+                        "AvailabilityZones"
+                    ]
+                }
+            ],
+            "ParameterLabels": {
+                "AvailabilityZones": {
+                    "default": "Select list of AZ:"
+                },
+                "LambdaSubnetIpBlocks": {
+                    "default": "Lambda Subnet CIDR Block:"
+                },
+                "MasterS3Bucket": {
+                    "default": "Bootstrap bucket for VM-Series firewalls"
+                },
+                "MgmtSubnetIpBlocks": {
+                    "default": "Management Subnet CIDR Block:"
+                },
+                "NATGWSubnetIpBlocks": {
+                    "default": "NAT Gateway Subnet CIDR Block:"
+                },
+                "NATGateway": {
+                    "default": "Do you want to create AWS NAT Gateway in each Availability Zones (AZ)?"
+                },
+                "NumberOfAZs": {
+                    "default": "Number of AZ for deployment:"
+                },
+                "TrustSubnetIpBlocks": {
+                    "default": "Trust Subnet CIDR Block:"
+                },
+                "UntrustSubnetIpBlocks": {
+                    "default": "Untrust Subnet CIDR Block:"
+                },
+                "VPCCIDR": {
+                    "default": "CIDR Block for the VPC:"
+                },
+                "VPCName": {
+                    "default": "VPC Name:"
+                }
+            }
+        }
+    },
+    "Mappings": {},
+    "Conditions": {
+        "CreateSubnet2": {
+            "Fn::Equals": [
+                {
+                    "Ref": "NumberOfAZs"
+                },
+                "2"
+            ]
+        },
+        "CreateSubnet3": {
+            "Fn::Or": [
+                {
+                    "Fn::Equals": [
+                        {
+                            "Ref": "NumberOfAZs"
+                        },
+                        "3"
+                    ]
+                },
+                {
+                    "Fn::Equals": [
+                        {
+                            "Ref": "NumberOfAZs"
+                        },
+                        "4"
+                    ]
+                }
+            ]
+        },
+        "CreateSubnet4": {
+            "Fn::Equals": [
+                {
+                    "Ref": "NumberOfAZs"
+                },
+                "4"
+            ]
+        },
+        "CreateSubnetAz3": {
+            "Fn::Equals": [
+                {
+                    "Ref": "NumberOfAZs"
+                },
+                "3"
+            ]
+        },
+        "NATGatewayNotRequired": {
+            "Fn::Equals": [
+                {
+                    "Ref": "NATGateway"
+                },
+                "No"
+            ]
+        },
+        "NATGatewayNotRequired3": {
+            "Fn::And": [
+                {
+                    "Fn::Equals": [
+                        {
+                            "Ref": "NATGateway"
+                        },
+                        "No"
+                    ]
+                },
+                {
+                    "Condition": "CreateSubnet3"
+                }
+            ]
+        },
+        "NATGatewayNotRequired4": {
+            "Fn::And": [
+                {
+                    "Fn::Equals": [
+                        {
+                            "Ref": "NATGateway"
+                        },
+                        "No"
+                    ]
+                },
+                {
+                    "Condition": "CreateSubnet4"
+                }
+            ]
+        },
+        "NATGatewayRequired": {
+            "Fn::Equals": [
+                {
+                    "Ref": "NATGateway"
+                },
+                "Yes"
+            ]
+        },
+        "NATGatewayRequired3": {
+            "Fn::And": [
+                {
+                    "Fn::Equals": [
+                        {
+                            "Ref": "NATGateway"
+                        },
+                        "Yes"
+                    ]
+                },
+                {
+                    "Condition": "CreateSubnet3"
+                }
+            ]
+        },
+        "NATGatewayRequired4": {
+            "Fn::And": [
+                {
+                    "Fn::Equals": [
+                        {
+                            "Ref": "NATGateway"
+                        },
+                        "Yes"
+                    ]
+                },
+                {
+                    "Condition": "CreateSubnet4"
+                }
+            ]
+        }
+    },
+    "Resources": {
+        "VPC": {
+            "Type": "AWS::EC2::VPC",
+            "Properties": {
+                "CidrBlock": {
+                    "Ref": "VPCCIDR"
+                },
+                "EnableDnsSupport" : true,
+    	    	"EnableDnsHostnames" : true,
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackId"
+                        }
+                    },
+                    {
+                        "Key": "Network",
+                        "Value": "MGMT"
+                    },
+                    {
+                        "Key": "Name",
+                        "Value": {
+                            "Ref": "VPCName"
+                        }
+                    }
+                ]
+            }
+        },
+        "LambdaSubnetAz1": {
+            "Type": "AWS::EC2::Subnet",
+            "Condition": "NATGatewayRequired",
+            "Properties": {
+                "AvailabilityZone": {
+                    "Fn::Select": [
+                        "0",
+                        {
+                            "Ref": "AvailabilityZones"
+                        }
+                    ]
+                },
+                "MapPublicIpOnLaunch": true,
+                "VpcId": {
+                    "Ref": "VPC"
+                },
+                "CidrBlock": {
+                    "Fn::Select": [
+                        "0",
+                        {
+                            "Ref": "LambdaSubnetIpBlocks"
+                        }
+                    ]
+                },
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackId"
+                        }
+                    },
+                    {
+                        "Key": "Network",
+                        "Value": "LambdaFunction"
+                    },
+                    {
+                        "Key": "Name",
+                        "Value": {
+                            "Fn::Join": [
+                                "-",
+                                [
+                                    {
+                                        "Ref": "AWS::StackName"
+                                    },
+                                    "LambdaSubnetAz1"
+                                ]
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        "LambdaSubnetAz2": {
+            "Type": "AWS::EC2::Subnet",
+            "Condition": "NATGatewayRequired",
+            "Properties": {
+                "AvailabilityZone": {
+                    "Fn::Select": [
+                        "1",
+                        {
+                            "Ref": "AvailabilityZones"
+                        }
+                    ]
+                },
+                "MapPublicIpOnLaunch": true,
+                "VpcId": {
+                    "Ref": "VPC"
+                },
+                "CidrBlock": {
+                    "Fn::Select": [
+                        "1",
+                        {
+                            "Ref": "LambdaSubnetIpBlocks"
+                        }
+                    ]
+                },
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackId"
+                        }
+                    },
+                    {
+                        "Key": "Network",
+                        "Value": "LambdaFunction"
+                    },
+                    {
+                        "Key": "Name",
+                        "Value": {
+                            "Fn::Join": [
+                                "-",
+                                [
+                                    {
+                                        "Ref": "AWS::StackName"
+                                    },
+                                    "LambdaSubnetAz2"
+                                ]
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        "LambdaSubnetAz3": {
+            "Type": "AWS::EC2::Subnet",
+            "Condition": "NATGatewayRequired3",
+            "Properties": {
+                "AvailabilityZone": {
+                    "Fn::Select": [
+                        "2",
+                        {
+                            "Ref": "AvailabilityZones"
+                        }
+                    ]
+                },
+                "MapPublicIpOnLaunch": true,
+                "VpcId": {
+                    "Ref": "VPC"
+                },
+                "CidrBlock": {
+                    "Fn::Select": [
+                        "2",
+                        {
+                            "Ref": "LambdaSubnetIpBlocks"
+                        }
+                    ]
+                },
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackId"
+                        }
+                    },
+                    {
+                        "Key": "Network",
+                        "Value": "LambdaFunction"
+                    },
+                    {
+                        "Key": "Name",
+                        "Value": {
+                            "Fn::Join": [
+                                "-",
+                                [
+                                    {
+                                        "Ref": "AWS::StackName"
+                                    },
+                                    "LambdaSubnetAz3"
+                                ]
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        "LambdaSubnetAz4": {
+            "Type": "AWS::EC2::Subnet",
+            "Condition": "NATGatewayRequired4",
+            "Properties": {
+                "AvailabilityZone": {
+                    "Fn::Select": [
+                        "3",
+                        {
+                            "Ref": "AvailabilityZones"
+                        }
+                    ]
+                },
+                "MapPublicIpOnLaunch": true,
+                "VpcId": {
+                    "Ref": "VPC"
+                },
+                "CidrBlock": {
+                    "Fn::Select": [
+                        "3",
+                        {
+                            "Ref": "LambdaSubnetIpBlocks"
+                        }
+                    ]
+                },
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackId"
+                        }
+                    },
+                    {
+                        "Key": "Network",
+                        "Value": "LambdaFunction"
+                    },
+                    {
+                        "Key": "Name",
+                        "Value": {
+                            "Fn::Join": [
+                                "-",
+                                [
+                                    {
+                                        "Ref": "AWS::StackName"
+                                    },
+                                    "LambdaSubnetAz4"
+                                ]
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        "LambdaRouteTableAz1": {
+            "Type": "AWS::EC2::RouteTable",
+            "Condition": "NATGatewayRequired",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "VPC"
+                },
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackId"
+                        }
+                    },
+                    {
+                        "Key": "Name",
+                        "Value": {
+                            "Fn::Join": [
+                                "-",
+                                [
+                                    {
+                                        "Ref": "AWS::StackName"
+                                    },
+                                    "LambdaRouteTableAz1"
+                                ]
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        "LambdaRouteTableAz2": {
+            "Type": "AWS::EC2::RouteTable",
+            "Condition": "NATGatewayRequired",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "VPC"
+                },
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackId"
+                        }
+                    },
+                    {
+                        "Key": "Name",
+                        "Value": {
+                            "Fn::Join": [
+                                "-",
+                                [
+                                    {
+                                        "Ref": "AWS::StackName"
+                                    },
+                                    "LambdaRouteTableAz2"
+                                ]
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        "LambdaRouteTableAz3": {
+            "Type": "AWS::EC2::RouteTable",
+            "Condition": "NATGatewayRequired3",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "VPC"
+                },
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackId"
+                        }
+                    },
+                    {
+                        "Key": "Name",
+                        "Value": {
+                            "Fn::Join": [
+                                "-",
+                                [
+                                    {
+                                        "Ref": "AWS::StackName"
+                                    },
+                                    "LambdaRouteTableAz3"
+                                ]
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        "LambdaRouteTableAz4": {
+            "Type": "AWS::EC2::RouteTable",
+            "Condition": "NATGatewayRequired4",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "VPC"
+                },
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackId"
+                        }
+                    },
+                    {
+                        "Key": "Name",
+                        "Value": {
+                            "Fn::Join": [
+                                "-",
+                                [
+                                    {
+                                        "Ref": "AWS::StackName"
+                                    },
+                                    "LambdaRouteTableAz4"
+                                ]
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        "NATGWSubnetAz1": {
+            "Type": "AWS::EC2::Subnet",
+            "Condition": "NATGatewayRequired",
+            "Properties": {
+                "AvailabilityZone": {
+                    "Fn::Select": [
+                        "0",
+                        {
+                            "Ref": "AvailabilityZones"
+                        }
+                    ]
+                },
+                "MapPublicIpOnLaunch": true,
+                "VpcId": {
+                    "Ref": "VPC"
+                },
+                "CidrBlock": {
+                    "Fn::Select": [
+                        "0",
+                        {
+                            "Ref": "NATGWSubnetIpBlocks"
+                        }
+                    ]
+                },
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackId"
+                        }
+                    },
+                    {
+                        "Key": "Network",
+                        "Value": "NATGW"
+                    },
+                    {
+                        "Key": "Name",
+                        "Value": {
+                            "Fn::Join": [
+                                "-",
+                                [
+                                    {
+                                        "Ref": "AWS::StackName"
+                                    },
+                                    "NATGWSubnetAz1"
+                                ]
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        "NATGWSubnetAz2": {
+            "Type": "AWS::EC2::Subnet",
+            "Condition": "NATGatewayRequired",
+            "Properties": {
+                "AvailabilityZone": {
+                    "Fn::Select": [
+                        "1",
+                        {
+                            "Ref": "AvailabilityZones"
+                        }
+                    ]
+                },
+                "MapPublicIpOnLaunch": true,
+                "VpcId": {
+                    "Ref": "VPC"
+                },
+                "CidrBlock": {
+                    "Fn::Select": [
+                        "1",
+                        {
+                            "Ref": "NATGWSubnetIpBlocks"
+                        }
+                    ]
+                },
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackId"
+                        }
+                    },
+                    {
+                        "Key": "Network",
+                        "Value": "NATGW"
+                    },
+                    {
+                        "Key": "Name",
+                        "Value": {
+                            "Fn::Join": [
+                                "-",
+                                [
+                                    {
+                                        "Ref": "AWS::StackName"
+                                    },
+                                    "NATGWSubnetAz2"
+                                ]
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        "NATGWSubnetAz3": {
+            "Type": "AWS::EC2::Subnet",
+            "Condition": "NATGatewayRequired3",
+            "Properties": {
+                "AvailabilityZone": {
+                    "Fn::Select": [
+                        "2",
+                        {
+                            "Ref": "AvailabilityZones"
+                        }
+                    ]
+                },
+                "MapPublicIpOnLaunch": true,
+                "VpcId": {
+                    "Ref": "VPC"
+                },
+                "CidrBlock": {
+                    "Fn::Select": [
+                        "2",
+                        {
+                            "Ref": "NATGWSubnetIpBlocks"
+                        }
+                    ]
+                },
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackId"
+                        }
+                    },
+                    {
+                        "Key": "Network",
+                        "Value": "NATGW"
+                    },
+                    {
+                        "Key": "Name",
+                        "Value": {
+                            "Fn::Join": [
+                                "-",
+                                [
+                                    {
+                                        "Ref": "AWS::StackName"
+                                    },
+                                    "NATGWSubnetAz3"
+                                ]
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        "NATGWSubnetAz4": {
+            "Type": "AWS::EC2::Subnet",
+            "Condition": "NATGatewayRequired4",
+            "Properties": {
+                "AvailabilityZone": {
+                    "Fn::Select": [
+                        "3",
+                        {
+                            "Ref": "AvailabilityZones"
+                        }
+                    ]
+                },
+                "MapPublicIpOnLaunch": true,
+                "VpcId": {
+                    "Ref": "VPC"
+                },
+                "CidrBlock": {
+                    "Fn::Select": [
+                        "3",
+                        {
+                            "Ref": "NATGWSubnetIpBlocks"
+                        }
+                    ]
+                },
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackId"
+                        }
+                    },
+                    {
+                        "Key": "Network",
+                        "Value": "NATGW"
+                    },
+                    {
+                        "Key": "Name",
+                        "Value": {
+                            "Fn::Join": [
+                                "-",
+                                [
+                                    {
+                                        "Ref": "AWS::StackName"
+                                    },
+                                    "NATGWSubnetAz4"
+                                ]
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        "EIP1": {
+            "Type": "AWS::EC2::EIP",
+            "Condition": "NATGatewayRequired",
+            "Properties": {
+                "Domain": "VPC"
+            },
+            "DependsOn": [
+                "VPC",
+                "GatewayToInternet",
+                "InternetGateway"
+            ]
+        },
+        "EIP2": {
+            "Type": "AWS::EC2::EIP",
+            "Condition": "NATGatewayRequired",
+            "Properties": {
+                "Domain": "VPC"
+            },
+            "DependsOn": [
+                "VPC",
+                "GatewayToInternet",
+                "InternetGateway"
+            ]
+        },
+        "EIP3": {
+            "Type": "AWS::EC2::EIP",
+            "Condition": "NATGatewayRequired3",
+            "Properties": {
+                "Domain": "VPC"
+            },
+            "DependsOn": [
+                "VPC",
+                "GatewayToInternet",
+                "InternetGateway"
+            ]
+        },
+        "EIP4": {
+            "Type": "AWS::EC2::EIP",
+            "Condition": "NATGatewayRequired4",
+            "Properties": {
+                "Domain": "VPC"
+            },
+            "DependsOn": [
+                "VPC",
+                "GatewayToInternet",
+                "InternetGateway"
+            ]
+        },
+        "NAT1": {
+            "Type": "AWS::EC2::NatGateway",
+            "Condition": "NATGatewayRequired",
+            "Properties": {
+                "AllocationId": {
+                    "Fn::GetAtt": [
+                        "EIP1",
+                        "AllocationId"
+                    ]
+                },
+                "SubnetId": {
+                    "Ref": "NATGWSubnetAz1"
+                }
+            },
+            "DependsOn": [
+                "VPC",
+                "GatewayToInternet"
+            ]
+        },
+        "NAT2": {
+            "Type": "AWS::EC2::NatGateway",
+            "Condition": "NATGatewayRequired",
+            "Properties": {
+                "AllocationId": {
+                    "Fn::GetAtt": [
+                        "EIP2",
+                        "AllocationId"
+                    ]
+                },
+                "SubnetId": {
+                    "Ref": "NATGWSubnetAz2"
+                }
+            },
+            "DependsOn": [
+                "VPC",
+                "GatewayToInternet"
+            ]
+        },
+        "NAT3": {
+            "Type": "AWS::EC2::NatGateway",
+            "Condition": "NATGatewayRequired3",
+            "Properties": {
+                "AllocationId": {
+                    "Fn::GetAtt": [
+                        "EIP3",
+                        "AllocationId"
+                    ]
+                },
+                "SubnetId": {
+                    "Ref": "NATGWSubnetAz3"
+                }
+            },
+            "DependsOn": [
+                "VPC",
+                "GatewayToInternet"
+            ]
+        },
+        "NAT4": {
+            "Type": "AWS::EC2::NatGateway",
+            "Condition": "NATGatewayRequired4",
+            "Properties": {
+                "AllocationId": {
+                    "Fn::GetAtt": [
+                        "EIP4",
+                        "AllocationId"
+                    ]
+                },
+                "SubnetId": {
+                    "Ref": "NATGWSubnetAz4"
+                }
+            },
+            "DependsOn": [
+                "VPC",
+                "GatewayToInternet"
+            ]
+        },
+        "MGMTSubnetAz1": {
+            "Type": "AWS::EC2::Subnet",
+            "Properties": {
+                "AvailabilityZone": {
+                    "Fn::Select": [
+                        "0",
+                        {
+                            "Ref": "AvailabilityZones"
+                        }
+                    ]
+                },
+                "MapPublicIpOnLaunch": true,
+                "VpcId": {
+                    "Ref": "VPC"
+                },
+                "CidrBlock": {
+                    "Fn::Select": [
+                        "0",
+                        {
+                            "Ref": "MgmtSubnetIpBlocks"
+                        }
+                    ]
+                },
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackId"
+                        }
+                    },
+                    {
+                        "Key": "Network",
+                        "Value": "MGMT"
+                    },
+                    {
+                        "Key": "Name",
+                        "Value": {
+                            "Fn::Join": [
+                                "-",
+                                [
+                                    {
+                                        "Ref": "AWS::StackName"
+                                    },
+                                    "MGMTSubnetAz1"
+                                ]
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        "MGMTSubnetAz2": {
+            "Type": "AWS::EC2::Subnet",
+            "Properties": {
+                "AvailabilityZone": {
+                    "Fn::Select": [
+                        "1",
+                        {
+                            "Ref": "AvailabilityZones"
+                        }
+                    ]
+                },
+                "MapPublicIpOnLaunch": true,
+                "VpcId": {
+                    "Ref": "VPC"
+                },
+                "CidrBlock": {
+                    "Fn::Select": [
+                        "1",
+                        {
+                            "Ref": "MgmtSubnetIpBlocks"
+                        }
+                    ]
+                },
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackId"
+                        }
+                    },
+                    {
+                        "Key": "Network",
+                        "Value": "MGMT"
+                    },
+                    {
+                        "Key": "Name",
+                        "Value": {
+                            "Fn::Join": [
+                                "-",
+                                [
+                                    {
+                                        "Ref": "AWS::StackName"
+                                    },
+                                    "MGMTSubnetAz2"
+                                ]
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        "MGMTSubnetAz3": {
+            "Type": "AWS::EC2::Subnet",
+            "Condition": "CreateSubnet3",
+            "Properties": {
+                "AvailabilityZone": {
+                    "Fn::Select": [
+                        "2",
+                        {
+                            "Ref": "AvailabilityZones"
+                        }
+                    ]
+                },
+                "MapPublicIpOnLaunch": true,
+                "VpcId": {
+                    "Ref": "VPC"
+                },
+                "CidrBlock": {
+                    "Fn::Select": [
+                        "2",
+                        {
+                            "Ref": "MgmtSubnetIpBlocks"
+                        }
+                    ]
+                },
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackId"
+                        }
+                    },
+                    {
+                        "Key": "Network",
+                        "Value": "MGMT"
+                    },
+                    {
+                        "Key": "Name",
+                        "Value": {
+                            "Fn::Join": [
+                                "-",
+                                [
+                                    {
+                                        "Ref": "AWS::StackName"
+                                    },
+                                    "MGMTSubnetAz3"
+                                ]
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        "MGMTSubnetAz4": {
+            "Type": "AWS::EC2::Subnet",
+            "Condition": "CreateSubnet4",
+            "Properties": {
+                "AvailabilityZone": {
+                    "Fn::Select": [
+                        "3",
+                        {
+                            "Ref": "AvailabilityZones"
+                        }
+                    ]
+                },
+                "MapPublicIpOnLaunch": true,
+                "VpcId": {
+                    "Ref": "VPC"
+                },
+                "CidrBlock": {
+                    "Fn::Select": [
+                        "3",
+                        {
+                            "Ref": "MgmtSubnetIpBlocks"
+                        }
+                    ]
+                },
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackId"
+                        }
+                    },
+                    {
+                        "Key": "Network",
+                        "Value": "MGMT"
+                    },
+                    {
+                        "Key": "Name",
+                        "Value": {
+                            "Fn::Join": [
+                                "-",
+                                [
+                                    {
+                                        "Ref": "AWS::StackName"
+                                    },
+                                    "MGMTSubnetAz4"
+                                ]
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        "InternetGateway": {
+            "Type": "AWS::EC2::InternetGateway",
+            "Properties": {
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackId"
+                        }
+                    },
+                    {
+                        "Key": "Network",
+                        "Value": "MGMT"
+                    },
+                    {
+                        "Key": "Name",
+                        "Value": {
+                            "Fn::Join": [
+                                "-",
+                                [
+                                    {
+                                        "Ref": "AWS::StackName"
+                                    },
+                                    "InternetGateway"
+                                ]
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        "GatewayToInternet": {
+            "Type": "AWS::EC2::VPCGatewayAttachment",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "VPC"
+                },
+                "InternetGatewayId": {
+                    "Ref": "InternetGateway"
+                }
+            }
+        },
+        "NATGWRouteTableAz1": {
+            "Type": "AWS::EC2::RouteTable",
+            "Condition": "NATGatewayRequired",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "VPC"
+                },
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackId"
+                        }
+                    },
+                    {
+                        "Key": "Name",
+                        "Value": {
+                            "Fn::Join": [
+                                "-",
+                                [
+                                    {
+                                        "Ref": "AWS::StackName"
+                                    },
+                                    "NATGWRouteTableAz1"
+                                ]
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        "NATGWRouteTableAz2": {
+            "Type": "AWS::EC2::RouteTable",
+            "Condition": "NATGatewayRequired",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "VPC"
+                },
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackId"
+                        }
+                    },
+                    {
+                        "Key": "Name",
+                        "Value": {
+                            "Fn::Join": [
+                                "-",
+                                [
+                                    {
+                                        "Ref": "AWS::StackName"
+                                    },
+                                    "NATGWRouteTableAz2"
+                                ]
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        "NATGWRouteTableAz3": {
+            "Type": "AWS::EC2::RouteTable",
+            "Condition": "NATGatewayRequired3",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "VPC"
+                },
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackId"
+                        }
+                    },
+                    {
+                        "Key": "Name",
+                        "Value": {
+                            "Fn::Join": [
+                                "-",
+                                [
+                                    {
+                                        "Ref": "AWS::StackName"
+                                    },
+                                    "NATGWRouteTableAz3"
+                                ]
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        "NATGWRouteTableAz4": {
+            "Type": "AWS::EC2::RouteTable",
+            "Condition": "NATGatewayRequired4",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "VPC"
+                },
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackId"
+                        }
+                    },
+                    {
+                        "Key": "Name",
+                        "Value": {
+                            "Fn::Join": [
+                                "-",
+                                [
+                                    {
+                                        "Ref": "AWS::StackName"
+                                    },
+                                    "NATGWRouteTableAz4"
+                                ]
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        "NATGWRoute1": {
+            "Type": "AWS::EC2::Route",
+            "Condition": "NATGatewayRequired",
+            "Properties": {
+                "RouteTableId": {
+                    "Ref": "NATGWRouteTableAz1"
+                },
+                "DestinationCidrBlock": "0.0.0.0/0",
+                "GatewayId": {
+                    "Ref": "InternetGateway"
+                }
+            },
+            "DependsOn": [
+                "GatewayToInternet"
+            ]
+        },
+        "NATGWRoute2": {
+            "Type": "AWS::EC2::Route",
+            "Condition": "NATGatewayRequired",
+            "Properties": {
+                "RouteTableId": {
+                    "Ref": "NATGWRouteTableAz2"
+                },
+                "DestinationCidrBlock": "0.0.0.0/0",
+                "GatewayId": {
+                    "Ref": "InternetGateway"
+                }
+            },
+            "DependsOn": [
+                "GatewayToInternet"
+            ]
+        },
+        "NATGWRoute3": {
+            "Type": "AWS::EC2::Route",
+            "Condition": "NATGatewayRequired3",
+            "Properties": {
+                "RouteTableId": {
+                    "Ref": "NATGWRouteTableAz3"
+                },
+                "DestinationCidrBlock": "0.0.0.0/0",
+                "GatewayId": {
+                    "Ref": "InternetGateway"
+                }
+            },
+            "DependsOn": [
+                "GatewayToInternet"
+            ]
+        },
+        "MGMTRouteTableAz1": {
+            "Type": "AWS::EC2::RouteTable",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "VPC"
+                },
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackId"
+                        }
+                    },
+                    {
+                        "Key": "Name",
+                        "Value": {
+                            "Fn::Join": [
+                                "-",
+                                [
+                                    {
+                                        "Ref": "AWS::StackName"
+                                    },
+                                    "MGMTRouteTableAz1"
+                                ]
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        "MGMTRouteTableAz2": {
+            "Type": "AWS::EC2::RouteTable",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "VPC"
+                },
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackId"
+                        }
+                    },
+                    {
+                        "Key": "Name",
+                        "Value": {
+                            "Fn::Join": [
+                                "-",
+                                [
+                                    {
+                                        "Ref": "AWS::StackName"
+                                    },
+                                    "MGMTRouteTableAz2"
+                                ]
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        "MGMTRouteTableAz3": {
+            "Type": "AWS::EC2::RouteTable",
+            "Condition": "CreateSubnet3",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "VPC"
+                },
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackId"
+                        }
+                    },
+                    {
+                        "Key": "Name",
+                        "Value": {
+                            "Fn::Join": [
+                                "-",
+                                [
+                                    {
+                                        "Ref": "AWS::StackName"
+                                    },
+                                    "MGMTRouteTableAz3"
+                                ]
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        "MGMTRouteTableAz4": {
+            "Type": "AWS::EC2::RouteTable",
+            "Condition": "CreateSubnet4",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "VPC"
+                },
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackId"
+                        }
+                    },
+                    {
+                        "Key": "Name",
+                        "Value": {
+                            "Fn::Join": [
+                                "-",
+                                [
+                                    {
+                                        "Ref": "AWS::StackName"
+                                    },
+                                    "MGMTRouteTableAz4"
+                                ]
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        "MGMTRoute1": {
+            "Type": "AWS::EC2::Route",
+            "Condition": "NATGatewayNotRequired",
+            "Properties": {
+                "RouteTableId": {
+                    "Ref": "MGMTRouteTableAz1"
+                },
+                "DestinationCidrBlock": "0.0.0.0/0",
+                "GatewayId": {
+                    "Ref": "InternetGateway"
+                }
+            },
+            "DependsOn": [
+                "GatewayToInternet"
+            ]
+        },
+        "MGMTRoute2": {
+            "Type": "AWS::EC2::Route",
+            "Condition": "NATGatewayNotRequired",
+            "Properties": {
+                "RouteTableId": {
+                    "Ref": "MGMTRouteTableAz2"
+                },
+                "DestinationCidrBlock": "0.0.0.0/0",
+                "GatewayId": {
+                    "Ref": "InternetGateway"
+                }
+            },
+            "DependsOn": [
+                "GatewayToInternet"
+            ]
+        },
+        "MGMTRoute3": {
+            "Type": "AWS::EC2::Route",
+            "Condition": "NATGatewayNotRequired3",
+            "Properties": {
+                "RouteTableId": {
+                    "Ref": "MGMTRouteTableAz3"
+                },
+                "DestinationCidrBlock": "0.0.0.0/0",
+                "GatewayId": {
+                    "Ref": "InternetGateway"
+                }
+            },
+            "DependsOn": [
+                "GatewayToInternet"
+            ]
+        },
+        "MGMTRoute4": {
+            "Type": "AWS::EC2::Route",
+            "Condition": "NATGatewayNotRequired4",
+            "Properties": {
+                "RouteTableId": {
+                    "Ref": "MGMTRouteTableAz4"
+                },
+                "DestinationCidrBlock": "0.0.0.0/0",
+                "GatewayId": {
+                    "Ref": "InternetGateway"
+                }
+            }
+        },
+        "LambdaRoute1": {
+            "Type": "AWS::EC2::Route",
+            "Condition": "NATGatewayRequired",
+            "Properties": {
+                "RouteTableId": {
+                    "Ref": "LambdaRouteTableAz1"
+                },
+                "DestinationCidrBlock": "0.0.0.0/0",
+                "NatGatewayId": {
+                    "Ref": "NAT1"
+                }
+            }
+        },
+        "LambdaRoute2": {
+            "Type": "AWS::EC2::Route",
+            "Condition": "NATGatewayRequired",
+            "Properties": {
+                "RouteTableId": {
+                    "Ref": "LambdaRouteTableAz2"
+                },
+                "DestinationCidrBlock": "0.0.0.0/0",
+                "NatGatewayId": {
+                    "Ref": "NAT2"
+                }
+            }
+        },
+        "LambdaRoute3": {
+            "Type": "AWS::EC2::Route",
+            "Condition": "NATGatewayRequired3",
+            "Properties": {
+                "RouteTableId": {
+                    "Ref": "LambdaRouteTableAz3"
+                },
+                "DestinationCidrBlock": "0.0.0.0/0",
+                "NatGatewayId": {
+                    "Ref": "NAT3"
+                }
+            }
+        },
+        "LambdaRoute4": {
+            "Type": "AWS::EC2::Route",
+            "Condition": "NATGatewayRequired4",
+            "Properties": {
+                "RouteTableId": {
+                    "Ref": "LambdaRouteTableAz4"
+                },
+                "DestinationCidrBlock": "0.0.0.0/0",
+                "NatGatewayId": {
+                    "Ref": "NAT4"
+                }
+            }
+        },
+        "MGMTRouteNAT1": {
+            "Type": "AWS::EC2::Route",
+            "Condition": "NATGatewayRequired",
+            "Properties": {
+                "RouteTableId": {
+                    "Ref": "MGMTRouteTableAz1"
+                },
+                "DestinationCidrBlock": "0.0.0.0/0",
+                "NatGatewayId": {
+                    "Ref": "NAT1"
+                }
+            }
+        },
+        "MGMTRouteNAT2": {
+            "Type": "AWS::EC2::Route",
+            "Condition": "NATGatewayRequired",
+            "Properties": {
+                "RouteTableId": {
+                    "Ref": "MGMTRouteTableAz2"
+                },
+                "DestinationCidrBlock": "0.0.0.0/0",
+                "NatGatewayId": {
+                    "Ref": "NAT2"
+                }
+            }
+        },
+        "MGMTRouteNAT3": {
+            "Type": "AWS::EC2::Route",
+            "Condition": "NATGatewayRequired3",
+            "Properties": {
+                "RouteTableId": {
+                    "Ref": "MGMTRouteTableAz3"
+                },
+                "DestinationCidrBlock": "0.0.0.0/0",
+                "NatGatewayId": {
+                    "Ref": "NAT3"
+                }
+            }
+        },
+        "MGMTRouteNAT4": {
+            "Type": "AWS::EC2::Route",
+            "Condition": "NATGatewayRequired4",
+            "Properties": {
+                "RouteTableId": {
+                    "Ref": "MGMTRouteTableAz4"
+                },
+                "DestinationCidrBlock": "0.0.0.0/0",
+                "NatGatewayId": {
+                    "Ref": "NAT4"
+                }
+            }
+        },
+        "LambdaSubnetRouteTableAssociation1": {
+            "Type": "AWS::EC2::SubnetRouteTableAssociation",
+            "Condition": "NATGatewayRequired",
+            "Properties": {
+                "SubnetId": {
+                    "Ref": "LambdaSubnetAz1"
+                },
+                "RouteTableId": {
+                    "Ref": "LambdaRouteTableAz1"
+                }
+            }
+        },
+        "LambdaSubnetRouteTableAssociation2": {
+            "Type": "AWS::EC2::SubnetRouteTableAssociation",
+            "Condition": "NATGatewayRequired",
+            "Properties": {
+                "SubnetId": {
+                    "Ref": "LambdaSubnetAz2"
+                },
+                "RouteTableId": {
+                    "Ref": "LambdaRouteTableAz2"
+                }
+            }
+        },
+        "LambdaSubnetRouteTableAssociation3": {
+            "Type": "AWS::EC2::SubnetRouteTableAssociation",
+            "Condition": "NATGatewayRequired3",
+            "Properties": {
+                "SubnetId": {
+                    "Ref": "LambdaSubnetAz3"
+                },
+                "RouteTableId": {
+                    "Ref": "LambdaRouteTableAz3"
+                }
+            }
+        },
+        "LambdaSubnetRouteTableAssociation4": {
+            "Type": "AWS::EC2::SubnetRouteTableAssociation",
+            "Condition": "NATGatewayRequired4",
+            "Properties": {
+                "SubnetId": {
+                    "Ref": "LambdaSubnetAz4"
+                },
+                "RouteTableId": {
+                    "Ref": "LambdaRouteTableAz4"
+                }
+            }
+        },
+        "MGMTSubnetRouteTableAssociation1": {
+            "Type": "AWS::EC2::SubnetRouteTableAssociation",
+            "Condition": "NATGatewayNotRequired",
+            "Properties": {
+                "SubnetId": {
+                    "Ref": "MGMTSubnetAz1"
+                },
+                "RouteTableId": {
+                    "Ref": "MGMTRouteTableAz1"
+                }
+            }
+        },
+        "MGMTSubnetRouteTableAssociation2": {
+            "Type": "AWS::EC2::SubnetRouteTableAssociation",
+            "Condition": "NATGatewayNotRequired",
+            "Properties": {
+                "SubnetId": {
+                    "Ref": "MGMTSubnetAz2"
+                },
+                "RouteTableId": {
+                    "Ref": "MGMTRouteTableAz2"
+                }
+            }
+        },
+        "MGMTSubnetRouteTableAssociation3": {
+            "Type": "AWS::EC2::SubnetRouteTableAssociation",
+            "Condition": "NATGatewayNotRequired3",
+            "Properties": {
+                "SubnetId": {
+                    "Ref": "MGMTSubnetAz3"
+                },
+                "RouteTableId": {
+                    "Ref": "MGMTRouteTableAz3"
+                }
+            }
+        },
+        "MGMTSubnetRouteTableAssociation4": {
+            "Type": "AWS::EC2::SubnetRouteTableAssociation",
+            "Condition": "NATGatewayNotRequired4",
+            "Properties": {
+                "SubnetId": {
+                    "Ref": "MGMTSubnetAz4"
+                },
+                "RouteTableId": {
+                    "Ref": "MGMTRouteTableAz4"
+                }
+            }
+        },
+        "NAT1SubnetRouteTableAssociation": {
+            "Type": "AWS::EC2::SubnetRouteTableAssociation",
+            "Condition": "NATGatewayRequired",
+            "Properties": {
+                "SubnetId": {
+                    "Ref": "NATGWSubnetAz1"
+                },
+                "RouteTableId": {
+                    "Ref": "NATGWRouteTableAz1"
+                }
+            }
+        },
+        "NAT2SubnetRouteTableAssociation": {
+            "Type": "AWS::EC2::SubnetRouteTableAssociation",
+            "Condition": "NATGatewayRequired",
+            "Properties": {
+                "SubnetId": {
+                    "Ref": "NATGWSubnetAz2"
+                },
+                "RouteTableId": {
+                    "Ref": "NATGWRouteTableAz2"
+                }
+            }
+        },
+        "NAT3SubnetRouteTableAssociation": {
+            "Type": "AWS::EC2::SubnetRouteTableAssociation",
+            "Condition": "NATGatewayRequired3",
+            "Properties": {
+                "SubnetId": {
+                    "Ref": "NATGWSubnetAz3"
+                },
+                "RouteTableId": {
+                    "Ref": "NATGWRouteTableAz3"
+                }
+            }
+        },
+        "NAT4SubnetRouteTableAssociation": {
+            "Type": "AWS::EC2::SubnetRouteTableAssociation",
+            "Condition": "NATGatewayRequired4",
+            "Properties": {
+                "SubnetId": {
+                    "Ref": "NATGWSubnetAz4"
+                },
+                "RouteTableId": {
+                    "Ref": "NATGWRouteTableAz4"
+                }
+            }
+        },
+        "MGMTSubnetRouteTableAssociationNAT1": {
+            "Type": "AWS::EC2::SubnetRouteTableAssociation",
+            "Condition": "NATGatewayRequired",
+            "Properties": {
+                "SubnetId": {
+                    "Ref": "MGMTSubnetAz1"
+                },
+                "RouteTableId": {
+                    "Ref": "MGMTRouteTableAz1"
+                }
+            },
+            "DependsOn": [
+                "MGMTRouteNAT1"
+            ]
+        },
+        "MGMTSubnetRouteTableAssociationNAT2": {
+            "Type": "AWS::EC2::SubnetRouteTableAssociation",
+            "Condition": "NATGatewayRequired",
+            "Properties": {
+                "SubnetId": {
+                    "Ref": "MGMTSubnetAz2"
+                },
+                "RouteTableId": {
+                    "Ref": "MGMTRouteTableAz2"
+                }
+            }
+        },
+        "MGMTSubnetRouteTableAssociationNAT3": {
+            "Type": "AWS::EC2::SubnetRouteTableAssociation",
+            "Condition": "NATGatewayRequired3",
+            "Properties": {
+                "SubnetId": {
+                    "Ref": "MGMTSubnetAz3"
+                },
+                "RouteTableId": {
+                    "Ref": "MGMTRouteTableAz3"
+                }
+            }
+        },
+        "MGMTSubnetRouteTableAssociationNAT4": {
+            "Type": "AWS::EC2::SubnetRouteTableAssociation",
+            "Condition": "NATGatewayRequired4",
+            "Properties": {
+                "SubnetId": {
+                    "Ref": "MGMTSubnetAz4"
+                },
+                "RouteTableId": {
+                    "Ref": "MGMTRouteTableAz4"
+                }
+            }
+        },
+        "UNTRUSTSubnet1": {
+            "Type": "AWS::EC2::Subnet",
+            "Properties": {
+                "AvailabilityZone": {
+                    "Fn::Select": [
+                        "0",
+                        {
+                            "Ref": "AvailabilityZones"
+                        }
+                    ]
+                },
+                "VpcId": {
+                    "Ref": "VPC"
+                },
+                "CidrBlock": {
+                    "Fn::Select": [
+                        "0",
+                        {
+                            "Ref": "UntrustSubnetIpBlocks"
+                        }
+                    ]
+                },
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackId"
+                        }
+                    },
+                    {
+                        "Key": "Network",
+                        "Value": "UNTRUST"
+                    },
+                    {
+                        "Key": "Name",
+                        "Value": {
+                            "Fn::Join": [
+                                "-",
+                                [
+                                    {
+                                        "Ref": "AWS::StackName"
+                                    },
+                                    "UNTRUSTSubnet1"
+                                ]
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        "UNTRUSTSubnet2": {
+            "Type": "AWS::EC2::Subnet",
+            "Properties": {
+                "AvailabilityZone": {
+                    "Fn::Select": [
+                        "1",
+                        {
+                            "Ref": "AvailabilityZones"
+                        }
+                    ]
+                },
+                "VpcId": {
+                    "Ref": "VPC"
+                },
+                "CidrBlock": {
+                    "Fn::Select": [
+                        "1",
+                        {
+                            "Ref": "UntrustSubnetIpBlocks"
+                        }
+                    ]
+                },
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackId"
+                        }
+                    },
+                    {
+                        "Key": "Network",
+                        "Value": "UNTRUST"
+                    },
+                    {
+                        "Key": "Name",
+                        "Value": {
+                            "Fn::Join": [
+                                "-",
+                                [
+                                    {
+                                        "Ref": "AWS::StackName"
+                                    },
+                                    "UNTRUSTSubnet2"
+                                ]
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        "UNTRUSTSubnet3": {
+            "Type": "AWS::EC2::Subnet",
+            "Condition": "CreateSubnet3",
+            "Properties": {
+                "AvailabilityZone": {
+                    "Fn::Select": [
+                        "2",
+                        {
+                            "Ref": "AvailabilityZones"
+                        }
+                    ]
+                },
+                "VpcId": {
+                    "Ref": "VPC"
+                },
+                "CidrBlock": {
+                    "Fn::Select": [
+                        "2",
+                        {
+                            "Ref": "UntrustSubnetIpBlocks"
+                        }
+                    ]
+                },
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackId"
+                        }
+                    },
+                    {
+                        "Key": "Network",
+                        "Value": "UNTRUST"
+                    },
+                    {
+                        "Key": "Name",
+                        "Value": {
+                            "Fn::Join": [
+                                "-",
+                                [
+                                    {
+                                        "Ref": "AWS::StackName"
+                                    },
+                                    "UNTRUSTSubnet3"
+                                ]
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        "UNTRUSTSubnet4": {
+            "Type": "AWS::EC2::Subnet",
+            "Condition": "CreateSubnet4",
+            "Properties": {
+                "AvailabilityZone": {
+                    "Fn::Select": [
+                        "3",
+                        {
+                            "Ref": "AvailabilityZones"
+                        }
+                    ]
+                },
+                "VpcId": {
+                    "Ref": "VPC"
+                },
+                "CidrBlock": {
+                    "Fn::Select": [
+                        "3",
+                        {
+                            "Ref": "UntrustSubnetIpBlocks"
+                        }
+                    ]
+                },
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackId"
+                        }
+                    },
+                    {
+                        "Key": "Network",
+                        "Value": "UNTRUST"
+                    },
+                    {
+                        "Key": "Name",
+                        "Value": {
+                            "Fn::Join": [
+                                "-",
+                                [
+                                    {
+                                        "Ref": "AWS::StackName"
+                                    },
+                                    "UNTRUSTSubnet4"
+                                ]
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        "UNTRUSTRouteTable": {
+            "Type": "AWS::EC2::RouteTable",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "VPC"
+                },
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackId"
+                        }
+                    },
+                    {
+                        "Key": "Network",
+                        "Value": "UNTRUST"
+                    },
+                    {
+                        "Key": "Name",
+                        "Value": {
+                            "Fn::Join": [
+                                "-",
+                                [
+                                    {
+                                        "Ref": "AWS::StackName"
+                                    },
+                                    "UNTRUSTRouteTable"
+                                ]
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        "UNTRUSTRoute": {
+            "Type": "AWS::EC2::Route",
+            "Properties": {
+                "RouteTableId": {
+                    "Ref": "UNTRUSTRouteTable"
+                },
+                "DestinationCidrBlock": "0.0.0.0/0",
+                "GatewayId": {
+                    "Ref": "InternetGateway"
+                }
+            },
+            "DependsOn": [
+                "GatewayToInternet"
+            ]
+        },
+        "UNTRUSTSubnetRouteTableAssociation1": {
+            "Type": "AWS::EC2::SubnetRouteTableAssociation",
+            "Properties": {
+                "SubnetId": {
+                    "Ref": "UNTRUSTSubnet1"
+                },
+                "RouteTableId": {
+                    "Ref": "UNTRUSTRouteTable"
+                }
+            },
+            "DependsOn": [
+                "UNTRUSTRoute"
+            ]
+        },
+        "UNTRUSTSubnetRouteTableAssociation2": {
+            "Type": "AWS::EC2::SubnetRouteTableAssociation",
+            "Properties": {
+                "SubnetId": {
+                    "Ref": "UNTRUSTSubnet2"
+                },
+                "RouteTableId": {
+                    "Ref": "UNTRUSTRouteTable"
+                }
+            },
+            "DependsOn": [
+                "UNTRUSTRoute"
+            ]
+        },
+        "UNTRUSTSubnetRouteTableAssociation3": {
+            "Type": "AWS::EC2::SubnetRouteTableAssociation",
+            "Condition": "CreateSubnet3",
+            "Properties": {
+                "SubnetId": {
+                    "Ref": "UNTRUSTSubnet3"
+                },
+                "RouteTableId": {
+                    "Ref": "UNTRUSTRouteTable"
+                }
+            },
+            "DependsOn": [
+                "UNTRUSTRoute"
+            ]
+        },
+        "UNTRUSTSubnetRouteTableAssociation4": {
+            "Type": "AWS::EC2::SubnetRouteTableAssociation",
+            "Condition": "CreateSubnet4",
+            "Properties": {
+                "SubnetId": {
+                    "Ref": "UNTRUSTSubnet4"
+                },
+                "RouteTableId": {
+                    "Ref": "UNTRUSTRouteTable"
+                }
+            },
+            "DependsOn": [
+                "UNTRUSTRoute"
+            ]
+        },
+        "TRUSTSubnet1": {
+            "Type": "AWS::EC2::Subnet",
+            "Properties": {
+                "AvailabilityZone": {
+                    "Fn::Select": [
+                        "0",
+                        {
+                            "Ref": "AvailabilityZones"
+                        }
+                    ]
+                },
+                "VpcId": {
+                    "Ref": "VPC"
+                },
+                "CidrBlock": {
+                    "Fn::Select": [
+                        "0",
+                        {
+                            "Ref": "TrustSubnetIpBlocks"
+                        }
+                    ]
+                },
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackId"
+                        }
+                    },
+                    {
+                        "Key": "Network",
+                        "Value": "TRUST"
+                    },
+                    {
+                        "Key": "Name",
+                        "Value": {
+                            "Fn::Join": [
+                                "-",
+                                [
+                                    {
+                                        "Ref": "AWS::StackName"
+                                    },
+                                    "TRUSTSubnet1"
+                                ]
+                            ]
+                        }
+                    }
+                ]
+            },
+            "DependsOn": [
+                "InternetGateway"
+            ]
+        },
+        "TRUSTSubnet2": {
+            "Type": "AWS::EC2::Subnet",
+            "Properties": {
+                "AvailabilityZone": {
+                    "Fn::Select": [
+                        "1",
+                        {
+                            "Ref": "AvailabilityZones"
+                        }
+                    ]
+                },
+                "VpcId": {
+                    "Ref": "VPC"
+                },
+                "CidrBlock": {
+                    "Fn::Select": [
+                        "1",
+                        {
+                            "Ref": "TrustSubnetIpBlocks"
+                        }
+                    ]
+                },
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackId"
+                        }
+                    },
+                    {
+                        "Key": "Network",
+                        "Value": "TRUST"
+                    },
+                    {
+                        "Key": "Name",
+                        "Value": {
+                            "Fn::Join": [
+                                "-",
+                                [
+                                    {
+                                        "Ref": "AWS::StackName"
+                                    },
+                                    "TRUSTSubnet2"
+                                ]
+                            ]
+                        }
+                    }
+                ]
+            },
+            "DependsOn": [
+                "InternetGateway"
+            ]
+        },
+        "TRUSTSubnet3": {
+            "Type": "AWS::EC2::Subnet",
+            "Condition": "CreateSubnet3",
+            "Properties": {
+                "AvailabilityZone": {
+                    "Fn::Select": [
+                        "2",
+                        {
+                            "Ref": "AvailabilityZones"
+                        }
+                    ]
+                },
+                "VpcId": {
+                    "Ref": "VPC"
+                },
+                "CidrBlock": {
+                    "Fn::Select": [
+                        "2",
+                        {
+                            "Ref": "TrustSubnetIpBlocks"
+                        }
+                    ]
+                },
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackId"
+                        }
+                    },
+                    {
+                        "Key": "Network",
+                        "Value": "TRUST"
+                    },
+                    {
+                        "Key": "Name",
+                        "Value": {
+                            "Fn::Join": [
+                                "-",
+                                [
+                                    {
+                                        "Ref": "AWS::StackName"
+                                    },
+                                    "TRUSTSubnet3"
+                                ]
+                            ]
+                        }
+                    }
+                ]
+            },
+            "DependsOn": [
+                "InternetGateway"
+            ]
+        },
+        "TRUSTSubnet4": {
+            "Type": "AWS::EC2::Subnet",
+            "Condition": "CreateSubnet4",
+            "Properties": {
+                "AvailabilityZone": {
+                    "Fn::Select": [
+                        "3",
+                        {
+                            "Ref": "AvailabilityZones"
+                        }
+                    ]
+                },
+                "VpcId": {
+                    "Ref": "VPC"
+                },
+                "CidrBlock": {
+                    "Fn::Select": [
+                        "3",
+                        {
+                            "Ref": "TrustSubnetIpBlocks"
+                        }
+                    ]
+                },
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackId"
+                        }
+                    },
+                    {
+                        "Key": "Network",
+                        "Value": "TRUST"
+                    },
+                    {
+                        "Key": "Name",
+                        "Value": {
+                            "Fn::Join": [
+                                "-",
+                                [
+                                    {
+                                        "Ref": "AWS::StackName"
+                                    },
+                                    "TRUSTSubnet4"
+                                ]
+                            ]
+                        }
+                    }
+                ]
+            },
+            "DependsOn": [
+                "InternetGateway"
+            ]
+        },
+        "TRUSTRouteTable": {
+            "Type": "AWS::EC2::RouteTable",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "VPC"
+                },
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackId"
+                        }
+                    },
+                    {
+                        "Key": "Network",
+                        "Value": "TRUST"
+                    },
+                    {
+                        "Key": "Name",
+                        "Value": {
+                            "Fn::Join": [
+                                "-",
+                                [
+                                    {
+                                        "Ref": "AWS::StackName"
+                                    },
+                                    "TRUSTRouteTable"
+                                ]
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        "TRUSTRouteTableAz1": {
+            "Type": "AWS::EC2::RouteTable",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "VPC"
+                },
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackId"
+                        }
+                    },
+                    {
+                        "Key": "Name",
+                        "Value": {
+                            "Fn::Join": [
+                                "-",
+                                [
+                                    {
+                                        "Ref": "AWS::StackName"
+                                    },
+                                    "TRUSTRouteTableAz1"
+                                ]
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        "TRUSTRouteTableAz2": {
+            "Type": "AWS::EC2::RouteTable",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "VPC"
+                },
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackId"
+                        }
+                    },
+                    {
+                        "Key": "Name",
+                        "Value": {
+                            "Fn::Join": [
+                                "-",
+                                [
+                                    {
+                                        "Ref": "AWS::StackName"
+                                    },
+                                    "TRUSTRouteTableAz2"
+                                ]
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        "TRUSTRouteTableAz3": {
+            "Type": "AWS::EC2::RouteTable",
+            "Condition": "CreateSubnet3",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "VPC"
+                },
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackId"
+                        }
+                    },
+                    {
+                        "Key": "Name",
+                        "Value": {
+                            "Fn::Join": [
+                                "-",
+                                [
+                                    {
+                                        "Ref": "AWS::StackName"
+                                    },
+                                    "TRUSTRouteTableAz3"
+                                ]
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        "TRUSTRouteTableAz4": {
+            "Type": "AWS::EC2::RouteTable",
+            "Condition": "CreateSubnet4",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "VPC"
+                },
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackId"
+                        }
+                    },
+                    {
+                        "Key": "Name",
+                        "Value": {
+                            "Fn::Join": [
+                                "-",
+                                [
+                                    {
+                                        "Ref": "AWS::StackName"
+                                    },
+                                    "TRUSTRouteTableAz4"
+                                ]
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        "TRUSTRouteNAT1": {
+            "Type": "AWS::EC2::Route",
+            "Condition": "NATGatewayRequired",
+            "Properties": {
+                "RouteTableId": {
+                    "Ref": "TRUSTRouteTableAz1"
+                },
+                "DestinationCidrBlock": "0.0.0.0/0",
+                "NatGatewayId": {
+                    "Ref": "NAT1"
+                }
+            }
+        },
+        "TRUSTRouteNAT2": {
+            "Type": "AWS::EC2::Route",
+            "Condition": "NATGatewayRequired",
+            "Properties": {
+                "RouteTableId": {
+                    "Ref": "TRUSTRouteTableAz2"
+                },
+                "DestinationCidrBlock": "0.0.0.0/0",
+                "NatGatewayId": {
+                    "Ref": "NAT2"
+                }
+            }
+        },
+        "TRUSTRouteNAT3": {
+            "Type": "AWS::EC2::Route",
+            "Condition": "NATGatewayRequired3",
+            "Properties": {
+                "RouteTableId": {
+                    "Ref": "TRUSTRouteTableAz3"
+                },
+                "DestinationCidrBlock": "0.0.0.0/0",
+                "NatGatewayId": {
+                    "Ref": "NAT3"
+                }
+            }
+        },
+        "TRUSTRouteNAT4": {
+            "Type": "AWS::EC2::Route",
+            "Condition": "NATGatewayRequired4",
+            "Properties": {
+                "RouteTableId": {
+                    "Ref": "TRUSTRouteTableAz4"
+                },
+                "DestinationCidrBlock": "0.0.0.0/0",
+                "NatGatewayId": {
+                    "Ref": "NAT4"
+                }
+            }
+        },
+        "TRUSTRoute": {
+            "Type": "AWS::EC2::Route",
+            "Properties": {
+                "RouteTableId": {
+                    "Ref": "TRUSTRouteTable"
+                },
+                "DestinationCidrBlock": "0.0.0.0/0",
+                "GatewayId": {
+                    "Ref": "InternetGateway"
+                }
+            },
+            "DependsOn": [
+                "GatewayToInternet"
+            ]
+        },
+        "TRUSTSubnetRouteTableAssociation1": {
+            "Type": "AWS::EC2::SubnetRouteTableAssociation",
+            "Properties": {
+                "SubnetId": {
+                    "Ref": "TRUSTSubnet1"
+                },
+                "RouteTableId": {
+                    "Ref": "TRUSTRouteTable"
+                }
+            }
+        },
+        "TRUSTSubnetRouteTableAssociation2": {
+            "Type": "AWS::EC2::SubnetRouteTableAssociation",
+            "Properties": {
+                "SubnetId": {
+                    "Ref": "TRUSTSubnet2"
+                },
+                "RouteTableId": {
+                    "Ref": "TRUSTRouteTable"
+                }
+            }
+        },
+        "TRUSTSubnetRouteTableAssociation3": {
+            "Type": "AWS::EC2::SubnetRouteTableAssociation",
+            "Condition": "CreateSubnet3",
+            "Properties": {
+                "SubnetId": {
+                    "Ref": "TRUSTSubnet3"
+                },
+                "RouteTableId": {
+                    "Ref": "TRUSTRouteTable"
+                }
+            }
+        },
+        "TRUSTSubnetRouteTableAssociation4": {
+            "Type": "AWS::EC2::SubnetRouteTableAssociation",
+            "Condition": "CreateSubnet4",
+            "Properties": {
+                "SubnetId": {
+                    "Ref": "TRUSTSubnet4"
+                },
+                "RouteTableId": {
+                    "Ref": "TRUSTRouteTable"
+                }
+            }
+        },
+        "TRUSTSubnetRouteTableAssociationNAT1": {
+            "Type": "AWS::EC2::SubnetRouteTableAssociation",
+            "Condition": "NATGatewayRequired",
+            "Properties": {
+                "SubnetId": {
+                    "Ref": "TRUSTSubnet1"
+                },
+                "RouteTableId": {
+                    "Ref": "TRUSTRouteTableAz1"
+                }
+            },
+            "DependsOn": [
+                "TRUSTRouteNAT1"
+            ]
+        },
+        "TRUSTSubnetRouteTableAssociationNAT2": {
+            "Type": "AWS::EC2::SubnetRouteTableAssociation",
+            "Condition": "NATGatewayRequired",
+            "Properties": {
+                "SubnetId": {
+                    "Ref": "TRUSTSubnet2"
+                },
+                "RouteTableId": {
+                    "Ref": "TRUSTRouteTableAz2"
+                }
+            },
+            "DependsOn": [
+                "TRUSTRouteNAT2"
+            ]
+        },
+        "TRUSTSubnetRouteTableAssociationNAT3": {
+            "Type": "AWS::EC2::SubnetRouteTableAssociation",
+            "Condition": "NATGatewayRequired3",
+            "Properties": {
+                "SubnetId": {
+                    "Ref": "TRUSTSubnet3"
+                },
+                "RouteTableId": {
+                    "Ref": "TRUSTRouteTableAz3"
+                }
+            },
+            "DependsOn": [
+                "TRUSTRouteNAT3"
+            ]
+        },
+        "TRUSTSubnetRouteTableAssociationNAT4": {
+            "Type": "AWS::EC2::SubnetRouteTableAssociation",
+            "Condition": "NATGatewayRequired4",
+            "Properties": {
+                "SubnetId": {
+                    "Ref": "TRUSTSubnet4"
+                },
+                "RouteTableId": {
+                    "Ref": "TRUSTRouteTableAz4"
+                }
+            },
+            "DependsOn": [
+                "TRUSTRouteNAT4"
+            ]
+        },
+        "S3Endpoint2": {
+            "Type": "AWS::EC2::VPCEndpoint",
+            "Condition": "CreateSubnet2",
+            "Properties": {
+                "PolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Principal": "*",
+                            "Action": "s3:ListBucket",
+                            "Resource": {
+                                "Fn::Join": [
+                                    "",
+                                    [
+                                        "arn:aws:s3:::",
+                                        {
+                                            "Ref": "MasterS3Bucket"
+                                        }
+                                    ]
+                                ]
+                            }
+                        },
+                        {
+                            "Effect": "Allow",
+                            "Principal": "*",
+                            "Action": "s3:GetObject",
+                            "Resource": {
+                                "Fn::Join": [
+                                    "",
+                                    [
+                                        "arn:aws:s3:::",
+                                        {
+                                            "Ref": "MasterS3Bucket"
+                                        },
+                                        "/*"
+                                    ]
+                                ]
+                            }
+                        }
+                    ]
+                },
+                "RouteTableIds": [
+                    {
+                        "Ref": "UNTRUSTRouteTable"
+                    }
+                ],
+                "ServiceName": {
+                    "Fn::Join": [
+                        "",
+                        [
+                            "com.amazonaws.",
+                            {
+                                "Ref": "AWS::Region"
+                            },
+                            ".s3"
+                        ]
+                    ]
+                },
+                "VpcId": {
+                    "Ref": "VPC"
+                }
+            }
+        },
+        "S3Endpoint3": {
+            "Type": "AWS::EC2::VPCEndpoint",
+            "Condition": "CreateSubnetAz3",
+            "Properties": {
+                "PolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Principal": "*",
+                            "Action": "s3:ListBucket",
+                            "Resource": {
+                                "Fn::Join": [
+                                    "",
+                                    [
+                                        "arn:aws:s3:::",
+                                        {
+                                            "Ref": "MasterS3Bucket"
+                                        }
+                                    ]
+                                ]
+                            }
+                        },
+                        {
+                            "Effect": "Allow",
+                            "Principal": "*",
+                            "Action": "s3:GetObject",
+                            "Resource": {
+                                "Fn::Join": [
+                                    "",
+                                    [
+                                        "arn:aws:s3:::",
+                                        {
+                                            "Ref": "MasterS3Bucket"
+                                        },
+                                        "/*"
+                                    ]
+                                ]
+                            }
+                        }
+                    ]
+                },
+                "RouteTableIds": [
+                    {
+                        "Ref": "UNTRUSTRouteTable"
+                    }
+                ],
+                "ServiceName": {
+                    "Fn::Join": [
+                        "",
+                        [
+                            "com.amazonaws.",
+                            {
+                                "Ref": "AWS::Region"
+                            },
+                            ".s3"
+                        ]
+                    ]
+                },
+                "VpcId": {
+                    "Ref": "VPC"
+                }
+            }
+        },
+        "S3Endpoint4": {
+            "Type": "AWS::EC2::VPCEndpoint",
+            "Condition": "CreateSubnet4",
+            "Properties": {
+                "PolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Principal": "*",
+                            "Action": "s3:ListBucket",
+                            "Resource": {
+                                "Fn::Join": [
+                                    "",
+                                    [
+                                        "arn:aws:s3:::",
+                                        {
+                                            "Ref": "MasterS3Bucket"
+                                        }
+                                    ]
+                                ]
+                            }
+                        },
+                        {
+                            "Effect": "Allow",
+                            "Principal": "*",
+                            "Action": "s3:GetObject",
+                            "Resource": {
+                                "Fn::Join": [
+                                    "",
+                                    [
+                                        "arn:aws:s3:::",
+                                        {
+                                            "Ref": "MasterS3Bucket"
+                                        },
+                                        "/*"
+                                    ]
+                                ]
+                            }
+                        }
+                    ]
+                },
+                "RouteTableIds": [
+                    {
+                        "Ref": "UNTRUSTRouteTable"
+                    }
+                ],
+                "ServiceName": {
+                    "Fn::Join": [
+                        "",
+                        [
+                            "com.amazonaws.",
+                            {
+                                "Ref": "AWS::Region"
+                            },
+                            ".s3"
+                        ]
+                    ]
+                },
+                "VpcId": {
+                    "Ref": "VPC"
+                }
+            }
+        }
+    },
+    "Outputs": {
+        "VPCID": {
+            "Description": "VPC Id",
+            "Value": {
+                "Ref": "VPC"
+            }
+        },
+        "LambdaSubnetAz1": {
+            "Description": "Lambda subnet 1 Id",
+            "Condition": "NATGatewayRequired",
+            "Value": {
+                "Ref": "LambdaSubnetAz1"
+            }
+        },
+        "LambdaSubnetAz2": {
+            "Description": "Lambda subnet 2 Id",
+            "Condition": "NATGatewayRequired",
+            "Value": {
+                "Ref": "LambdaSubnetAz2"
+            }
+        },
+        "LambdaSubnetAz3": {
+            "Condition": "NATGatewayRequired3",
+            "Description": "Lambda subnet 3 Id",
+            "Value": {
+                "Ref": "LambdaSubnetAz3"
+            }
+        },
+        "LambdaSubnetAz4": {
+            "Condition": "NATGatewayRequired4",
+            "Description": "Lambda subnet 4 Id",
+            "Value": {
+                "Ref": "LambdaSubnetAz4"
+            }
+        },
+        "MGMTSubnetAz1": {
+            "Description": "Mgmt subnet 1 Id",
+            "Value": {
+                "Ref": "MGMTSubnetAz1"
+            }
+        },
+        "MGMTSubnetAz2": {
+            "Description": "Mgmt subnet 2 Id",
+            "Value": {
+                "Ref": "MGMTSubnetAz2"
+            }
+        },
+        "MGMTSubnetAz3": {
+            "Condition": "CreateSubnet3",
+            "Description": "Mgmt subnet 3 Id",
+            "Value": {
+                "Ref": "MGMTSubnetAz3"
+            }
+        },
+        "MGMTSubnetAz4": {
+            "Condition": "CreateSubnet4",
+            "Description": "Mgmt subnet 4 Id",
+            "Value": {
+                "Ref": "MGMTSubnetAz4"
+            }
+        },
+        "NATGWSubnetAz1": {
+        	"Condition": "NATGatewayRequired",
+            "Description": "NAT gateway subnet 1 Id",
+            "Value": {
+                "Ref": "NATGWSubnetAz1"
+            }
+        },
+        "NATGWSubnetAz2": {
+        	"Condition": "NATGatewayRequired",
+            "Description": "NAT gateway subnet 2 Id",
+            "Value": {
+                "Ref": "NATGWSubnetAz2"
+            }
+        },
+        "NATGWSubnetAz3": {
+            "Condition": "NATGatewayRequired3",
+            "Description": "NAT gateway subnet 3 Id",
+            "Value": {
+                "Ref": "NATGWSubnetAz3"
+            }
+        },
+        "NATGWSubnetAz4": {
+            "Condition": "NATGatewayRequired4",
+            "Description": "NAT gateway subnet 4 Id",
+            "Value": {
+                "Ref": "NATGWSubnetAz4"
+            }
+        },
+        "UNTRUSTSubnet1": {
+            "Description": "Untrust subnet 1 Id",
+            "Value": {
+                "Ref": "UNTRUSTSubnet1"
+            }
+        },
+        "UNTRUSTSubnet2": {
+            "Description": "Untrust subnet 2 Id",
+            "Value": {
+                "Ref": "UNTRUSTSubnet2"
+            }
+        },
+        "UNTRUSTSubnet3": {
+            "Condition": "CreateSubnet3",
+            "Description": "Untrust subnet 3 Id",
+            "Value": {
+                "Ref": "UNTRUSTSubnet3"
+            }
+        },
+        "UNTRUSTSubnet4": {
+            "Condition": "CreateSubnet4",
+            "Description": "Untrust subnet 4 Id",
+            "Value": {
+                "Ref": "UNTRUSTSubnet4"
+            }
+        },
+        "TRUSTSubnet1": {
+            "Description": "Trust subnet 1 Id",
+            "Value": {
+                "Ref": "TRUSTSubnet1"
+            }
+        },
+        "TRUSTSubnet2": {
+            "Description": "Trust subnet 2 Id",
+            "Value": {
+                "Ref": "TRUSTSubnet2"
+            }
+        },
+        "TRUSTSubnet3": {
+            "Condition": "CreateSubnet3",
+            "Description": "Trust subnet 3 Id",
+            "Value": {
+                "Ref": "TRUSTSubnet3"
+            }
+        },
+        "TRUSTSubnet4": {
+            "Condition": "CreateSubnet4",
+            "Description": "Trust subnet 4 Id",
+            "Value": {
+                "Ref": "TRUSTSubnet4"
+            }
+        },
+        "InternetGatewayId": {
+            "Description": "Internet Gateway Id",
+            "Value": {
+                "Ref": "InternetGateway"
+            }
+        }
+    }
+}

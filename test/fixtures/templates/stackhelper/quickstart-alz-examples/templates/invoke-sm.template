@@ -1,0 +1,93 @@
+---
+AWSTemplateFormatVersion: 2010-09-09
+Description: Deploys lambda function to start state machine execution
+Resources:
+  # Start state machine execution
+  StartStateMachine:
+    Type: Custom::StartStateMachine
+    Properties:
+      ServiceToken: !GetAtt 'StartStateMachineExecutionLambdaFunction.Arn'
+      StateMachineArn: !Ref 'StateMachineArn'
+      AddOnS3Bucket: !Ref 'AddOnS3Bucket'
+      ProductName: !Ref 'ProductName'
+      ProductS3Url: !Ref 'ProductS3Url'
+
+  # Lambda function to start state machine execution
+  StartStateMachineExecutionLambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Description: Lambda function to start state machine execution
+      Code:
+        S3Bucket: !Ref TempS3Bucket
+        S3Key: !Sub ${SourceS3KeyPrefix}lambda/package/function.zip
+      Handler: invoke_state_machine.lambda_handler
+      Role: !GetAtt StateMachineLambdaExecutionRole.Arn
+      Runtime: python3.7
+      Timeout: 300
+  
+  # IAM Role for Lambda functions
+  StateMachineLambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Path: /
+      Policies:
+      - PolicyDocument:
+          Statement:
+          - Effect: Allow
+            Action: 'states:*'
+            Resource: '*'
+        PolicyName: LambdaFunction-StepFun-Role
+  
+                    
+Outputs:
+  oStartStateMachineExecutionLambdaFunction:
+    Description: Lambda function to start state machine execution
+    Value: !Ref StartStateMachineExecutionLambdaFunction
+  
+Parameters:
+  ProductName:
+    Type: String
+    Description: Product name for which you are creating the AddOn.
+    AllowedPattern: ^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$
+    ConstraintDescription: Product name can include numbers, lowercase
+      letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen(-).
+
+  StateMachineArn:
+    Type: String
+    Description: ARN of the state machine.
+  
+  AddOnS3Bucket:
+    Type: String
+    Description: Name of the S3 bucket where the addon files need to be uploaded.
+    AllowedPattern: ^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$
+    ConstraintDescription: Quick Start bucket name can include numbers, lowercase
+        letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen
+        (-).
+  
+  ProductS3Url:
+    Type: String
+    Description: S3 URL of the Product CloudFormation template.
+  
+  TempS3Bucket:
+    Type: String
+    Description: Name of the S3 bucket which contains the template and Lambda function.zip package
+    AllowedPattern: ^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$
+    ConstraintDescription: Quick Start bucket name can include numbers, lowercase
+      letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen
+      (-).
+    
+  SourceS3KeyPrefix:
+    Type: String
+    Description: S3 Key Prefix for Lambda function.zip
+    AllowedPattern: ^[0-9a-zA-Z-/]*$
+    ConstraintDescription: Quick Start key prefix can include numbers, lowercase letters,
+      uppercase letters, hyphens (-), and a forward slash (/) at the end of the prefix.

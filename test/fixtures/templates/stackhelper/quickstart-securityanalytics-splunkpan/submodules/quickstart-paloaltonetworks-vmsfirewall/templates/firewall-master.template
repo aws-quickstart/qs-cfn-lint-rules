@@ -1,0 +1,2026 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "Creates VPC, Subnets, Route Tables, SG, Classic ELBs, ASG for Webservers and Lambda Infrastructure for the VM-Series firewall (qs-1ndtndso7)",
+    "Parameters": {
+        "AvailabilityZones": {
+            "Description": "Enter the list of Availability Zones (Based on Number of AZs above)",
+            "Type": "List<AWS::EC2::AvailabilityZone::Name>"
+        },
+        "ELBName": {
+            "Default": "public-elb",
+            "Description": "Enter the name of the External Classic Load Balancer",
+            "MaxLength": "12",
+            "MinLength": "3",
+            "Type": "String"
+        },
+        "FWInstanceType": {
+            "AllowedValues": [
+                "m4.xlarge",
+                "m4.2xlarge",
+                "m4.4xlarge",
+                "m3.xlarge",
+                "m3.2xlarge",
+                "c4.xlarge",
+                "c4.2xlarge",
+                "c4.4xlarge",
+                "c3.xlarge",
+                "c3.2xlarge",
+                "c3.4xlarge"
+            ],
+            "Default": "m4.xlarge",
+            "Description": "Enter the instance type and size that you want for VM-Series firewall",
+            "Type": "String"
+        },
+        "ILBName": {
+            "Default": "private-ilb",
+            "Description": "Enter the name of the Internal Load Balancer",
+            "MaxLength": "12",
+            "MinLength": "3",
+            "Type": "String"
+        },
+        "InstanceType": {
+            "AllowedValues": [
+                "t2.micro",
+                "t2.small",
+                "t2.medium",
+                "m3.medium",
+                "m3.large",
+                "m3.xlarge",
+                "m3.2xlarge",
+                "c3.xlarge",
+                "c3.2xlarge",
+                "c3.4xlarge",
+                "c3.8xlarge",
+                "c4.large",
+                "c4.xlarge",
+                "c4.2xlarge",
+                "c4.4xlarge",
+                "c4.8xlarge",
+                "r3.large",
+                "r3.xlarge",
+                "r3.2xlarge",
+                "r3.4xlarge",
+                "r3.8xlarge",
+                "i2.xlarge",
+                "i2.2xlarge",
+                "i2.4xlarge"
+            ],
+            "ConstraintDescription": "must be a valid EC2 instance type.",
+            "Default": "t2.medium",
+            "Description": "WebServer EC2 instance type",
+            "Type": "String"
+        },
+        "KeyDeLicense": {
+            "Default": "",
+            "Description": "Key used to de-license the PAN FW",
+            "NoEcho": "true",
+            "Type": "String"
+        },
+        "KeyName": {
+            "Description": "Amazon EC2 Key Pair",
+            "Type": "AWS::EC2::KeyPair::KeyName"
+        },
+        "KeyPANWFirewall": {
+            "AllowedPattern": "[\\S0-9a-zA-Z]+",
+            "ConstraintDescription": "The PAN FW API key is required.",
+            "Default": "LUFRPT1Zd2pYUGpkMUNrVEZlb3hROEQyUm95dXNGRkU9N0d4RGpTN2VZaVZYMVVoS253U0p6dlk3MkM0SDFySEh2UUR4Y3hzK2g3ST0=",
+            "Description": "API Key associated to username/password of the VM-Series Firewall. By default it is pandemo/demopassword",
+            "MaxLength": "128",
+            "MinLength": "3",
+            "NoEcho": "true",
+            "Type": "String"
+        },
+        "KeyPANWPanorama": {
+            "Description": "API Key associated to username/password of the Panorama. By default it is admin/admin",
+            "NoEcho": "true",
+            "Type": "String"
+        },
+        "LambdaSubnetIpBlocks": {
+            "Default": "192.168.200.0/24, 192.168.201.0/24, 192.168.202.0/24",
+            "Description": "Lambda Funcion Subnets for AZ: Comma-delimited list of CIDR blocks only if NAT Gateway is needed",
+            "Type": "CommaDelimitedList"
+        },
+        "MasterS3Bucket": {
+            "Description": "Enter the name of the Bootstrap S3 bucket for the VM-Series firewall",
+            "MaxLength": "63",
+            "MinLength": "3",
+            "Type": "String"
+        },
+        "MaximumInstancesASG": {
+            "Default": "3",
+            "Description": "Maximum number of VM-Series firewalls in the ASG",
+            "Type": "Number"
+        },
+        "MgmtSubnetIpBlocks": {
+            "Default": "192.168.0.0/24, 192.168.10.0/24, 192.168.20.0/24",
+            "Description": "Management subnet comma-delimited list of CIDR blocks",
+            "Type": "CommaDelimitedList"
+        },
+        "MinInstancesASG": {
+            "Default": "1",
+            "Description": "Minimum number of VM-Series firewalls in the ASG",
+            "Type": "Number"
+        },
+        "NATGWSubnetIpBlocks": {
+            "Default": "192.168.100.0/24, 192.168.101.0/24, 192.168.102.0/24",
+            "Description": "AWS NAT Gateway Comma-delimited list of CIDR blocks",
+            "Type": "CommaDelimitedList"
+        },
+        "NATGateway": {
+            "AllowedValues": [
+                "Yes",
+                "No"
+            ],
+            "Default": "Yes",
+            "Description": "Yes = create AWS NAT Gateway in each AZ, No = Use EIPs (skip subnet CIDR for NAT/Lambda)",
+            "Type": "String"
+        },
+        "NumberOfAZs": {
+            "Default": "2",
+            "Description": "Total Number of AZs which will be used in this deployment (Min 2 and Max 3)",
+            "MaxValue": "3",
+            "MinValue": "2",
+            "Type": "Number"
+        },
+        "PanFWLicenseType": {
+            "AllowedValues": [
+                "Bring-your-own-license",
+                "Pay-as-you-go-bundle-1",
+                "Pay-as-you-go-bundle-2"
+            ],
+            "Default": "Pay-as-you-go-bundle-2",
+            "Description": "PANOS 8.0 License Type to select AMI Id",
+            "Type": "String"
+        },
+        "QSS3BucketName": {
+            "AllowedPattern": "^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$",
+            "ConstraintDescription": "Quick Start bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-).",
+            "Default": "aws-quickstart",
+            "Description": "S3 bucket name for the Quick Start assets. Quick Start bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-).",
+            "Type": "String"
+        },
+        "QSS3KeyPrefix": {
+            "AllowedPattern": "^[0-9a-zA-Z-/]*$",
+            "ConstraintDescription": "Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).",
+            "Default": "quickstart-paloaltonetworks-vmsfirewall/",
+            "Description": "S3 key prefix for the Quick Start assets. Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).",
+            "Type": "String"
+        },
+        "SSHLocation": {
+            "AllowedPattern": "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})",
+            "ConstraintDescription": "must be a valid CIDR range of the form x.x.x.x/x.",
+            "Default": "0.0.0.0/0",
+            "Description": "Restrict SSH access to the VM-Series firewall (by default can be accessed from anywhere)",
+            "MaxLength": "18",
+            "MinLength": "9",
+            "Type": "String"
+        },
+        "ScaleDownThreshold": {
+            "Default": "20",
+            "Description": "Value at which ScaleDown event would take place",
+            "Type": "Number"
+        },
+        "ScaleUpThreshold": {
+            "Default": "80",
+            "Description": "Value at which ScaleUp event would take place",
+            "Type": "Number"
+        },
+        "ScalingParameter": {
+            "AllowedValues": [
+                "DataPlaneCPUUtilization",
+                "ActiveSessions",
+                "DataPlaneBufferUtilization"
+            ],
+            "Default": "ActiveSessions",
+            "Description": "Refer to guide for recommended values for ScaleUp and ScaleDown",
+            "Type": "String"
+        },
+        "ScalingPeriod": {
+            "Default": "900",
+            "Description": "The period in seconds over which the average statistic is applied. Must be multiple of 60",
+            "Type": "String"
+        },
+        "TrustSubnetIpBlocks": {
+            "Default": "192.168.2.0/24, 192.168.12.0/24, 192.168.22.0/24",
+            "Description": "Trust subnet comma-delimited list of CIDR blocks",
+            "Type": "CommaDelimitedList"
+        },
+        "UntrustSubnetIpBlocks": {
+            "Default": "192.168.1.0/24, 192.168.11.0/24, 192.168.21.0/24",
+            "Description": "Untrust subnet comma-delimited list of CIDR blocks",
+            "Type": "CommaDelimitedList"
+        },
+        "VPCCIDR": {
+            "AllowedPattern": "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})",
+            "ConstraintDescription": "must be a valid CIDR range of the form x.x.x.x/x.",
+            "Default": "192.168.0.0/16",
+            "Description": "Enter the VPC CIDR that you want to use",
+            "Type": "String"
+        },
+        "VPCName": {
+            "Default": "panwVPC",
+            "Description": "Name of the newly created VPC",
+            "MaxLength": "24",
+            "MinLength": "6",
+            "Type": "String"
+        }
+    },
+    "Metadata": {
+        "AWS::CloudFormation::Interface": {
+            "ParameterGroups": [
+                {
+                    "Label": {
+                        "default": "VPC Configuration"
+                    },
+                    "Parameters": [
+                        "VPCName",
+                        "VPCCIDR",
+                        "MgmtSubnetIpBlocks",
+                        "UntrustSubnetIpBlocks",
+                        "TrustSubnetIpBlocks",
+                        "NATGateway",
+                        "NATGWSubnetIpBlocks",
+                        "LambdaSubnetIpBlocks",
+                        "NumberOfAZs",
+                        "AvailabilityZones"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "VM-Series Firewall Instance Configuration"
+                    },
+                    "Parameters": [
+                        "FWInstanceType",
+                        "PanFWLicenseType",
+                        "KeyDeLicense",
+                        "KeyName",
+                        "SSHLocation"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "Firewall Bootstrap S3 Bucket details"
+                    },
+                    "Parameters": [
+                        "MasterS3Bucket"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "VM-Series API Key"
+                    },
+                    "Parameters": [
+                        "KeyPANWFirewall",
+                        "KeyPANWPanorama"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "Auto Scaling Group Configuration"
+                    },
+                    "Parameters": [
+                        "ScalingParameter",
+                        "ScalingPeriod",
+                        "MaximumInstancesASG",
+                        "MinInstancesASG",
+                        "ScaleDownThreshold",
+                        "ScaleUpThreshold"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "Web Server Configuration"
+                    },
+                    "Parameters": [
+                        "InstanceType",
+                        "ELBName",
+                        "ILBName"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "AWS Quick Start Configuration"
+                    },
+                    "Parameters": [
+                        "QSS3BucketName",
+                        "QSS3KeyPrefix"
+                    ]
+                }
+            ],
+            "ParameterLabels": {
+                "AvailabilityZones": {
+                    "default": "Select list of AZ:"
+                },
+                "ELBName": {
+                    "default": "Name of External Load Balancer:"
+                },
+                "FWInstanceType": {
+                    "default": "Firewall Instance size:"
+                },
+                "ILBName": {
+                    "default": "Name of Internal Load Balancer:"
+                },
+                "InstanceType": {
+                    "default": "Instance Type of Web Servers behind ILB:"
+                },
+                "KeyDeLicense": {
+                    "default": "Key used to de-license the FW"
+                },
+                "KeyName": {
+                    "default": "Key pair:"
+                },
+                "KeyPANWFirewall": {
+                    "default": "API Key for Firewall:"
+                },
+                "KeyPANWPanorama": {
+                    "default": "API Key for Panorama:"
+                },
+                "LambdaSubnetIpBlocks": {
+                    "default": "Lambda Subnet CIDR Block:"
+                },
+                "MasterS3Bucket": {
+                    "default": "Bootstrap bucket for VM-Series firewalls"
+                },
+                "MaximumInstancesASG": {
+                    "default": "Maximum VM-Series Instances:"
+                },
+                "MgmtSubnetIpBlocks": {
+                    "default": "Management Subnet CIDR Block:"
+                },
+                "MinInstancesASG": {
+                    "default": "Minimum VM-Series Instances:"
+                },
+                "NATGWSubnetIpBlocks": {
+                    "default": "NAT Gateway Subnet CIDR Block:"
+                },
+                "NATGateway": {
+                    "default": "Do you want to create AWS NAT Gateway in each Availability Zones (AZ)?"
+                },
+                "NumberOfAZs": {
+                    "default": "Number of AZ for deployment:"
+                },
+                "QSS3BucketName": {
+                    "default": "Quick Start S3 Bucket Name"
+                },
+                "QSS3KeyPrefix": {
+                    "default": "Quick Start S3 Key Prefix"
+                },
+                "SSHLocation": {
+                    "default": "SSH From:"
+                },
+                "ScaleDownThreshold": {
+                    "default": "ScaleDown threshold value in percentage/value:"
+                },
+                "ScaleUpThreshold": {
+                    "default": "ScaleUp threshold value in percentage/value:"
+                },
+                "ScalingParameter": {
+                    "default": "Choose your Scaling Parameter:"
+                },
+                "ScalingPeriod": {
+                    "default": "Choose time in seconds for Scaling Period:"
+                },
+                "TrustSubnetIpBlocks": {
+                    "default": "Trust Subnet CIDR Block:"
+                },
+                "UntrustSubnetIpBlocks": {
+                    "default": "Untrust Subnet CIDR Block:"
+                },
+                "VPCCIDR": {
+                    "default": "CIDR Block for the VPC:"
+                },
+                "VPCName": {
+                    "default": "VPC Name:"
+                }
+            }
+        }
+    },
+    "Conditions": {
+        "CreateSubnet2": {
+            "Fn::Equals": [
+                {
+                    "Ref": "NumberOfAZs"
+                },
+                "2"
+            ]
+        },
+        "CreateSubnet3": {
+            "Fn::Or": [
+                {
+                    "Fn::Equals": [
+                        {
+                            "Ref": "NumberOfAZs"
+                        },
+                        "3"
+                    ]
+                },
+                {
+                    "Fn::Equals": [
+                        {
+                            "Ref": "NumberOfAZs"
+                        },
+                        "4"
+                    ]
+                }
+            ]
+        },
+        "CreateSubnet4": {
+            "Fn::Equals": [
+                {
+                    "Ref": "NumberOfAZs"
+                },
+                "4"
+            ]
+        },
+        "GovCloudCondition": {
+            "Fn::Equals": [
+                {
+                    "Ref": "AWS::Region"
+                },
+                "us-gov-west-1"
+            ]
+        },
+        "NATGatewayNotRequired2": {
+            "Fn::And": [
+                {
+                    "Fn::Equals": [
+                        {
+                            "Ref": "NATGateway"
+                        },
+                        "No"
+                    ]
+                },
+                {
+                    "Condition": "CreateSubnet2"
+                }
+            ]
+        },
+        "NATGatewayNotRequired3": {
+            "Fn::And": [
+                {
+                    "Fn::Equals": [
+                        {
+                            "Ref": "NATGateway"
+                        },
+                        "No"
+                    ]
+                },
+                {
+                    "Condition": "CreateSubnet3"
+                }
+            ]
+        },
+        "NATGatewayNotRequired4": {
+            "Fn::And": [
+                {
+                    "Fn::Equals": [
+                        {
+                            "Ref": "NATGateway"
+                        },
+                        "No"
+                    ]
+                },
+                {
+                    "Condition": "CreateSubnet4"
+                }
+            ]
+        },
+        "NATGatewayRequired2": {
+            "Fn::And": [
+                {
+                    "Fn::Equals": [
+                        {
+                            "Ref": "NATGateway"
+                        },
+                        "Yes"
+                    ]
+                },
+                {
+                    "Condition": "CreateSubnet2"
+                }
+            ]
+        },
+        "NATGatewayRequired3": {
+            "Fn::And": [
+                {
+                    "Fn::Equals": [
+                        {
+                            "Ref": "NATGateway"
+                        },
+                        "Yes"
+                    ]
+                },
+                {
+                    "Condition": "CreateSubnet3"
+                }
+            ]
+        },
+        "NATGatewayRequired4": {
+            "Fn::And": [
+                {
+                    "Fn::Equals": [
+                        {
+                            "Ref": "NATGateway"
+                        },
+                        "Yes"
+                    ]
+                },
+                {
+                    "Condition": "CreateSubnet4"
+                }
+            ]
+        }
+    },
+    "Resources": {
+        "VPCStack": {
+            "Type": "AWS::CloudFormation::Stack",
+            "Properties": {
+                "TemplateURL": {
+                    "Fn::Sub": [
+                        "https://${QSS3BucketName}.${QSS3Region}.amazonaws.com/${QSS3KeyPrefix}templates/vpc.template",
+                        {
+                            "QSS3Region": {
+                                "Fn::If": [
+                                    "GovCloudCondition",
+                                    "s3-us-gov-west-1",
+                                    "s3"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                "Parameters": {
+                    "LambdaSubnetIpBlocks": {
+                        "Fn::Join": [
+                            ",",
+                            {
+                                "Ref": "LambdaSubnetIpBlocks"
+                            }
+                        ]
+                    },
+                    "MasterS3Bucket": {
+                        "Ref": "MasterS3Bucket"
+                    },
+                    "MgmtSubnetIpBlocks": {
+                        "Fn::Join": [
+                            ",",
+                            {
+                                "Ref": "MgmtSubnetIpBlocks"
+                            }
+                        ]
+                    },
+                    "NATGWSubnetIpBlocks": {
+                        "Fn::Join": [
+                            ",",
+                            {
+                                "Ref": "NATGWSubnetIpBlocks"
+                            }
+                        ]
+                    },
+                    "NATGateway": {
+                        "Ref": "NATGateway"
+                    },
+                    "NumberOfAZs": {
+                        "Ref": "NumberOfAZs"
+                    },
+                    "TrustSubnetIpBlocks": {
+                        "Fn::Join": [
+                            ",",
+                            {
+                                "Ref": "TrustSubnetIpBlocks"
+                            }
+                        ]
+                    },
+                    "UntrustSubnetIpBlocks": {
+                        "Fn::Join": [
+                            ",",
+                            {
+                                "Ref": "UntrustSubnetIpBlocks"
+                            }
+                        ]
+                    },
+                    "VPCCIDR": {
+                        "Ref": "VPCCIDR"
+                    },
+                    "VPCName": {
+                        "Ref": "VPCName"
+                    },
+                    "AvailabilityZones": {
+                        "Fn::Join": [
+                            ",",
+                            {
+                                "Ref": "AvailabilityZones"
+                            }
+                        ]
+                    }
+                }
+            }
+        },
+        "WebserverStack": {
+            "Type": "AWS::CloudFormation::Stack",
+            "Condition": "CreateSubnet2",
+            "Properties": {
+                "TemplateURL": {
+                    "Fn::Sub": [
+                        "https://${QSS3BucketName}.${QSS3Region}.amazonaws.com/${QSS3KeyPrefix}templates/webserver.template",
+                        {
+                            "QSS3Region": {
+                                "Fn::If": [
+                                    "GovCloudCondition",
+                                    "s3-us-gov-west-1",
+                                    "s3"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                "Parameters": {
+                    "AvailabilityZones": {
+                        "Fn::Join": [
+                            ",",
+                            {
+                                "Ref": "AvailabilityZones"
+                            }
+                        ]
+                    },
+                    "NumberOfAZs": {
+                        "Ref": "NumberOfAZs"
+                    },
+                    "VPCCIDR": {
+                        "Ref": "VPCCIDR"
+                    },
+                    "ILBName": {
+                        "Ref": "ILBName"
+                    },
+                    "ELBName": {
+                        "Ref": "ELBName"
+                    },
+                    "SSHLocation": {
+                        "Ref": "SSHLocation"
+                    },
+                    "VPCID": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.VPCID"
+                        ]
+                    },
+                    "AZSubnetIDUntrust": {
+                        "Fn::Join": [
+                            ",",
+                            [
+                                {
+                                    "Fn::GetAtt": [
+                                        "VPCStack",
+                                        "Outputs.UNTRUSTSubnet1"
+                                    ]
+                                },
+                                {
+                                    "Fn::GetAtt": [
+                                        "VPCStack",
+                                        "Outputs.UNTRUSTSubnet2"
+                                    ]
+                                }
+                            ]
+                        ]
+                    },
+                    "AZSubnetIDTrust": {
+                        "Fn::Join": [
+                            ",",
+                            [
+                                {
+                                    "Fn::GetAtt": [
+                                        "VPCStack",
+                                        "Outputs.TRUSTSubnet1"
+                                    ]
+                                },
+                                {
+                                    "Fn::GetAtt": [
+                                        "VPCStack",
+                                        "Outputs.TRUSTSubnet2"
+                                    ]
+                                }
+                            ]
+                        ]
+                    },
+                    "KeyName": {
+                        "Ref": "KeyName"
+                    },
+                    "NATGateway": {
+                        "Ref": "NATGateway"
+                    },
+                    "InstanceType": {
+                        "Ref": "InstanceType"
+                    }
+                }
+            }
+        },
+        "WebserverStack3": {
+            "Type": "AWS::CloudFormation::Stack",
+            "Condition": "CreateSubnet3",
+            "Properties": {
+                "TemplateURL": {
+                    "Fn::Sub": [
+                        "https://${QSS3BucketName}.${QSS3Region}.amazonaws.com/${QSS3KeyPrefix}templates/webserver.template",
+                        {
+                            "QSS3Region": {
+                                "Fn::If": [
+                                    "GovCloudCondition",
+                                    "s3-us-gov-west-1",
+                                    "s3"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                "Parameters": {
+                    "AvailabilityZones": {
+                        "Fn::Join": [
+                            ",",
+                            {
+                                "Ref": "AvailabilityZones"
+                            }
+                        ]
+                    },
+                    "NumberOfAZs": {
+                        "Ref": "NumberOfAZs"
+                    },
+                    "VPCCIDR": {
+                        "Ref": "VPCCIDR"
+                    },
+                    "ILBName": {
+                        "Ref": "ILBName"
+                    },
+                    "ELBName": {
+                        "Ref": "ELBName"
+                    },
+                    "SSHLocation": {
+                        "Ref": "SSHLocation"
+                    },
+                    "VPCID": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.VPCID"
+                        ]
+                    },
+                    "AZSubnetIDUntrust": {
+                        "Fn::Join": [
+                            ",",
+                            [
+                                {
+                                    "Fn::GetAtt": [
+                                        "VPCStack",
+                                        "Outputs.UNTRUSTSubnet1"
+                                    ]
+                                },
+                                {
+                                    "Fn::GetAtt": [
+                                        "VPCStack",
+                                        "Outputs.UNTRUSTSubnet2"
+                                    ]
+                                },
+                                {
+                                    "Fn::GetAtt": [
+                                        "VPCStack",
+                                        "Outputs.UNTRUSTSubnet3"
+                                    ]
+                                }
+                            ]
+                        ]
+                    },
+                    "AZSubnetIDTrust": {
+                        "Fn::Join": [
+                            ",",
+                            [
+                                {
+                                    "Fn::GetAtt": [
+                                        "VPCStack",
+                                        "Outputs.TRUSTSubnet1"
+                                    ]
+                                },
+                                {
+                                    "Fn::GetAtt": [
+                                        "VPCStack",
+                                        "Outputs.TRUSTSubnet2"
+                                    ]
+                                },
+                                {
+                                    "Fn::GetAtt": [
+                                        "VPCStack",
+                                        "Outputs.TRUSTSubnet3"
+                                    ]
+                                }
+                            ]
+                        ]
+                    },
+                    "KeyName": {
+                        "Ref": "KeyName"
+                    },
+                    "NATGateway": {
+                        "Ref": "NATGateway"
+                    },
+                    "InstanceType": {
+                        "Ref": "InstanceType"
+                    }
+                }
+            }
+        },
+        "az2n": {
+            "Type": "AWS::CloudFormation::Stack",
+            "Condition": "NATGatewayRequired2",
+            "Properties": {
+                "TemplateURL": {
+                    "Fn::Sub": [
+                        "https://${QSS3BucketName}.${QSS3Region}.amazonaws.com/${QSS3KeyPrefix}templates/firewall.template",
+                        {
+                            "QSS3Region": {
+                                "Fn::If": [
+                                    "GovCloudCondition",
+                                    "s3-us-gov-west-1",
+                                    "s3"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                "Parameters": {
+                    "VPCCIDR": {
+                        "Ref": "VPCCIDR"
+                    },
+                    "ILBName": {
+                        "Ref": "ILBName"
+                    },
+                    "ELBName": {
+                        "Ref": "ELBName"
+                    },
+                    "MasterS3Bucket": {
+                        "Ref": "MasterS3Bucket"
+                    },
+                    "SSHLocation": {
+                        "Ref": "SSHLocation"
+                    },
+                    "FWInstanceType": {
+                        "Ref": "FWInstanceType"
+                    },
+                    "PanFWLicenseType": {
+                        "Ref": "PanFWLicenseType"
+                    },
+                    "VPCID": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.VPCID"
+                        ]
+                    },
+                    "AZSubnetIDMgmt": {
+                        "Fn::Join": [
+                            ",",
+                            [
+                                {
+                                    "Fn::GetAtt": [
+                                        "VPCStack",
+                                        "Outputs.MGMTSubnetAz1"
+                                    ]
+                                },
+                                {
+                                    "Fn::GetAtt": [
+                                        "VPCStack",
+                                        "Outputs.MGMTSubnetAz2"
+                                    ]
+                                }
+                            ]
+                        ]
+                    },
+                    "AZSubnetIDUntrust": {
+                        "Fn::Join": [
+                            ",",
+                            [
+                                {
+                                    "Fn::GetAtt": [
+                                        "VPCStack",
+                                        "Outputs.UNTRUSTSubnet1"
+                                    ]
+                                },
+                                {
+                                    "Fn::GetAtt": [
+                                        "VPCStack",
+                                        "Outputs.UNTRUSTSubnet2"
+                                    ]
+                                }
+                            ]
+                        ]
+                    },
+                    "AZSubnetIDTrust": {
+                        "Fn::Join": [
+                            ",",
+                            [
+                                {
+                                    "Fn::GetAtt": [
+                                        "VPCStack",
+                                        "Outputs.TRUSTSubnet1"
+                                    ]
+                                },
+                                {
+                                    "Fn::GetAtt": [
+                                        "VPCStack",
+                                        "Outputs.TRUSTSubnet2"
+                                    ]
+                                }
+                            ]
+                        ]
+                    },
+                    "KeyName": {
+                        "Ref": "KeyName"
+                    },
+                    "MinInstancesASG": {
+                        "Ref": "MinInstancesASG"
+                    },
+                    "MaximumInstancesASG": {
+                        "Ref": "MaximumInstancesASG"
+                    },
+                    "ScaleUpThreshold": {
+                        "Ref": "ScaleUpThreshold"
+                    },
+                    "ScaleDownThreshold": {
+                        "Ref": "ScaleDownThreshold"
+                    },
+                    "ScalingParameter": {
+                        "Ref": "ScalingParameter"
+                    },
+                    "ScalingPeriod": {
+                        "Ref": "ScalingPeriod"
+                    },
+                    "QSS3BucketName": {
+                        "Ref": "QSS3BucketName"
+                    },
+                    "QSS3KeyPrefix": {
+                        "Ref": "QSS3KeyPrefix"
+                    },
+                    "KeyPANWFirewall": {
+                        "Ref": "KeyPANWFirewall"
+                    },
+                    "KeyPANWPanorama": {
+                        "Ref": "KeyPANWPanorama"
+                    },
+                    "NATGateway": {
+                        "Ref": "NATGateway"
+                    },
+                    "AZSubnetIDNATGW": {
+                        "Fn::Join": [
+                            ",",
+                            [
+                                {
+                                    "Fn::GetAtt": [
+                                        "VPCStack",
+                                        "Outputs.NATGWSubnetAz1"
+                                    ]
+                                },
+                                {
+                                    "Fn::GetAtt": [
+                                        "VPCStack",
+                                        "Outputs.NATGWSubnetAz2"
+                                    ]
+                                }
+                            ]
+                        ]
+                    },
+                    "AZSubnetIDLambda": {
+                        "Fn::Join": [
+                            ",",
+                            [
+                                {
+                                    "Fn::GetAtt": [
+                                        "VPCStack",
+                                        "Outputs.LambdaSubnetAz1"
+                                    ]
+                                },
+                                {
+                                    "Fn::GetAtt": [
+                                        "VPCStack",
+                                        "Outputs.LambdaSubnetAz2"
+                                    ]
+                                }
+                            ]
+                        ]
+                    },
+                    "KeyDeLicense": {
+                        "Ref": "KeyDeLicense"
+                    }
+                }
+            },
+            "DependsOn": [
+                "WebserverStack"
+            ]
+        },
+        "az2": {
+            "Type": "AWS::CloudFormation::Stack",
+            "Condition": "NATGatewayNotRequired2",
+            "DependsOn": [
+                "WebserverStack"
+            ],
+            "Properties": {
+                "TemplateURL": {
+                    "Fn::Sub": [
+                        "https://${QSS3BucketName}.${QSS3Region}.amazonaws.com/${QSS3KeyPrefix}templates/firewall.template",
+                        {
+                            "QSS3Region": {
+                                "Fn::If": [
+                                    "GovCloudCondition",
+                                    "s3-us-gov-west-1",
+                                    "s3"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                "Parameters": {
+                    "VPCCIDR": {
+                        "Ref": "VPCCIDR"
+                    },
+                    "ILBName": {
+                        "Ref": "ILBName"
+                    },
+                    "ELBName": {
+                        "Ref": "ELBName"
+                    },
+                    "MasterS3Bucket": {
+                        "Ref": "MasterS3Bucket"
+                    },
+                    "SSHLocation": {
+                        "Ref": "SSHLocation"
+                    },
+                    "FWInstanceType": {
+                        "Ref": "FWInstanceType"
+                    },
+                    "PanFWLicenseType": {
+                        "Ref": "PanFWLicenseType"
+                    },
+                    "VPCID": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.VPCID"
+                        ]
+                    },
+                    "AZSubnetIDMgmt": {
+                        "Fn::Join": [
+                            ",",
+                            [
+                                {
+                                    "Fn::GetAtt": [
+                                        "VPCStack",
+                                        "Outputs.MGMTSubnetAz1"
+                                    ]
+                                },
+                                {
+                                    "Fn::GetAtt": [
+                                        "VPCStack",
+                                        "Outputs.MGMTSubnetAz2"
+                                    ]
+                                }
+                            ]
+                        ]
+                    },
+                    "AZSubnetIDUntrust": {
+                        "Fn::Join": [
+                            ",",
+                            [
+                                {
+                                    "Fn::GetAtt": [
+                                        "VPCStack",
+                                        "Outputs.UNTRUSTSubnet1"
+                                    ]
+                                },
+                                {
+                                    "Fn::GetAtt": [
+                                        "VPCStack",
+                                        "Outputs.UNTRUSTSubnet2"
+                                    ]
+                                }
+                            ]
+                        ]
+                    },
+                    "AZSubnetIDTrust": {
+                        "Fn::Join": [
+                            ",",
+                            [
+                                {
+                                    "Fn::GetAtt": [
+                                        "VPCStack",
+                                        "Outputs.TRUSTSubnet1"
+                                    ]
+                                },
+                                {
+                                    "Fn::GetAtt": [
+                                        "VPCStack",
+                                        "Outputs.TRUSTSubnet2"
+                                    ]
+                                }
+                            ]
+                        ]
+                    },
+                    "KeyName": {
+                        "Ref": "KeyName"
+                    },
+                    "MinInstancesASG": {
+                        "Ref": "MinInstancesASG"
+                    },
+                    "MaximumInstancesASG": {
+                        "Ref": "MaximumInstancesASG"
+                    },
+                    "ScaleUpThreshold": {
+                        "Ref": "ScaleUpThreshold"
+                    },
+                    "ScaleDownThreshold": {
+                        "Ref": "ScaleDownThreshold"
+                    },
+                    "ScalingParameter": {
+                        "Ref": "ScalingParameter"
+                    },
+                    "ScalingPeriod": {
+                        "Ref": "ScalingPeriod"
+                    },
+                    "QSS3BucketName": {
+                        "Ref": "QSS3BucketName"
+                    },
+                    "QSS3KeyPrefix": {
+                        "Ref": "QSS3KeyPrefix"
+                    },
+                    "KeyPANWFirewall": {
+                        "Ref": "KeyPANWFirewall"
+                    },
+                    "KeyPANWPanorama": {
+                        "Ref": "KeyPANWPanorama"
+                    },
+                    "NATGateway": {
+                        "Ref": "NATGateway"
+                    },
+                    "KeyDeLicense": {
+                        "Ref": "KeyDeLicense"
+                    }
+                }
+            }
+        },
+        "az3n": {
+            "Type": "AWS::CloudFormation::Stack",
+            "Condition": "NATGatewayRequired3",
+            "DependsOn": [
+                "WebserverStack3"
+            ],
+            "Properties": {
+                "TemplateURL": {
+                    "Fn::Sub": [
+                        "https://${QSS3BucketName}.${QSS3Region}.amazonaws.com/${QSS3KeyPrefix}templates/firewall.template",
+                        {
+                            "QSS3Region": {
+                                "Fn::If": [
+                                    "GovCloudCondition",
+                                    "s3-us-gov-west-1",
+                                    "s3"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                "Parameters": {
+                    "VPCCIDR": {
+                        "Ref": "VPCCIDR"
+                    },
+                    "ILBName": {
+                        "Ref": "ILBName"
+                    },
+                    "ELBName": {
+                        "Ref": "ELBName"
+                    },
+                    "MasterS3Bucket": {
+                        "Ref": "MasterS3Bucket"
+                    },
+                    "FWInstanceType": {
+                        "Ref": "FWInstanceType"
+                    },
+                    "PanFWLicenseType": {
+                        "Ref": "PanFWLicenseType"
+                    },
+                    "SSHLocation": {
+                        "Ref": "SSHLocation"
+                    },
+                    "VPCID": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.VPCID"
+                        ]
+                    },
+                    "AZSubnetIDMgmt": {
+                        "Fn::Join": [
+                            ",",
+                            [
+                                {
+                                    "Fn::GetAtt": [
+                                        "VPCStack",
+                                        "Outputs.MGMTSubnetAz1"
+                                    ]
+                                },
+                                {
+                                    "Fn::GetAtt": [
+                                        "VPCStack",
+                                        "Outputs.MGMTSubnetAz2"
+                                    ]
+                                },
+                                {
+                                    "Fn::GetAtt": [
+                                        "VPCStack",
+                                        "Outputs.MGMTSubnetAz3"
+                                    ]
+                                }
+                            ]
+                        ]
+                    },
+                    "AZSubnetIDUntrust": {
+                        "Fn::Join": [
+                            ",",
+                            [
+                                {
+                                    "Fn::GetAtt": [
+                                        "VPCStack",
+                                        "Outputs.UNTRUSTSubnet1"
+                                    ]
+                                },
+                                {
+                                    "Fn::GetAtt": [
+                                        "VPCStack",
+                                        "Outputs.UNTRUSTSubnet2"
+                                    ]
+                                },
+                                {
+                                    "Fn::GetAtt": [
+                                        "VPCStack",
+                                        "Outputs.UNTRUSTSubnet3"
+                                    ]
+                                }
+                            ]
+                        ]
+                    },
+                    "AZSubnetIDTrust": {
+                        "Fn::Join": [
+                            ",",
+                            [
+                                {
+                                    "Fn::GetAtt": [
+                                        "VPCStack",
+                                        "Outputs.TRUSTSubnet1"
+                                    ]
+                                },
+                                {
+                                    "Fn::GetAtt": [
+                                        "VPCStack",
+                                        "Outputs.TRUSTSubnet2"
+                                    ]
+                                },
+                                {
+                                    "Fn::GetAtt": [
+                                        "VPCStack",
+                                        "Outputs.TRUSTSubnet3"
+                                    ]
+                                }
+                            ]
+                        ]
+                    },
+                    "KeyName": {
+                        "Ref": "KeyName"
+                    },
+                    "MinInstancesASG": {
+                        "Ref": "MinInstancesASG"
+                    },
+                    "MaximumInstancesASG": {
+                        "Ref": "MaximumInstancesASG"
+                    },
+                    "ScaleUpThreshold": {
+                        "Ref": "ScaleUpThreshold"
+                    },
+                    "ScaleDownThreshold": {
+                        "Ref": "ScaleDownThreshold"
+                    },
+                    "ScalingParameter": {
+                        "Ref": "ScalingParameter"
+                    },
+                    "ScalingPeriod": {
+                        "Ref": "ScalingPeriod"
+                    },
+                    "QSS3BucketName": {
+                        "Ref": "QSS3BucketName"
+                    },
+                    "QSS3KeyPrefix": {
+                        "Ref": "QSS3KeyPrefix"
+                    },
+                    "KeyPANWFirewall": {
+                        "Ref": "KeyPANWFirewall"
+                    },
+                    "KeyPANWPanorama": {
+                        "Ref": "KeyPANWPanorama"
+                    },
+                    "NATGateway": {
+                        "Ref": "NATGateway"
+                    },
+                    "AZSubnetIDNATGW": {
+                        "Fn::Join": [
+                            ",",
+                            [
+                                {
+                                    "Fn::GetAtt": [
+                                        "VPCStack",
+                                        "Outputs.NATGWSubnetAz1"
+                                    ]
+                                },
+                                {
+                                    "Fn::GetAtt": [
+                                        "VPCStack",
+                                        "Outputs.NATGWSubnetAz2"
+                                    ]
+                                },
+                                {
+                                    "Fn::GetAtt": [
+                                        "VPCStack",
+                                        "Outputs.NATGWSubnetAz3"
+                                    ]
+                                }
+                            ]
+                        ]
+                    },
+                    "AZSubnetIDLambda": {
+                        "Fn::Join": [
+                            ",",
+                            [
+                                {
+                                    "Fn::GetAtt": [
+                                        "VPCStack",
+                                        "Outputs.LambdaSubnetAz1"
+                                    ]
+                                },
+                                {
+                                    "Fn::GetAtt": [
+                                        "VPCStack",
+                                        "Outputs.LambdaSubnetAz2"
+                                    ]
+                                },
+                                {
+                                    "Fn::GetAtt": [
+                                        "VPCStack",
+                                        "Outputs.LambdaSubnetAz3"
+                                    ]
+                                }
+                            ]
+                        ]
+                    },
+                    "KeyDeLicense": {
+                        "Ref": "KeyDeLicense"
+                    }
+                }
+            }
+        },
+        "az3": {
+            "Type": "AWS::CloudFormation::Stack",
+            "Condition": "NATGatewayNotRequired3",
+            "DependsOn": [
+                "WebserverStack3"
+            ],
+            "Properties": {
+                "TemplateURL": {
+                    "Fn::Sub": [
+                        "https://${QSS3BucketName}.${QSS3Region}.amazonaws.com/${QSS3KeyPrefix}templates/firewall.template",
+                        {
+                            "QSS3Region": {
+                                "Fn::If": [
+                                    "GovCloudCondition",
+                                    "s3-us-gov-west-1",
+                                    "s3"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                "Parameters": {
+                    "VPCCIDR": {
+                        "Ref": "VPCCIDR"
+                    },
+                    "ILBName": {
+                        "Ref": "ILBName"
+                    },
+                    "ELBName": {
+                        "Ref": "ELBName"
+                    },
+                    "MasterS3Bucket": {
+                        "Ref": "MasterS3Bucket"
+                    },
+                    "FWInstanceType": {
+                        "Ref": "FWInstanceType"
+                    },
+                    "PanFWLicenseType": {
+                        "Ref": "PanFWLicenseType"
+                    },
+                    "SSHLocation": {
+                        "Ref": "SSHLocation"
+                    },
+                    "VPCID": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.VPCID"
+                        ]
+                    },
+                    "AZSubnetIDMgmt": {
+                        "Fn::Join": [
+                            ",",
+                            [
+                                {
+                                    "Fn::GetAtt": [
+                                        "VPCStack",
+                                        "Outputs.MGMTSubnetAz1"
+                                    ]
+                                },
+                                {
+                                    "Fn::GetAtt": [
+                                        "VPCStack",
+                                        "Outputs.MGMTSubnetAz2"
+                                    ]
+                                },
+                                {
+                                    "Fn::GetAtt": [
+                                        "VPCStack",
+                                        "Outputs.MGMTSubnetAz3"
+                                    ]
+                                }
+                            ]
+                        ]
+                    },
+                    "AZSubnetIDUntrust": {
+                        "Fn::Join": [
+                            ",",
+                            [
+                                {
+                                    "Fn::GetAtt": [
+                                        "VPCStack",
+                                        "Outputs.UNTRUSTSubnet1"
+                                    ]
+                                },
+                                {
+                                    "Fn::GetAtt": [
+                                        "VPCStack",
+                                        "Outputs.UNTRUSTSubnet2"
+                                    ]
+                                },
+                                {
+                                    "Fn::GetAtt": [
+                                        "VPCStack",
+                                        "Outputs.UNTRUSTSubnet3"
+                                    ]
+                                }
+                            ]
+                        ]
+                    },
+                    "AZSubnetIDTrust": {
+                        "Fn::Join": [
+                            ",",
+                            [
+                                {
+                                    "Fn::GetAtt": [
+                                        "VPCStack",
+                                        "Outputs.TRUSTSubnet1"
+                                    ]
+                                },
+                                {
+                                    "Fn::GetAtt": [
+                                        "VPCStack",
+                                        "Outputs.TRUSTSubnet2"
+                                    ]
+                                },
+                                {
+                                    "Fn::GetAtt": [
+                                        "VPCStack",
+                                        "Outputs.TRUSTSubnet3"
+                                    ]
+                                }
+                            ]
+                        ]
+                    },
+                    "KeyName": {
+                        "Ref": "KeyName"
+                    },
+                    "MinInstancesASG": {
+                        "Ref": "MinInstancesASG"
+                    },
+                    "MaximumInstancesASG": {
+                        "Ref": "MaximumInstancesASG"
+                    },
+                    "ScaleUpThreshold": {
+                        "Ref": "ScaleUpThreshold"
+                    },
+                    "ScaleDownThreshold": {
+                        "Ref": "ScaleDownThreshold"
+                    },
+                    "ScalingParameter": {
+                        "Ref": "ScalingParameter"
+                    },
+                    "ScalingPeriod": {
+                        "Ref": "ScalingPeriod"
+                    },
+                    "QSS3BucketName": {
+                        "Ref": "QSS3BucketName"
+                    },
+                    "QSS3KeyPrefix": {
+                        "Ref": "QSS3KeyPrefix"
+                    },
+                    "KeyPANWFirewall": {
+                        "Ref": "KeyPANWFirewall"
+                    },
+                    "KeyPANWPanorama": {
+                        "Ref": "KeyPANWPanorama"
+                    },
+                    "NATGateway": {
+                        "Ref": "NATGateway"
+                    },
+                    "KeyDeLicense": {
+                        "Ref": "KeyDeLicense"
+                    }
+                }
+            }
+        },
+        "az4n": {
+            "Type": "AWS::CloudFormation::Stack",
+            "Condition": "NATGatewayRequired4",
+            "Properties": {
+                "TemplateURL": {
+                    "Fn::Sub": [
+                        "https://${QSS3BucketName}.${QSS3Region}.amazonaws.com/${QSS3KeyPrefix}templates/firewall.template",
+                        {
+                            "QSS3Region": {
+                                "Fn::If": [
+                                    "GovCloudCondition",
+                                    "s3-us-gov-west-1",
+                                    "s3"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                "Parameters": {
+                    "VPCCIDR": {
+                        "Ref": "VPCCIDR"
+                    },
+                    "ILBName": {
+                        "Ref": "ILBName"
+                    },
+                    "ELBName": {
+                        "Ref": "ELBName"
+                    },
+                    "MasterS3Bucket": {
+                        "Ref": "MasterS3Bucket"
+                    },
+                    "FWInstanceType": {
+                        "Ref": "FWInstanceType"
+                    },
+                    "PanFWLicenseType": {
+                        "Ref": "PanFWLicenseType"
+                    },
+                    "SSHLocation": {
+                        "Ref": "SSHLocation"
+                    },
+                    "VPCID": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.VPCID"
+                        ]
+                    },
+                    "AZSubnetIDMgmt": {
+                        "Fn::Join": [
+                            ",",
+                            [
+                                {
+                                    "Fn::GetAtt": [
+                                        "VPCStack",
+                                        "Outputs.MGMTSubnetAz1"
+                                    ]
+                                },
+                                {
+                                    "Fn::GetAtt": [
+                                        "VPCStack",
+                                        "Outputs.MGMTSubnetAz2"
+                                    ]
+                                },
+                                {
+                                    "Fn::GetAtt": [
+                                        "VPCStack",
+                                        "Outputs.MGMTSubnetAz3"
+                                    ]
+                                },
+                                {
+                                    "Fn::GetAtt": [
+                                        "VPCStack",
+                                        "Outputs.MGMTSubnetAz4"
+                                    ]
+                                }
+                            ]
+                        ]
+                    },
+                    "AZSubnetIDUntrust": {
+                        "Fn::Join": [
+                            ",",
+                            [
+                                {
+                                    "Fn::GetAtt": [
+                                        "VPCStack",
+                                        "Outputs.UNTRUSTSubnet1"
+                                    ]
+                                },
+                                {
+                                    "Fn::GetAtt": [
+                                        "VPCStack",
+                                        "Outputs.UNTRUSTSubnet2"
+                                    ]
+                                },
+                                {
+                                    "Fn::GetAtt": [
+                                        "VPCStack",
+                                        "Outputs.UNTRUSTSubnet3"
+                                    ]
+                                },
+                                {
+                                    "Fn::GetAtt": [
+                                        "VPCStack",
+                                        "Outputs.UNTRUSTSubnet4"
+                                    ]
+                                }
+                            ]
+                        ]
+                    },
+                    "AZSubnetIDTrust": {
+                        "Fn::Join": [
+                            ",",
+                            [
+                                {
+                                    "Fn::GetAtt": [
+                                        "VPCStack",
+                                        "Outputs.TRUSTSubnet1"
+                                    ]
+                                },
+                                {
+                                    "Fn::GetAtt": [
+                                        "VPCStack",
+                                        "Outputs.TRUSTSubnet2"
+                                    ]
+                                },
+                                {
+                                    "Fn::GetAtt": [
+                                        "VPCStack",
+                                        "Outputs.TRUSTSubnet3"
+                                    ]
+                                },
+                                {
+                                    "Fn::GetAtt": [
+                                        "VPCStack",
+                                        "Outputs.TRUSTSubnet4"
+                                    ]
+                                }
+                            ]
+                        ]
+                    },
+                    "KeyName": {
+                        "Ref": "KeyName"
+                    },
+                    "MinInstancesASG": {
+                        "Ref": "MinInstancesASG"
+                    },
+                    "MaximumInstancesASG": {
+                        "Ref": "MaximumInstancesASG"
+                    },
+                    "ScaleUpThreshold": {
+                        "Ref": "ScaleUpThreshold"
+                    },
+                    "ScaleDownThreshold": {
+                        "Ref": "ScaleDownThreshold"
+                    },
+                    "ScalingParameter": {
+                        "Ref": "ScalingParameter"
+                    },
+                    "ScalingPeriod": {
+                        "Ref": "ScalingPeriod"
+                    },
+                    "QSS3BucketName": {
+                        "Ref": "QSS3BucketName"
+                    },
+                    "QSS3KeyPrefix": {
+                        "Ref": "QSS3KeyPrefix"
+                    },
+                    "KeyPANWFirewall": {
+                        "Ref": "KeyPANWFirewall"
+                    },
+                    "KeyPANWPanorama": {
+                        "Ref": "KeyPANWPanorama"
+                    },
+                    "NATGateway": {
+                        "Ref": "NATGateway"
+                    },
+                    "AZSubnetIDNATGW": {
+                        "Fn::Join": [
+                            ",",
+                            [
+                                {
+                                    "Fn::GetAtt": [
+                                        "VPCStack",
+                                        "Outputs.NATGWSubnetAz1"
+                                    ]
+                                },
+                                {
+                                    "Fn::GetAtt": [
+                                        "VPCStack",
+                                        "Outputs.NATGWSubnetAz2"
+                                    ]
+                                },
+                                {
+                                    "Fn::GetAtt": [
+                                        "VPCStack",
+                                        "Outputs.NATGWSubnetAz3"
+                                    ]
+                                },
+                                {
+                                    "Fn::GetAtt": [
+                                        "VPCStack",
+                                        "Outputs.NATGWSubnetAz4"
+                                    ]
+                                }
+                            ]
+                        ]
+                    },
+                    "AZSubnetIDLambda": {
+                        "Fn::Join": [
+                            ",",
+                            [
+                                {
+                                    "Fn::GetAtt": [
+                                        "VPCStack",
+                                        "Outputs.LambdaSubnetAz1"
+                                    ]
+                                },
+                                {
+                                    "Fn::GetAtt": [
+                                        "VPCStack",
+                                        "Outputs.LambdaSubnetAz2"
+                                    ]
+                                },
+                                {
+                                    "Fn::GetAtt": [
+                                        "VPCStack",
+                                        "Outputs.LambdaSubnetAz3"
+                                    ]
+                                },
+                                {
+                                    "Fn::GetAtt": [
+                                        "VPCStack",
+                                        "Outputs.LambdaSubnetAz4"
+                                    ]
+                                }
+                            ]
+                        ]
+                    },
+                    "KeyDeLicense": {
+                        "Ref": "KeyDeLicense"
+                    }
+                }
+            }
+        },
+        "az4": {
+            "Type": "AWS::CloudFormation::Stack",
+            "Condition": "NATGatewayNotRequired4",
+            "Properties": {
+                "TemplateURL": {
+                    "Fn::Sub": [
+                        "https://${QSS3BucketName}.${QSS3Region}.amazonaws.com/${QSS3KeyPrefix}templates/firewall.template",
+                        {
+                            "QSS3Region": {
+                                "Fn::If": [
+                                    "GovCloudCondition",
+                                    "s3-us-gov-west-1",
+                                    "s3"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                "Parameters": {
+                    "VPCCIDR": {
+                        "Ref": "VPCCIDR"
+                    },
+                    "ILBName": {
+                        "Ref": "ILBName"
+                    },
+                    "ELBName": {
+                        "Ref": "ELBName"
+                    },
+                    "MasterS3Bucket": {
+                        "Ref": "MasterS3Bucket"
+                    },
+                    "FWInstanceType": {
+                        "Ref": "FWInstanceType"
+                    },
+                    "PanFWLicenseType": {
+                        "Ref": "PanFWLicenseType"
+                    },
+                    "SSHLocation": {
+                        "Ref": "SSHLocation"
+                    },
+                    "VPCID": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.VPCID"
+                        ]
+                    },
+                    "AZSubnetIDMgmt": {
+                        "Fn::Join": [
+                            ",",
+                            [
+                                {
+                                    "Fn::GetAtt": [
+                                        "VPCStack",
+                                        "Outputs.MGMTSubnetAz1"
+                                    ]
+                                },
+                                {
+                                    "Fn::GetAtt": [
+                                        "VPCStack",
+                                        "Outputs.MGMTSubnetAz2"
+                                    ]
+                                },
+                                {
+                                    "Fn::GetAtt": [
+                                        "VPCStack",
+                                        "Outputs.MGMTSubnetAz3"
+                                    ]
+                                },
+                                {
+                                    "Fn::GetAtt": [
+                                        "VPCStack",
+                                        "Outputs.MGMTSubnetAz4"
+                                    ]
+                                }
+                            ]
+                        ]
+                    },
+                    "AZSubnetIDUntrust": {
+                        "Fn::Join": [
+                            ",",
+                            [
+                                {
+                                    "Fn::GetAtt": [
+                                        "VPCStack",
+                                        "Outputs.UNTRUSTSubnet1"
+                                    ]
+                                },
+                                {
+                                    "Fn::GetAtt": [
+                                        "VPCStack",
+                                        "Outputs.UNTRUSTSubnet2"
+                                    ]
+                                },
+                                {
+                                    "Fn::GetAtt": [
+                                        "VPCStack",
+                                        "Outputs.UNTRUSTSubnet3"
+                                    ]
+                                },
+                                {
+                                    "Fn::GetAtt": [
+                                        "VPCStack",
+                                        "Outputs.UNTRUSTSubnet4"
+                                    ]
+                                }
+                            ]
+                        ]
+                    },
+                    "AZSubnetIDTrust": {
+                        "Fn::Join": [
+                            ",",
+                            [
+                                {
+                                    "Fn::GetAtt": [
+                                        "VPCStack",
+                                        "Outputs.TRUSTSubnet1"
+                                    ]
+                                },
+                                {
+                                    "Fn::GetAtt": [
+                                        "VPCStack",
+                                        "Outputs.TRUSTSubnet2"
+                                    ]
+                                },
+                                {
+                                    "Fn::GetAtt": [
+                                        "VPCStack",
+                                        "Outputs.TRUSTSubnet3"
+                                    ]
+                                },
+                                {
+                                    "Fn::GetAtt": [
+                                        "VPCStack",
+                                        "Outputs.TRUSTSubnet4"
+                                    ]
+                                }
+                            ]
+                        ]
+                    },
+                    "KeyName": {
+                        "Ref": "KeyName"
+                    },
+                    "MinInstancesASG": {
+                        "Ref": "MinInstancesASG"
+                    },
+                    "MaximumInstancesASG": {
+                        "Ref": "MaximumInstancesASG"
+                    },
+                    "ScaleUpThreshold": {
+                        "Ref": "ScaleUpThreshold"
+                    },
+                    "ScaleDownThreshold": {
+                        "Ref": "ScaleDownThreshold"
+                    },
+                    "ScalingParameter": {
+                        "Ref": "ScalingParameter"
+                    },
+                    "ScalingPeriod": {
+                        "Ref": "ScalingPeriod"
+                    },
+                    "QSS3BucketName": {
+                        "Ref": "QSS3BucketName"
+                    },
+                    "QSS3KeyPrefix": {
+                        "Ref": "QSS3KeyPrefix"
+                    },
+                    "KeyPANWFirewall": {
+                        "Ref": "KeyPANWFirewall"
+                    },
+                    "KeyPANWPanorama": {
+                        "Ref": "KeyPANWPanorama"
+                    },
+                    "NATGateway": {
+                        "Ref": "NATGateway"
+                    },
+                    "KeyDeLicense": {
+                        "Ref": "KeyDeLicense"
+                    }
+                }
+            }
+        }
+    },
+    "Outputs": {
+        "BootstrapS3Bucket": {
+            "Description": "Your Bootstrap bucket being used for this deployment",
+            "Value": {
+                "Ref": "MasterS3Bucket"
+            }
+        },
+        "DNSNamePublicELB": {
+            "Description": "DNS Name for Elastic Load Balancer (Public)",
+            "Value": {
+                "Fn::If": [
+                    "CreateSubnet2",
+                    {
+                        "Fn::GetAtt": [
+                            "WebserverStack",
+                            "Outputs.DNSNamePublicELB"
+                        ]
+                    },
+                    {
+                        "Fn::GetAtt": [
+                            "WebserverStack3",
+                            "Outputs.DNSNamePublicELB"
+                        ]
+                    }
+                ]
+            }
+        },
+        "ELBName": {
+            "Description": "Elastic Load Balancer (Public)",
+            "Value": {
+                "Ref": "ELBName"
+            }
+        },
+        "ILBName": {
+            "Description": "Internal Load Balancer (Private)",
+            "Value": {
+                "Ref": "ILBName"
+            }
+        },
+        "KeyName": {
+            "Description": "Key Pair you have selected for SSH",
+            "Value": {
+                "Ref": "KeyName"
+            }
+        },
+        "SSHLocation": {
+            "Description": "Make sure you SSH from this IP address",
+            "Value": {
+                "Ref": "SSHLocation"
+            }
+        },
+        "ScalingParameter": {
+            "Description": "Scaling Parameter you have selected",
+            "Value": {
+                "Ref": "ScalingParameter"
+            }
+        }
+    }
+}

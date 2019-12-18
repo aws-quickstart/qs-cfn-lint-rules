@@ -1,0 +1,351 @@
+---
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "
+  This template creates a HA pair across Availability Zones with two instance of Citrix ADC:
+  3 ENIs associated to 3 VPC subnets (Management, Client, Server) on primary and 3 ENIs associated
+  to 3 VPC subnets (Management, Client, Server) on secondary.
+  All the resource names created by this CFT will be prefixed with a tagName of the stackname
+  **WARNING** This template creates AWS resources.
+  You will be billed for the AWS resources used if you create a stack from this template. (qs-1q77hsju3)"
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Network configuration
+        Parameters:
+          - VPCID
+          - BastionSecurityGroupID
+          - RestrictedWebAppCIDR
+          - PrimaryManagementPrivateSubnetID
+          - PrimaryClientPublicSubnetID
+          - PrimaryServerPrivateSubnetID
+          - SecondaryManagementPrivateSubnetID
+          - SecondaryClientPublicSubnetID
+          - SecondaryServerPrivateSubnetID
+          - PrimaryManagementPrivateIP
+          - PrimaryClientPrivateIP
+          - PrimaryServerPrivateIP
+          - SecondaryManagementPrivateIP
+          - SecondaryClientPrivateIP
+          - SecondaryServerPrivateIP
+          - VPCTenancy
+
+      - Label:
+          default: Citrix ADC configuration
+        Parameters:
+          - CitrixADCImageID
+          - KeyPairName
+          - CitrixADCInstanceType
+
+      - Label:
+          default: AWS Quick Start configuration
+        Parameters:
+          - QSS3BucketName
+          - QSS3KeyPrefix
+
+    ParameterLabels:
+      CitrixADCImageID:
+        default: Citrix ADC AMI ID
+
+      VPCID:
+        default: VPC ID
+      PrimaryManagementPrivateSubnetID:
+        default: Primary Management private subnet ID
+      PrimaryClientPublicSubnetID:
+        default: Primary Client public subnet ID
+      PrimaryServerPrivateSubnetID:
+        default: Primary Server private subnet ID
+
+      RestrictedWebAppCIDR:
+        default: Remote web traffic CIDR
+
+      SecondaryManagementPrivateSubnetID:
+        default: Secondary Management private subnet ID
+      SecondaryClientPublicSubnetID:
+        default: Secondary Client public subnet ID
+      SecondaryServerPrivateSubnetID:
+        default: Secondary Server private subnet ID
+
+      PrimaryManagementPrivateIP:
+        default: Primary Management private IP address
+      PrimaryClientPrivateIP:
+        default: Primary Client private IP address
+      PrimaryServerPrivateIP:
+        default: Primary Server private IP address
+      SecondaryManagementPrivateIP:
+        default: Secondary Management private IP address
+      SecondaryClientPrivateIP:
+        default: Secondary Client private IP address
+      SecondaryServerPrivateIP:
+        default: Secondary Server private IP address
+      BastionSecurityGroupID:
+        default: Bastion security group ID address
+
+      VPCTenancy:
+        default: VPC tenancy attribute
+      KeyPairName:
+        default: Key pair name
+      CitrixADCInstanceType:
+        default: Citrix ADC VPX instance type
+
+      QSS3BucketName:
+        default: Quick Start S3 bucket name
+      QSS3KeyPrefix:
+        default: Quick Start S3 key prefix
+
+Parameters:
+  CitrixADCImageID:
+    Type: String
+    Default: ""
+    Description: >-
+      [Optional] AMI ID of Citrix ADC to be provisioned. If left empty, "Citrix ADC VPX - Customer Licensed Version 13.0-41.20
+      (https://aws.amazon.com/marketplace/pp/B00AA01BOE)" is provisioned by default.
+  VPCID:
+    Type: AWS::EC2::VPC::Id
+    Description: The ID of your existing VPC (e.g., vpc-0343606e).
+  VPCTenancy:
+    Description: The allowed tenancy of instances launched into the VPC.
+    Type: String
+    Default: default
+    AllowedValues:
+      - default
+      - dedicated
+  RestrictedWebAppCIDR:
+    Type: String
+    MinLength: 9
+    MaxLength: 18
+    Description:
+      "A CIDR block that is allowed to access the ADC on tcp ports 80, 443.
+      We recommend that you use a constrained CIDR range to
+      reduce the potential of inbound attacks from unknown IP addresses."
+    AllowedPattern: '(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})'
+    ConstraintDescription: Must be a valid IP CIDR range of the form x.x.x.x/x.
+  PrimaryManagementPrivateSubnetID:
+    Type: AWS::EC2::Subnet::Id
+    Description: >-
+      Private subnet ID of an existing subnet dedicated for the primary Management network interface.
+      Note - The CIDR should be different from that of VPC (VPC Stack Private subnet 1B).
+  PrimaryClientPublicSubnetID:
+    Type: AWS::EC2::Subnet::Id
+    Description: >-
+      Public subnet ID of an existing subnet dedicated for the primary Client network interface (VPC Stack Public subnet 1).
+  PrimaryServerPrivateSubnetID:
+    Type: AWS::EC2::Subnet::Id
+    Description: >-
+      Private subnet ID of an existing subnet dedicated for the primary Server network interface (VPC Stack Private subnet 1A).
+  SecondaryManagementPrivateSubnetID:
+    Type: AWS::EC2::Subnet::Id
+    Description: >-
+      Private subnet ID of an existing subnet dedicated for the secondary Management network interface (VPC Stack Private subnet 2B).
+  SecondaryClientPublicSubnetID:
+    Type: AWS::EC2::Subnet::Id
+    Description: >-
+      Public subnet ID of an existing subnet dedicated for the secondary Client network interface (VPC Stack Public subnet 2).
+  SecondaryServerPrivateSubnetID:
+    Type: AWS::EC2::Subnet::Id
+    Description: >-
+      Private subnet ID of an existing subnet dedicated for the secondary Server network interface (VPC Stack Private subnet 2A).
+  PrimaryManagementPrivateIP:
+    Default: ""
+    Type: String
+    Description: >-
+      [Optional] Management private IP address of the primary Citrix ADC instance (last octet must be between 5 and 254). It is automatically assigned from the primary Management subnet CIDR.
+  PrimaryClientPrivateIP:
+    Default: ""
+    Type: String
+    Description: >-
+      [Optional] Client private IP address of the primary Citrix ADC instance (last octet must be between 5 and 254). It is automatically assigned from the primary Client IP address from the primary Client subnet CIDR.
+  PrimaryServerPrivateIP:
+    Default: ""
+    Type: String
+    Description: >-
+      [Optional] Server private IP address of the primary Citrix ADC instance (last octet must be between 5 and 254). It is automatically assigned from the primary Server subnet CIDR.
+  SecondaryManagementPrivateIP:
+    Default: ""
+    Type: String
+    Description: >-
+      [Optional] Management private IP address of the secondary Citrix ADC instance (last octet must be between 5 and 254). It is automatically assigned from the secondary Management subnet CIDR.
+  SecondaryClientPrivateIP:
+    Default: ""
+    Type: String
+    Description: >-
+      [Optional] Client private IP address of the secondary Citrix ADC instance (last octet must be between 5 and 254). It is automatically assigned from the secondary Client subnet CIDR.
+  SecondaryServerPrivateIP:
+    Default: ""
+    Type: String
+    Description: >-
+      [Optional] Server private IP address of the secondary Citrix ADC instance (last octet must be between 5 and 254). It is automatically assigned from the secondary Server subnet CIDR.
+  BastionSecurityGroupID:
+    Type: AWS::EC2::SecurityGroup::Id
+    Description: >-
+      The security group ID that the bastion stack has created.
+      This will be used to allow access from the bastion hosts to the interfaces belonging to the security groups that will be created for the Citrix ADC VPX pair.
+      Effectively the bastion hosts will be able to open connections to all ADC VPX interfaces (Management, Client, and Server).
+  QSS3BucketName:
+    AllowedPattern: "^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$"
+    ConstraintDescription: >-
+      Quick Start bucket name can include numbers, lowercase letters, uppercase
+      letters, and hyphens (-). It cannot start or end with a hyphen (-).
+    Default: aws-quickstart
+    Description: >-
+      S3 bucket name for the Quick Start assets. This bucket name can include
+      numbers, lowercase letters, uppercase letters, and hyphens (-), but should
+      not start or end with a hyphen. You can specify your own bucket if you
+      copy all of the assets and submodules into it, if you want to override the
+      Quick Start behavior for your specific implementation.
+    Type: String
+  QSS3KeyPrefix:
+    AllowedPattern: "^[0-9a-zA-Z-/]*$"
+    ConstraintDescription: >-
+      Quick Start key prefix can include numbers, lowercase letters, uppercase
+      letters, hyphens (-), and forward slash (/).
+    Default: quickstart-citrix-adc-vpx/
+    Description: >-
+      S3 key prefix for the Quick Start assets. Quick Start key prefix can
+      include numbers, lowercase letters, uppercase letters, hyphens (-), and
+      forward slash (/).
+    Type: String
+  KeyPairName:
+    ConstraintDescription: "Can contain only alphanumeric characters, spaces, dashes and underscores."
+    Description: EC2 key pair name to remotely access ADC VPX instances on port 22 (SSH).
+    MinLength: 1
+    AllowedPattern: "[-_ a-zA-Z0-9]*"
+    MaxLength: 64
+    Type: AWS::EC2::KeyPair::KeyName
+  CitrixADCInstanceType:
+    Default: m4.xlarge
+    ConstraintDescription: Must be a valid EC2 instance type.
+    Type: String
+    Description: EC2 instance type to use for the ADC VPX instances.
+    AllowedValues:
+      - m4.xlarge
+      - m4.2xlarge
+      - m4.4xlarge
+      - m4.10xlarge
+      - m3.large
+      - m3.xlarge
+      - m3.2xlarge
+      - c4.large
+      - c4.xlarge
+      - c4.2xlarge
+      - c4.4xlarge
+      - c4.8xlarge
+
+
+Resources:
+  SecurityGroupStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub >-
+        https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}templates/security-group.template.yaml
+      Parameters:
+        VPCID: !Ref VPCID
+        RestrictedWebAppCIDR: !Ref RestrictedWebAppCIDR
+        BastionSecurityGroupID: !Ref BastionSecurityGroupID
+
+  IAMRoleStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub >-
+        https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}templates/iam.template.yaml
+
+  PrimaryADCInstance:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub >-
+        https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}templates/citrix-adc.template.yaml
+      Parameters:
+        CitrixADCImageID: !Ref CitrixADCImageID
+        ManagementSecurityGroup: !GetAtt SecurityGroupStack.Outputs.ManagementSecurityGroupID
+        ClientSecurityGroup: !GetAtt SecurityGroupStack.Outputs.ClientSecurityGroupID
+        ServerSecurityGroup: !GetAtt SecurityGroupStack.Outputs.ServerSecurityGroupID
+        ManagementPrivateSubnetID: !Ref PrimaryManagementPrivateSubnetID
+        ClientPublicSubnetID: !Ref PrimaryClientPublicSubnetID
+        ServerPrivateSubnetID: !Ref PrimaryServerPrivateSubnetID
+        ManagementPrivateIP: !Ref PrimaryManagementPrivateIP
+        ClientPrivateIP: !Ref PrimaryClientPrivateIP
+        ServerPrivateIP: !Ref PrimaryServerPrivateIP
+        ClientENIEIP: 'Yes'
+        ADCInstanceTagName: Primary
+        KeyPairName: !Ref KeyPairName
+        VPCTenancy: !Ref VPCTenancy
+        CitrixNodesProfile: !GetAtt IAMRoleStack.Outputs.CitrixNodesProfile
+        CitrixADCInstanceType: !Ref CitrixADCInstanceType
+
+  SecondaryADCInstance:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub >-
+        https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}templates/citrix-adc.template.yaml
+      Parameters:
+        CitrixADCImageID: !Ref CitrixADCImageID
+        ManagementSecurityGroup: !GetAtt SecurityGroupStack.Outputs.ManagementSecurityGroupID
+        ClientSecurityGroup: !GetAtt SecurityGroupStack.Outputs.ClientSecurityGroupID
+        ServerSecurityGroup: !GetAtt SecurityGroupStack.Outputs.ServerSecurityGroupID
+        ManagementPrivateSubnetID: !Ref SecondaryManagementPrivateSubnetID
+        ClientPublicSubnetID: !Ref SecondaryClientPublicSubnetID
+        ServerPrivateSubnetID: !Ref SecondaryServerPrivateSubnetID
+        ManagementPrivateIP: !Ref SecondaryManagementPrivateIP
+        ClientPrivateIP: !Ref SecondaryClientPrivateIP
+        ServerPrivateIP: !Ref SecondaryServerPrivateIP
+        ClientENIEIP: 'No'
+        ADCInstanceTagName: Secondary
+        KeyPairName: !Ref KeyPairName
+        VPCTenancy: !Ref VPCTenancy
+        CitrixNodesProfile: !GetAtt IAMRoleStack.Outputs.CitrixNodesProfile
+        CitrixADCInstanceType: !Ref CitrixADCInstanceType
+
+  LambdaHAAZStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub >-
+        https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}templates/lambda-helper-ha-across-az.template.yaml
+      Parameters:
+        PrimaryInstanceID: !GetAtt PrimaryADCInstance.Outputs.CitrixADCInstanceID
+        PrimaryManagementPrivateIP: !GetAtt PrimaryADCInstance.Outputs.ManagementPrivateNSIP
+        PrimaryClientPrivateIP: !GetAtt PrimaryADCInstance.Outputs.ClientPrivateVIP
+        PrimaryClientPublicSubnetID: !Ref PrimaryClientPublicSubnetID
+        SecondaryInstanceID: !GetAtt SecondaryADCInstance.Outputs.CitrixADCInstanceID
+        SecondaryManagementPrivateIP: !GetAtt SecondaryADCInstance.Outputs.ManagementPrivateNSIP
+        SecondaryClientPrivateIP: !GetAtt SecondaryADCInstance.Outputs.ClientPrivateVIP
+        QSS3BucketName: !Ref QSS3BucketName
+        QSS3KeyPrefix: !Ref QSS3KeyPrefix
+        ManagementSecurityGroupID: !GetAtt SecurityGroupStack.Outputs.ManagementSecurityGroupID
+        PrimarySubnetID: !Ref PrimaryManagementPrivateSubnetID
+        SecondarySubnetID: !Ref SecondaryManagementPrivateSubnetID
+
+Outputs:
+  ManagementSecurityGroupID:
+    Description: Security group ID for management ADC ENIs
+    Value: !GetAtt SecurityGroupStack.Outputs.ManagementSecurityGroupID
+  ClientSecurityGroupID:
+    Description: Security group ID for client ADC ENIs
+    Value: !GetAtt SecurityGroupStack.Outputs.ClientSecurityGroupID
+  ServerSecurityGroupID:
+    Description: Security group ID for server ADC ENIs
+    Value: !GetAtt SecurityGroupStack.Outputs.ServerSecurityGroupID
+  InstanceProfileName:
+    Description: Instance profile for ADCs
+    Value: !GetAtt IAMRoleStack.Outputs.CitrixNodesProfile
+  PrimaryADCInstanceID:
+    Description: Primary ADC instance ID
+    Value: !GetAtt PrimaryADCInstance.Outputs.CitrixADCInstanceID
+  PrimaryManagementPrivateNSIP:
+    Description: Primary Management private NSIP
+    Value: !GetAtt PrimaryADCInstance.Outputs.ManagementPrivateNSIP
+  PrimaryClientPublicEIP:
+    Description: Primary Client public EIP
+    Value: !GetAtt PrimaryADCInstance.Outputs.ClientPublicEIP
+  PrimaryClientPrivateVIP:
+    Description: Primary Client private VIP
+    Value: !GetAtt PrimaryADCInstance.Outputs.ClientPrivateVIP
+  SecondaryADCInstanceID:
+    Description: Secondary ADC instance ID
+    Value: !GetAtt SecondaryADCInstance.Outputs.CitrixADCInstanceID
+  SecondaryManagementPrivateNSIP:
+    Description: Secondary Management private NSIP
+    Value: !GetAtt SecondaryADCInstance.Outputs.ManagementPrivateNSIP
+  SecondaryClientPrivateVIP:
+    Description: Secondary Client private VIP
+    Value: !GetAtt SecondaryADCInstance.Outputs.ClientPrivateVIP

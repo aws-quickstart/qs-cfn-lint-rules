@@ -1,0 +1,960 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: AWS CloudFormation template to create IAM roles. (qs-1nlkhq1oj)
+Resources:
+  AnalyticsAccess:
+    Condition: CreateDemoResources
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action: sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service: kinesisanalytics.amazonaws.com
+        Version: '2012-10-17'
+      Policies:
+        - PolicyDocument:
+            Statement:
+              - Action:
+                  - firehose:DescribeDeliveryStream
+                  - firehose:PutRecord
+                  - firehose:PutRecordBatch
+                Effect: Allow
+                Resource:
+                  - arn:aws:firehose:*
+                Sid: WriteOutputFirehose
+              - Action:
+                  - firehose:DescribeDeliveryStream
+                  - firehose:Get*
+                Effect: Allow
+                Resource:
+                  - arn:aws:firehose:*
+                Sid: ReadInputFirehose
+              - Action:
+                  - s3:Get*
+                  - s3:List*
+                Effect: Allow
+                Resource:
+                  - !Join
+                    - /
+                    - - !Ref 'CuratedDatasetsARN'
+                      - '*'
+                Sid: ReadS3ReferenceData
+            Version: '2012-10-17'
+          PolicyName: Access
+    Type: AWS::IAM::Role
+  CleanupResourcesRole:
+    Condition: CreateDemoResources
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action:
+              - sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+        Version: '2012-10-17'
+      Policies:
+        - PolicyDocument:
+            Statement:
+              - Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Effect: Allow
+                Resource: arn:aws:logs:*:*:*
+            Version: '2012-10-17'
+          PolicyName: LambdaLogging
+        - PolicyDocument:
+            Statement:
+              - Action: kinesisanalytics:ListApplications
+                Effect: Allow
+                Resource: '*'
+            Version: '2012-10-17'
+          PolicyName: ListKinesisAnalyticsApplications
+        - PolicyDocument:
+            Statement:
+              - Action:
+                  - kinesisanalytics:DescribeApplication
+                  - kinesisanalytics:DeleteApplication
+                Effect: Allow
+                Resource:
+                  - !Join
+                    - ''
+                    - - 'arn:aws:kinesisanalytics:'
+                      - !Ref 'AWS::Region'
+                      - ':'
+                      - !Ref 'AWS::AccountId'
+                      - :application/clean-orders-app
+                  - !Join
+                    - ''
+                    - - 'arn:aws:kinesisanalytics:'
+                      - !Ref 'AWS::Region'
+                      - ':'
+                      - !Ref 'AWS::AccountId'
+                      - :application/aggregate-orders-app
+            Version: '2012-10-17'
+          PolicyName: DeleteKinesisAnalyticsApplications
+        - PolicyDocument:
+            Statement:
+              - Action:
+                  - s3:ListBucket
+                  - s3:DeleteObject
+                Effect: Allow
+                Resource:
+                  - !Join
+                    - ''
+                    - - !Ref 'SubmissionsBucketARN'
+                      - '*'
+                  - !Join
+                    - ''
+                    - - !Ref 'CuratedDatasetsARN'
+                      - '*'
+                  - !Join
+                    - ''
+                    - - !Ref 'PublishedDataARN'
+                      - '*'
+                  - !Join
+                    - ''
+                    - - !Ref 'AthenaQueryResultsBucketARN'
+                      - '*'
+            Version: '2012-10-17'
+          PolicyName: ListDeleteDataLakeAndAthenaBuckets
+    Type: AWS::IAM::Role
+  CopyDataRole:
+    Condition: CreateDemoResources
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action:
+              - sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+        Version: '2012-10-17'
+      Policies:
+        - PolicyDocument:
+            Statement:
+              - Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Effect: Allow
+                Resource: arn:aws:logs:*:*:*
+            Version: '2012-10-17'
+          PolicyName: LambdaLogging
+        - PolicyDocument:
+            Statement:
+              - Action:
+                  - s3:AbortMultipartUpload
+                  - s3:GetBucketLocation
+                  - s3:GetObject
+                  - s3:ListBucket
+                  - s3:ListBucketMultipartUploads
+                  - s3:PutObject
+                Effect: Allow
+                Resource:
+                  - !Join
+                    - ''
+                    - - !Ref 'SubmissionsBucketARN'
+                      - '*'
+                  - !Join
+                    - ''
+                    - - !Ref 'CuratedDatasetsARN'
+                      - '*'
+            Version: '2012-10-17'
+          PolicyName: SumbissionsBucketAccess
+        - PolicyDocument:
+            Statement:
+              - Action:
+                  - s3:ListBucket
+                  - s3:GetObject
+                Effect: Allow
+                Resource:
+                  - !Join
+                    - ''
+                    - - 'arn:aws:s3:::'
+                      - !Ref 'DatasetS3BucketName'
+                      - '*'
+            Version: '2012-10-17'
+          PolicyName: ListGetDatasetBucket
+    Type: AWS::IAM::Role
+  CopyLambdaDeploymentRole:
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action:
+              - sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+        Version: '2012-10-17'
+      Policies:
+        - PolicyDocument:
+            Statement:
+              - Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Effect: Allow
+                Resource: arn:aws:logs:*:*:*
+            Version: '2012-10-17'
+          PolicyName: LambdaLogging
+        - PolicyDocument:
+            Statement:
+              - Action:
+                  - s3:PutObject
+                  - s3:DeleteObject
+                Effect: Allow
+                Resource:
+                  - !Join
+                    - ''
+                    - - !Ref 'RegionalLambdaBucketARN'
+                      - /*
+            Version: '2012-10-17'
+          PolicyName: PutDeleteRegionalLambdaBucket
+        - PolicyDocument:
+            Statement:
+              - Action:
+                  - s3:ListBucket
+                  - s3:GetObject
+                Effect: Allow
+                Resource:
+                  - !Join
+                    - ''
+                    - - 'arn:aws:s3:::'
+                      - !Ref 'QSS3BucketName'
+                      - '*'
+            Version: '2012-10-17'
+          PolicyName: ListGetQSSBucket
+    Type: AWS::IAM::Role
+  ElasticSearchLambdaIAMPolicy:
+    Properties:
+      PolicyDocument:
+        Statement:
+          - Action:
+              - es:DescribeElasticsearchDomain
+              - es:DescribeElasticsearchDomains
+              - es:DescribeElasticsearchDomainConfig
+              - es:ESHttpPost
+              - es:ESHttpPut
+              - es:ESHttpGet
+            Effect: Allow
+            Resource: !Join
+              - ''
+              - - 'arn:aws:es:'
+                - !Ref 'AWS::Region'
+                - ':'
+                - !Ref 'AWS::AccountId'
+                - :domain/
+                - datalake-quickstart
+                - '*'
+        Version: '2012-10-17'
+      PolicyName: ElasticsearchLambdaPolicy
+      Roles:
+        - !Ref 'ElasticsearchAccess'
+        - !Ref 'RegisterKibanaDashboardRole'
+        - !Ref 'LambdaRole'
+    Type: AWS::IAM::Policy
+  ElasticsearchAccess:
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                sts:ExternalId: !Ref 'AWS::AccountId'
+            Effect: Allow
+            Principal:
+              Service: firehose.amazonaws.com
+        Version: '2012-10-17'
+    Type: AWS::IAM::Role
+  EmptyBucketsRole:
+    Condition: CreateDemoResources
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action:
+              - sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+        Version: '2012-10-17'
+      Policies:
+        - PolicyDocument:
+            Statement:
+              - Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Effect: Allow
+                Resource: arn:aws:logs:*:*:*
+            Version: '2012-10-17'
+          PolicyName: LambdaLogging
+        - PolicyDocument:
+            Statement:
+              - Action:
+                  - s3:ListBucket
+                  - s3:DeleteObject
+                Effect: Allow
+                Resource:
+                  - !Join
+                    - ''
+                    - - !Ref 'SubmissionsBucketARN'
+                      - '*'
+                  - !Join
+                    - ''
+                    - - !Ref 'CuratedDatasetsARN'
+                      - '*'
+                  - !Join
+                    - ''
+                    - - !Ref 'PublishedDataARN'
+                      - '*'
+            Version: '2012-10-17'
+          PolicyName: ListDeleteDataLakeBuckets
+    Type: AWS::IAM::Role
+  InstanceProfile:
+    Condition: CreateDemoResources
+    Properties:
+      Roles:
+        - !Ref 'InstanceRole'
+    Type: AWS::IAM::InstanceProfile
+  InstanceRole:
+    Condition: CreateDemoResources
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action:
+              - sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+        Version: '2012-10-17'
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonAthenaFullAccess
+      Policies:
+        - PolicyDocument:
+            Statement:
+              - Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                  - s3:ListBucket
+                  - s3:GetBucketLocation
+                Effect: Allow
+                Resource:
+                  - !Join
+                    - ''
+                    - - !Ref 'SubmissionsBucketARN'
+                      - '*'
+                  - !Join
+                    - ''
+                    - - !Ref 'CuratedDatasetsARN'
+                      - '*'
+                  - !Join
+                    - ''
+                    - - !Ref 'PublishedDataARN'
+                      - '*'
+                  - !Join
+                    - ''
+                    - - !Ref 'AthenaQueryResultsBucketARN'
+                      - '*'
+              - Action:
+                  - s3:GetObject
+                Effect: Allow
+                Resource: !Join
+                  - ''
+                  - - 'arn:aws:s3:::'
+                    - !Ref 'QSS3BucketName'
+                    - /*
+              - Action:
+                  - s3:ListBucket
+                  - s3:GetBucketLocation
+                Effect: Allow
+                Resource: !Join
+                  - ''
+                  - - 'arn:aws:s3:::'
+                    - !Ref 'QSS3BucketName'
+              - Action:
+                  - s3:ListBucket
+                  - s3:GetObject
+                Effect: Allow
+                Resource:
+                  - !Join
+                    - ''
+                    - - 'arn:aws:s3:::'
+                      - !Ref 'DatasetS3BucketName'
+                      - '*'
+            Version: '2012-10-17'
+          PolicyName: S3Policy
+        - PolicyDocument:
+            Statement:
+              - Action:
+                  - firehose:PutRecordBatch
+                Effect: Allow
+                Resource: '*'
+            Version: '2012-10-17'
+          PolicyName: FirehosePolicy
+        - PolicyDocument:
+            Statement:
+              - Action:
+                  - kinesisanalytics:CreateApplication
+                  - kinesisanalytics:StartApplication
+                  - kinesisanalytics:DescribeApplication
+                  - kinesisanalytics:ListApplications
+                  - kinesisanalytics:AddApplicationReferenceDataSource
+                Effect: Allow
+                Resource: '*'
+            Version: '2012-10-17'
+          PolicyName: KinesisAnalyticsPolicy
+        - PolicyDocument:
+            Statement:
+              - Action:
+                  - iam:GetRole
+                  - iam:PassRole
+                Effect: Allow
+                Resource: arn:aws:iam::*
+            Version: '2012-10-17'
+          PolicyName: IAMPassRolePolicy
+        - PolicyDocument:
+            Statement:
+              - Action:
+                  - sns:Publish
+                Effect: Allow
+                Resource:
+                  - !Ref 'SnsLearnMoreTopicArn'
+            Version: '2012-10-17'
+          PolicyName: PublishToSnsDataLakeTopic
+        - PolicyDocument:
+            Statement:
+              - Action:
+                  - glue:StartCrawler
+                  - glue:GetCrawler
+                  - glue:StartJobRun
+                  - glue:GetJobRun
+                Effect: Allow
+                Resource: '*'
+            Version: '2012-10-17'
+          PolicyName: AWSGluePolicy
+        - PolicyDocument:
+            Statement:
+              - Action:
+                  - sagemaker:InvokeEndpoint
+                Effect: Allow
+                Resource: '*'
+            Version: '2012-10-17'
+          PolicyName: SageMakerInvokeEndpointPolicy
+    Type: AWS::IAM::Role
+  KinesisStreamBucketRole:
+    Condition: CreateKinesisStreamBucketRole
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                sts:ExternalId: !Ref 'AWS::AccountId'
+            Effect: Allow
+            Principal:
+              Service: firehose.amazonaws.com
+        Version: '2012-10-17'
+      Policies:
+        - PolicyDocument:
+            Statement:
+              - Action:
+                  - s3:AbortMultipartUpload
+                  - s3:GetBucketLocation
+                  - s3:GetObject
+                  - s3:ListBucket
+                  - s3:ListBucketMultipartUploads
+                  - s3:PutObject
+                Effect: Allow
+                Resource: !Join
+                  - ''
+                  - - !Ref 'SubmissionsBucketARN'
+                    - '*'
+            Version: '2012-10-17'
+          PolicyName: KinesisBucketAccess
+    Type: AWS::IAM::Role
+  LambdaRole:
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action:
+              - sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+        Version: '2012-10-17'
+      Policies:
+        - PolicyDocument:
+            Statement:
+              - Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Effect: Allow
+                Resource: arn:aws:logs:*:*:*
+            Version: '2012-10-17'
+          PolicyName: LambdaLogging
+        - PolicyDocument:
+            Statement:
+              - Action:
+                  - s3:GetObject
+                Effect: Allow
+                Resource:
+                  - !Join
+                    - ''
+                    - - !Ref 'SubmissionsBucketARN'
+                      - /*
+                  - !Join
+                    - ''
+                    - - !Ref 'CuratedDatasetsARN'
+                      - /*
+                  - !Join
+                    - ''
+                    - - !Ref 'PublishedDataARN'
+                      - /*
+            Version: '2012-10-17'
+          PolicyName: GetObjectsDatalake
+    Type: AWS::IAM::Role
+  CuratedBucketAccess:
+    Condition: CreateDemoResources
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                sts:ExternalId: !Ref 'AWS::AccountId'
+            Effect: Allow
+            Principal:
+              Service: firehose.amazonaws.com
+        Version: '2012-10-17'
+      Policies:
+        - PolicyDocument:
+            Statement:
+              - Action:
+                  - s3:AbortMultipartUpload
+                  - s3:GetBucketLocation
+                  - s3:GetObject
+                  - s3:ListBucket
+                  - s3:ListBucketMultipartUploads
+                  - s3:PutObject
+                Effect: Allow
+                Resource:
+                  - !Ref 'CuratedDatasetsARN'
+                  - !Join
+                    - /
+                    - - !Ref 'CuratedDatasetsARN'
+                      - '*'
+            Version: '2012-10-17'
+          PolicyName: AllowS3Access
+    Type: AWS::IAM::Role
+  QSRedshiftRole:
+    Condition: CreateRedshiftRole
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action: sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service: redshift.amazonaws.com
+        Version: '2012-10-17'
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AWSGlueConsoleFullAccess
+      Path: /
+      Policies:
+        - PolicyDocument:
+            Statement:
+              - Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                  - s3:ListBucket
+                  - s3:GetBucketLocation
+                Effect: Allow
+                Resource:
+                  - !Join
+                    - ''
+                    - - !Ref 'CuratedDatasetsARN'
+                      - '*'
+                  - !Join
+                    - ''
+                    - - !Ref 'PublishedDataARN'
+                      - '*'
+            Version: '2012-10-17'
+          PolicyName: S3Access
+    Type: AWS::IAM::Role
+  RegisterKibanaDashboardRole:
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action:
+              - sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+        Version: '2012-10-17'
+      Policies:
+        - PolicyDocument:
+            Statement:
+              - Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Effect: Allow
+                Resource: arn:aws:logs:*:*:*
+            Version: '2012-10-17'
+          PolicyName: LambdaLogging
+        - PolicyDocument:
+            Statement:
+              - Action:
+                  - s3:GetObject
+                Effect: Allow
+                Resource:
+                  - !Join
+                    - ''
+                    - - 'arn:aws:s3:::'
+                      - !Ref 'QSS3BucketName'
+                      - /*
+            Version: '2012-10-17'
+          PolicyName: GetQSS3Bucket
+    Type: AWS::IAM::Role
+  SubmissionsBucketAccess:
+    Condition: CreateDemoResources
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                sts:ExternalId: !Ref 'AWS::AccountId'
+            Effect: Allow
+            Principal:
+              Service: firehose.amazonaws.com
+        Version: '2012-10-17'
+      Policies:
+        - PolicyDocument:
+            Statement:
+              - Action:
+                  - s3:AbortMultipartUpload
+                  - s3:GetBucketLocation
+                  - s3:GetObject
+                  - s3:ListBucket
+                  - s3:ListBucketMultipartUploads
+                  - s3:PutObject
+                Effect: Allow
+                Resource:
+                  - !Ref 'SubmissionsBucketARN'
+                  - !Join
+                    - /
+                    - - !Ref 'SubmissionsBucketARN'
+                      - '*'
+            Version: '2012-10-17'
+          PolicyName: AllowS3Access
+    Type: AWS::IAM::Role
+  AWSGlueCuratedDatasetsCrawlerRole:
+    Type: AWS::IAM::Role
+    Condition: CreateDemoResources
+    Properties:
+      Path: /
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Action: sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service: glue.amazonaws.com
+      Policies:
+        - PolicyName: AWSGlueCrawlerS3Access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                Effect: Allow
+                Resource:
+                  - !Sub '${CuratedDatasetsARN}*'
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSGlueServiceRole
+  AWSGlueJobRole:
+    Type: AWS::IAM::Role
+    Condition: CreateDemoResources
+    Properties:
+      Path: /
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Action: sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service: glue.amazonaws.com
+      Policies:
+        - PolicyName: AWSGlueJobS3Access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                  - s3:DeleteObject
+                Effect: Allow
+                Resource:
+                  - !Sub '${CuratedDatasetsARN}*'
+                  - !Sub 'arn:aws:s3:::${QSS3BucketName}*'
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSGlueServiceRole
+  SageMakerExecutionRole:
+    Condition: CreateDemoResources
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - sagemaker.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSageMakerFullAccess
+        - arn:aws:iam::aws:policy/CloudWatchLogsFullAccess
+        - arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess
+      Path: /service-role/
+      Policies:
+        - PolicyName: CuratedBucketS3BucketAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:*
+                Resource:
+                  - !Sub '${CuratedDatasetsARN}*'
+        - PolicyName: SageMakerS3Access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: 'VisualEditor0'
+                Effect: Allow
+                Action: s3:ListBucket
+                Resource: arn:aws:s3:::SageMaker
+              - Sid: 'VisualEditor1'
+                Effect: Allow
+                Action:
+                  - s3:GetLifecycleConfiguration
+                  - s3:ListBucketByTags
+                  - s3:GetBucketTagging
+                  - s3:GetInventoryConfiguration
+                  - s3:GetObjectVersionTagging
+                  - s3:GetBucketLogging
+                  - s3:ListBucketVersions
+                  - s3:GetAccelerateConfiguration
+                  - s3:ListBucket
+                  - s3:GetBucketPolicy
+                  - s3:GetEncryptionConfiguration
+                  - s3:GetObjectAcl
+                  - s3:GetObjectVersionTorrent
+                  - s3:GetBucketRequestPayment
+                  - s3:GetObjectVersionAcl
+                  - s3:GetObjectTagging
+                  - s3:GetMetricsConfiguration
+                  - s3:GetIpConfiguration
+                  - s3:ListBucketMultipartUploads
+                  - s3:GetBucketWebsite
+                  - s3:GetBucketVersioning
+                  - s3:GetBucketAcl
+                  - s3:GetBucketNotification
+                  - s3:GetReplicationConfiguration
+                  - s3:ListMultipartUploadParts
+                  - s3:GetObject
+                  - s3:GetObjectTorrent
+                  - s3:GetBucketCORS
+                  - s3:GetAnalyticsConfiguration
+                  - s3:GetObjectVersionForReplication
+                  - s3:GetBucketLocation
+                  - s3:GetObjectVersio
+                Resource: arn:aws:s3:::SageMaker/*
+              - Sid: 'VisualEditor2'
+                Effect: Allow
+                Action:
+                  - s3:ListAllMyBuckets
+                  - s3:HeadBucket
+                Resource: '*'
+  CreateNotebookFunctionExecuteRole:
+    Condition: CreateDemoResources
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: /
+      Policies:
+        - PolicyName: CreateNotebookFunctionPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: arn:aws:logs:*:*:*
+              - Effect: Allow
+                Action:
+                  - sagemaker:*
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - iam:PassRole
+                Resource: !GetAtt 'SageMakerExecutionRole.Arn'
+              - Effect: Allow
+                Action:
+                  - ec2:*
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - s3:*
+                Resource:
+                  - !Sub 'arn:aws:s3:::${QSS3BucketName}*'
+Conditions:
+  CreateDemoResources: !Equals
+    - !Ref 'CreateDemonstration'
+    - 'yes'
+  CreateRedshiftRole: !Or
+    - !Condition 'CreateDemoResources'
+    - !Equals
+      - !Ref 'EnableRedshift'
+      - 'yes'
+  CreateKinesisStreamBucketRole: !Equals
+    - !Ref 'CreateDemonstration'
+    - 'no'
+Parameters:
+  AthenaQueryResultsBucketARN:
+    Description: RegionalLambdaBucket bucket ARN
+    Type: String
+  CreateDemonstration:
+    AllowedValues:
+      - 'yes'
+      - 'no'
+    Default: 'yes'
+    Description: "Set this parameter to no if you don\u2019t want the Quick Start\
+      \ to deploy the data lake wizard and load sample data into the Amazon Redshift\
+      \ cluster and Kinesis streams. For more information about the wizard, see step\
+      \ 4. The following five parameters are used only if Create Demonstration is\
+      \ set to yes."
+    Type: String
+  DatasetS3BucketName:
+    Description: Dataset bucket name for the Quick Start dataset
+    Type: String
+  EnableRedshift:
+    AllowedValues:
+      - 'yes'
+      - 'no'
+    Default: 'no'
+    Description: Enable Redshift
+    Type: String
+  CuratedDatasetsARN:
+    Description: CuratedDatasets bucket ARN
+    Type: String
+  PublishedDataARN:
+    Description: PublishedData bucket ARN
+    Type: String
+  QSS3BucketName:
+    Description: Quick Start S3 bucket name
+    Type: String
+  RegionalLambdaBucketARN:
+    Description: RegionalLambdaBucket bucket ARN
+    Type: String
+  SnsLearnMoreTopicArn:
+    Description: SNS topic ARN for Data Lake learn more
+    Type: String
+  SubmissionsBucketARN:
+    Description: SubmissionsBucket bucket ARN
+    Type: String
+Outputs:
+  EmptyBucketsRoleARN:
+    Description: ARN of EmptyBucketsRole
+    Condition: CreateDemoResources
+    Value: !GetAtt 'EmptyBucketsRole.Arn'
+  CopyDataRoleARN:
+    Description: ARN of CopyDataRole
+    Condition: CreateDemoResources
+    Value: !GetAtt 'CopyDataRole.Arn'
+  LambdaRoleARN:
+    Description: ARN of LambdaRole
+    Value: !GetAtt 'LambdaRole.Arn'
+  CopyLambdaDeploymentRoleARN:
+    Description: ARN of CopyLambdaDeploymentRole
+    Value: !GetAtt 'CopyLambdaDeploymentRole.Arn'
+  SubmissionsBucketAccessARN:
+    Description: ARN of SubmissionsBucketAccess
+    Condition: CreateDemoResources
+    Value: !GetAtt 'SubmissionsBucketAccess.Arn'
+  CuratedBucketAccessARN:
+    Description: ARN of CuratedBucketAccess
+    Condition: CreateDemoResources
+    Value: !GetAtt 'CuratedBucketAccess.Arn'
+  ElasticsearchAccessARN:
+    Description: ARN of ElasticsearchAccess
+    Condition: CreateDemoResources
+    Value: !GetAtt 'ElasticsearchAccess.Arn'
+  AnalyticsAccessARN:
+    Description: ARN of AnalyticsAccess
+    Condition: CreateDemoResources
+    Value: !GetAtt 'AnalyticsAccess.Arn'
+  QSRedshiftRoleARN:
+    Description: ARN of QSRedshiftRole
+    Condition: CreateRedshiftRole
+    Value: !GetAtt 'QSRedshiftRole.Arn'
+  InstanceProfileARN:
+    Description: ARN of InstanceProfile
+    Condition: CreateDemoResources
+    Value: !GetAtt 'InstanceProfile.Arn'
+  InstanceProfileName:
+    Description: Name of InstanceProfile
+    Condition: CreateDemoResources
+    Value: !Ref 'InstanceProfile'
+  InstanceRoleARN:
+    Description: ARN of InstanceRole
+    Condition: CreateDemoResources
+    Value: !GetAtt 'InstanceRole.Arn'
+  CleanupResourcesRoleARN:
+    Description: ARN of CleanupResourcesRole
+    Condition: CreateDemoResources
+    Value: !GetAtt 'CleanupResourcesRole.Arn'
+  RegisterKibanaDashboardRoleARN:
+    Description: ARN of RegisterKibanaDashboardRole
+    Value: !GetAtt 'RegisterKibanaDashboardRole.Arn'
+  KinesisStreamBucketRoleARN:
+    Description: ARN of KinesisStreamBucketRole
+    Condition: CreateKinesisStreamBucketRole
+    Value: !GetAtt 'KinesisStreamBucketRole.Arn'
+  AWSGlueCuratedDatasetsCrawlerRoleName:
+    Description: Name of AWSGlueCuratedDatasetsCrawlerRole
+    Condition: CreateDemoResources
+    Value: !Ref 'AWSGlueCuratedDatasetsCrawlerRole'
+  AWSGlueJobRoleName:
+    Description: Name of AWSGlueJobRole
+    Condition: CreateDemoResources
+    Value: !Ref 'AWSGlueJobRole'
+  SageMakerExecutionRoleARN:
+    Description: Sage Maker Execution Role ARN
+    Condition: CreateDemoResources
+    Value: !GetAtt 'SageMakerExecutionRole.Arn'
+  CreateNotebookFunctionExecuteRoleARN:
+    Description: Sage Maker Execution Role ARN
+    Condition: CreateDemoResources
+    Value: !GetAtt 'CreateNotebookFunctionExecuteRole.Arn'

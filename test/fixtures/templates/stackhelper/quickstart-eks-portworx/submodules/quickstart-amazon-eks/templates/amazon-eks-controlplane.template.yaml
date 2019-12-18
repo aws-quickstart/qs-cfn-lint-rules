@@ -1,0 +1,99 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Deploys the EKS control plane (qs-1p7nknofn)"
+Parameters:
+  SecurityGroupIds:
+    Type: List<AWS::EC2::SecurityGroup::Id>
+  SubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+  RoleArn:
+    Type: String
+  NodeInstanceRoleArn:
+    Type: String
+  KubeManifestLambdaArn:
+    Type: String
+  KubeConfigUploadLambdaArn:
+    Type: String
+  CleanupLoadBalancersLambdaArn:
+    Type: String
+  KubeConfigUploadRoleArn:
+    Type: String
+  KubeConfigS3Bucket:
+    Type: String
+  KubeConfigS3Key:
+    Type: String
+    Default: ".kube/config.enc"
+  KmsKeyArn:
+    Type: String
+  KmsContext:
+    Type: String
+    Default: "EKSQuickStart"
+  AdditionalEKSAdminArns:
+    Type: CommaDelimitedList
+    Default: ""
+  KubernetesVersion:
+    Type: String
+    AllowedValues: [ "1.11", "1.10" ]
+Conditions:
+  AddUsers: !Not [ !Equals [!Select [ 0, !Ref AdditionalEKSAdminArns ], ""] ]
+Resources:
+  EKS:
+    Type: "AWS::EKS::Cluster"
+    Properties:
+      ResourcesVpcConfig:
+        SecurityGroupIds: !Ref SecurityGroupIds
+        SubnetIds: !Ref SubnetIds
+      RoleArn: !Ref RoleArn
+      Version: !Ref KubernetesVersion
+  EksNodeUser:
+    DependsOn: KubeConfigToS3
+    Type: "Custom::KubeManifest"
+    Version: '1.0'
+    Properties:
+      ServiceToken: !Ref KubeManifestLambdaArn
+      KubeConfigPath: !Sub "s3://${KubeConfigS3Bucket}/${KubeConfigS3Key}"
+      KubeConfigKmsContext: !Ref KmsContext
+      Users:
+        Arns: [ !Ref NodeInstanceRoleArn ]
+        Groups: [ 'system:bootstrappers', 'system:nodes' ]
+        Username: 'system:node:{{EC2PrivateDNSName}}'
+  AdditionalAdminUsers:
+    Condition: AddUsers
+    DependsOn: EksNodeUser
+    Type: "Custom::KubeManifest"
+    Version: '1.0'
+    Properties:
+      ServiceToken: !Ref KubeManifestLambdaArn
+      KubeConfigPath: !Sub "s3://${KubeConfigS3Bucket}/${KubeConfigS3Key}"
+      KubeConfigKmsContext: !Ref KmsContext
+      Users:
+        Arns: !Ref AdditionalEKSAdminArns
+        Groups: [ "system:masters" ]
+  KubeConfigToS3:
+    Type: "Custom::ConfigToS3"
+    Version: '1.0'
+    Properties:
+      ServiceToken: !Ref KubeConfigUploadLambdaArn
+      RoleArn: !Ref KubeConfigUploadRoleArn
+      EKSCAData: !GetAtt EKS.CertificateAuthorityData
+      EKSEndpoint: !GetAtt EKS.Endpoint
+      EKSArn: !GetAtt EKS.Arn
+      S3BucketName: !Ref KubeConfigS3Bucket
+      S3Key: !Ref KubeConfigS3Key
+      EncryptionContext: !Ref KmsContext
+      KmsKeyArn: !Ref KmsKeyArn
+  CleanupLoadBalancers:
+    Type: Custom::CleanupLoadBalancers
+    Properties:
+      ServiceToken: !Ref CleanupLoadBalancersLambdaArn
+      ClusterName: !Ref EKS
+Outputs:
+  EksArn:
+    Value: !GetAtt EKS.Arn
+  CAData:
+    Value: !GetAtt EKS.CertificateAuthorityData
+  EKSEndpoint:
+    Value: !GetAtt EKS.Endpoint
+  EKSName:
+    Value: !Ref EKS
+  KubeConfigPath:
+    Value: !Sub "s3://${KubeConfigS3Bucket}/${KubeConfigS3Key}"

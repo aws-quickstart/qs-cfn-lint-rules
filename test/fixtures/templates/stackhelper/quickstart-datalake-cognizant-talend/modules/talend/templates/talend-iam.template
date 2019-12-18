@@ -1,0 +1,267 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "This template creates IAM roles and profiles for use by EC2 instances.  **WARNING** This template creates Amazon EC2 instance and related resources. You will be billed for the AWS resources used if you create a stack from this template. QS(9999)",
+    "Parameters": {
+        "QSS3BucketName": {
+            "AllowedPattern": "^[0-9a-zA-Z]+([0-9a-zA-Z-.]*[0-9a-zA-Z])*$",
+            "ConstraintDescription": "Quick Start bucket name can include numbers, lowercase letters, uppercase letters, periods (.), and hyphens (-). It cannot start or end with a hyphen (-).",
+            "Default": "baseline.quickstart.talend",
+            "Description": "S3 bucket name for the Quick Start assets. Quick Start bucket name can include numbers, lowercase letters, uppercase letters, periods (.), and hyphens (-). It cannot start or end with a hyphen (-).",
+            "Type": "String"
+        },
+        "QSS3KeyPrefix": {
+            "AllowedPattern": "^[0-9a-zA-Z-/]*$",
+            "ConstraintDescription": "Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).  Prefix cannot start with a slash but must end with a slash unless it is the empty string.",
+            "Default": "",
+            "Description": "S3 key prefix for the Quick Start assets. Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).  Prefix cannot start with a slash but must end with a slash unless it is the empty string.",
+            "Type": "String"
+        },
+        "ScriptBucket": {
+            "AllowedPattern": "^[0-9a-zA-Z]+([0-9a-zA-Z-.]*[0-9a-zA-Z])*$",
+            "ConstraintDescription": "Quick Start script bucket name can include numbers, lowercase letters, uppercase letters, periods (.), and hyphens (-). It cannot start or end with a hyphen (-).",
+            "Description": "Leave this value unchanged.  It is the S3 bucket name for the Quick Start scripts. Quick Start bucket name can include numbers, lowercase letters, uppercase letters, periods (.), and hyphens (-). It cannot start or end with a hyphen (-).",
+            "Type": "String",
+            "Default": "oodle.quickstart.talend"
+        },
+        "StackRoot": {
+            "Description": "Root of the stack name used to limit Cloud Formation Describe command access",
+            "Type": "String"
+        },
+        "TalendLicenseBucket": {
+            "Description": "Bucket holding Talend license",
+            "Type": "String",
+            "AllowedPattern": "^[0-9a-zA-Z]+([0-9a-zA-Z-.]*[0-9a-zA-Z])*$",
+            "ConstraintDescription": "Quick Start bucket name can include numbers, lowercase letters, uppercase letters, periods (.), and hyphens (-). It cannot start or end with a hyphen (-) or period (.)."
+        },
+        "TalendResourceBucket": {
+            "Description": "Talend S3 resources bucket.",
+            "Type": "String",
+            "Default": "repo-quickstart-talend"
+        },
+        "TalendSourceBucket": {
+            "Description": "Talend source bucket for demo jobs.",
+            "Type": "String",
+            "Default": ""
+        },
+        "TalendTargetBucket": {
+            "Description": "Talend target bucket for demo jobs.",
+            "Type": "String",
+            "Default": ""
+        }
+	},
+    "Mappings": {
+        "Talend": {
+            "tui": {
+				"talendRepoDir": "/opt/repo"
+            }
+        }
+    },
+	"Conditions": {
+        "TalendSourceBucketCondition": {
+            "Fn::Not": [
+                { 
+                    "Fn::Equals": [
+                        "",
+                        { "Ref": "TalendSourceBucket" }
+                    ]
+                }
+            ]
+        },
+        "TalendTargetBucketCondition": {
+            "Fn::Not": [
+                { 
+                    "Fn::Equals": [
+                        "",
+                        { "Ref": "TalendTargetBucket" }
+                    ]
+                }
+            ]
+        }
+	},
+    "Resources": {
+        "InstanceRole": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "AssumeRolePolicyDocument": {
+                    "Statement": [
+                        {
+                            "Action": [ "sts:AssumeRole" ],
+                            "Effect": "Allow",
+                            "Principal": {
+                                "Service": [ "ec2.amazonaws.com" ]
+                            }
+                        }
+                    ],
+                    "Version": "2012-10-17"
+                },
+                "Path": "/talend/",
+                "Policies": [
+                    {
+                        "PolicyName": "QuickstartBucketAccess",
+                        "PolicyDocument": {
+                            "Statement":[
+                                {
+                                  "Effect": "Allow",
+                                  "Action": ["s3:ListBucket"],
+                                  "Resource": [ { "Fn::Sub": "arn:aws:s3:::${QSS3BucketName}" } ]
+                                },
+                                {
+                                    "Action": [ "s3:GetObject" ],
+                                    "Effect": "Allow",
+                                    "Resource": [ { "Fn::Sub": "arn:aws:s3:::${QSS3BucketName}/${QSS3KeyPrefix}*" } ]
+                                },
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "s3:ListBucket"
+                                    ],
+                                    "Resource": [
+                                        { "Fn::Sub": "arn:aws:s3:::${TalendLicenseBucket}" }
+                                    ]
+                                },
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "s3:GetObject"
+                                    ],
+                                    "Resource": [
+                                        { "Fn::Sub": "arn:aws:s3:::${TalendLicenseBucket}/*" }
+                                    ]
+                                },
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "s3:ListBucket"
+                                    ],
+                                    "Resource": [
+                                        { "Fn::Sub": "arn:aws:s3:::${TalendResourceBucket}" }
+                                    ]
+                                },
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "s3:GetObject"
+                                    ],
+                                    "Resource": [
+                                        { "Fn::Sub": "arn:aws:s3:::${TalendResourceBucket}/*" }
+                                    ]
+                                },
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "s3:ListBucket"
+                                    ],
+                                    "Resource": [
+                                        { "Fn::Sub": "arn:aws:s3:::${ScriptBucket}" }
+                                    ]
+                                },
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "s3:GetObject"
+                                    ],
+                                    "Resource": [
+                                        { "Fn::Sub": "arn:aws:s3:::${ScriptBucket}/*" }
+                                    ]
+                                },
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "cloudformation:Describe*",
+                                        "cloudformation:List*",
+                                        "cloudformation:Get*",
+                                        "cloudformation:SignalResource*"
+                                    ],
+                                    "Resource": { "Fn::Sub": "arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${StackRoot}*/*" }
+                                }
+                            ]
+                        }
+                    },
+                    {
+                        "PolicyName":"DemoSourceBucketAccess",
+                        "PolicyDocument":{
+                            "Statement":[
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "s3:ListBucket"
+                                    ],
+                                    "Resource": [
+                                        { "Fn::Sub": "arn:aws:s3:::${TalendSourceBucket}" }
+                                    ]
+                                },
+                                {
+                                    "Action": [
+                                        "s3:GetObject",
+                                        "s3:PutObject",
+                                        "s3:DeleteObject",
+                                        "s3:PutObjectAcl"
+                                    ],
+                                    "Effect": "Allow",
+                                    "Resource": [
+                                        { "Fn::Sub": "arn:aws:s3:::${TalendSourceBucket}/*" }
+                                    ]
+                                }
+                            ]
+                        }
+                    },
+                    {
+                        "PolicyName":"DemoTargetBucketAccess",
+                        "PolicyDocument":{
+                            "Statement":[
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "s3:ListBucket"
+                                    ],
+                                    "Resource": [
+                                        { "Fn::Sub": "arn:aws:s3:::${TalendTargetBucket}" }
+                                    ]
+                                },
+                                {
+                                    "Action": [
+                                        "s3:GetObject",
+                                        "s3:PutObject",
+                                        "s3:DeleteObject",
+                                        "s3:PutObjectAcl"
+                                    ],
+                                    "Effect": "Allow",
+                                    "Resource": [
+                                        { "Fn::Sub": "arn:aws:s3:::${TalendTargetBucket}/*" }
+                                    ]
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        "InstanceProfile": {
+            "Type": "AWS::IAM::InstanceProfile",
+            "Properties": {
+                "Path": "/talend/",
+                "Roles": [ { "Ref": "InstanceRole" } ]
+            }
+        }
+    },
+    "Outputs": {
+        "InstanceRole": {
+            "Value": { "Ref": "InstanceRole" },
+            "Description": "IAM Role for Talend EC2 instances",
+			"Export": {
+				"Name": {
+					"Fn::Sub": "${AWS::StackName}:InstanceRole" 
+				}
+			}
+        },
+        "InstanceProfile": {
+            "Value": { "Ref": "InstanceProfile" },
+            "Description": "Talend Instance Profile",
+			"Export": {
+				"Name": {
+                    "Fn::Sub": "${AWS::StackName}:InstanceProfile"
+				}
+			}
+        }
+    }
+}

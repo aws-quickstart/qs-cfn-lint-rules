@@ -1,0 +1,247 @@
+---
+AWSTemplateFormatVersion: 2010-09-09
+Description: Biotech Blueprint template to automate creating PrivateLink and split horizon DNS configs to Benchling's SaaS platform. (qs-1of00337s)
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+    - Label:
+        default: PrivateLink Configuration
+      Parameters:
+      - pPrivateLinkServiceName
+      - pInternalHostedZoneSecondLevelDomainName
+    - Label:
+        default: Network Configuration
+      Parameters:
+      - pAppSubnetA
+      - pAppSubnetB
+      - pSecurityGroupForWebAccess
+      - pWebAccessCIDR
+      - pVpcId
+    ParameterLabels:
+      pInternalHostedZoneSecondLevelDomainName:
+        default: Subdomain
+      pAppSubnetA:
+        default: Application Subnet A
+      pAppSubnetB:
+        default: Application Subnet B
+      pPrivateLinkServiceName:
+        default: PrivateLink Service Name
+      pSecurityGroupForWebAccess:
+        default: Web Access Security Group
+      pVpcId:
+        default: VPC ID
+      pWebAccessCIDR:
+        default: Web Access CIDR (No SG)
+      
+Parameters: 
+  pAppSubnetA:
+    Description: Production App Subnet A. Target subnet for the app server. 
+    Type: AWS::EC2::Subnet::Id
+  pAppSubnetB:
+    Description: Production App Subnet B. Target subnet for the app server. 
+    Type: AWS::EC2::Subnet::Id
+  pInternalHostedZoneSecondLevelDomainName:
+    Description: Second Level domain to use as subdomain, e.g. <mysubdomain>.benchling.com
+    Type: String
+  pPrivateLinkServiceName:
+    Description: PrivateLink Service Name
+    Type: String
+    Default: ""
+  pSecurityGroupForWebAccess:
+    Description: Security group for web access
+    Type: String
+    Default: ""
+  pVpcId: 
+    Description: VPC ID
+    Type: AWS::EC2::VPC::Id
+  pWebAccessCIDR:
+    Description: Will only be used if Web Access Security Group is not specified. Enter 0.0.0.0/0 if you want to open it to the world.
+    Type: String
+    Default: "10.0.0.0/16"
+Conditions:
+  cEndpointServiceNameSpecified: !Not [!Equals [!Ref pPrivateLinkServiceName, ""]]
+  cNoWebAccessSG: !Equals [ !Ref pSecurityGroupForWebAccess, "" ]
+Mappings:
+  AWSVpcEndpointRegionMap: 
+    Endpoint:
+      BenchlingEndpoint: Benchling-1.0.0-20180508
+    us-east-1: 
+      BenchlingEndpoint: com.amazonaws.vpce.us-east-1.vpce-svc-03e8d1078aecfb238
+    us-west-2: 
+      BenchlingEndpoint: com.amazonaws.vpce.us-west-2.vpce-svc-08286900e6bca1fbe
+    eu-west-1: 
+      BenchlingEndpoint: com.amazonaws.vpce.eu-west-1.vpce-svc-057f855192ec4bf8f
+  Defaults:
+    ParamStorePath:
+      VpcEndpoint: "/PrivateLink/benchling/VpcEndpointID"
+Resources: 
+  rSecurityGroupNoSG:
+    Type: AWS::EC2::SecurityGroup
+    Condition: cNoWebAccessSG
+    Properties:
+      GroupDescription: Allow access to Benchling. Open to CIDR.
+      VpcId: !Ref pVpcId
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 80
+        ToPort: 80
+        CidrIp: !Ref pWebAccessCIDR
+      - IpProtocol: tcp
+        FromPort: 443
+        ToPort: 443
+        CidrIp: !Ref pWebAccessCIDR
+      Tags:
+      - Key: Name
+        Value: sg-benchling-access-ports-bycidr
+
+  rInternalHostedZoneForPortCo: 
+    Type: AWS::Route53::HostedZone
+    Properties: 
+      Name: benchling.com
+      VPCs: 
+      - VPCId: !Ref pVpcId
+        VPCRegion: !Ref AWS::Region
+
+  rServiceDNSRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref rInternalHostedZoneForPortCo
+      Comment: Internal DNS CNAME Benchling Service.
+      Name: !Sub ${pInternalHostedZoneSecondLevelDomainName}.benchling.com
+      Type: CNAME
+      TTL: 60
+      ResourceRecords:
+      - !GetAtt rCustomLambdaResourceTrigger.PrimaryDnsName
+  rCreateBenchlingPrivateLinkLambda:
+    Type: AWS::Lambda::Function
+    DependsOn:
+    - rCreateBenchlingPLLambdaRole
+    Properties:
+      Handler: index.handler
+      Runtime: python3.6
+      Timeout: 30
+      Role: !GetAtt rCreateBenchlingPLLambdaRole.Arn
+      Code:
+        ZipFile: |
+          import boto3
+          import json
+          import cfnresponse
+          import traceback
+          ec2=boto3.client('ec2')
+          ssm=boto3.client('ssm')
+          def delete_endpoints(event, context):
+            try:
+              ssm_path = event['ResourceProperties']['pParamStorePath']
+              vpc_endpoint = ssm.get_parameter(Name=ssm_path, WithDecryption=False)['Parameter']['Value']
+              response = ec2.delete_vpc_endpoints(VpcEndpointIds=[vpc_endpoint])
+              if len(response['Unsuccessful']) > 0:
+                raise Exception(json.dumps(response))
+              response_data={}
+              cfnresponse.send(event, context, cfnresponse.SUCCESS, response_data)
+            except Exception as e:
+              errorMessage = e.args[0]
+              response_data = {'ErrorMessage': errorMessage}
+              cfnresponse.send(event, context, cfnresponse.FAILED, response_data)
+          def create_endpoint(event, context):
+            try:
+              response = ec2.create_vpc_endpoint(
+                ServiceName=event['ResourceProperties']['pVPCEndpointServiceName'],
+                VpcId=event['ResourceProperties']['pVpcId'],
+                SubnetIds=[
+                  event['ResourceProperties']['pAppSubnetA'],
+                  event['ResourceProperties']['pAppSubnetB']
+                ],
+                VpcEndpointType='Interface',
+                SecurityGroupIds=event['ResourceProperties']['pSecurityGroupForWebAccess'] if event['ResourceProperties']['pSecurityGroupForWebAccess'] not in [None, ''] else []
+              )
+              param_response = ssm.put_parameter(
+                Name=event['ResourceProperties']['pParamStorePath'],
+                Description='VPC Endpoint ID for Benchling Privatelink endpoint service',
+                Type='String',
+                Value=response['VpcEndpoint']['VpcEndpointId'],
+                Overwrite=True
+              )
+              response_data = {
+                'VpcEndpointId': response['VpcEndpoint']['VpcEndpointId'],
+                'PrimaryDnsName': response['VpcEndpoint']['DnsEntries'][0]['DnsName']
+              }
+              cfnresponse.send(event, context, cfnresponse.SUCCESS, response_data)
+            except Exception as e:
+              print (e)
+              traceback.print_exc()
+              response_data = {'ErrorMessage': e}
+              cfnresponse.send(event, context, cfnresponse.FAILED, response_data)
+          def handler(event, context):
+            print(event)
+            if event['RequestType'] == 'Delete':
+              delete_endpoints(event, context)
+            elif event['RequestType'] == 'Create':
+              create_endpoint(event, context)
+            print ("Completed successfully")
+  rCustomLambdaResourceTrigger:
+    Type: Custom::rCustomLambdaResourceTrigger
+    Properties:
+      ServiceToken: !GetAtt rCreateBenchlingPrivateLinkLambda.Arn
+      pVpcId: !Ref pVpcId
+      pVPCEndpointServiceName: !If [ cEndpointServiceNameSpecified, !Ref pPrivateLinkServiceName, !FindInMap [ AWSVpcEndpointRegionMap, !Ref "AWS::Region", BenchlingEndpoint ] ]
+      pSecurityGroupForWebAccess: 
+      - !If [ cNoWebAccessSG, !Ref rSecurityGroupNoSG, !Ref pSecurityGroupForWebAccess ]
+      pAppSubnetA: !Ref pAppSubnetA
+      pAppSubnetB: !Ref pAppSubnetB
+      pParamStorePath: !FindInMap [ Defaults,  ParamStorePath, VpcEndpoint ]
+
+  rCreateBenchlingPLLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Path: /
+      Policies:
+      - PolicyName: CreateBenchlingPrivateLinkRoleForLambda
+        PolicyDocument:
+          Version: 2012-10-17
+          Statement:
+          - Effect: Allow
+            Action:
+            - ssm:GetParameter
+            - ssm:PutParameter
+            Resource: 
+              Fn::Sub:
+               - arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${LocalFindInMapParamStorePath}
+               - {
+                 LocalFindInMapParamStorePath: !FindInMap [ Defaults, ParamStorePath, VpcEndpoint ]
+                 }
+          - Effect: Allow
+            Action:
+            - ec2:DeleteVpcEndpoints
+            - ec2:CreateVpcEndpoint
+            Resource: "*"
+          - Effect: Allow
+            Action:
+            - logs:CreateLogGroup
+            - logs:CreateLogStream
+            - logs:PutLogEvents
+            Resource: "arn:aws:logs:*:*:*"
+
+Outputs:
+  BenchlingURL:
+    Value: !Sub https://${pInternalHostedZoneSecondLevelDomainName}.benchling.com
+  VPCEndpointConsoleLink:
+    Description: Link to PrivateLink console.
+    Value: !Sub https://${AWS::Region}.console.aws.amazon.com/vpc/home?region=${AWS::Region}#Endpoints:search=${rCustomLambdaResourceTrigger.VpcEndpointId};sort=vpcEndpointId
+  rVPCEndpointID:
+    Description: VPC Endpoint ID to Benchling
+    Value: !GetAtt rCustomLambdaResourceTrigger.VpcEndpointId
+  rInternalHostedZoneIDParam:
+    Description: Route53 internal hosted zone ID for Benchling split horizon DNS.
+    Value: !Ref rInternalHostedZoneForPortCo
+  rInternalHostedZoneApexDomainName: 
+    Description: Route53 internal hosted zone domain name for Benchling service
+    Value: !Sub ${pInternalHostedZoneSecondLevelDomainName}.benchling.com

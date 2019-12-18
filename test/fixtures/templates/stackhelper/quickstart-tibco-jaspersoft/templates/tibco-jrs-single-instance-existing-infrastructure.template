@@ -1,0 +1,509 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "This template deploys TIBCO JasperReports Server into Public subnet. The instance is configured to use an S3 bucket for storage **WARNING** This template creates EC2 instances and related resources. You will be billed for the AWS resources used if you create a stack from this template. (qs-1puat8478)",
+    "Metadata": {
+        "AWS::CloudFormation::Interface": {
+            "ParameterGroups": [
+                {
+                    "Label": {
+                        "default": "Network configuration"
+                    },
+                    "Parameters": [
+                        "VPCID",
+                        "PublicSubnet1ID"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "Amazon EC2 configuration"
+                    },
+                    "Parameters": [
+                        "KeyPairName",
+                        "BastionSecurityGroupID"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "TIBCO JasperReports Server node configuration"
+                    },
+                    "Parameters": [
+                        "WorkloadInstanceType",
+                        "NewBucket",
+                        "S3BucketName"
+                    ]
+                }
+            ],
+            "ParameterLabels": {
+                "BastionSecurityGroupID": {
+                    "default": "Bastion security group ID"
+                },
+                "KeyPairName": {
+                    "default": "Key pair name"
+                },
+                "PublicSubnet1ID": {
+                    "default": "Public subnet 1 ID"
+                },
+                "VPCID": {
+                    "default": "VPC ID"
+                },
+                "WorkloadInstanceType": {
+                    "default": "Server instance Type"
+                },
+                "NewBucket" : {
+                    "default" : "S3 bucket for license and customization?"
+                },
+                "S3BucketName": {
+                    "default" : "Name of S3 bucket for license and customization"
+                }
+            }
+        }
+    },
+    "Parameters": {
+        "BastionSecurityGroupID": {
+            "Description": "ID of the bastion host security group to enable SSH connections (e.g., sg-7f16e910).",
+            "Type": "AWS::EC2::SecurityGroup::Id",
+            "MinLength": "1",
+            "MaxLength": "64",
+            "ConstraintDescription" : "Parameter value is Required"
+        },
+        "KeyPairName": {
+            "Description": "Name of an existing EC2 key pair, which allows you to securely connect to your instance after it launches.",
+            "Type": "AWS::EC2::KeyPair::KeyName",
+            "MinLength": "1",
+            "MaxLength": "64",
+            "ConstraintDescription" : "Parameter value is Required"
+        },
+        "PublicSubnet1ID": {
+            "Description": "ID of public subnet 1 in Availability Zone 1 for the Application Load Balancer (e.g., subnet-9bc642ac).",
+            "Type": "AWS::EC2::Subnet::Id",
+            "MinLength": "1",
+            "MaxLength": "64",
+            "ConstraintDescription" : "Parameter value is Required"
+        },
+        "VPCID": {
+            "Description": "ID of your existing VPC for deployment.",
+            "Type": "AWS::EC2::VPC::Id",
+            "MinLength": "1",
+            "MaxLength": "64",
+            "ConstraintDescription" : "Parameter value is Required"
+        },
+        "WorkloadInstanceType": {
+            "AllowedValues": [
+                "m4.large","m4.xlarge","m4.2xlarge","m4.4xlarge","m4.10xlarge","r3.xlarge","r3.2xlarge","c4.xlarge","t2.medium","m5.large"
+            ],
+            "ConstraintDescription": "Must contain valid instance type",
+            "Default": "m4.xlarge",
+            "Description": "Amazon EC2 instance type for the TIBCO JasperReports instance.",
+            "Type": "String"
+        },
+        "NewBucket": {
+            "AllowedValues": [
+                "Yes",
+                "No"
+            ],
+            "ConstraintDescription": "The value should be Yes/No.",
+            "Default": "No",
+            "Description": "A new S3 bucket. Choose Yes to create a new bucket, where you can upload third-party drivers, OSGI bundles, certificates, plugins, etc., to extend the base image later.",
+            "Type": "String"
+        },
+        "S3BucketName": {
+            "Description" : "Name of the new S3 bucket. Enter a unique name that does not include uppercase characters.",
+            "Type" : "String",
+            "Default" : "new-bucket-for-license-and-customization",
+            "MinLength": "1",
+            "MaxLength": "64"
+
+        }
+
+
+    },
+    "Rules": {
+        "KeyPairsNotEmpty": {
+            "Assertions": [
+                {
+                    "Assert": {
+                        "Fn::Not": [
+                            {
+                                "Fn::EachMemberEquals": [
+                                    {
+                                        "Fn::RefAll": "AWS::EC2::KeyPair::KeyName"
+                                    },
+                                    ""
+                                ]
+                            }
+                        ]
+                    },
+                    "AssertDescription": "All key pair parameters must not be empty"
+                }
+            ]
+        },
+        "SubnetsInVPC": {
+            "Assertions": [
+                {
+                    "Assert": {
+                        "Fn::EachMemberIn": [
+                            {
+                                "Fn::ValueOfAll": [
+                                    "AWS::EC2::Subnet::Id",
+                                    "VpcId"
+                                ]
+                            },
+                            {
+                                "Fn::RefAll": "AWS::EC2::VPC::Id"
+                            }
+                        ]
+                    },
+                    "AssertDescription": "All subnets must in the VPC"
+                }
+            ]
+        }
+    },
+    "Conditions" : {
+        "CreateS3Bucket": {
+            "Fn::Equals": [
+                {
+                    "Ref": "NewBucket"
+                },
+                "Yes"
+            ]
+        }
+    },
+    "Mappings": {
+        "AWSAMIRegionMap": {
+            "us-east-1" : { "64" : "ami-06f91cd7d5536aed2"},
+            "us-east-2" : { "64" : "ami-07f4e1c328364f8e4"},
+            "us-west-1" : { "64" : "ami-0f9f10a52ce57e08a"},
+            "us-west-2" : { "64" : "ami-0702731f9db377eb3"},
+            "ca-central-1" : { "64" : "ami-0d62d0215cb127fde"},
+            "eu-central-1" : { "64" : "ami-03416724bb8fbcb29"},
+            "eu-west-1" : { "64" : "ami-04ffae4f29bb4704c"},
+            "eu-west-2" : { "64" : "ami-07db901a8a06212e3"},
+            "eu-west-3" : { "64" : "ami-065a2eb9e4e60fb03"},
+            "eu-north-1" : { "64" : "ami-d255deac"},
+            "ap-southeast-1" : { "64" : "ami-09e028879b48bdf8e"},
+            "ap-southeast-2" : { "64" : "ami-0133968d004c2627a"},
+            "ap-south-1" : { "64" : "ami-05984a0227a13875e"},
+            "ap-northeast-1" : { "64" : "ami-0a707cd6956f3d8a0"},
+            "ap-northeast-2" : { "64" : "ami-0bfcf731282d1dde2"},
+            "sa-east-1" : { "64" : "ami-09383944bc61d70b5"}
+        }
+    },
+    "Resources": {
+        "JRSInitWaitHandle" : {
+            "Type" : "AWS::CloudFormation::WaitConditionHandle",
+            "Properties" : {
+            }
+        },
+        "JRSInitWaitCondition" : {
+            "Type" : "AWS::CloudFormation::WaitCondition",
+            "Properties" : {
+                "Handle" : { "Ref" : "JRSInitWaitHandle" },
+                "Timeout" : "600"
+            }
+        },
+        "SetupRole": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "AssumeRolePolicyDocument": {
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Principal": {
+                                "Service": [
+                                    "ec2.amazonaws.com"
+                                ]
+                            },
+                            "Action": [
+                                "sts:AssumeRole"
+                            ]
+                        }
+                    ]
+                },
+                "Path": "/",
+                "Policies": [
+                    {
+                        "PolicyName": "WorkloadSetup",
+                        "PolicyDocument": {
+                            "Statement": [
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "cloudwatch:PutMetricData",
+                                        "cloudwatch:EnableAlarmActions",
+                                        "cloudwatch:PutMetricAlarm"
+                                    ],
+                                    "Resource": "*"
+                                },
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "s3:*"
+                                    ],
+                                    "Resource": [
+                                        {
+                                            "Fn::Join": [
+                                                "",
+                                                [
+                                                    "arn:aws:s3:::",
+                                                    {
+                                                        "Fn::If": [
+                                                            "CreateS3Bucket",
+                                                            {"Ref": "S3Bucket"},
+                                                            {"Ref": "S3BucketName"}
+                                                        ]
+
+                                                    },
+                                                    ""
+                                                ]
+                                            ]
+                                        },
+                                        {
+                                            "Fn::Join": [
+                                                "",
+                                                [
+                                                    "arn:aws:s3:::",
+                                                    {
+                                                        "Fn::If": [
+                                                            "CreateS3Bucket",
+                                                            {"Ref": "S3Bucket"},
+                                                            {"Ref": "S3BucketName"}
+                                                        ]
+
+                                                    },
+                                                    "/*"
+                                                ]
+                                            ]
+                                        }
+                                    ]
+                                }
+                            ]
+                        }
+                    },
+                    {
+                        "PolicyName": "JRSRolePolicy",
+                        "PolicyDocument": {
+                            "Statement": [
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "rds:Describe*",
+                                        "rds:AuthorizeDBSecurityGroupIngress",
+                                        "rds:CreateDBSecurityGroup",
+                                        "rds:RevokeDBSecurityGroupIngress",
+                                        "rds:ModifyDBInstance",
+                                        "redshift:Describe*",
+                                        "redshift:AuthorizeClusterSecurityGroupIngress",
+                                        "redshift:CreateClusterSecurityGroup",
+                                        "redshift:RevokeClusterSecurityGroupIngress",
+                                        "redshift:ModifyCluster",
+                                        "ec2:DescribeSecurityGroups",
+                                        "ec2:AuthorizeSecurityGroupIngress",
+                                        "ec2:CreateSecurityGroup",
+                                        "ec2:RevokeSecurityGroupIngress",
+                                        "sqs:*",
+                                        "s3:Get*",
+                                        "s3:List*"
+                                    ],
+                                    "Resource": "*"
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        "SetupRoleProfile": {
+            "Type": "AWS::IAM::InstanceProfile",
+            "Properties": {
+                "Path": "/",
+                "Roles": [
+                    {
+                        "Ref": "SetupRole"
+                    }
+                ]
+            }
+        },
+        "WorkloadInstance": {
+            "Type": "AWS::EC2::Instance",
+            "Version": "2018-11-20",
+            "Metadata": {
+              "AWS::CloudFormation::Init": {
+                "configSets" : { "ConfigureAndRestart" : ["Configure" , "Restart"]
+                },
+                "Configure": {
+                  "files": {
+                  },
+
+                  "commands" : {
+                    "1-setInitialPassword" : {
+                      "command" : { "Fn::Join" :[" ",["/usr/bin/java -cp /etc/jasperserver/*:/var/lib/tomcat8/webapps/jasperserver-pro/WEB-INF/lib/*:/usr/share/tomcat8/lib/*","com.jaspersoft.utils.DirectPasswordChanger jdbc:postgresql://127.0.0.1:5432/jasperserver","postgres","postgres","superuser","`/opt/aws/bin/ec2-metadata --instance-id | cut -d \" \" -f 2`"]]},
+                      "ignoreErrors" : "false",
+                      "test" : "test ! -e /etc/jasperserver/initializationMarker.log"
+                    },
+                    "2-disableAndExpireUsers" : {
+                      "command" : { "Fn::Join" :[" ",["env PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres jasperserver -c ", "\"update jiuser set enabled = false where username <> 'superuser';update jiuser set previouspasswordchangetime = (now() - interval '366 days')\""]]},
+                      "ignoreErrors" : "false",
+                      "test" : "test ! -e /etc/jasperserver/initializationMarker.log"
+                    },
+                    "3-pullLicense" : {
+                      "command" : { "Fn::Join" : ["", ["/usr/bin/aws --region ",{ "Ref": "AWS::Region" }," s3 cp s3://",{"Fn::If": ["CreateS3Bucket",{"Ref": "S3Bucket"},{"Ref": "S3BucketName"}]},"/jasperserver.license /var/lib/tomcat8/webapps/jasperserver-pro/WEB-INF/jasperserver.license"]]},
+                      "ignoreErrors" : "true"
+                    },
+                    "4-pullCustomizations" : {
+                      "command" : { "Fn::Join" : ["", ["/usr/bin/aws --region ",{ "Ref": "AWS::Region" }," s3 cp s3://",{"Fn::If": ["CreateS3Bucket",{"Ref": "S3Bucket"},{"Ref": "S3BucketName"}]},"/ /var/lib/tomcat8/ --recursive"]]},
+                      "ignoreErrors" : "true"
+                    },
+                    "5-WriteInitializationMarker" : {
+                      "command" : {"Fn::Join" :["",["echo \"Initialization complete. Initialization commands will be blocked.\" > /etc/jasperserver/initializationMarker.log"]]},
+                      "ignoreErrors" : "true",
+                      "test" : "test ! -e /etc/jasperserver/initializationMarker.log"
+                    }
+                  }
+
+
+                },
+                "Restart" : {
+                  "services" : {
+                    "tomcat8" : {
+                      "enabled" : "true",
+                      "ensureRunning" : "true",
+                      "commands" : ["1-setInitialPassword","2-disableAndExpireUsers","3-pullLicense","4-pullCustomizations","5-WriteInitializationMarker"]
+                    }
+                  }
+                }
+              }
+            },
+            "Properties": {
+                "InstanceInitiatedShutdownBehavior" : "stop",
+                "ImageId": {"Fn::FindInMap" : [ "AWSAMIRegionMap", { "Ref" : "AWS::Region" }, "64" ]},
+                "IamInstanceProfile": { "Ref": "SetupRoleProfile" },
+                "InstanceType": { "Ref" : "WorkloadInstanceType" },
+                "KeyName" : { "Ref" : "KeyPairName" },
+                "Monitoring": "false",
+                "DisableApiTermination": "false",
+                "SecurityGroupIds": [{ "Ref": "WorkloadSecurityGroup"}],
+                "SubnetId" : {"Ref": "PublicSubnet1ID" },
+                "UserData"       : { "Fn::Base64" : { "Fn::Join" : ["", [
+                    "Content-Type: multipart/mixed; boundary=\"//\"\n",
+                    "MIME-Version: 1.0\n",
+                    "\n",
+                    "--//\n",
+                    "Content-Type: text/cloud-config; charset=\"us-ascii\"\n",
+                    "MIME-Version: 1.0\n",
+                    "Content-Transfer-Encoding: 7bit\n",
+                    "Content-Disposition: attachment; filename=\"cloud-config.txt\"\n",
+                    "\n",
+                    "#cloud-config\n",
+                    "cloud_final_modules:\n",
+                    "- [scripts-user, always]\n",
+                    "\n",
+                    "--//\n",
+                    "Content-Type: text/x-shellscript; charset=\"us-ascii\"\n",
+                    "MIME-Version: 1.0\n",
+                    "Content-Transfer-Encoding: 7bit\n",
+                    "Content-Disposition: attachment; filename=\"userdata.txt\"\n",
+                    "\n",
+                    "#!/bin/bash -xe\n",
+                    "yum install -y aws-cfn-bootstrap\n",
+
+                    "# Install the files and packages from the metadata\n",
+                    "/opt/aws/bin/cfn-init ",
+                    "         --stack ", { "Ref" : "AWS::StackName" },
+                    "         --resource WorkloadInstance",
+                    "         --configsets ConfigureAndRestart",
+                    "         --region ", { "Ref" : "AWS::Region" }, "\n",
+
+                    "# Signal the status from cfn-init\n",
+                    "/opt/aws/bin/cfn-signal -e $? ",
+                    "         --data \"Application has completed DB configuration.\"",
+                    " ",{ "Fn::Base64" : { "Ref" : "JRSInitWaitHandle"}},"\n",
+                    ""
+
+                ]]}}
+            }
+        },
+        "WorkloadSecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "GroupDescription": "Allow access to the TIBCO JasperReports Server instance",
+                "VpcId": {
+                    "Ref": "VPCID"
+                },
+                "SecurityGroupIngress": [
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "80",
+                        "ToPort": "80",
+                        "CidrIp": "0.0.0.0/0"
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "443",
+                        "ToPort": "443",
+                        "CidrIp": "0.0.0.0/0"
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "22",
+                        "ToPort": "22",
+                        "SourceSecurityGroupId": {
+                            "Ref": "BastionSecurityGroupID"
+                        }
+                    }
+                ]
+            }
+        },
+
+
+        "S3Bucket": {
+            "Type": "AWS::S3::Bucket",
+            "Condition" : "CreateS3Bucket",
+            "Properties": {
+                "BucketName" : { "Ref": "S3BucketName" },
+                "AccessControl": "BucketOwnerFullControl"
+            },
+            "DeletionPolicy" : "Retain"
+        }
+    },
+    "Outputs": {
+        "GettingStartedPublicURL": {
+            "Description": "TIBCO JasperReports Server Getting Started URL",
+            "Value": {
+                "Fn::Join" : ["", ["http://",
+                    { "Fn::GetAtt": [
+                        "WorkloadInstance",
+                        "PublicDnsName"
+                    ]
+                    }
+                ]] },
+            "Export": {
+                "Name": {
+                    "Fn::Sub": "${AWS::StackName}-URL"
+                }
+            }
+        },
+        "S3CustomizationBucket" : {
+          "Value" : {"Fn::If": ["CreateS3Bucket",{"Ref": "S3Bucket"},{"Ref": "S3BucketName"}]},
+          "Description" : "Template create S3 bucket where you can upload your license file \"jasperserver.license\" and customizations for product",
+          "Export" : {
+            "Name" : {
+              "Fn::Sub": "${AWS::StackName}-S3bucket"
+            }
+          }
+        },
+        "Login" : {
+          "Value": "superuser",
+          "Description": "Master user name"
+        },
+        "Password" : {
+          "Value" :  { "Ref" : "WorkloadInstance" },
+          "Description" : "Initial master user password",
+          "Export" : {
+            "Name" : {
+              "Fn::Sub": "${AWS::StackName}-InitPassword"
+            }
+          }
+        }
+
+    }
+}

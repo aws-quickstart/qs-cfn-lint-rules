@@ -1,0 +1,2383 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "(0002) - This template creates a VPC infrastructure for a multi-AZ, multi-tier deployment of a Windows based Application infrastructure. It installs 2 Windows Server instances into subnets in separate AZs inside a VPC, as well as Remote Desktop Gateway and NAT instances into the DMZ for each Availability Zone. After extending your on-premises network to the VPC, you can promote the Windows Server instances to Domain Controllers in your AD forest. **WARNING** This template creates Amazon EC2 Windows instance and related resources. You will be billed for the AWS resources used if you create a stack from this template.",
+    "Parameters": {
+        "KeyPairName": {
+            "Description": "Public/private key pairs allow you to securely connect to your instance after it launches",
+            "Type": "AWS::EC2::KeyPair::KeyName"
+        },
+        "ADInstanceType": {
+            "Description": "Amazon EC2 instance type for the first Active Directory Instance",
+            "Type": "String",
+            "Default": "m4.xlarge",
+            "AllowedValues": [
+                "m4.large",
+                "m4.xlarge",
+                "m4.2xlarge",
+                "m4.4xlarge"
+            ]
+        },
+        "AD2InstanceType": {
+            "Description": "Amazon EC2 instance type for the second Active Directory Instance",
+            "Type": "String",
+            "Default": "m4.xlarge",
+            "AllowedValues": [
+                "m4.large",
+                "m4.xlarge",
+                "m4.2xlarge",
+                "m4.4xlarge"
+            ]
+        },
+        "NATInstanceType": {
+            "Description": "Amazon EC2 instance type for the NAT Instances",
+            "Type": "String",
+            "Default": "t2.small",
+            "AllowedValues": [
+                "t2.small",
+                "t2.medium"
+            ]
+        },
+        "RDGWInstanceType": {
+            "Description": "Amazon EC2 instance type for the Remote Desktop Gatweway Instance",
+            "Type": "String",
+            "Default": "m4.xlarge",
+            "AllowedValues": [
+                "m4.large",
+                "m4.xlarge",
+                "m4.2xlarge",
+                "m4.4xlarge"
+            ]
+        },
+        "ADServerNetBIOSName1": {
+            "Description": "NetBIOS name of the 1st AD Server (upto 15 characters)",
+            "Type": "String",
+            "Default": "DC1",
+            "MinLength": "1",
+            "MaxLength": "15",
+            "AllowedPattern": "[a-zA-Z0-9\\-]+"
+        },
+        "ADServerNetBIOSName2": {
+            "Description": "NetBIOS name of the 2nd AD Server (upto 15 characters)",
+            "Type": "String",
+            "Default": "DC2",
+            "MinLength": "1",
+            "MaxLength": "15",
+            "AllowedPattern": "[a-zA-Z0-9\\-]+"
+        },
+        "DMZ1CIDR": {
+            "Description": "CIDR Block for the Public DMZ Subnet located in AZ1",
+            "Type": "String",
+            "Default": "10.0.32.0/20",
+            "AllowedPattern": "[a-zA-Z0-9]+\\..+"
+        },
+        "DMZ2CIDR": {
+            "Description": "CIDR Block for the Public DMZ Subnet located in AZ2",
+            "Type": "String",
+            "Default": "10.0.96.0/20",
+            "AllowedPattern": "[a-zA-Z0-9]+\\..+"
+        },
+        "PrivSub1CIDR": {
+            "Description": "CIDR Block for Private Subnet 1 located in AZ1",
+            "Type": "String",
+            "Default": "10.0.0.0/19",
+            "AllowedPattern": "[a-zA-Z0-9]+\\..+"
+        },
+        "PrivSub2CIDR": {
+            "Description": "CIDR Block for Private Subnet 2 located in AZ2",
+            "Type": "String",
+            "Default": "10.0.64.0/19",
+            "AllowedPattern": "[a-zA-Z0-9]+\\..+"
+        },
+        "VPCCIDR": {
+            "Description": "CIDR Block for the VPC",
+            "Type": "String",
+            "Default": "10.0.0.0/16",
+            "AllowedPattern": "[a-zA-Z0-9]+\\..+"
+        },
+        "AD1PrivateIp": {
+            "Description": "Fixed private IP for the first Active Directory server located in AZ1",
+            "Type": "String",
+            "Default": "10.0.0.10"
+        },
+        "AD2PrivateIp": {
+            "Description": "Fixed private IP for the second Active Directory serverr located in AZ2",
+            "Type": "String",
+            "Default": "10.0.64.10"
+        }
+    },
+    "Mappings": {
+        "AWSAMIRegionMap": {
+            "AMI": {
+                "AWSNATHVM": "amzn-ami-vpc-nat-hvm-2017.09.1.20180307-x86_64-ebs",
+                "WS2012R2": "Windows_Server-2012-R2_RTM-English-64Bit-Base-2018.04.11"
+            },
+            "ap-northeast-1": {
+                "AWSNATHVM": "ami-6d7b370b",
+                "WS2012R2": "ami-84dccef8"
+            },
+            "ap-northeast-2": {
+                "AWSNATHVM": "ami-ec1ab782",
+                "WS2012R2": "ami-67da7409"
+            },
+            "ap-south-1": {
+                "AWSNATHVM": "ami-1d89d772",
+                "WS2012R2": "ami-47b69228"
+            },
+            "ap-southeast-1": {
+                "AWSNATHVM": "ami-76aafe0a",
+                "WS2012R2": "ami-49a78135"
+            },
+            "ap-southeast-2": {
+                "AWSNATHVM": "ami-20874742",
+                "WS2012R2": "ami-a762abc5"
+            },
+            "ca-central-1": {
+                "AWSNATHVM": "ami-d456d1b0",
+                "WS2012R2": "ami-f234b296"
+            },
+            "eu-central-1": {
+                "AWSNATHVM": "ami-4a432d25",
+                "WS2012R2": "ami-ab520a40"
+            },
+            "eu-west-1": {
+                "AWSNATHVM": "ami-59054720",
+                "WS2012R2": "ami-768dd70f"
+            },
+            "eu-west-2": {
+                "AWSNATHVM": "ami-cbf116ac",
+                "WS2012R2": "ami-25d13142"
+            },
+            "sa-east-1": {
+                "AWSNATHVM": "ami-ce3c76a2",
+                "WS2012R2": "ami-2162334d"
+            },
+            "us-east-1": {
+                "AWSNATHVM": "ami-68a75915",
+                "WS2012R2": "ami-bf934bc0"
+            },
+            "us-east-2": {
+                "AWSNATHVM": "ami-bd6f59d8",
+                "WS2012R2": "ami-0a84b46f"
+            },
+            "us-west-1": {
+                "AWSNATHVM": "ami-da5441ba",
+                "WS2012R2": "ami-d0d0c3b0"
+            },
+            "us-west-2": {
+                "AWSNATHVM": "ami-a878ecd0",
+                "WS2012R2": "ami-10375468"
+            }
+        }
+    },
+    "Resources": {
+        "DhcpOptions": {
+            "Type": "AWS::EC2::DHCPOptions",
+            "Properties": {
+                "DomainNameServers": [
+                    "AmazonProvidedDNS"
+                ],
+                "NtpServers": [
+                    {
+                        "Ref": "AD1PrivateIp"
+                    }
+                ],
+                "NetbiosNameServers": [
+                    {
+                        "Ref": "AD1PrivateIp"
+                    },
+                    {
+                        "Ref": "AD2PrivateIp"
+                    }
+                ],
+                "NetbiosNodeType": "2"
+            }
+        },
+        "VPC": {
+            "Type": "AWS::EC2::VPC",
+            "Properties": {
+                "CidrBlock": {
+                    "Ref": "VPCCIDR"
+                },
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackName"
+                        }
+                    },
+                    {
+                        "Key": "Network",
+                        "Value": "Public"
+                    }
+                ]
+            }
+        },
+        "VPCDHCPOptionsAssociation": {
+            "Type": "AWS::EC2::VPCDHCPOptionsAssociation",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "VPC"
+                },
+                "DhcpOptionsId": {
+                    "Ref": "DhcpOptions"
+                }
+            }
+        },
+        "DMZSubnet": {
+            "Type": "AWS::EC2::Subnet",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "VPC"
+                },
+                "CidrBlock": {
+                    "Ref": "DMZ1CIDR"
+                },
+                "AvailabilityZone": {
+                    "Fn::Select": [
+                        0,
+                        {
+                            "Fn::GetAZs": ""
+                        }
+                    ]
+                },
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackName"
+                        }
+                    },
+                    {
+                        "Key": "Network",
+                        "Value": "Public"
+                    },
+                    {
+                        "Key": "Role",
+                        "Value": "DMZ 1 Subnet"
+                    }
+                ]
+            }
+        },
+        "DMZ2Subnet": {
+            "Type": "AWS::EC2::Subnet",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "VPC"
+                },
+                "CidrBlock": {
+                    "Ref": "DMZ2CIDR"
+                },
+                "AvailabilityZone": {
+                    "Fn::Select": [
+                        1,
+                        {
+                            "Fn::GetAZs": ""
+                        }
+                    ]
+                },
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackName"
+                        }
+                    },
+                    {
+                        "Key": "Network",
+                        "Value": "Public"
+                    },
+                    {
+                        "Key": "Role",
+                        "Value": "DMZ 2 Subnet"
+                    }
+                ]
+            }
+        },
+        "PrivateSubnet1": {
+            "Type": "AWS::EC2::Subnet",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "VPC"
+                },
+                "CidrBlock": {
+                    "Ref": "PrivSub1CIDR"
+                },
+                "AvailabilityZone": {
+                    "Fn::Select": [
+                        0,
+                        {
+                            "Fn::GetAZs": ""
+                        }
+                    ]
+                },
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackName"
+                        }
+                    },
+                    {
+                        "Key": "Network",
+                        "Value": "Private"
+                    },
+                    {
+                        "Key": "Role",
+                        "Value": "AD1 Subnet"
+                    }
+                ]
+            }
+        },
+        "PrivateSubnet2": {
+            "Type": "AWS::EC2::Subnet",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "VPC"
+                },
+                "CidrBlock": {
+                    "Ref": "PrivSub2CIDR"
+                },
+                "AvailabilityZone": {
+                    "Fn::Select": [
+                        1,
+                        {
+                            "Fn::GetAZs": ""
+                        }
+                    ]
+                },
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackName"
+                        }
+                    },
+                    {
+                        "Key": "Network",
+                        "Value": "Private"
+                    },
+                    {
+                        "Key": "Role",
+                        "Value": "AD2 Subnet"
+                    }
+                ]
+            }
+        },
+        "InternetGateway": {
+            "Type": "AWS::EC2::InternetGateway",
+            "Properties": {
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackName"
+                        }
+                    },
+                    {
+                        "Key": "Network",
+                        "Value": "Public"
+                    }
+                ]
+            }
+        },
+        "AttachGateway": {
+            "Type": "AWS::EC2::VPCGatewayAttachment",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "VPC"
+                },
+                "InternetGatewayId": {
+                    "Ref": "InternetGateway"
+                }
+            }
+        },
+        "DMZRouteTable": {
+            "Type": "AWS::EC2::RouteTable",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "VPC"
+                },
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackName"
+                        }
+                    },
+                    {
+                        "Key": "Network",
+                        "Value": "DMZ"
+                    }
+                ]
+            }
+        },
+        "DMZRoute": {
+            "DependsOn": "AttachGateway",
+            "Type": "AWS::EC2::Route",
+            "Properties": {
+                "RouteTableId": {
+                    "Ref": "DMZRouteTable"
+                },
+                "DestinationCidrBlock": "0.0.0.0/0",
+                "GatewayId": {
+                    "Ref": "InternetGateway"
+                }
+            }
+        },
+        "DMZ1SubnetRouteTableAssociation": {
+            "Type": "AWS::EC2::SubnetRouteTableAssociation",
+            "Properties": {
+                "SubnetId": {
+                    "Ref": "DMZSubnet"
+                },
+                "RouteTableId": {
+                    "Ref": "DMZRouteTable"
+                }
+            }
+        },
+        "DMZ2SubnetRouteTableAssociation": {
+            "Type": "AWS::EC2::SubnetRouteTableAssociation",
+            "Properties": {
+                "SubnetId": {
+                    "Ref": "DMZ2Subnet"
+                },
+                "RouteTableId": {
+                    "Ref": "DMZRouteTable"
+                }
+            }
+        },
+        "PrivateRouteTable": {
+            "Type": "AWS::EC2::RouteTable",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "VPC"
+                },
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackName"
+                        }
+                    },
+                    {
+                        "Key": "Network",
+                        "Value": "AZ1 Private"
+                    }
+                ]
+            }
+        },
+        "PrivateRoute": {
+            "Type": "AWS::EC2::Route",
+            "Properties": {
+                "RouteTableId": {
+                    "Ref": "PrivateRouteTable"
+                },
+                "DestinationCidrBlock": "0.0.0.0/0",
+                "InstanceId": {
+                    "Ref": "NAT1"
+                }
+            }
+        },
+        "PrivateRouteTable2": {
+            "Type": "AWS::EC2::RouteTable",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "VPC"
+                },
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackName"
+                        }
+                    },
+                    {
+                        "Key": "Network",
+                        "Value": "AZ2 Private"
+                    }
+                ]
+            }
+        },
+        "PrivateRoute2": {
+            "Type": "AWS::EC2::Route",
+            "Properties": {
+                "RouteTableId": {
+                    "Ref": "PrivateRouteTable2"
+                },
+                "DestinationCidrBlock": "0.0.0.0/0",
+                "InstanceId": {
+                    "Ref": "NAT2"
+                }
+            }
+        },
+        "PrivateSubnetRouteTableAssociation1": {
+            "Type": "AWS::EC2::SubnetRouteTableAssociation",
+            "Properties": {
+                "SubnetId": {
+                    "Ref": "PrivateSubnet1"
+                },
+                "RouteTableId": {
+                    "Ref": "PrivateRouteTable"
+                }
+            }
+        },
+        "PrivateSubnetRouteTableAssociation2": {
+            "Type": "AWS::EC2::SubnetRouteTableAssociation",
+            "Properties": {
+                "SubnetId": {
+                    "Ref": "PrivateSubnet2"
+                },
+                "RouteTableId": {
+                    "Ref": "PrivateRouteTable2"
+                }
+            }
+        },
+        "RdgwEIP": {
+            "Type": "AWS::EC2::EIP",
+            "Properties": {
+                "Domain": "vpc",
+                "InstanceId": {
+                    "Ref": "RDGateway"
+                }
+            }
+        },
+        "Rdgw2EIP": {
+            "Type": "AWS::EC2::EIP",
+            "Properties": {
+                "Domain": "vpc",
+                "InstanceId": {
+                    "Ref": "RDGateway2"
+                }
+            }
+        },
+        "NAT1": {
+            "Type": "AWS::EC2::Instance",
+            "DependsOn": "AttachGateway",
+            "Properties": {
+                "ImageId": {
+                    "Fn::FindInMap": [
+                        "AWSAMIRegionMap",
+                        {
+                            "Ref": "AWS::Region"
+                        },
+                        "AWSNATHVM"
+                    ]
+                },
+                "InstanceType": {
+                    "Ref": "NATInstanceType"
+                },
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": "NAT1"
+                    }
+                ],
+                "NetworkInterfaces": [
+                    {
+                        "GroupSet": [
+                            {
+                                "Ref": "NATSecurityGroup"
+                            }
+                        ],
+                        "AssociatePublicIpAddress": "true",
+                        "DeviceIndex": "0",
+                        "DeleteOnTermination": "true",
+                        "SubnetId": {
+                            "Ref": "DMZSubnet"
+                        }
+                    }
+                ],
+                "KeyName": {
+                    "Ref": "KeyPairName"
+                },
+                "SourceDestCheck": "false"
+            }
+        },
+        "NAT2": {
+            "Type": "AWS::EC2::Instance",
+            "DependsOn": "AttachGateway",
+            "Properties": {
+                "ImageId": {
+                    "Fn::FindInMap": [
+                        "AWSAMIRegionMap",
+                        {
+                            "Ref": "AWS::Region"
+                        },
+                        "AWSNATHVM"
+                    ]
+                },
+                "InstanceType": {
+                    "Ref": "NATInstanceType"
+                },
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": "NAT2"
+                    }
+                ],
+                "NetworkInterfaces": [
+                    {
+                        "GroupSet": [
+                            {
+                                "Ref": "NATSecurityGroup"
+                            }
+                        ],
+                        "AssociatePublicIpAddress": "true",
+                        "DeviceIndex": "0",
+                        "DeleteOnTermination": "true",
+                        "SubnetId": {
+                            "Ref": "DMZ2Subnet"
+                        }
+                    }
+                ],
+                "KeyName": {
+                    "Ref": "KeyPairName"
+                },
+                "SourceDestCheck": "false"
+            }
+        },
+        "DomainController": {
+            "Type": "AWS::EC2::Instance",
+            "DependsOn": "NAT1",
+            "Metadata": {
+                "AWS::CloudFormation::Init": {
+                    "configSets": {
+                        "config": [
+                            "setup",
+                            "rename",
+                            "finalize"
+                        ]
+                    },
+                    "setup": {
+                        "files": {
+                            "c:\\cfn\\cfn-hup.conf": {
+                                "content": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "[main]\n",
+                                            "stack=",
+                                            {
+                                                "Ref": "AWS::StackName"
+                                            },
+                                            "\n",
+                                            "region=",
+                                            {
+                                                "Ref": "AWS::Region"
+                                            },
+                                            "\n"
+                                        ]
+                                    ]
+                                }
+                            },
+                            "c:\\cfn\\hooks.d\\cfn-auto-reloader.conf": {
+                                "content": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "[cfn-auto-reloader-hook]\n",
+                                            "triggers=post.update\n",
+                                            "path=Resources.DomainController.Metadata.AWS::CloudFormation::Init\n",
+                                            "action=cfn-init.exe -v -c config -s ",
+                                            {
+                                                "Ref": "AWS::StackId"
+                                            },
+                                            " -r DomainController",
+                                            " --region ",
+                                            {
+                                                "Ref": "AWS::Region"
+                                            },
+                                            "\n"
+                                        ]
+                                    ]
+                                }
+                            },
+                            "c:\\cfn\\scripts\\Set-StaticIP.ps1": {
+                                "content": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "$netip = Get-NetIPConfiguration;",
+                                            "$ipconfig = Get-NetIPAddress | ?{$_.IpAddress -eq $netip.IPv4Address.IpAddress};",
+                                            "Get-NetAdapter | Set-NetIPInterface -DHCP Disabled;",
+                                            "Get-NetAdapter | New-NetIPAddress -AddressFamily IPv4 -IPAddress $netip.IPv4Address.IpAddress -PrefixLength $ipconfig.PrefixLength -DefaultGateway $netip.IPv4DefaultGateway.NextHop;",
+                                            "Get-NetAdapter | Set-DnsClientServerAddress -ServerAddresses $netip.DNSServer.ServerAddresses;",
+                                            "\n"
+                                        ]
+                                    ]
+                                }
+                            }
+                        },
+                        "services": {
+                            "windows": {
+                                "cfn-hup": {
+                                    "enabled": "true",
+                                    "ensureRunning": "true",
+                                    "files": [
+                                        "c:\\cfn\\cfn-hup.conf",
+                                        "c:\\cfn\\hooks.d\\cfn-auto-reloader.conf"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "rename": {
+                        "commands": {
+                            "a-set-static-ip": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "powershell.exe -ExecutionPolicy RemoteSigned -Command c:\\cfn\\scripts\\Set-StaticIP.ps1"
+                                        ]
+                                    ]
+                                },
+                                "waitAfterCompletion": "45"
+                            },
+                            "b-execute-powershell-script-RenameComputer": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "powershell.exe Rename-Computer -NewName ",
+                                            {
+                                                "Ref": "ADServerNetBIOSName1"
+                                            },
+                                            " -Restart"
+                                        ]
+                                    ]
+                                },
+                                "waitAfterCompletion": "forever"
+                            }
+                        }
+                    },
+                    "finalize": {
+                        "commands": {
+                            "1-signal-success": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "cfn-signal.exe -e 0 \"",
+                                            {
+                                                "Ref": "DomainControllerWaitHandle"
+                                            },
+                                            "\""
+                                        ]
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "Properties": {
+                "ImageId": {
+                    "Fn::FindInMap": [
+                        "AWSAMIRegionMap",
+                        {
+                            "Ref": "AWS::Region"
+                        },
+                        "WS2012R2"
+                    ]
+                },
+                "InstanceType": {
+                    "Ref": "ADInstanceType"
+                },
+                "SubnetId": {
+                    "Ref": "PrivateSubnet1"
+                },
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": {
+                            "Ref": "ADServerNetBIOSName1"
+                        }
+                    }
+                ],
+                "BlockDeviceMappings": [
+                    {
+                        "DeviceName": "/dev/sda1",
+                        "Ebs": {
+                            "VolumeSize": "100",
+                            "VolumeType": "gp2"
+                        }
+                    }
+                ],
+                "SecurityGroupIds": [
+                    {
+                        "Ref": "DomainControllerSG1"
+                    }
+                ],
+                "PrivateIpAddress": {
+                    "Ref": "AD1PrivateIp"
+                },
+                "KeyName": {
+                    "Ref": "KeyPairName"
+                },
+                "UserData": {
+                    "Fn::Base64": {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "<script>\n",
+                                "cfn-init.exe -v -c config -s ",
+                                {
+                                    "Ref": "AWS::StackId"
+                                },
+                                " -r DomainController",
+                                " --region ",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                "\n",
+                                "</script>\n"
+                            ]
+                        ]
+                    }
+                }
+            }
+        },
+        "DomainController2": {
+            "Type": "AWS::EC2::Instance",
+            "DependsOn": "DomainControllerWaitCondition",
+            "Metadata": {
+                "AWS::CloudFormation::Init": {
+                    "configSets": {
+                        "config": [
+                            "setup",
+                            "rename",
+                            "finalize"
+                        ]
+                    },
+                    "setup": {
+                        "files": {
+                            "c:\\cfn\\cfn-hup.conf": {
+                                "content": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "[main]\n",
+                                            "stack=",
+                                            {
+                                                "Ref": "AWS::StackName"
+                                            },
+                                            "\n",
+                                            "region=",
+                                            {
+                                                "Ref": "AWS::Region"
+                                            },
+                                            "\n"
+                                        ]
+                                    ]
+                                }
+                            },
+                            "c:\\cfn\\hooks.d\\cfn-auto-reloader.conf": {
+                                "content": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "[cfn-auto-reloader-hook]\n",
+                                            "triggers=post.update\n",
+                                            "path=Resources.DomainController2.Metadata.AWS::CloudFormation::Init\n",
+                                            "action=cfn-init.exe -v -c config -s ",
+                                            {
+                                                "Ref": "AWS::StackId"
+                                            },
+                                            " -r DomainController2",
+                                            " --region ",
+                                            {
+                                                "Ref": "AWS::Region"
+                                            },
+                                            "\n"
+                                        ]
+                                    ]
+                                }
+                            },
+                            "c:\\cfn\\scripts\\Set-StaticIP.ps1": {
+                                "content": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "$netip = Get-NetIPConfiguration;",
+                                            "$ipconfig = Get-NetIPAddress | ?{$_.IpAddress -eq $netip.IPv4Address.IpAddress};",
+                                            "Get-NetAdapter | Set-NetIPInterface -DHCP Disabled;",
+                                            "Get-NetAdapter | New-NetIPAddress -AddressFamily IPv4 -IPAddress $netip.IPv4Address.IpAddress -PrefixLength $ipconfig.PrefixLength -DefaultGateway $netip.IPv4DefaultGateway.NextHop;",
+                                            "Get-NetAdapter | Set-DnsClientServerAddress -ServerAddresses $netip.DNSServer.ServerAddresses;",
+                                            "\n"
+                                        ]
+                                    ]
+                                }
+                            }
+                        },
+                        "services": {
+                            "windows": {
+                                "cfn-hup": {
+                                    "enabled": "true",
+                                    "ensureRunning": "true",
+                                    "files": [
+                                        "c:\\cfn\\cfn-hup.conf",
+                                        "c:\\cfn\\hooks.d\\cfn-auto-reloader.conf"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "rename": {
+                        "commands": {
+                            "a-set-static-ip": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "powershell.exe -ExecutionPolicy RemoteSigned -Command c:\\cfn\\scripts\\Set-StaticIP.ps1"
+                                        ]
+                                    ]
+                                },
+                                "waitAfterCompletion": "45"
+                            },
+                            "b-execute-powershell-script-RenameComputer": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "powershell.exe Rename-Computer -NewName ",
+                                            {
+                                                "Ref": "ADServerNetBIOSName2"
+                                            },
+                                            " -Restart"
+                                        ]
+                                    ]
+                                },
+                                "waitAfterCompletion": "forever"
+                            }
+                        }
+                    },
+                    "finalize": {
+                        "commands": {
+                            "1-signal-success": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "cfn-signal.exe -e 0 \"",
+                                            {
+                                                "Ref": "DomainController2WaitHandle"
+                                            },
+                                            "\""
+                                        ]
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "Properties": {
+                "ImageId": {
+                    "Fn::FindInMap": [
+                        "AWSAMIRegionMap",
+                        {
+                            "Ref": "AWS::Region"
+                        },
+                        "WS2012R2"
+                    ]
+                },
+                "InstanceType": {
+                    "Ref": "AD2InstanceType"
+                },
+                "SubnetId": {
+                    "Ref": "PrivateSubnet2"
+                },
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": {
+                            "Ref": "ADServerNetBIOSName2"
+                        }
+                    }
+                ],
+                "SecurityGroupIds": [
+                    {
+                        "Ref": "DomainControllerSG2"
+                    }
+                ],
+                "BlockDeviceMappings": [
+                    {
+                        "DeviceName": "/dev/sda1",
+                        "Ebs": {
+                            "VolumeSize": "100",
+                            "VolumeType": "gp2"
+                        }
+                    }
+                ],
+                "PrivateIpAddress": {
+                    "Ref": "AD2PrivateIp"
+                },
+                "KeyName": {
+                    "Ref": "KeyPairName"
+                },
+                "UserData": {
+                    "Fn::Base64": {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "<script>\n",
+                                "cfn-init.exe -v -c config -s ",
+                                {
+                                    "Ref": "AWS::StackId"
+                                },
+                                " -r DomainController2",
+                                " --region ",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                "\n",
+                                "</script>\n"
+                            ]
+                        ]
+                    }
+                }
+            }
+        },
+        "RDGateway": {
+            "Type": "AWS::EC2::Instance",
+            "DependsOn": "DomainController2",
+            "Metadata": {
+                "AWS::CloudFormation::Init": {
+                    "configSets": {
+                        "config": [
+                            "setup",
+                            "rename",
+                            "installRDS",
+                            "finalize"
+                        ]
+                    },
+                    "setup": {
+                        "files": {
+                            "c:\\cfn\\cfn-hup.conf": {
+                                "content": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "[main]\n",
+                                            "stack=",
+                                            {
+                                                "Ref": "AWS::StackName"
+                                            },
+                                            "\n",
+                                            "region=",
+                                            {
+                                                "Ref": "AWS::Region"
+                                            },
+                                            "\n"
+                                        ]
+                                    ]
+                                }
+                            },
+                            "c:\\cfn\\hooks.d\\cfn-auto-reloader.conf": {
+                                "content": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "[cfn-auto-reloader-hook]\n",
+                                            "triggers=post.update\n",
+                                            "path=Resources.RDGateway.Metadata.AWS::CloudFormation::Init\n",
+                                            "action=cfn-init.exe -v -c config -s ",
+                                            {
+                                                "Ref": "AWS::StackId"
+                                            },
+                                            " -r RDGateway",
+                                            " --region ",
+                                            {
+                                                "Ref": "AWS::Region"
+                                            },
+                                            "\n"
+                                        ]
+                                    ]
+                                }
+                            }
+                        },
+                        "services": {
+                            "windows": {
+                                "cfn-hup": {
+                                    "enabled": "true",
+                                    "ensureRunning": "true",
+                                    "files": [
+                                        "c:\\cfn\\cfn-hup.conf",
+                                        "c:\\cfn\\hooks.d\\cfn-auto-reloader.conf"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "rename": {
+                        "commands": {
+                            "1-execute-powershell-script-RenameComputer": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "powershell.exe Rename-Computer -NewName RDGW1 -Restart"
+                                        ]
+                                    ]
+                                },
+                                "waitAfterCompletion": "forever"
+                            }
+                        }
+                    },
+                    "installRDS": {
+                        "commands": {
+                            "1-install-rds": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "powershell.exe \"Install-WindowsFeature RDS-Gateway,RSAT-RDS-Gateway\""
+                                        ]
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "finalize": {
+                        "commands": {
+                            "1-signal-success": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "cfn-signal.exe -e 0 \"",
+                                            {
+                                                "Ref": "RDGWWaitHandle"
+                                            },
+                                            "\""
+                                        ]
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "Properties": {
+                "ImageId": {
+                    "Fn::FindInMap": [
+                        "AWSAMIRegionMap",
+                        {
+                            "Ref": "AWS::Region"
+                        },
+                        "WS2012R2"
+                    ]
+                },
+                "InstanceType": {
+                    "Ref": "RDGWInstanceType"
+                },
+                "SubnetId": {
+                    "Ref": "DMZSubnet"
+                },
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": "RDGW1"
+                    }
+                ],
+                "BlockDeviceMappings": [
+                    {
+                        "DeviceName": "/dev/sda1",
+                        "Ebs": {
+                            "VolumeSize": "50",
+                            "VolumeType": "gp2"
+                        }
+                    }
+                ],
+                "SecurityGroupIds": [
+                    {
+                        "Ref": "RDGWSecurityGroup"
+                    },
+                    {
+                        "Ref": "DomainMemberSG"
+                    }
+                ],
+                "KeyName": {
+                    "Ref": "KeyPairName"
+                },
+                "UserData": {
+                    "Fn::Base64": {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "<script>\n",
+                                "cfn-init.exe -v -c config -s ",
+                                {
+                                    "Ref": "AWS::StackId"
+                                },
+                                " -r RDGateway",
+                                " --region ",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                "\n",
+                                "</script>\n"
+                            ]
+                        ]
+                    }
+                }
+            }
+        },
+        "RDGateway2": {
+            "Type": "AWS::EC2::Instance",
+            "DependsOn": "DomainController2",
+            "Metadata": {
+                "AWS::CloudFormation::Init": {
+                    "configSets": {
+                        "config": [
+                            "setup",
+                            "rename",
+                            "installRDS",
+                            "finalize"
+                        ]
+                    },
+                    "setup": {
+                        "files": {
+                            "c:\\cfn\\cfn-hup.conf": {
+                                "content": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "[main]\n",
+                                            "stack=",
+                                            {
+                                                "Ref": "AWS::StackName"
+                                            },
+                                            "\n",
+                                            "region=",
+                                            {
+                                                "Ref": "AWS::Region"
+                                            },
+                                            "\n"
+                                        ]
+                                    ]
+                                }
+                            },
+                            "c:\\cfn\\hooks.d\\cfn-auto-reloader.conf": {
+                                "content": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "[cfn-auto-reloader-hook]\n",
+                                            "triggers=post.update\n",
+                                            "path=Resources.RDGateway2.Metadata.AWS::CloudFormation::Init\n",
+                                            "action=cfn-init.exe -v -c config -s ",
+                                            {
+                                                "Ref": "AWS::StackId"
+                                            },
+                                            " -r RDGateway2",
+                                            " --region ",
+                                            {
+                                                "Ref": "AWS::Region"
+                                            },
+                                            "\n"
+                                        ]
+                                    ]
+                                }
+                            }
+                        },
+                        "services": {
+                            "windows": {
+                                "cfn-hup": {
+                                    "enabled": "true",
+                                    "ensureRunning": "true",
+                                    "files": [
+                                        "c:\\cfn\\cfn-hup.conf",
+                                        "c:\\cfn\\hooks.d\\cfn-auto-reloader.conf"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "rename": {
+                        "commands": {
+                            "1-execute-powershell-script-RenameComputer": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "powershell.exe Rename-Computer -NewName RDGW2 -Restart"
+                                        ]
+                                    ]
+                                },
+                                "waitAfterCompletion": "forever"
+                            }
+                        }
+                    },
+                    "installRDS": {
+                        "commands": {
+                            "1-install-rds": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "powershell.exe \"Install-WindowsFeature RDS-Gateway,RSAT-RDS-Gateway\""
+                                        ]
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "finalize": {
+                        "commands": {
+                            "1-signal-success": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "cfn-signal.exe -e 0 \"",
+                                            {
+                                                "Ref": "RDGW2WaitHandle"
+                                            },
+                                            "\""
+                                        ]
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "Properties": {
+                "ImageId": {
+                    "Fn::FindInMap": [
+                        "AWSAMIRegionMap",
+                        {
+                            "Ref": "AWS::Region"
+                        },
+                        "WS2012R2"
+                    ]
+                },
+                "InstanceType": {
+                    "Ref": "RDGWInstanceType"
+                },
+                "SubnetId": {
+                    "Ref": "DMZ2Subnet"
+                },
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": "RDGW2"
+                    }
+                ],
+                "BlockDeviceMappings": [
+                    {
+                        "DeviceName": "/dev/sda1",
+                        "Ebs": {
+                            "VolumeSize": "50",
+                            "VolumeType": "gp2"
+                        }
+                    }
+                ],
+                "SecurityGroupIds": [
+                    {
+                        "Ref": "RDGWSecurityGroup"
+                    },
+                    {
+                        "Ref": "DomainMemberSG"
+                    }
+                ],
+                "KeyName": {
+                    "Ref": "KeyPairName"
+                },
+                "UserData": {
+                    "Fn::Base64": {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "<script>\n",
+                                "cfn-init.exe -v -c config -s ",
+                                {
+                                    "Ref": "AWS::StackId"
+                                },
+                                " -r RDGateway2",
+                                " --region ",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                "\n",
+                                "</script>\n"
+                            ]
+                        ]
+                    }
+                }
+            }
+        },
+        "DomainControllerWaitCondition": {
+            "Type": "AWS::CloudFormation::WaitCondition",
+            "DependsOn": "DomainController",
+            "Properties": {
+                "Handle": {
+                    "Ref": "DomainControllerWaitHandle"
+                },
+                "Timeout": "3600"
+            }
+        },
+        "DomainControllerWaitHandle": {
+            "Type": "AWS::CloudFormation::WaitConditionHandle"
+        },
+        "DomainController2WaitCondition": {
+            "Type": "AWS::CloudFormation::WaitCondition",
+            "DependsOn": "DomainController2",
+            "Properties": {
+                "Handle": {
+                    "Ref": "DomainController2WaitHandle"
+                },
+                "Timeout": "3600"
+            }
+        },
+        "DomainController2WaitHandle": {
+            "Type": "AWS::CloudFormation::WaitConditionHandle"
+        },
+        "RDGWWaitCondition": {
+            "Type": "AWS::CloudFormation::WaitCondition",
+            "DependsOn": "RDGateway",
+            "Properties": {
+                "Handle": {
+                    "Ref": "RDGWWaitHandle"
+                },
+                "Timeout": "3000"
+            }
+        },
+        "RDGWWaitHandle": {
+            "Type": "AWS::CloudFormation::WaitConditionHandle"
+        },
+        "RDGW2WaitCondition": {
+            "Type": "AWS::CloudFormation::WaitCondition",
+            "DependsOn": "RDGateway2",
+            "Properties": {
+                "Handle": {
+                    "Ref": "RDGW2WaitHandle"
+                },
+                "Timeout": "3000"
+            }
+        },
+        "RDGW2WaitHandle": {
+            "Type": "AWS::CloudFormation::WaitConditionHandle"
+        },
+        "DomainControllerSG1": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "GroupDescription": "Domain Controller",
+                "VpcId": {
+                    "Ref": "VPC"
+                },
+                "SecurityGroupIngress": [
+                    {
+                        "IpProtocol": "udp",
+                        "FromPort": "123",
+                        "ToPort": "123",
+                        "CidrIp": {
+                            "Ref": "PrivSub2CIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "135",
+                        "ToPort": "135",
+                        "CidrIp": {
+                            "Ref": "PrivSub2CIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "9389",
+                        "ToPort": "9389",
+                        "CidrIp": {
+                            "Ref": "PrivSub2CIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "udp",
+                        "FromPort": "138",
+                        "ToPort": "138",
+                        "CidrIp": {
+                            "Ref": "PrivSub2CIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "445",
+                        "ToPort": "445",
+                        "CidrIp": {
+                            "Ref": "PrivSub2CIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "udp",
+                        "FromPort": "445",
+                        "ToPort": "445",
+                        "CidrIp": {
+                            "Ref": "PrivSub2CIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "udp",
+                        "FromPort": "464",
+                        "ToPort": "464",
+                        "CidrIp": {
+                            "Ref": "PrivSub2CIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "464",
+                        "ToPort": "464",
+                        "CidrIp": {
+                            "Ref": "PrivSub2CIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "49152",
+                        "ToPort": "65535",
+                        "CidrIp": {
+                            "Ref": "PrivSub2CIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "udp",
+                        "FromPort": "49152",
+                        "ToPort": "65535",
+                        "CidrIp": {
+                            "Ref": "PrivSub2CIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "389",
+                        "ToPort": "389",
+                        "CidrIp": {
+                            "Ref": "PrivSub2CIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "udp",
+                        "FromPort": "389",
+                        "ToPort": "389",
+                        "CidrIp": {
+                            "Ref": "PrivSub2CIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "636",
+                        "ToPort": "636",
+                        "CidrIp": {
+                            "Ref": "PrivSub2CIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "3268",
+                        "ToPort": "3268",
+                        "CidrIp": {
+                            "Ref": "PrivSub2CIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "3269",
+                        "ToPort": "3269",
+                        "CidrIp": {
+                            "Ref": "PrivSub2CIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "53",
+                        "ToPort": "53",
+                        "CidrIp": {
+                            "Ref": "VPCCIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "udp",
+                        "FromPort": "53",
+                        "ToPort": "53",
+                        "CidrIp": {
+                            "Ref": "VPCCIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "9389",
+                        "ToPort": "9389",
+                        "CidrIp": {
+                            "Ref": "PrivSub2CIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "88",
+                        "ToPort": "88",
+                        "CidrIp": {
+                            "Ref": "PrivSub2CIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "udp",
+                        "FromPort": "88",
+                        "ToPort": "88",
+                        "CidrIp": {
+                            "Ref": "PrivSub2CIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "udp",
+                        "FromPort": "5355",
+                        "ToPort": "5355",
+                        "CidrIp": {
+                            "Ref": "PrivSub2CIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "udp",
+                        "FromPort": "137",
+                        "ToPort": "137",
+                        "CidrIp": {
+                            "Ref": "PrivSub2CIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "139",
+                        "ToPort": "139",
+                        "CidrIp": {
+                            "Ref": "PrivSub2CIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "5722",
+                        "ToPort": "5722",
+                        "CidrIp": {
+                            "Ref": "PrivSub2CIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "udp",
+                        "FromPort": "123",
+                        "ToPort": "123",
+                        "SourceSecurityGroupId": {
+                            "Ref": "DomainMemberSG"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "135",
+                        "ToPort": "135",
+                        "SourceSecurityGroupId": {
+                            "Ref": "DomainMemberSG"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "9389",
+                        "ToPort": "9389",
+                        "SourceSecurityGroupId": {
+                            "Ref": "DomainMemberSG"
+                        }
+                    },
+                    {
+                        "IpProtocol": "udp",
+                        "FromPort": "138",
+                        "ToPort": "138",
+                        "SourceSecurityGroupId": {
+                            "Ref": "DomainMemberSG"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "445",
+                        "ToPort": "445",
+                        "SourceSecurityGroupId": {
+                            "Ref": "DomainMemberSG"
+                        }
+                    },
+                    {
+                        "IpProtocol": "udp",
+                        "FromPort": "445",
+                        "ToPort": "445",
+                        "SourceSecurityGroupId": {
+                            "Ref": "DomainMemberSG"
+                        }
+                    },
+                    {
+                        "IpProtocol": "udp",
+                        "FromPort": "464",
+                        "ToPort": "464",
+                        "SourceSecurityGroupId": {
+                            "Ref": "DomainMemberSG"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "464",
+                        "ToPort": "464",
+                        "SourceSecurityGroupId": {
+                            "Ref": "DomainMemberSG"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "49152",
+                        "ToPort": "65535",
+                        "SourceSecurityGroupId": {
+                            "Ref": "DomainMemberSG"
+                        }
+                    },
+                    {
+                        "IpProtocol": "udp",
+                        "FromPort": "49152",
+                        "ToPort": "65535",
+                        "SourceSecurityGroupId": {
+                            "Ref": "DomainMemberSG"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "389",
+                        "ToPort": "389",
+                        "SourceSecurityGroupId": {
+                            "Ref": "DomainMemberSG"
+                        }
+                    },
+                    {
+                        "IpProtocol": "udp",
+                        "FromPort": "389",
+                        "ToPort": "389",
+                        "SourceSecurityGroupId": {
+                            "Ref": "DomainMemberSG"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "636",
+                        "ToPort": "636",
+                        "SourceSecurityGroupId": {
+                            "Ref": "DomainMemberSG"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "3268",
+                        "ToPort": "3268",
+                        "SourceSecurityGroupId": {
+                            "Ref": "DomainMemberSG"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "3269",
+                        "ToPort": "3269",
+                        "SourceSecurityGroupId": {
+                            "Ref": "DomainMemberSG"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "88",
+                        "ToPort": "88",
+                        "SourceSecurityGroupId": {
+                            "Ref": "DomainMemberSG"
+                        }
+                    },
+                    {
+                        "IpProtocol": "udp",
+                        "FromPort": "88",
+                        "ToPort": "88",
+                        "SourceSecurityGroupId": {
+                            "Ref": "DomainMemberSG"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "3389",
+                        "ToPort": "3389",
+                        "CidrIp": {
+                            "Ref": "DMZ1CIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "3389",
+                        "ToPort": "3389",
+                        "CidrIp": {
+                            "Ref": "DMZ2CIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "icmp",
+                        "FromPort": "-1",
+                        "ToPort": "-1",
+                        "CidrIp": {
+                            "Ref": "DMZ1CIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "icmp",
+                        "FromPort": "-1",
+                        "ToPort": "-1",
+                        "CidrIp": {
+                            "Ref": "DMZ2CIDR"
+                        }
+                    }
+                ]
+            }
+        },
+        "DomainControllerSG2": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "GroupDescription": "Domain Controller",
+                "VpcId": {
+                    "Ref": "VPC"
+                },
+                "SecurityGroupIngress": [
+                    {
+                        "IpProtocol": "udp",
+                        "FromPort": "123",
+                        "ToPort": "123",
+                        "CidrIp": {
+                            "Ref": "PrivSub1CIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "135",
+                        "ToPort": "135",
+                        "CidrIp": {
+                            "Ref": "PrivSub1CIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "9389",
+                        "ToPort": "9389",
+                        "CidrIp": {
+                            "Ref": "PrivSub1CIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "udp",
+                        "FromPort": "138",
+                        "ToPort": "138",
+                        "CidrIp": {
+                            "Ref": "PrivSub1CIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "445",
+                        "ToPort": "445",
+                        "CidrIp": {
+                            "Ref": "PrivSub1CIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "udp",
+                        "FromPort": "445",
+                        "ToPort": "445",
+                        "CidrIp": {
+                            "Ref": "PrivSub1CIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "udp",
+                        "FromPort": "464",
+                        "ToPort": "464",
+                        "CidrIp": {
+                            "Ref": "PrivSub1CIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "464",
+                        "ToPort": "464",
+                        "CidrIp": {
+                            "Ref": "PrivSub1CIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "49152",
+                        "ToPort": "65535",
+                        "CidrIp": {
+                            "Ref": "PrivSub1CIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "udp",
+                        "FromPort": "49152",
+                        "ToPort": "65535",
+                        "CidrIp": {
+                            "Ref": "PrivSub1CIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "389",
+                        "ToPort": "389",
+                        "CidrIp": {
+                            "Ref": "PrivSub1CIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "udp",
+                        "FromPort": "389",
+                        "ToPort": "389",
+                        "CidrIp": {
+                            "Ref": "PrivSub1CIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "636",
+                        "ToPort": "636",
+                        "CidrIp": {
+                            "Ref": "PrivSub1CIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "3268",
+                        "ToPort": "3268",
+                        "CidrIp": {
+                            "Ref": "PrivSub1CIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "3269",
+                        "ToPort": "3269",
+                        "CidrIp": {
+                            "Ref": "PrivSub1CIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "9389",
+                        "ToPort": "9389",
+                        "CidrIp": {
+                            "Ref": "PrivSub1CIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "88",
+                        "ToPort": "88",
+                        "CidrIp": {
+                            "Ref": "PrivSub1CIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "udp",
+                        "FromPort": "5355",
+                        "ToPort": "5355",
+                        "CidrIp": {
+                            "Ref": "PrivSub1CIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "udp",
+                        "FromPort": "137",
+                        "ToPort": "137",
+                        "CidrIp": {
+                            "Ref": "PrivSub1CIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "139",
+                        "ToPort": "139",
+                        "CidrIp": {
+                            "Ref": "PrivSub1CIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "5722",
+                        "ToPort": "5722",
+                        "CidrIp": {
+                            "Ref": "PrivSub1CIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "udp",
+                        "FromPort": "123",
+                        "ToPort": "123",
+                        "SourceSecurityGroupId": {
+                            "Ref": "DomainMemberSG"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "135",
+                        "ToPort": "135",
+                        "SourceSecurityGroupId": {
+                            "Ref": "DomainMemberSG"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "9389",
+                        "ToPort": "9389",
+                        "SourceSecurityGroupId": {
+                            "Ref": "DomainMemberSG"
+                        }
+                    },
+                    {
+                        "IpProtocol": "udp",
+                        "FromPort": "138",
+                        "ToPort": "138",
+                        "SourceSecurityGroupId": {
+                            "Ref": "DomainMemberSG"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "445",
+                        "ToPort": "445",
+                        "SourceSecurityGroupId": {
+                            "Ref": "DomainMemberSG"
+                        }
+                    },
+                    {
+                        "IpProtocol": "udp",
+                        "FromPort": "445",
+                        "ToPort": "445",
+                        "SourceSecurityGroupId": {
+                            "Ref": "DomainMemberSG"
+                        }
+                    },
+                    {
+                        "IpProtocol": "udp",
+                        "FromPort": "464",
+                        "ToPort": "464",
+                        "SourceSecurityGroupId": {
+                            "Ref": "DomainMemberSG"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "464",
+                        "ToPort": "464",
+                        "SourceSecurityGroupId": {
+                            "Ref": "DomainMemberSG"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "49152",
+                        "ToPort": "65535",
+                        "SourceSecurityGroupId": {
+                            "Ref": "DomainMemberSG"
+                        }
+                    },
+                    {
+                        "IpProtocol": "udp",
+                        "FromPort": "49152",
+                        "ToPort": "65535",
+                        "SourceSecurityGroupId": {
+                            "Ref": "DomainMemberSG"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "389",
+                        "ToPort": "389",
+                        "SourceSecurityGroupId": {
+                            "Ref": "DomainMemberSG"
+                        }
+                    },
+                    {
+                        "IpProtocol": "udp",
+                        "FromPort": "389",
+                        "ToPort": "389",
+                        "SourceSecurityGroupId": {
+                            "Ref": "DomainMemberSG"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "636",
+                        "ToPort": "636",
+                        "SourceSecurityGroupId": {
+                            "Ref": "DomainMemberSG"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "3268",
+                        "ToPort": "3268",
+                        "SourceSecurityGroupId": {
+                            "Ref": "DomainMemberSG"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "3269",
+                        "ToPort": "3269",
+                        "SourceSecurityGroupId": {
+                            "Ref": "DomainMemberSG"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "53",
+                        "ToPort": "53",
+                        "CidrIp": {
+                            "Ref": "VPCCIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "udp",
+                        "FromPort": "53",
+                        "ToPort": "53",
+                        "CidrIp": {
+                            "Ref": "VPCCIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "88",
+                        "ToPort": "88",
+                        "SourceSecurityGroupId": {
+                            "Ref": "DomainMemberSG"
+                        }
+                    },
+                    {
+                        "IpProtocol": "udp",
+                        "FromPort": "88",
+                        "ToPort": "88",
+                        "SourceSecurityGroupId": {
+                            "Ref": "DomainMemberSG"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "3389",
+                        "ToPort": "3389",
+                        "CidrIp": {
+                            "Ref": "DMZ1CIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "3389",
+                        "ToPort": "3389",
+                        "CidrIp": {
+                            "Ref": "DMZ2CIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "icmp",
+                        "FromPort": "-1",
+                        "ToPort": "-1",
+                        "CidrIp": {
+                            "Ref": "DMZ1CIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "icmp",
+                        "FromPort": "-1",
+                        "ToPort": "-1",
+                        "CidrIp": {
+                            "Ref": "DMZ2CIDR"
+                        }
+                    }
+                ]
+            }
+        },
+        "DomainMemberSG": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "GroupDescription": "Domain Members",
+                "VpcId": {
+                    "Ref": "VPC"
+                },
+                "SecurityGroupIngress": [
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "53",
+                        "ToPort": "53",
+                        "CidrIp": {
+                            "Ref": "PrivSub1CIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "udp",
+                        "FromPort": "53",
+                        "ToPort": "53",
+                        "CidrIp": {
+                            "Ref": "PrivSub1CIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "49152",
+                        "ToPort": "65535",
+                        "CidrIp": {
+                            "Ref": "PrivSub1CIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "udp",
+                        "FromPort": "49152",
+                        "ToPort": "65535",
+                        "CidrIp": {
+                            "Ref": "PrivSub1CIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "53",
+                        "ToPort": "53",
+                        "CidrIp": {
+                            "Ref": "PrivSub2CIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "udp",
+                        "FromPort": "53",
+                        "ToPort": "53",
+                        "CidrIp": {
+                            "Ref": "PrivSub2CIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "49152",
+                        "ToPort": "65535",
+                        "CidrIp": {
+                            "Ref": "PrivSub2CIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "udp",
+                        "FromPort": "49152",
+                        "ToPort": "65535",
+                        "CidrIp": {
+                            "Ref": "PrivSub2CIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "3389",
+                        "ToPort": "3389",
+                        "CidrIp": {
+                            "Ref": "DMZ1CIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "3389",
+                        "ToPort": "3389",
+                        "CidrIp": {
+                            "Ref": "DMZ2CIDR"
+                        }
+                    }
+                ]
+            }
+        },
+        "NATSecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "GroupDescription": "Enables SSH access to NAT1 in AZ1 via port 22 and outbound internet access via private subnets",
+                "VpcId": {
+                    "Ref": "VPC"
+                },
+                "SecurityGroupIngress": [
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "22",
+                        "ToPort": "22",
+                        "CidrIp": "0.0.0.0/0"
+                    },
+                    {
+                        "IpProtocol": "icmp",
+                        "FromPort": "-1",
+                        "ToPort": "-1",
+                        "CidrIp": "0.0.0.0/0"
+                    },
+                    {
+                        "IpProtocol": "-1",
+                        "FromPort": "1",
+                        "ToPort": "65535",
+                        "CidrIp": {
+                            "Ref": "PrivSub1CIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "icmp",
+                        "FromPort": "-1",
+                        "ToPort": "-1",
+                        "CidrIp": {
+                            "Ref": "PrivSub1CIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "-1",
+                        "FromPort": "1",
+                        "ToPort": "65535",
+                        "CidrIp": {
+                            "Ref": "PrivSub2CIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "icmp",
+                        "FromPort": "-1",
+                        "ToPort": "-1",
+                        "CidrIp": {
+                            "Ref": "PrivSub2CIDR"
+                        }
+                    }
+                ]
+            }
+        },
+        "RDGWSecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "GroupDescription": "Enable RDP access from the Internet",
+                "VpcId": {
+                    "Ref": "VPC"
+                },
+                "SecurityGroupIngress": [
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "3389",
+                        "ToPort": "3389",
+                        "CidrIp": "0.0.0.0/0"
+                    },
+                    {
+                        "IpProtocol": "icmp",
+                        "FromPort": "-1",
+                        "ToPort": "-1",
+                        "CidrIp": "0.0.0.0/0"
+                    }
+                ]
+            }
+        }
+    },
+    "Outputs": {
+        "RDGW1ElasticIP": {
+            "Value": {
+                "Ref": "RdgwEIP"
+            },
+            "Description": "Elastic IP address of the first Remote Desktop Gateway (RDGW1) in AZ1"
+        },
+        "RDGW2ElasticIP": {
+            "Value": {
+                "Ref": "Rdgw2EIP"
+            },
+            "Description": "Elastic IP address of the second Remote Desktop Gateway (RDGW2) in AZ2"
+        }
+    }
+}

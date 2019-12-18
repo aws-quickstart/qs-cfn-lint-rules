@@ -1,0 +1,1578 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "This template builds a base TIBCO Cloud Integration - BusinessWorks docker image, creates an ECR repo with name 'tibco-tci-bw' and pushes base docker image into the ECR repo. It then leverages an existing VPC. License: Apache 2.0 (Please do not remove) Apr,2,2018 (qs-1oalbg1k9)",
+    "Metadata": {
+        "AWSAMIRegionMap":{
+            "Filters":{
+                "BWCEAMI":{
+                    "name":"BWCE-AMI-2.4.*-863648ee-2412-4c50-b46c-0d5c24092b59-ami-*",
+                    "owner-alias":"aws-marketplace",
+                    "product-code.type":"marketplace"
+                }
+           }
+        },
+        "AWS::CloudFormation::Interface": {
+            "ParameterGroups": [
+                {
+                    "Label": {
+                        "default": "Network Configuration"
+                    },
+                    "Parameters": [
+                        "VPCID",
+                        "CIDRBlockCluster",
+                        "PrivateSubnet1ID",
+                        "PrivateSubnet2ID",
+                        "PublicSubnet1ID",
+                        "PublicSubnet2ID",
+                        "AdminIngressLocation"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "ECS Cluster + Studio Configuration"
+                    },
+                    "Parameters": [
+                        "ClusterSize",
+                        "InstanceType",
+                        "VolSize",
+                        "InstanceTypeStudioImage",
+                        "StudioPassword",
+                        "VolSizeStudioImage",
+                        "KeyName"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "Base Image Customization Configuration"
+                    },
+                    "Parameters": [
+                        "PluginList",
+                        "ExtBucket"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "AWS Quickstart Configuration"
+                    },
+                    "Parameters": [
+                        "QSS3BucketName",
+                        "QSS3KeyPrefix"
+                    ]
+                }
+            ],
+            "ParameterLabels": {
+                "AdminIngressLocation": {
+                    "default": "Admin Ingress Location"
+                },
+                "CIDRBlockCluster": {
+                    "default": "VPC CIDR"
+                },
+                "ClusterSize": {
+                    "default": "ECS Cluster Size:"
+                },
+                "ExtBucket": {
+                    "default": "Create S3 Bucket for Base Image Customization?"
+                },
+                "InstanceType": {
+                    "default": "ECS Cluster Instance Type:"
+                },
+                "InstanceTypeStudioImage": {
+                    "default": "Studio EC2 Instance Type:"
+                },
+                "KeyName": {
+                    "default": "Key Pair:"
+                },
+                "PluginList": {
+                    "default": "List of Plug-ins:"
+                },
+                "PrivateSubnet1ID": {
+                    "default": "Private Subnet ID 1"
+                },
+                "PrivateSubnet2ID": {
+                    "default": "Private Subnet ID 2"
+                },
+                "PublicSubnet1ID": {
+                    "default": "Public Subnet ID 1"
+                },
+                "PublicSubnet2ID": {
+                    "default": "Public Subnet ID 2"
+                },
+                "QSS3BucketName": {
+                    "default": "Quick Start S3 Bucket Name"
+                },
+                "QSS3KeyPrefix": {
+                    "default": "Quick Start S3 Key Prefix"
+                },
+                "StudioPassword": {
+                    "default": "Studio Password:"
+                },
+                "VPCID": {
+                    "default": "VPC ID"
+                },
+                "VolSize": {
+                    "default": "ECS Cluster Volume Size:"
+                },
+                "VolSizeStudioImage": {
+                    "default": "Studio EC2 Volume Size:"
+                }
+            }
+        }
+    },
+    "Parameters": {
+        "AdminIngressLocation": {
+            "AllowedPattern": "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})",
+            "ConstraintDescription": "must be a valid IP CIDR range of the form x.x.x.x/x.",
+            "Description": "CIDR block (IP address range) to allow SSH and VNC access to your TCI-BW studio instance. Use 0.0.0.0/0 to allow access from all locations. You can always manually change this later if needed.",
+            "MaxLength": "18",
+            "MinLength": "9",
+            "Type": "String"
+        },
+        "CIDRBlockCluster": {
+            "AllowedPattern": "^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\\/(1[6-9]|2[0-8]))$",
+            "ConstraintDescription": "CIDR block parameter must be in the form x.x.x.x/16-28",
+            "Default": "10.0.0.0/16",
+            "Description": "CIDR block for the VPC",
+            "Type": "String"
+        },
+        "ClusterSize": {
+            "ConstraintDescription": "ClusterSize must be numeric and between 1 and 100.",
+            "Default": 2,
+            "Description": "Number of EC2 instances to be created initially in the ECS Cluster (1-100). This value will be used to set the Min, Max & Desired count of instances in the Auto Scaling Group.",
+            "MaxValue": 100,
+            "MinValue": 1,
+            "Type": "Number"
+        },
+        "ExtBucket": {
+            "AllowedValues": [
+                "Yes",
+                "No"
+            ],
+            "ConstraintDescription": "The value should be Yes/No.",
+            "Default": "No",
+            "Description": "Do you want to create a new S3 bucket & required folder structure for extending base image? You can upload third-party drivers, OSGI bundles, certificates, plugins etc. in this bucket to extend the base image later.",
+            "Type": "String"
+        },
+        "InstanceType": {
+            "AllowedValues": [
+                "t2.micro",
+                "t2.small",
+                "t2.medium",
+                "t2.large",
+                "t2.xlarge",
+                "t2.2xlarge",
+                "m4.large",
+                "m4.xlarge",
+                "m4.2xlarge",
+                "m4.4xlarge",
+                "m4.10xlarge",
+                "m4.16xlarge",
+                "m3.medium",
+                "m3.large",
+                "m3.xlarge",
+                "m3.2xlarge",
+                "c4.large",
+                "c4.xlarge",
+                "c4.2xlarge",
+                "c4.4xlarge",
+                "c4.8xlarge",
+                "c3.large",
+                "c3.xlarge",
+                "c3.2xlarge",
+                "c3.4xlarge",
+                "c3.8xlarge",
+                "f1.2xlarge",
+                "f1.16xlarge",
+                "g3.4xlarge",
+                "g3.8xlarge",
+                "g3.16xlarge",
+                "g2.2xlarge",
+                "g2.8xlarge",
+                "p2.xlarge",
+                "p2.8xlarge",
+                "p2.16xlarge",
+                "r4.large",
+                "r4.xlarge",
+                "r4.2xlarge",
+                "r4.4xlarge",
+                "r4.8xlarge",
+                "r4.16xlarge",
+                "r3.large",
+                "r3.xlarge",
+                "r3.2xlarge",
+                "r3.4xlarge",
+                "r3.8xlarge",
+                "x1.16xlarge",
+                "x1.32xlarge",
+                "d2.xlarge",
+                "d2.2xlarge",
+                "d2.4xlarge",
+                "d2.8xlarge",
+                "i2.xlarge",
+                "i2.2xlarge",
+                "i2.4xlarge",
+                "i2.8xlarge",
+                "i3.large",
+                "i3.xlarge",
+                "i3.2xlarge",
+                "i3.4xlarge",
+                "i3.8xlarge",
+                "i3.16xlarge"
+            ],
+            "ConstraintDescription": "InstanceType must be a valid EC2 instance type.",
+            "Default": "t2.medium",
+            "Description": "Select an instance type for EC2 instances to be created in the ECS cluster.",
+            "Type": "String"
+        },
+        "InstanceTypeStudioImage": {
+            "AllowedValues": [
+                "t2.large",
+                "t2.xlarge",
+                "t2.2xlarge",
+                "m4.large",
+                "m4.xlarge",
+                "m4.2xlarge",
+                "m4.4xlarge",
+                "m4.10xlarge",
+                "m4.16xlarge",
+                "m3.medium",
+                "m3.large",
+                "m3.xlarge",
+                "m3.2xlarge"
+            ],
+            "ConstraintDescription": "InstanceTypeStudioImage must be a valid EC2 instance type.",
+            "Default": "m4.large",
+            "Description": "Select an instance type that runs your TIBCO Cloud Integrationg - BusinessWorks studio.",
+            "Type": "String"
+        },
+        "KeyName": {
+            "AllowedPattern": "[-_ a-zA-Z0-9]*",
+            "ConstraintDescription": "Must be the name of an existing key pair. It can contain only alphanumeric characters, spaces, dashes and underscores.",
+            "Description": "Select an existing key pair. You must provide existing key pair to be able to SSH into EC2 instances.",
+            "MaxLength": 64,
+            "MinLength": 1,
+            "Type": "AWS::EC2::KeyPair::KeyName"
+        },
+        "PluginList": {
+            "Description": "Provide list of IDs of supported Plug-ins to be added in the customized image, e.g. for including Data Conversion, MongoDB and S3 plug-ins, provide the value as 'DC, MongoDB, S3'. This list should be comma separated and should not include any space inbetween. The list of supported Plug-ins are - AMQP (Plug-in for AMQP), Cassandra (Plug-in for Cassandra), DC (Plug-in for Data Conversion), DCRM (Plug-in for Microsoft Dynamics CRM), FTL (Plug-in for FTL), Kafka (Plug-in for Apache Kafka), Marketo (Plug-in for Marketo), MongoDB (Plug-in for MongoDB), MQ (Plug-in for WebSphere MQ), OData (Plug-in for OData), S3 (Plug-in for Amazon S3), ServiceNow (Plug-in for ServiceNow), SFDC (Plug-in for Salesforce.com), SFTP (Plug-in for SFTP), SQS-SNS (Plugin for SQS-SNS), Workday (Plug-in for Workday), NetSuite (Plug-in for NetSuite), PDF (Plug-in for PDF), Files (Plug-in for Files), SAP (Plug-in for SAP), ADB (Plug-in for ADB), SharePoint (Plug-in for SharePoint), LDAP (Plug-in for LDAP), SWIFT (Plug-in for SWIFT), OracleEBS (Plug-in for OracleEBS), SAP-HANA (Plug-in for SAP-HANA).",
+            "Type": "String"
+        },
+        "PrivateSubnet1ID": {
+            "Description": "ID of private subnet 1 in Availability Zone 1 for the Workload (e.g., subnet-c0236ecd)",
+            "Type": "AWS::EC2::Subnet::Id"
+        },
+        "PrivateSubnet2ID": {
+            "Description": "ID of private subnet 2 in Availability Zone 2 for the Workload (e.g., subnet-bdf5347d)",
+            "Type": "AWS::EC2::Subnet::Id"
+        },
+        "PublicSubnet1ID": {
+            "Description": "ID of public subnet 1 in Availability Zone 1 for the ELB load balancer (e.g., subnet-0ba63bb)",
+            "Type": "AWS::EC2::Subnet::Id"
+        },
+        "PublicSubnet2ID": {
+            "Description": "ID of public subnet 2 in Availability Zone 2 for the ELB load balancer (e.g., subnet-e323d09)",
+            "Type": "AWS::EC2::Subnet::Id"
+        },
+        "QSS3BucketName": {
+            "AllowedPattern": "^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$",
+            "ConstraintDescription": "Quick Start bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-).",
+            "Default": "aws-quickstart",
+            "Description": "S3 bucket name for the Quick Start assets. This string can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-).",
+            "Type": "String"
+        },
+        "QSS3KeyPrefix": {
+            "AllowedPattern": "^[0-9a-zA-Z-/]*$",
+            "ConstraintDescription": "Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).",
+            "Default": "quickstart-tibco-tci-bw/",
+            "Description": "S3 key prefix for the Quick Start assets. Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).",
+            "Type": "String"
+        },
+        "StudioPassword": {
+            "ConstraintDescription": "This password needs to be set in order to access your TCI-BW studio instance. The max length of this password is 8 characters.",
+            "Description": "Password to access the TCI-BW studio via VNC",
+            "MaxLength": 8,
+            "MinLength": 1,
+            "NoEcho": "true",
+            "Type": "String"
+        },
+        "VPCID": {
+            "Description": "ID of your existing VPC for deployment",
+            "Type": "AWS::EC2::VPC::Id"
+        },
+        "VolSize": {
+            "ConstraintDescription": "VolumeSize must be numeric and between 30 and 16384.",
+            "Default": 30,
+            "Description": "Volume Size (GB) for ECS cluster instances.",
+            "MaxValue": 16384,
+            "MinValue": 30,
+            "Type": "Number"
+        },
+        "VolSizeStudioImage": {
+            "ConstraintDescription": "VolSizeStudioImage must be numeric and between 40 and 100.",
+            "Default": 40,
+            "Description": "Volume Size  (GB) for EC2 instance running TIBCO Cloud Integration - BusinessWorks studio.",
+            "MaxValue": 100,
+            "MinValue": 40,
+            "Type": "Number"
+        }
+    },
+    "Conditions": {
+        "CreateS3Bucket": {
+            "Fn::Equals": [
+                {
+                    "Ref": "ExtBucket"
+                },
+                "Yes"
+            ]
+        },
+        "GovCloudCondition": {
+            "Fn::Equals": [
+                {
+                    "Ref": "AWS::Region"
+                },
+                "us-gov-west-1"
+            ]
+        },
+        "HasVolSize": {
+            "Fn::Not": [
+                {
+                    "Fn::Equals": [
+                        {
+                            "Ref": "VolSize"
+                        },
+                        ""
+                    ]
+                }
+            ]
+        },
+        "HasVolStudioSize": {
+            "Fn::Not": [
+                {
+                    "Fn::Equals": [
+                        {
+                            "Ref": "VolSizeStudioImage"
+                        },
+                        ""
+                    ]
+                }
+            ]
+        }
+    },
+    "Rules": {
+        "SubnetsInVPC": {
+            "Assertions": [
+                {
+                    "Assert": {
+                        "Fn::EachMemberIn": [
+                            {
+                                "Fn::ValueOfAll": [
+                                    "AWS::EC2::Subnet::Id",
+                                    "VpcId"
+                                ]
+                            },
+                            {
+                                "Fn::RefAll": "AWS::EC2::VPC::Id"
+                            }
+                        ]
+                    },
+                    "AssertDescription": "All subnets must be in the VPC"
+                }
+            ]
+        }
+    },
+    "Mappings": {
+        "AWSAMIRegionMap": {
+            "AMI": {
+                "BWCEAMI": "BWCE-AMI-2.4.2-863648ee-2412-4c50-b46c-0d5c24092b59-ami-0dc6aecb8446aeeef.4"
+            },
+            "ap-northeast-1": {
+                "BWCEAMI": "ami-0ea1d75d5a9852585"
+            },
+            "ap-southeast-1": {
+                "BWCEAMI": "ami-05dd9b6e39668f42b"
+            },
+            "ap-southeast-2": {
+                "BWCEAMI": "ami-0df87c7437f0f7b83"
+            },
+            "ca-central-1": {
+                "BWCEAMI": "ami-062c003cc2102cb6a"
+            },
+            "eu-central-1": {
+                "BWCEAMI": "ami-0c12a6bae6b394e8e"
+            },
+            "eu-west-1": {
+                "BWCEAMI": "ami-0c2a9c5145e112f03"
+            },
+            "eu-west-2": {
+                "BWCEAMI": "ami-04a40a3a0fad0945a"
+            },
+            "us-east-1": {
+                "BWCEAMI": "ami-0abdd08fa94dbbe30"
+            },
+            "us-east-2": {
+                "BWCEAMI": "ami-0b9dd0aa380859bd8"
+            },
+            "us-west-1": {
+                "BWCEAMI": "ami-03341b9bed55b246f"
+            },
+            "us-west-2": {
+                "BWCEAMI": "ami-09b8612e9fbf75b93"
+            }
+        }
+    },
+    "Resources": {
+        "ECSHostSecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "VPCID"
+                },
+                "GroupDescription": "Access to the ECS hosts and the tasks/containers that run on them",
+                "SecurityGroupIngress": [
+                    {
+                        "SourceSecurityGroupId": {
+                            "Ref": "LoadBalancerSecurityGroup"
+                        },
+                        "IpProtocol": -1
+                    }
+                ],
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": {
+                            "Fn::Sub": "${AWS::StackName}-ECS-Hosts"
+                        }
+                    }
+                ]
+            }
+        },
+        "EC2SecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "VPCID"
+                },
+                "GroupDescription": "Base security group for EC2 TIBCO Cloud Integration - BusinessWorks Instance",
+                "SecurityGroupIngress": [
+                    {
+                        "IpProtocol": "tcp",
+                        "CidrIp": {
+                            "Ref": "AdminIngressLocation"
+                        },
+                        "FromPort": "22",
+                        "ToPort": "22"
+                    }
+                ]
+            }
+        },
+        "LoadBalancerSecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "VPCID"
+                },
+                "GroupDescription": "Access to the load balancer that sits in front of ECS",
+                "SecurityGroupIngress": [
+                    {
+                        "CidrIp": {
+                            "Ref": "AdminIngressLocation"
+                        },
+                        "IpProtocol": "tcp",
+                        "FromPort": "8080",
+                        "ToPort": "8080"
+                    }
+                ],
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": {
+                            "Fn::Sub": "${AWS::StackName}-LoadBalancers"
+                        }
+                    }
+                ]
+            }
+        },
+        "TCIBWArtifactsBucket": {
+            "Type": "AWS::S3::Bucket",
+            "Condition": "CreateS3Bucket",
+            "DeletionPolicy": "Retain"
+        },
+        "TCIBWEcrRepository": {
+            "Type": "AWS::ECR::Repository"
+        },
+        "DefaultTargetGroup": {
+            "Type": "AWS::ElasticLoadBalancingV2::TargetGroup",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "VPCID"
+                },
+                "Port": 8080,
+                "Protocol": "HTTP",
+                "HealthCheckPath": "/_ping",
+                "HealthCheckPort": 7777,
+                "HealthCheckProtocol": "HTTP",
+                "Matcher": {
+                    "HttpCode": "200,302"
+                },
+                "HealthCheckIntervalSeconds": 30,
+                "HealthCheckTimeoutSeconds": 5,
+                "HealthyThresholdCount": 3,
+                "UnhealthyThresholdCount": 2
+            }
+        },
+        "LoadBalancer": {
+            "Type": "AWS::ElasticLoadBalancingV2::LoadBalancer",
+            "Properties": {
+                "Subnets": [
+                    {
+                        "Ref": "PublicSubnet1ID"
+                    },
+                    {
+                        "Ref": "PublicSubnet2ID"
+                    }
+                ],
+                "SecurityGroups": [
+                    {
+                        "Ref": "LoadBalancerSecurityGroup"
+                    }
+                ]
+            }
+        },
+        "LoadBalancerListener": {
+            "Type": "AWS::ElasticLoadBalancingV2::Listener",
+            "Properties": {
+                "LoadBalancerArn": {
+                    "Ref": "LoadBalancer"
+                },
+                "Port": 8080,
+                "Protocol": "HTTP",
+                "DefaultActions": [
+                    {
+                        "Type": "forward",
+                        "TargetGroupArn": {
+                            "Ref": "DefaultTargetGroup"
+                        }
+                    }
+                ]
+            }
+        },
+        "InitialEC2Setup": {
+            "Type": "AWS::EC2::Instance",
+            "Properties": {
+                "ImageId": {
+                    "Fn::FindInMap": [
+                        "AWSAMIRegionMap",
+                        {
+                            "Ref": "AWS::Region"
+                        },
+                        "BWCEAMI"
+                    ]
+                },
+                "InstanceType": "t2.medium",
+                "IamInstanceProfile": {
+                    "Ref": "ECSInstanceProfile"
+                },
+                "InstanceInitiatedShutdownBehavior": "terminate",
+                "SecurityGroupIds": [
+                    {
+                        "Ref": "EC2SecurityGroup"
+                    }
+                ],
+                "SubnetId": {
+                    "Ref": "PublicSubnet1ID"
+                },
+                "UserData": {
+                    "Fn::Base64": {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "#!/bin/bash\n",
+                                "echo 'TCI-BW-AWS: Start of EC2 Instance UserData execution...'\n",
+                                "export PATH=/home/ec2-user/.local/bin:$PATH\n",
+                                "export PYTHONPATH=$PYTHONPATH:/home/ec2-user/.local/lib/python2.7/site-packages\n\n",
+                                "echo 'TCI-BW-AWS: Install Docker-ce...'\n",
+                                "sudo yum install -y yum-utils device-mapper-persistent-data lvm2\n",
+                                "sudo yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo\n",
+                                "sudo yum -y install docker-ce\n",
+                                "echo 'Docker installed, starting now...'\n",
+                                "sudo systemctl start docker\n",
+                                "sudo usermod -aG docker $USER\n",
+                                "\n",
+                                "pluginListName=",
+                                {
+                                    "Ref": "PluginList"
+                                },
+                                "\n",
+                                "if [[ -n \"$pluginListName\" ]]; then\n",
+                                "    echo 'TCI-BW-AWS: Provided List of Plug-ins... ' ",
+                                {
+                                    "Ref": "PluginList"
+                                },
+                                "\n",
+                                "    for pluginName in $(echo ",
+                                {
+                                    "Ref": "PluginList"
+                                },
+                                " | tr ',' '\\n')\n",
+                                "    do\n",
+                                "        if [ $pluginName == 'DC' ]; then\n",
+                                "           echo 'TCI-BW-AWS: Copying DC Plugin Runtime...'\n",
+                                "            cp /home/ec2-user/bwce/installers/plugins/DC/TIB_bwdcp_4.5.1_v4.1_bwce-runtime.zip /home/ec2-user/bwce/bwce-docker/resources/addons/plugins/TIB_bwdcp_4.5.1_v4.1_bwce-runtime.zip || true\n",
+                                "        elif [ $pluginName == 'DCRM' ]; then\n",
+                                "            echo 'TCI-BW-AWS: Copying DCRM Plugin Runtime...'\n",
+                                "            cp /home/ec2-user/bwce/installers/plugins/DCRM/TIB_bwplugindynamicscrm_6.6.0_v7.1_bwce-runtime.zip /home/ec2-user/bwce/bwce-docker/resources/addons/plugins/TIB_bwplugindynamicscrm_6.6.0_v7.1_bwce-runtime.zip || true\n",
+                                "        elif [ $pluginName == 'Cassandra' ]; then\n",
+                                "            echo 'TCI-BW-AWS: Copying Cassandra Plugin Runtime...'\n",
+                                "            cp /home/ec2-user/bwce/installers/plugins/Cassandra/TIB_bwplugincassandra_6.3.0_v11.1_bwce-runtime.zip /home/ec2-user/bwce/bwce-docker/resources/addons/plugins/TIB_bwplugincassandra_6.3.0_v11.1_bwce-runtime.zip || true\n",
+                                "        elif [ $pluginName == 'FTL' ]; then\n",
+                                "            echo 'TCI-BW-AWS: Copying FTL Plugin Runtime...'\n",
+                                "            cp /home/ec2-user/bwce/installers/plugins/FTL/TIB_bwpluginftl_6.4.1_v2.1_bwce-runtime.zip /home/ec2-user/bwce/bwce-docker/resources/addons/plugins/TIB_bwpluginftl_6.4.1_v2.1_bwce-runtime.zip || true\n",
+                                "        elif [ $pluginName == 'Marketo' ]; then\n",
+                                "            echo 'TCI-BW-AWS: Copying Marketo Plugin Runtime...'\n",
+                                "            cp /home/ec2-user/bwce/installers/plugins/Marketo/TIB_bwpluginmarketo_7.2.1_v2.1_bwce-runtime.zip /home/ec2-user/bwce/bwce-docker/resources/addons/plugins/TIB_bwpluginmarketo_7.2.1_v2.1_bwce-runtime.zip || true\n",
+                                "        elif [ $pluginName == 'SFTP' ]; then\n",
+                                "            echo 'TCI-BW-AWS: Copying SFTP Plugin Runtime...'\n",
+                                "            cp /home/ec2-user/bwce/installers/plugins/SFTP/TIB_bwsp_6.1.2_v1.2_bwce-runtime.zip /home/ec2-user/bwce/bwce-docker/resources/addons/plugins/TIB_bwsp_6.1.2_v1.2_bwce-runtime.zip || true\n",
+                                "        elif [ $pluginName == 'SQS-SNS' ]; then\n",
+                                "            echo 'TCI-BW-AWS: Copying SQS-SNS Plugin Runtime...'\n",
+                                "            cp /home/ec2-user/bwce/installers/plugins/SQS-SNS/TIB_bwpluginawsm_6.3.0_v11_bwce-runtime.zip /home/ec2-user/bwce/bwce-docker/resources/addons/plugins/TIB_bwpluginawsm_6.3.0_v11_bwce-runtime.zip || true\n",
+                                "        elif [ $pluginName == 'Workday' ]; then\n",
+                                "            echo 'TCI-BW-AWS: Copying Workday Plugin Runtime...'\n",
+                                "            cp /home/ec2-user/bwce/installers/plugins/Workday/TIB_bwpluginworkday_6.0.1_v5_bwce-runtime.zip /home/ec2-user/bwce/bwce-docker/resources/addons/plugins/TIB_bwpluginworkday_6.0.1_v5_bwce-runtime.zip || true\n",
+                                "        elif [ $pluginName == 'NetSuite' ]; then\n",
+                                "            echo 'TCI-BW-AWS: Copying NetSuite Plugin Runtime...'\n",
+                                "            cp /home/ec2-user/bwce/installers/plugins/Netsuite/TIB_bwpluginnetsuite_6.3.2_v6_bwce-runtime.zip /home/ec2-user/bwce/bwce-docker/resources/addons/plugins/TIB_bwpluginnetsuite_6.3.2_v6_bwce-runtime.zip || true\n",
+                                "        elif [ $pluginName == 'PDF' ]; then\n",
+                                "            echo 'TCI-BW-AWS: Copying PDF Plugin Runtime...'\n",
+                                "            cp /home/ec2-user/bwce/installers/plugins/PDF/TIB_bwpluginpdf_6.2.1_v1.1_bwce-runtime.zip /home/ec2-user/bwce/bwce-docker/resources/addons/plugins/TIB_bwpluginpdf_6.2.1_v1.1_bwce-runtime.zip || true\n",
+                                "        elif [ $pluginName == 'Files' ]; then\n",
+                                "            echo 'TCI-BW-AWS: Copying Files Plugin Runtime...'\n",
+                                "            cp /home/ec2-user/bwce/installers/plugins/Files/TIB_bwpluginfiles_8.1.0_v11.3_bwce-runtime.zip /home/ec2-user/bwce/bwce-docker/resources/addons/plugins/TIB_bwpluginfiles_8.1.0_v11.3_bwce-runtime.zip || true\n",
+                                "        elif [ $pluginName == 'SAP' ]; then\n",
+                                "            echo 'TCI-BW-AWS: Copying SAP Plugin Runtime...'\n",
+                                "            cp /home/ec2-user/bwce/installers/plugins/SAP/TIB_bwpluginsap_8.2.2_v9.1_bwce-runtime.zip /home/ec2-user/bwce/bwce-docker/resources/addons/plugins/TIB_bwpluginsap_8.2.2_v9.1_bwce-runtime.zip || true\n",
+                                "        elif [ $pluginName == 'ADB' ]; then\n",
+                                "            echo 'TCI-BW-AWS: Copying ADB Plugin Runtime...'\n",
+                                "            cp /home/ec2-user/bwce/installers/plugins/ADB/TIB_bwpluginadb_8.3.0_v9_bwce-runtime.zip /home/ec2-user/bwce/bwce-docker/resources/addons/plugins/TIB_bwpluginadb_8.3.0_v9_bwce-runtime.zip || true\n",
+                                "        elif [ $pluginName == 'MongoDB' ]; then\n",
+                                "            echo 'TCI-BW-AWS: Copying MongoDB Plugin Runtime...'\n",
+                                "            cp /home/ec2-user/bwce/installers/plugins/MongoDB/TIB_bwpluginmongodb_6.3.0_v7_bwce-runtime.zip /home/ec2-user/bwce/bwce-docker/resources/addons/plugins/TIB_bwpluginmongodb_6.3.0_v7_bwce-runtime.zip || true\n",
+                                "        elif [ $pluginName == 'SFDC' ]; then\n",
+                                "            echo 'TCI-BW-AWS: Copying SFDC Plugin Runtime...'\n",
+                                "            cp /home/ec2-user/bwce/installers/plugins/SFDC/TIB_bwpluginsalesforce_6.5.1_v3_bwce-runtime.zip /home/ec2-user/bwce/bwce-docker/resources/addons/plugins/TIB_bwpluginsalesforce_6.5.1_v3_bwce-runtime.zip || true\n",
+                                "        elif [ $pluginName == 'ServiceNow' ]; then\n",
+                                "            echo 'TCI-BW-AWS: Copying ServiceNow Plugin Runtime...'\n",
+                                "            cp /home/ec2-user/bwce/installers/plugins/ServiceNow/TIB_bwpluginservicenow_6.0.0_v19.0.2_bwce-runtime.zip /home/ec2-user/bwce/bwce-docker/resources/addons/plugins/TIB_bwpluginservicenow_6.0.0_v19.0.2_bwce-runtime.zip || true\n",
+                                "        elif [ $pluginName == 'MQ' ]; then\n",
+                                "            echo 'TCI-BW-AWS: Copying MQ Plugin Runtime...'\n",
+                                "            cp /home/ec2-user/bwce/installers/plugins/MQ/TIB_bwmq_8.5.1_v4.2_bwce-runtime.zip /home/ec2-user/bwce/bwce-docker/resources/addons/plugins/TIB_bwmq_8.5.1_v4.2_bwce-runtime.zip || true\n",
+                                "        elif [ $pluginName == 'OData' ]; then\n",
+                                "            echo 'TCI-BW-AWS: Copying OData Plugin Runtime...'\n",
+                                "            cp /home/ec2-user/bwce/installers/plugins/OData/TIB_bwpluginodata_6.0.1_v3.1_bwce-runtime.zip /home/ec2-user/bwce/bwce-docker/resources/addons/plugins/TIB_bwpluginodata_6.0.1_v3.1_bwce-runtime.zip || true\n",
+                                "        elif [ $pluginName == 'AMQP' ]; then\n",
+                                "            echo 'TCI-BW-AWS: Copying AMQP Plugin Runtime...'\n",
+                                "            cp /home/ec2-user/bwce/installers/plugins/AMQP/TIB_bwpluginamqp_6.0.1_v8.3_bwce-runtime.zip /home/ec2-user/bwce/bwce-docker/resources/addons/plugins/TIB_bwpluginamqp_6.0.1_v8.3_bwce-runtime.zip || true\n",
+                                "        elif [ $pluginName == 'Kafka' ]; then\n",
+                                "            echo 'TCI-BW-AWS: Copying Kafka Plugin Runtime...'\n",
+                                "            cp /home/ec2-user/bwce/installers/plugins/Kafka/TIB_bwpluginkafka_6.1.1_v5_bwce-runtime.zip /home/ec2-user/bwce/bwce-docker/resources/addons/plugins/TIB_bwpluginkafka_6.1.1_v5_bwce-runtime.zip || true\n",
+                                "        elif [ $pluginName == 'SharePoint' ]; then\n",
+                                "            echo 'TCI-BW-AWS: Copying SharePoint Plugin Runtime...'\n",
+                                "            cp /home/ec2-user/bwce/installers/plugins/SharePoint/TIB_bwpluginsharepoint_6.2.1_v3.2_bwce-runtime.zip /home/ec2-user/bwce/bwce-docker/resources/addons/plugins/TIB_bwpluginsharepoint_6.2.1_v3.2_bwce-runtime.zip || true\n",
+                                "        elif [ $pluginName == 'LDAP' ]; then\n",
+                                "            echo 'TCI-BW-AWS: Copying LDAP Plugin Runtime...'\n",
+                                "            cp /home/ec2-user/bwce/installers/plugins/LDAP/TIB_bwpluginldap_7.2.0_v8_bwce-runtime.zip /home/ec2-user/bwce/bwce-docker/resources/addons/plugins/TIB_bwpluginldap_7.2.0_v8_bwce-runtime.zip || true\n",
+                                "        elif [ $pluginName == 'SWIFT' ]; then\n",
+                                "            echo 'TCI-BW-AWS: Copying SWIFT Plugin Runtime...'\n",
+                                "            cp /home/ec2-user/bwce/installers/plugins/SWIFT/TIB_bwpluginswift_6.4.0_v7_bwce-runtime.zip /home/ec2-user/bwce/bwce-docker/resources/addons/plugins/TIB_bwpluginswift_6.4.0_v7_bwce-runtime.zip || true\n",
+                                "        elif [ $pluginName == 'OracleEBS' ]; then\n",
+                                "            echo 'TCI-BW-AWS: Copying OracleEBS Plugin Runtime...'\n",
+                                "            cp /home/ec2-user/bwce/installers/plugins/OracleEBS/TIB_bwpluginoracleebs_6.1.2_v5_bwce-runtime.zip /home/ec2-user/bwce/bwce-docker/resources/addons/plugins/TIB_bwpluginoracleebs_6.1.2_v5_bwce-runtime.zip || true\n",
+                                "        elif [ $pluginName == 'SAP-HANA' ]; then\n",
+                                "            echo 'TCI-BW-AWS: Copying SAP-HANA Plugin Runtime...'\n",
+                                "            cp /home/ec2-user/bwce/installers/plugins/SAP-HANA/TIB_bwplugins4hana_6.0.0_v12.1_bwce-runtime.zip /home/ec2-user/bwce/bwce-docker/resources/addons/plugins/TIB_bwplugins4hana_6.0.0_v12.1_bwce-runtime.zip || true\n",
+                                "        elif [ $pluginName == 'S3' ]; then\n",
+                                "            echo 'TCI-BW-AWS: Copying S3 Plugin Runtime...'\n",
+                                "            cp /home/ec2-user/bwce/installers/plugins/S3/TIB_bwpluginawss3_6.2.0_v9_bwce-runtime.zip /home/ec2-user/bwce/bwce-docker/resources/addons/plugins/TIB_bwpluginawss3_6.2.0_v9_bwce-runtime.zip || true\n",
+                                "        fi\n",
+                                "done\n",
+                                "else \n",
+                                "    echo 'TCI-BW-AWS: List of Plug-ins not provided...'\n",
+                                "fi\n",
+                                "\n",
+                                "$( aws ecr get-login --region ",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                " --no-include-email )\n",
+                                "sudo chmod +x /home/ec2-user/bwce/bwce-docker/createDockerImage.sh\n",
+                                "cd /home/ec2-user/bwce/bwce-docker/\n",
+                                "rm -f /home/ec2-user/bwce/bwce-docker/resources/bwce-runtime/bwceruntime-aws-2.4.2.zip\n",
+                                "./createDockerImage.sh /home/ec2-user/bwce/bwce-runtime/bwceruntime-aws-2.4.2.zip tibco/tci-bw:2.4.2\n",
+                                "docker tag tibco/tci-bw:2.4.2 ",
+                                {
+                                    "Ref": "AWS::AccountId"
+                                },
+                                ".dkr.ecr.",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                ".amazonaws.com/",
+                                {
+                                    "Ref": "TCIBWEcrRepository"
+                                },
+                                ":2.4.2\n",
+                                "docker push ",
+                                {
+                                    "Ref": "AWS::AccountId"
+                                },
+                                ".dkr.ecr.",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                ".amazonaws.com/",
+                                {
+                                    "Ref": "TCIBWEcrRepository"
+                                },
+                                ":2.4.2\n",
+                                "   /opt/aws/bin/cfn-init -v --stack ",
+                                {
+                                    "Ref": "AWS::StackName"
+                                },
+                                " --resource InitialEC2Setup --configsets ",
+                                {
+                                    "Fn::If": [
+                                        "CreateS3Bucket",
+                                        "quickstartwithS3",
+                                        "cfnInitEnd"
+                                    ]
+                                },
+                                "    --region ",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                "\n",
+                                "echo 'TCIBW-AWS: End of EC2 Instance UserData execution, shutting down...'\n",
+                                "sudo poweroff\n"
+                            ]
+                        ]
+                    }
+                }
+            },
+            "Metadata": {
+                "AWS::CloudFormation::Init": {
+                    "configSets": {
+                        "quickstartwithS3": [
+                            "bucketFolderCreation",
+                            "endMessage"
+                        ],
+                        "cfnInitEnd": [
+                            "endMessage"
+                        ]
+                    },
+                    "bucketFolderCreation": {
+                        "commands": {
+                            "01_create_folder": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "#!/bin/bash\n",
+                                            "aws s3api put-object --bucket ",
+                                            {
+                                                "Fn::If": [
+                                                    "CreateS3Bucket",
+                                                    {
+                                                        "Ref": "TCIBWArtifactsBucket"
+                                                    },
+                                                    {
+                                                        "Ref": "AWS::NoValue"
+                                                    }
+                                                ]
+                                            },
+                                            " --key certs/\n",
+                                            "aws s3api put-object --bucket ",
+                                            {
+                                                "Fn::If": [
+                                                    "CreateS3Bucket",
+                                                    {
+                                                        "Ref": "TCIBWArtifactsBucket"
+                                                    },
+                                                    {
+                                                        "Ref": "AWS::NoValue"
+                                                    }
+                                                ]
+                                            },
+                                            " --key jars/\n",
+                                            "aws s3api put-object --bucket ",
+                                            {
+                                                "Fn::If": [
+                                                    "CreateS3Bucket",
+                                                    {
+                                                        "Ref": "TCIBWArtifactsBucket"
+                                                    },
+                                                    {
+                                                        "Ref": "AWS::NoValue"
+                                                    }
+                                                ]
+                                            },
+                                            " --key lib/\n",
+                                            "aws s3api put-object --bucket ",
+                                            {
+                                                "Fn::If": [
+                                                    "CreateS3Bucket",
+                                                    {
+                                                        "Ref": "TCIBWArtifactsBucket"
+                                                    },
+                                                    {
+                                                        "Ref": "AWS::NoValue"
+                                                    }
+                                                ]
+                                            },
+                                            " --key monitor-agents/\n",
+                                            "aws s3api put-object --bucket ",
+                                            {
+                                                "Fn::If": [
+                                                    "CreateS3Bucket",
+                                                    {
+                                                        "Ref": "TCIBWArtifactsBucket"
+                                                    },
+                                                    {
+                                                        "Ref": "AWS::NoValue"
+                                                    }
+                                                ]
+                                            },
+                                            " --key plugins/\n",
+                                            "aws s3api put-object --bucket ",
+                                            {
+                                                "Fn::If": [
+                                                    "CreateS3Bucket",
+                                                    {
+                                                        "Ref": "TCIBWArtifactsBucket"
+                                                    },
+                                                    {
+                                                        "Ref": "AWS::NoValue"
+                                                    }
+                                                ]
+                                            },
+                                            " --key thirdparty-installs/\n"
+                                        ]
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "endMessage": {
+                        "commands": {
+                            "02_end_Message": {
+                                "command": "echo 'end cfn-init...'"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "StudioEC2Instance": {
+            "Type": "AWS::EC2::Instance",
+            "Metadata": {
+                "AWS::CloudFormation::Init": {
+                    "config": {
+                        "files": {
+                            "/tmp/studio_pass.txt": {
+                                "content": {
+                                    "Ref": "StudioPassword"
+                                },
+                                "mode": "000644",
+                                "owner": "ec2-user",
+                                "group": "ec2-user"
+                            }
+                        }
+                    }
+                }
+            },
+            "Properties": {
+                "ImageId": {
+                    "Fn::FindInMap": [
+                        "AWSAMIRegionMap",
+                        {
+                            "Ref": "AWS::Region"
+                        },
+                        "BWCEAMI"
+                    ]
+                },
+                "InstanceType": {
+                    "Ref": "InstanceTypeStudioImage"
+                },
+                "KeyName": {
+                    "Ref": "KeyName"
+                },
+                "SecurityGroupIds": [
+                    {
+                        "Ref": "EC2SecurityGroup"
+                    }
+                ],
+                "SubnetId": {
+                    "Ref": "PublicSubnet1ID"
+                },
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": {
+                            "Fn::Sub": "${AWS::StackName} - TCI-BW Studio"
+                        }
+                    }
+                ],
+                "IamInstanceProfile": {
+                    "Ref": "EC2InstanceProfile"
+                },
+                "UserData": {
+                    "Fn::Base64": {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "#!/bin/bash\n",
+                                "yum update -y\n",
+                                "/opt/aws/bin/cfn-init -v --stack ",
+                                {
+                                    "Ref": "AWS::StackName"
+                                },
+                                " --resource StudioEC2Instance ",
+                                " --region ",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                "\n",
+                                "echo 'TCI-BW-AWS: Install Docker-ce...'\n",
+                                "yum install -y yum-utils device-mapper-persistent-data lvm2\n",
+                                "yum install -y go git\n",
+                                "yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo\n",
+                                "yum -y install docker-ce\n",
+                                "systemctl start docker\n",
+                                "usermod -aG docker ec2-user\n",
+                                "yum groupinstall -y 'GNOME Desktop' 'Graphical Administration Tools'\n",
+                                "yum install -y tigervnc-server xorg-x11-fonts-Type1\n",
+                                "cp /lib/systemd/system/vncserver@.service /etc/systemd/system/vncserver@:5.service\n",
+                                "sed -i -e 's/<USER>/ec2-user/g' /etc/systemd/system/vncserver@:5.service\n",
+                                "sed -i -e 's#ExecStart=/usr/bin/vncserver %i#ExecStart=/usr/bin/vncserver %i -localhost#g' /etc/systemd/system/vncserver@:5.service\n",
+                                "mkdir '/home/ec2-user/bwce/bwce-studio'\n",
+                                "chmod 755 '/home/ec2-user/bwce/bwce-studio'\n",
+                                "mkdir '/home/ec2-user/bwce/installers/bwce/BWCE-install'\n",
+                                "unzip '/home/ec2-user/bwce/installers/bwce/TIB_bwce_2.4.2_linux26gl23_x86_64.zip' -d '/home/ec2-user/bwce/installers/bwce/BWCE-install'\n",
+                                "sed -i -e 's#/opt/tibco/bwce#/home/ec2-user/bwce/bwce-studio#g' /home/ec2-user/bwce/installers/bwce/BWCE-install/TIBCOUniversalInstaller_bwce_2.4.2.silent\n",
+                                "cd /home/ec2-user/bwce/installers/bwce/BWCE-install\n",
+                                "./TIBCOUniversalInstaller-lnx-x86-64.bin -silent\n",
+                                "mkdir -p '/home/ec2-user/.vnc'\n",
+                                "chmod 777 '/home/ec2-user/.vnc'\n",
+                                "runuser -l ec2-user -c 'vncpasswd -f <<< $(cat /tmp/studio_pass.txt)",
+                                " > '/home/ec2-user/.vnc/passwd''\n",
+                                "runuser -l ec2-user -c 'chmod 600 '/home/ec2-user/.vnc/passwd''\n",
+                                "runuser -l ec2-user -c 'vncserver'\n",
+                                "systemctl daemon-reload\n",
+                                "systemctl start vncserver@:5.service\n",
+                                "systemctl enable vncserver@:5.service\n",
+                                "vncserver -kill :1\n",
+                                "rm /tmp/studio_pass.txt\n"
+                            ]
+                        ]
+                    }
+                }
+            }
+        },
+        "ECSCluster": {
+            "Type": "AWS::ECS::Cluster",
+            "Properties": {
+                "ClusterName": {
+                    "Ref": "AWS::StackName"
+                }
+            }
+        },
+        "ECSAutoScalingGroup": {
+            "Type": "AWS::AutoScaling::AutoScalingGroup",
+            "Properties": {
+                "VPCZoneIdentifier": [
+                    {
+                        "Ref": "PrivateSubnet1ID"
+                    },
+                    {
+                        "Ref": "PrivateSubnet2ID"
+                    }
+                ],
+                "LaunchConfigurationName": {
+                    "Ref": "ECSLaunchConfiguration"
+                },
+                "MinSize": "1",
+                "MaxSize": "100",
+                "DesiredCapacity": {
+                    "Ref": "ClusterSize"
+                },
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": {
+                            "Fn::Sub": "${AWS::StackName} ECS host"
+                        },
+                        "PropagateAtLaunch": true
+                    }
+                ]
+            },
+            "CreationPolicy": {
+                "ResourceSignal": {
+                    "Timeout": "PT60M"
+                }
+            },
+            "UpdatePolicy": {
+                "AutoScalingRollingUpdate": {
+                    "MinInstancesInService": 1,
+                    "MaxBatchSize": 1,
+                    "PauseTime": "PT15M",
+                    "WaitOnResourceSignals": true
+                }
+            }
+        },
+        "ECSLaunchConfiguration": {
+            "Type": "AWS::AutoScaling::LaunchConfiguration",
+            "Properties": {
+                "ImageId": {
+                    "Fn::FindInMap": [
+                        "AWSAMIRegionMap",
+                        {
+                            "Ref": "AWS::Region"
+                        },
+                        "BWCEAMI"
+                    ]
+                },
+                "InstanceType": {
+                    "Ref": "InstanceType"
+                },
+                "KeyName": {
+                    "Ref": "KeyName"
+                },
+                "BlockDeviceMappings": [
+                    {
+                        "DeviceName": "/dev/sda1",
+                        "Ebs": {
+                            "DeleteOnTermination": false,
+                            "VolumeType": "gp2",
+                            "VolumeSize": {
+                                "Fn::If": [
+                                    "HasVolSize",
+                                    {
+                                        "Ref": "VolSize"
+                                    },
+                                    30
+                                ]
+                            }
+                        }
+                    }
+                ],
+                "SecurityGroups": [
+                    {
+                        "Ref": "ECSHostSecurityGroup"
+                    }
+                ],
+                "IamInstanceProfile": {
+                    "Ref": "ECSInstanceProfile"
+                },
+                "UserData": {
+                    "Fn::Base64": {
+                        "Fn::Join": [
+                            "\n",
+                            [
+                                "#!/bin/bash",
+                                "echo 'TCI-BW-AWS: Install Docker-ce...'",
+                                "sudo yum install -y yum-utils device-mapper-persistent-data lvm2",
+                                "sudo yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo",
+                                "sudo yum install -y docker-ce",
+                                "sudo systemctl start docker",
+                                "sudo usermod -aG docker $USER",
+                                "cd /tmp",
+                                "cd -",
+                                "echo ECS_CLUSTER=${ECSCluster} >> /etc/ecs/ecs.config",
+                                "echo ECS_CHECKPOINT=false >> /etc/ecs/ecs.config",
+                                "echo ECS_ENGINE_TASK_CLEANUP_WAIT_DURATION=8m >> /etc/ecs/ecs.config",
+                                "echo ECS_DISABLE_IMAGE_CLEANUP=false >> /etc/ecs/ecs.config",
+                                "echo ECS_IMAGE_CLEANUP_INTERVAL=15m >> /etc/ecs/ecs.config",
+                                "echo ECS_IMAGE_MINIMUM_CLEANUP_AGE=1h >> /etc/ecs/ecs.config",
+                                "echo ECS_NUM_IMAGES_DELETE_PER_CYCLE=5 >> /etc/ecs/ecs.config",
+                                "sudo systemctl enable docker-container@ecs-agent.service",
+                                "sudo systemctl start docker-container@ecs-agent.service",
+                                {
+                                    "Fn::Sub": "/opt/aws/bin/cfn-init -v --region ${AWS::Region} --stack ${AWS::StackName} --resource ECSLaunchConfiguration"
+                                },
+                                {
+                                    "Fn::Sub": "/opt/aws/bin/cfn-signal -e $? --region ${AWS::Region} --stack ${AWS::StackName} --resource ECSAutoScalingGroup"
+                                },
+                                "export PATH=/home/ec2-user/.local/bin:$PATH",
+                                "export PYTHONPATH=$PYTHONPATH:/home/ec2-user/.local/lib/python2.7/site-packages",
+                                {
+                                    "Fn::Sub": "$( aws ecr get-login --region ${AWS::Region} --no-include-email )"
+                                }
+                            ]
+                        ]
+                    }
+                }
+            },
+            "Metadata": {
+                "AWS::CloudFormation::Init": {
+                    "config": {
+                        "commands": {
+                            "01_add_instance_to_cluster": {
+                                "command": {
+                                    "Fn::Sub": "echo ECS_CLUSTER=${ECSCluster} >> /etc/ecs/ecs.config"
+                                }
+                            },
+                            "02_add_instance_to_cluster": {
+                                "command": "echo ECS_CHECKPOINT=false >> /etc/ecs/ecs.config"
+                            },
+                            "03_add_instance_to_cluster": {
+                                "command": "echo ECS_ENGINE_TASK_CLEANUP_WAIT_DURATION=10m >> /etc/ecs/ecs.config"
+                            },
+                            "04_add_instance_to_cluster": {
+                                "command": "echo ECS_DISABLE_IMAGE_CLEANUP=false >> /etc/ecs/ecs.config"
+                            }
+                        },
+                        "files": {
+                            "/etc/cfn/cfn-hup.conf": {
+                                "mode": 256,
+                                "owner": "root",
+                                "group": "root",
+                                "content": {
+                                    "Fn::Sub": "[main]\nstack=${AWS::StackId}\nregion=${AWS::Region}\n"
+                                }
+                            },
+                            "/etc/cfn/hooks.d/cfn-auto-reloader.conf": {
+                                "content": {
+                                    "Fn::Sub": "[cfn-auto-reloader-hook]\ntriggers=post.update\npath=Resources.ContainerInstances.Metadata.AWS::CloudFormation::Init\naction=/opt/aws/bin/cfn-init -v --region ${AWS::Region} --stack ${AWS::StackName} --resource ECSLaunchConfiguration\n"
+                                }
+                            }
+                        },
+                        "services": {
+                            "sysvinit": {
+                                "cfn-hup": {
+                                    "enabled": true,
+                                    "ensureRunning": true,
+                                    "files": [
+                                        "/etc/cfn/cfn-hup.conf",
+                                        "/etc/cfn/hooks.d/cfn-auto-reloader.conf"
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "StudioRole": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "Path": "/",
+                "AssumeRolePolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Principal": {
+                                "Service": [
+                                    "ec2.amazonaws.com",
+                                    "ecs.amazonaws.com"
+                                ]
+                            },
+                            "Action": [
+                                "sts:AssumeRole"
+                            ]
+                        }
+                    ]
+                },
+                "Policies": [
+                    {
+                        "PolicyName": "ecs-policy",
+                        "PolicyDocument": {
+                            "Version": "2012-10-17",
+                            "Statement": [
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "ecs:DeregisterContainerInstance",
+                                        "ecs:DiscoverPollEndpoint",
+                                        "ecs:Poll",
+                                        "ecs:RegisterContainerInstance",
+                                        "ecs:RegisterTaskDefinition",
+                                        "ecs:ListTaskDefinitions",
+                                        "ecs:RunTask",
+                                        "ecs:StartTelemetrySession",
+                                        "ecs:UpdateContainerInstancesState",
+                                        "ecs:Submit*",
+                                        "ecs:CreateService"
+                                    ],
+                                    "Resource": "*"
+                                }
+                            ]
+                        }
+                    },
+                    {
+                        "PolicyName": "ecr-policy",
+                        "PolicyDocument": {
+                            "Version": "2012-10-17",
+                            "Statement": [
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "ecr:GetAuthorizationToken",
+                                        "ecr:BatchCheckLayerAvailability",
+                                        "ecr:GetDownloadUrlForLayer",
+                                        "ecr:GetRepositoryPolicy",
+                                        "ecr:DescribeRepositories",
+                                        "ecr:ListImages",
+                                        "ecr:BatchGetImage",
+                                        "ecr:InitiateLayerUpload",
+                                        "ecr:UploadLayerPart",
+                                        "ecr:CompleteLayerUpload",
+                                        "ecr:PutImage"
+                                    ],
+                                    "Resource": "*"
+                                }
+                            ]
+                        }
+                    },
+                    {
+                        "PolicyName": "extra-policy",
+                        "PolicyDocument": {
+                            "Version": "2012-10-17",
+                            "Statement": [
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "iam:PassRole",
+                                        "elasticloadbalancing:Describe*"
+                                    ],
+                                    "Resource": "*"
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        "EC2InstanceProfile": {
+            "Type": "AWS::IAM::InstanceProfile",
+            "Properties": {
+                "Path": "/",
+                "Roles": [
+                    {
+                        "Ref": "StudioRole"
+                    }
+                ]
+            }
+        },
+        "ECSRole": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "Path": "/",
+                "AssumeRolePolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Principal": {
+                                "Service": [
+                                    "ec2.amazonaws.com"
+                                ]
+                            },
+                            "Action": [
+                                "sts:AssumeRole"
+                            ]
+                        }
+                    ]
+                },
+                "Policies": [
+                    {
+                        "PolicyName": "ecs-policy",
+                        "PolicyDocument": {
+                            "Version": "2012-10-17",
+                            "Statement": [
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "ecs:DeregisterContainerInstance",
+                                        "ecs:DiscoverPollEndpoint",
+                                        "ecs:Poll",
+                                        "ecs:RegisterContainerInstance",
+                                        "ecs:StartTelemetrySession",
+                                        "ecs:UpdateContainerInstancesState",
+                                        "ecs:Submit*"
+                                    ],
+                                    "Resource": "*"
+                                }
+                            ]
+                        }
+                    },
+                    {
+                        "PolicyName": "ecr-policy",
+                        "PolicyDocument": {
+                            "Version": "2012-10-17",
+                            "Statement": [
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "ecr:GetAuthorizationToken",
+                                        "ecr:BatchCheckLayerAvailability",
+                                        "ecr:GetDownloadUrlForLayer",
+                                        "ecr:GetRepositoryPolicy",
+                                        "ecr:DescribeRepositories",
+                                        "ecr:ListImages",
+                                        "ecr:BatchGetImage",
+                                        "ecr:InitiateLayerUpload",
+                                        "ecr:UploadLayerPart",
+                                        "ecr:CompleteLayerUpload",
+                                        "ecr:PutImage"
+                                    ],
+                                    "Resource": "*"
+                                }
+                            ]
+                        }
+                    },
+                    {
+                        "PolicyName": "logs-policy",
+                        "PolicyDocument": {
+                            "Version": "2012-10-17",
+                            "Statement": [
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "logs:CreateLogGroup",
+                                        "logs:CreateLogStream",
+                                        "logs:PutLogEvents",
+                                        "logs:DescribeLogStreams"
+                                    ],
+                                    "Resource": "*"
+                                }
+                            ]
+                        }
+                    },
+                    {
+                        "PolicyName": "elb-policy",
+                        "PolicyDocument": {
+                            "Version": "2012-10-17",
+                            "Statement": [
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "elasticloadbalancing:DeregisterInstancesFromLoadBalancer",
+                                        "elasticloadbalancing:DeregisterTargets",
+                                        "elasticloadbalancing:Describe*",
+                                        "elasticloadbalancing:RegisterInstancesWithLoadBalancer",
+                                        "elasticloadbalancing:RegisterTargets"
+                                    ],
+                                    "Resource": "*"
+                                }
+                            ]
+                        }
+                    },
+                    {
+                        "PolicyName": "ec2-policy",
+                        "PolicyDocument": {
+                            "Version": "2012-10-17",
+                            "Statement": [
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "aws-marketplace:MeterUsage",
+                                        "ec2:CreateTags*",
+                                        "ec2:Describe*"
+                                    ],
+                                    "Resource": "*"
+                                }
+                            ]
+                        }
+                    },
+                    {
+                        "Fn::If": [
+                            "CreateS3Bucket",
+                            {
+                                "PolicyName": "s3-policy",
+                                "PolicyDocument": {
+                                    "Version": "2012-10-17",
+                                    "Statement": [
+                                        {
+                                            "Effect": "Allow",
+                                            "Action": [
+                                                "s3:ListBucket",
+                                                "s3:PutObject",
+                                                "s3:GetObject",
+                                                "s3:DeleteObject",
+                                                "s3:ListObject"
+                                            ],
+                                            "Resource": {
+                                                "Fn::Join": [
+                                                    "",
+                                                    [
+                                                        "arn:aws:s3:::",
+                                                        {
+                                                            "Ref": "TCIBWArtifactsBucket"
+                                                        },
+                                                        "/*"
+                                                    ]
+                                                ]
+                                            }
+                                        }
+                                    ]
+                                }
+                            },
+                            {
+                                "Ref": "AWS::NoValue"
+                            }
+                        ]
+                    }
+                ]
+            }
+        },
+        "ECSInstanceProfile": {
+            "Type": "AWS::IAM::InstanceProfile",
+            "Properties": {
+                "Path": "/",
+                "Roles": [
+                    {
+                        "Ref": "ECSRole"
+                    }
+                ]
+            }
+        },
+        "ECRCleanupStack": {
+            "Type": "AWS::CloudFormation::Stack",
+            "DependsOn": "TCIBWEcrRepository",
+            "Properties": {
+                "TemplateURL": {
+                    "Fn::Sub": [
+                        "https://${QSS3BucketName}.${QSS3Region}.amazonaws.com/${QSS3KeyPrefix}templates/cleanup-repo.template",
+                        {
+                            "QSS3Region": {
+                                "Fn::If": [
+                                    "GovCloudCondition",
+                                    "s3-us-gov-west-1",
+                                    "s3"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                "Parameters": {
+                    "Repository": {
+                        "Ref": "TCIBWEcrRepository"
+                    }
+                }
+            }
+        }
+    },
+    "Outputs": {
+        "VPC": {
+            "Description": "A reference to the VPC.",
+            "Value": {
+                "Fn::Sub": "https://console.aws.amazon.com/vpc/home?region=${AWS::Region}#vpcs:filter=${AWS::StackName}"
+            }
+        },
+        "LoadBalancerARN": {
+            "Description": "ARN of the Application Load Balancer.",
+            "Value": {
+                "Ref": "LoadBalancer"
+            }
+        },
+        "ECSHostSecurityGroup": {
+            "Description": "ECS Host Security Group ID.",
+            "Value": {
+                "Ref": "ECSHostSecurityGroup"
+            }
+        },
+        "LoadBalancerSecurityGroup": {
+            "Description": "Load Balancer Security Group ID.",
+            "Value": {
+                "Ref": "LoadBalancerSecurityGroup"
+            }
+        },
+        "LoadBalancer": {
+            "Description": "A reference to the Application Load Balancer.",
+            "Value": {
+                "Fn::GetAtt": [
+                    "LoadBalancer",
+                    "DNSName"
+                ]
+            }
+        },
+        "DefaultTargetGroup": {
+            "Description": "A reference to the ARN of the default Target Group for the Application Load Balancer.",
+            "Value": {
+                "Ref": "DefaultTargetGroup"
+            }
+        },
+        "StudioEC2Instance": {
+            "Description": "IP address of the TCIBW Studio Instance",
+            "Value": {
+                "Fn::GetAtt": [
+                    "StudioEC2Instance",
+                    "PublicIp"
+                ]
+            }
+        },
+        "StudioRole": {
+            "Description": "ARN of the IAM Role applied to TCI-BW Studio Instance",
+            "Value": {
+                "Fn::GetAtt": [
+                    "StudioRole",
+                    "Arn"
+                ]
+            }
+        },
+        "AutoScalingGroup": {
+            "Description": "A reference to the Auto Scaling Group.",
+            "Value": {
+                "Fn::Sub": "https://console.aws.amazon.com/ec2/autoscaling/home?region=${AWS::Region}#AutoScalingGroups:id=${ECSAutoScalingGroup}"
+            }
+        },
+        "ECSClusterName": {
+            "Description": "Name of the ECS Cluster created",
+            "Value": {
+                "Ref": "ECSCluster"
+            }
+        },
+        "ECSCluster": {
+            "Description": "A reference to the ECS cluster.",
+            "Value": {
+                "Fn::Sub": "https://console.aws.amazon.com/ecs/home?region=${AWS::Region}#/clusters/${ECSCluster}/services"
+            }
+        },
+        "TCIBWEcrRepository": {
+            "Description": "Name of the ECR Repository created to store customized image. This image will have the plugins you selected installed within it.",
+            "Value": {
+                "Ref": "TCIBWEcrRepository"
+            }
+        },
+        "ECR": {
+            "Description": "A reference to the Amazon ECR (Amazon EC2 Container Registry).",
+            "Value": {
+                "Fn::Sub": "https://console.aws.amazon.com/ecs/home?region=${AWS::Region}#/repositories/${TCIBWEcrRepository}#images"
+            }
+        },
+        "S3Bucket": {
+            "Description": "A reference to the S3 Bucket which will be used for customizing base image. If you selected 'Create S3 Bucket for Base Image Customization?' as 'No', then it will not be applicable.",
+            "Value": {
+                "Fn::If": [
+                    "CreateS3Bucket",
+                    {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "https://console.aws.amazon.com/s3/home?region=",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                "&bucket=",
+                                {
+                                    "Ref": "TCIBWArtifactsBucket"
+                                },
+                                ""
+                            ]
+                        ]
+                    },
+                    "Not Applicable"
+                ]
+            }
+        }
+    }
+}

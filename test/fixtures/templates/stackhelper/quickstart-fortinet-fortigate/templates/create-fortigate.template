@@ -1,0 +1,283 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "Deploys a FortiGate EC2 instance to a subnet using a given FortiGate AMI, security group, and instance profile. **WARNING!** This template is designed for being called within FortiGate AutoScale Solution only but not compatible with any other Cloud Formation template. Do not directly use it anywhere else.",
+    "Parameters": {
+        "CustomTagValue": {
+            "AllowedPattern": "^([a-zA-Z0-9+\\-.,_:/@ *\\\\\"'\\[\\]\\{\\}]*)?$",
+            "ConstraintDescription": "tag values can only contain [a-zA-Z0-9+\\-._:/@ *\\\\\"'\\[\\]\\{\\}]",
+            "Default": "FortiGate-NAT-Gateway",
+            "Description": "(Optional) A custom tag value added to the EC2 instance.",
+            "Type": "String"
+        },
+        "FortiGateInstanceType": {
+            "Type": "String",
+            "Description": "Instance Type."
+        },
+        "KeyPairName": {
+            "Type": "AWS::EC2::KeyPair::KeyName",
+            "Description": "Amazon EC2 Key Pair for admin access."
+        },
+        "FortiGateAdminPort": {
+            "Type": "Number",
+            "MinValue": 1,
+            "MaxValue": 65535,
+            "ConstraintDescription": "must be a valid port number between 1 and 65535.",
+            "Description": "A port number for FortiGate administration. Default to 8443. Do not use: 443, 541, 514, 703."
+        },
+        "FortiGateSecurityGroupId": {
+            "Type": "String",
+            "Description": "The security group ID which is attached to this FortiGate instance."
+        },
+        "SubnetId1": {
+            "Type": "AWS::EC2::Subnet::Id",
+            "Description": "The subnet ID for the network interface #1"
+        },
+        "SubnetId2": {
+            "Type": "AWS::EC2::Subnet::Id",
+            "Description": "The subnet ID for the network interface #2"
+        },
+        "FortiGateImageId": {
+            "Type": "String",
+            "Description": "FortiGate Official AMI ID."
+        },
+        "InstanceProfile": {
+            "Type": "String",
+            "Description": "The instance profile that passes a proper IAM role to the FortiGate EC2 instance."
+        }
+    },
+    "Conditions":{
+        "IfAddCustomTag": {
+            "Fn::Not": [
+                {
+                    "Fn::Equals": [
+                        {
+                            "Ref": "CustomTagValue"
+                        },
+                        ""
+                    ]
+                }
+            ]
+        }
+    },
+    "Resources": {
+        "nic0": {
+            "Type": "AWS::EC2::NetworkInterface",
+            "Properties": {
+                "Description": "FortiGate NIC: port1",
+                "GroupSet": [
+                    {
+                        "Ref": "FortiGateSecurityGroupId"
+                    }
+                ],
+                "SourceDestCheck": "false",
+                "SubnetId": {
+                    "Ref": "SubnetId1"
+                },
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": {
+                            "Fn::Join": [
+                                "-",
+                                [
+                                    {
+                                        "Fn::If": [
+                                            "IfAddCustomTag",
+                                            {
+                                                "Ref": "CustomTagValue"
+                                            },
+                                            "FortiGate-NAT-Gateway"
+                                        ]
+                                    },
+                                    "fgt",
+                                    "eni0",
+                                    {
+                                        "Ref": "AWS::StackName"
+                                    }
+                                ]
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        "nic1": {
+            "Type": "AWS::EC2::NetworkInterface",
+            "Properties": {
+                "Description": "FortiGate NIC: port2",
+                "GroupSet": [
+                    {
+                        "Ref": "FortiGateSecurityGroupId"
+                    }
+                ],
+                "SourceDestCheck": "false",
+                "SubnetId": {
+                    "Ref": "SubnetId2"
+                },
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": {
+                            "Fn::Join": [
+                                "-",
+                                [
+                                    {
+                                        "Fn::If": [
+                                            "IfAddCustomTag",
+                                            {
+                                                "Ref": "CustomTagValue"
+                                            },
+                                            "FortiGate-NAT-Gateway"
+                                        ]
+                                    },
+                                    "fgt",
+                                    "eni1",
+                                    {
+                                        "Ref": "AWS::StackName"
+                                    }
+                                ]
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        "eip": {
+            "Type": "AWS::EC2::EIP",
+            "Properties": {
+                "Domain": "vpc"
+            },
+            "DependsOn": "nic0"
+        },
+        "eipAssociation": {
+            "Type": "AWS::EC2::EIPAssociation",
+            "Properties": {
+                "AllocationId": {
+                    "Fn::GetAtt": [
+                        "eip",
+                        "AllocationId"
+                    ]
+                },
+                "NetworkInterfaceId": {
+                    "Ref": "nic0"
+                }
+            },
+            "DependsOn": "eip"
+        },
+        "ec2InstanceFortiGate": {
+            "Type": "AWS::EC2::Instance",
+            "Properties": {
+                "KeyName": {
+                    "Ref": "KeyPairName"
+                },
+                "IamInstanceProfile": {
+                    "Ref": "InstanceProfile"
+                },
+                "NetworkInterfaces": [
+                    {
+                        "NetworkInterfaceId": {
+                            "Ref": "nic0"
+                        },
+                        "DeviceIndex": "0"
+                    },
+                    {
+                        "NetworkInterfaceId": {
+                            "Ref": "nic1"
+                        },
+                        "DeviceIndex": "1"
+                    }
+                ],
+                "ImageId": {
+                    "Ref": "FortiGateImageId"
+                },
+                "InstanceType": {
+                    "Ref": "FortiGateInstanceType"
+                },
+                "Monitoring": "true",
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": {
+                            "Fn::If": [
+                                "IfAddCustomTag",
+                                {
+                                    "Ref": "CustomTagValue"
+                                },
+                                "FortiGate-NAT-Gateway"
+                            ]
+                        }
+                    }
+                ],
+                "UserData": {
+                    "Fn::Base64": {
+                        "Fn::Join": [
+                            "\n",
+                            [
+                                "config system global",
+                                {
+                                    "Fn::Sub": [
+                                        "  set admin-sport ${FortiGateAdminPort}",
+                                        {
+                                            "FortiGateAdminPort": {
+                                                "Ref": "FortiGateAdminPort"
+                                            }
+                                        }
+                                    ]
+                                },
+                                "end",
+                                "config system interface",
+                                "  edit port1",
+                                "    set mode dhcp",
+                                "    set allowaccess ping https ssh fgfm",
+                                "  next",
+                                "  edit port2",
+                                "    set mode dhcp",
+                                "    set allowaccess ping",
+                                "    set defaultgw disable",
+                                "  next",
+                                "end",
+                                "config firewall policy",
+                                "  edit 0",
+                                "    set name \"outgoing\"",
+                                "    set srcintf \"port2\"",
+                                "    set dstintf \"port1\"",
+                                "    set srcaddr \"all\"",
+                                "    set dstaddr \"all\"",
+                                "    set action accept",
+                                "    set schedule \"always\"",
+                                "    set service \"ALL\"",
+                                "    set logtraffic disable",
+                                "    set nat enable",
+                                "  next",
+                                "end"
+                            ]
+                        ]
+                    }
+                }
+            },
+            "DependsOn": [
+                "eipAssociation"
+            ]
+        }
+    },
+    "Outputs": {
+        "InstanceId": {
+            "Description": "The instance ID of the created FortiGate.",
+            "Value": {
+                "Ref": "ec2InstanceFortiGate"
+            }
+        },
+        "NetworkInterface0Id": {
+            "Description": "The nic0 ID of the created FortiGate.",
+            "Value": {
+                "Ref": "nic0"
+            }
+        },
+        "NetworkInterface1Id": {
+            "Description": "The nic1 ID of the created FortiGate.",
+            "Value": {
+                "Ref": "nic1"
+            }
+        }
+    }
+}

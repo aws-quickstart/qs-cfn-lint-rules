@@ -1,0 +1,1375 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "QS(0021) - This template creates a VPC infrastructure for a multi-AZ, multi-tier deployment of a Windows based Application infrastructure. It deploys a managed Microsoft AD Directory Service into subnets in separate AZs inside a VPC, as well as Remote Desktop Gateway instances and managed NAT gateways into the public subnet for each Availability Zone. The default Domain Administrator user is 'admin'.  For adding members to the domain, ensure that they are launched into the domain member security group created by this template and then configure them to use the AD instances fixed private IP addresses as the DNS server. **WARNING** This template creates Amazon EC2 Windows instance and related resources. You will be billed for the AWS resources used if you create a stack from this template.",
+    "Metadata": {
+        "AWS::CloudFormation::Interface": {
+            "ParameterGroups": [
+                {
+                    "Label": {
+                        "default": "Network Configuration"
+                    },
+                    "Parameters": [
+                        "VPCCIDR",
+                        "PrivateSubnet1CIDR",
+                        "PrivateSubnet2CIDR",
+                        "PublicSubnet1CIDR",
+                        "PublicSubnet2CIDR"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "Amazon EC2 Configuration"
+                    },
+                    "Parameters": [
+                        "KeyPairName",
+                        "RDGWInstanceType"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "Microsoft Active Directory Configuration"
+                    },
+                    "Parameters": [
+                        "DomainDNSName",
+                        "DomainNetBIOSName",
+                        "DomainAdminPassword"
+                    ]
+                }
+            ],
+            "ParameterLabels": {
+                "KeyPairName": {
+                    "default": "Key Pair Name"
+                },
+                "RDGWInstanceType": {
+                    "default": "Remote Desktop Gateway Server Instance Type"
+                },
+                "DomainDNSName": {
+                    "default": "Domain DNS Name"
+                },
+                "DomainNetBIOSName": {
+                    "default": "Domain NetBIOS Name"
+                },
+                "DomainAdminPassword": {
+                    "default": "Domain Admin Password"
+                },
+                "PublicSubnet1CIDR": {
+                    "default": "Public Subnet 1 CIDR"
+                },
+                "PublicSubnet2CIDR": {
+                    "default": "Public Subnet 2 CIDR"
+                },
+                "PrivateSubnet1CIDR": {
+                    "default": "Private Subnet 1 CIDR"
+                },
+                "PrivateSubnet2CIDR": {
+                    "default": "Private Subnet 2 CIDR"
+                },
+                "VPCCIDR": {
+                    "default": "VPC CIDR"
+                }
+            }
+        }
+    },
+    "Parameters": {
+        "KeyPairName": {
+            "Description": "Public/private key pairs allow you to securely connect to your instance after it launches",
+            "Type": "AWS::EC2::KeyPair::KeyName"
+        },
+        "RDGWInstanceType": {
+            "Description": "Amazon EC2 instance type for the Remote Desktop Gatweway Instance",
+            "Type": "String",
+            "Default": "m4.xlarge",
+            "AllowedValues": [
+                "m4.large",
+                "m4.xlarge",
+                "m4.2xlarge",
+                "m4.4xlarge"
+            ]
+        },
+        "DomainDNSName": {
+            "Description": "Fully qualified domain name (FQDN) of the forest root domain e.g. example.com",
+            "Type": "String",
+            "Default": "example.com",
+            "MinLength": "3",
+            "MaxLength": "25",
+            "AllowedPattern": "[a-zA-Z0-9\\-]+\\..+"
+        },
+        "DomainNetBIOSName": {
+            "Description": "NetBIOS name of the domain (upto 15 characters) for users of earlier versions of Windows e.g. EXAMPLE",
+            "Type": "String",
+            "Default": "example",
+            "MinLength": "1",
+            "MaxLength": "15",
+            "AllowedPattern": "[a-zA-Z0-9\\-]+"
+        },
+        "DomainAdminPassword": {
+            "Description": "Password for the domain admin user. Must be at least 8 characters containing letters, numbers and symbols",
+            "Type": "String",
+            "MinLength": "8",
+            "MaxLength": "32",
+            "AllowedPattern": "(?=^.{6,255}$)((?=.*\\d)(?=.*[A-Z])(?=.*[a-z])|(?=.*\\d)(?=.*[^A-Za-z0-9])(?=.*[a-z])|(?=.*[^A-Za-z0-9])(?=.*[A-Z])(?=.*[a-z])|(?=.*\\d)(?=.*[A-Z])(?=.*[^A-Za-z0-9]))^.*",
+            "NoEcho": "true"
+        },
+        "PublicSubnet1CIDR": {
+            "Description": "CIDR Block for the Public DMZ Subnet located in AZ1",
+            "Type": "String",
+            "Default": "10.0.32.0/20",
+            "AllowedPattern": "[a-zA-Z0-9]+\\..+"
+        },
+        "PublicSubnet2CIDR": {
+            "Description": "CIDR Block for the Public DMZ Subnet located in AZ2",
+            "Type": "String",
+            "Default": "10.0.96.0/20",
+            "AllowedPattern": "[a-zA-Z0-9]+\\..+"
+        },
+        "PrivateSubnet1CIDR": {
+            "Description": "CIDR Block for Private Subnet 1 located in AZ1",
+            "Type": "String",
+            "Default": "10.0.0.0/19",
+            "AllowedPattern": "[a-zA-Z0-9]+\\..+"
+        },
+        "PrivateSubnet2CIDR": {
+            "Description": "CIDR Block for Private Subnet 2 located in AZ2",
+            "Type": "String",
+            "Default": "10.0.64.0/19",
+            "AllowedPattern": "[a-zA-Z0-9]+\\..+"
+        },
+        "VPCCIDR": {
+            "Description": "CIDR Block for the VPC",
+            "Type": "String",
+            "Default": "10.0.0.0/16",
+            "AllowedPattern": "[a-zA-Z0-9]+\\..+"
+        }
+    },
+    "Mappings": {
+        "AWSAMIRegionMap": {
+            "AMI": {
+                "WS2012R2": "Windows_Server-2012-R2_RTM-English-64Bit-Base-2018.04.11"
+            },
+            "ap-northeast-1": {
+                "WS2012R2": "ami-84dccef8"
+            },
+            "ap-northeast-2": {
+                "WS2012R2": "ami-67da7409"
+            },
+            "ap-south-1": {
+                "WS2012R2": "ami-47b69228"
+            },
+            "ap-southeast-1": {
+                "WS2012R2": "ami-49a78135"
+            },
+            "ap-southeast-2": {
+                "WS2012R2": "ami-a762abc5"
+            },
+            "ca-central-1": {
+                "WS2012R2": "ami-f234b296"
+            },
+            "eu-central-1": {
+                "WS2012R2": "ami-ab520a40"
+            },
+            "eu-west-1": {
+                "WS2012R2": "ami-768dd70f"
+            },
+            "eu-west-2": {
+                "WS2012R2": "ami-25d13142"
+            },
+            "sa-east-1": {
+                "WS2012R2": "ami-2162334d"
+            },
+            "us-east-1": {
+                "WS2012R2": "ami-bf934bc0"
+            },
+            "us-east-2": {
+                "WS2012R2": "ami-0a84b46f"
+            },
+            "us-west-1": {
+                "WS2012R2": "ami-d0d0c3b0"
+            },
+            "us-west-2": {
+                "WS2012R2": "ami-10375468"
+            }
+        }
+    },
+    "Resources": {
+        "MicrosoftAD": {
+            "Type": "AWS::DirectoryService::MicrosoftAD",
+            "Properties": {
+                "Name": {
+                    "Ref": "DomainDNSName"
+                },
+                "ShortName": {
+                    "Ref": "DomainNetBIOSName"
+                },
+                "Password": {
+                    "Ref": "DomainAdminPassword"
+                },
+                "VpcSettings": {
+                    "SubnetIds": [
+                        {
+                            "Ref": "PrivateSubnet1"
+                        },
+                        {
+                            "Ref": "PrivateSubnet2"
+                        }
+                    ],
+                    "VpcId": {
+                        "Ref": "VPC"
+                    }
+                }
+            }
+        },
+        "DHCPOptions": {
+            "Type": "AWS::EC2::DHCPOptions",
+            "DependsOn": "MicrosoftAD",
+            "Properties": {
+                "DomainName": {
+                    "Ref": "DomainDNSName"
+                },
+                "DomainNameServers": {
+                    "Fn::GetAtt": [
+                        "MicrosoftAD",
+                        "DnsIpAddresses"
+                    ]
+                },
+                "Tags": [
+                    {
+                        "Key": "Domain",
+                        "Value": {
+                            "Ref": "DomainDNSName"
+                        }
+                    }
+                ]
+            }
+        },
+        "VPC": {
+            "Type": "AWS::EC2::VPC",
+            "Properties": {
+                "CidrBlock": {
+                    "Ref": "VPCCIDR"
+                },
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackName"
+                        }
+                    },
+                    {
+                        "Key": "Network",
+                        "Value": "Public"
+                    }
+                ]
+            }
+        },
+        "VPCDHCPOptionsAssociation": {
+            "Type": "AWS::EC2::VPCDHCPOptionsAssociation",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "VPC"
+                },
+                "DhcpOptionsId": {
+                    "Ref": "DHCPOptions"
+                }
+            }
+        },
+        "PublicSubnet1": {
+            "Type": "AWS::EC2::Subnet",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "VPC"
+                },
+                "CidrBlock": {
+                    "Ref": "PublicSubnet1CIDR"
+                },
+                "AvailabilityZone": {
+                    "Fn::Select": [
+                        0,
+                        {
+                            "Fn::GetAZs": ""
+                        }
+                    ]
+                },
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackName"
+                        }
+                    },
+                    {
+                        "Key": "Network",
+                        "Value": "Public"
+                    },
+                    {
+                        "Key": "Role",
+                        "Value": "DMZ 1 Subnet"
+                    }
+                ]
+            }
+        },
+        "PublicSubnet2": {
+            "Type": "AWS::EC2::Subnet",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "VPC"
+                },
+                "CidrBlock": {
+                    "Ref": "PublicSubnet2CIDR"
+                },
+                "AvailabilityZone": {
+                    "Fn::Select": [
+                        1,
+                        {
+                            "Fn::GetAZs": ""
+                        }
+                    ]
+                },
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackName"
+                        }
+                    },
+                    {
+                        "Key": "Network",
+                        "Value": "Public"
+                    },
+                    {
+                        "Key": "Role",
+                        "Value": "DMZ 2 Subnet"
+                    }
+                ]
+            }
+        },
+        "PrivateSubnet1": {
+            "Type": "AWS::EC2::Subnet",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "VPC"
+                },
+                "CidrBlock": {
+                    "Ref": "PrivateSubnet1CIDR"
+                },
+                "AvailabilityZone": {
+                    "Fn::Select": [
+                        0,
+                        {
+                            "Fn::GetAZs": ""
+                        }
+                    ]
+                },
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackName"
+                        }
+                    },
+                    {
+                        "Key": "Network",
+                        "Value": "Private"
+                    },
+                    {
+                        "Key": "Role",
+                        "Value": "AD1 Subnet"
+                    }
+                ]
+            }
+        },
+        "PrivateSubnet2": {
+            "Type": "AWS::EC2::Subnet",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "VPC"
+                },
+                "CidrBlock": {
+                    "Ref": "PrivateSubnet2CIDR"
+                },
+                "AvailabilityZone": {
+                    "Fn::Select": [
+                        1,
+                        {
+                            "Fn::GetAZs": ""
+                        }
+                    ]
+                },
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackName"
+                        }
+                    },
+                    {
+                        "Key": "Network",
+                        "Value": "Private"
+                    },
+                    {
+                        "Key": "Role",
+                        "Value": "AD2 Subnet"
+                    }
+                ]
+            }
+        },
+        "InternetGateway": {
+            "Type": "AWS::EC2::InternetGateway",
+            "Properties": {
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackName"
+                        }
+                    },
+                    {
+                        "Key": "Network",
+                        "Value": "Public"
+                    }
+                ]
+            }
+        },
+        "VPCGatewayAttachment": {
+            "Type": "AWS::EC2::VPCGatewayAttachment",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "VPC"
+                },
+                "InternetGatewayId": {
+                    "Ref": "InternetGateway"
+                }
+            }
+        },
+        "PublicRouteTable": {
+            "Type": "AWS::EC2::RouteTable",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "VPC"
+                },
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackName"
+                        }
+                    },
+                    {
+                        "Key": "Network",
+                        "Value": "DMZ"
+                    }
+                ]
+            }
+        },
+        "PublicRoute": {
+            "DependsOn": "VPCGatewayAttachment",
+            "Type": "AWS::EC2::Route",
+            "Properties": {
+                "RouteTableId": {
+                    "Ref": "PublicRouteTable"
+                },
+                "DestinationCidrBlock": "0.0.0.0/0",
+                "GatewayId": {
+                    "Ref": "InternetGateway"
+                }
+            }
+        },
+        "PublicSubnetRouteTableAssociation1": {
+            "Type": "AWS::EC2::SubnetRouteTableAssociation",
+            "Properties": {
+                "SubnetId": {
+                    "Ref": "PublicSubnet1"
+                },
+                "RouteTableId": {
+                    "Ref": "PublicRouteTable"
+                }
+            }
+        },
+        "PublicSubnetRouteTableAssociation2": {
+            "Type": "AWS::EC2::SubnetRouteTableAssociation",
+            "Properties": {
+                "SubnetId": {
+                    "Ref": "PublicSubnet2"
+                },
+                "RouteTableId": {
+                    "Ref": "PublicRouteTable"
+                }
+            }
+        },
+        "PrivateRouteTable1": {
+            "Type": "AWS::EC2::RouteTable",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "VPC"
+                },
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackName"
+                        }
+                    },
+                    {
+                        "Key": "Network",
+                        "Value": "AZ1 Private"
+                    }
+                ]
+            }
+        },
+        "PrivateRoute1": {
+            "Type": "AWS::EC2::Route",
+            "Properties": {
+                "RouteTableId": {
+                    "Ref": "PrivateRouteTable1"
+                },
+                "DestinationCidrBlock": "0.0.0.0/0",
+                "NatGatewayId": {
+                    "Ref": "NATGateway1"
+                }
+            }
+        },
+        "PrivateRouteTable2": {
+            "Type": "AWS::EC2::RouteTable",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "VPC"
+                },
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackName"
+                        }
+                    },
+                    {
+                        "Key": "Network",
+                        "Value": "AZ2 Private"
+                    }
+                ]
+            }
+        },
+        "PrivateRoute2": {
+            "Type": "AWS::EC2::Route",
+            "Properties": {
+                "RouteTableId": {
+                    "Ref": "PrivateRouteTable2"
+                },
+                "DestinationCidrBlock": "0.0.0.0/0",
+                "NatGatewayId": {
+                    "Ref": "NATGateway2"
+                }
+            }
+        },
+        "PrivateSubnetRouteTableAssociation1": {
+            "Type": "AWS::EC2::SubnetRouteTableAssociation",
+            "Properties": {
+                "SubnetId": {
+                    "Ref": "PrivateSubnet1"
+                },
+                "RouteTableId": {
+                    "Ref": "PrivateRouteTable1"
+                }
+            }
+        },
+        "PrivateSubnetRouteTableAssociation2": {
+            "Type": "AWS::EC2::SubnetRouteTableAssociation",
+            "Properties": {
+                "SubnetId": {
+                    "Ref": "PrivateSubnet2"
+                },
+                "RouteTableId": {
+                    "Ref": "PrivateRouteTable2"
+                }
+            }
+        },
+        "RDGW1EIP": {
+            "Type": "AWS::EC2::EIP",
+            "Properties": {
+                "Domain": "vpc",
+                "InstanceId": {
+                    "Ref": "RDGateway1"
+                }
+            }
+        },
+        "RDGW2EIP": {
+            "Type": "AWS::EC2::EIP",
+            "Properties": {
+                "Domain": "vpc",
+                "InstanceId": {
+                    "Ref": "RDGateway2"
+                }
+            }
+        },
+        "NATGateway1EIP": {
+            "Type": "AWS::EC2::EIP",
+            "Properties": {
+                "Domain": "vpc"
+            }
+        },
+        "NATGateway2EIP": {
+            "Type": "AWS::EC2::EIP",
+            "Properties": {
+                "Domain": "vpc"
+            }
+        },
+        "NATGateway1": {
+            "DependsOn": "VPCGatewayAttachment",
+            "Type": "AWS::EC2::NatGateway",
+            "Properties": {
+                "AllocationId": {
+                    "Fn::GetAtt": [
+                        "NATGateway1EIP",
+                        "AllocationId"
+                    ]
+                },
+                "SubnetId": {
+                    "Ref": "PublicSubnet1"
+                }
+            }
+        },
+        "NATGateway2": {
+            "DependsOn": "VPCGatewayAttachment",
+            "Type": "AWS::EC2::NatGateway",
+            "Properties": {
+                "AllocationId": {
+                    "Fn::GetAtt": [
+                        "NATGateway2EIP",
+                        "AllocationId"
+                    ]
+                },
+                "SubnetId": {
+                    "Ref": "PublicSubnet2"
+                }
+            }
+        },
+        "RDGateway1": {
+            "Type": "AWS::EC2::Instance",
+            "DependsOn": "VPCDHCPOptionsAssociation",
+            "Metadata": {
+                "AWS::CloudFormation::Init": {
+                    "configSets": {
+                        "config": [
+                            "setup",
+                            "rename",
+                            "join",
+                            "installRDS",
+                            "finalize"
+                        ]
+                    },
+                    "setup": {
+                        "files": {
+                            "c:\\cfn\\cfn-hup.conf": {
+                                "content": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "[main]\n",
+                                            "stack=",
+                                            {
+                                                "Ref": "AWS::StackName"
+                                            },
+                                            "\n",
+                                            "region=",
+                                            {
+                                                "Ref": "AWS::Region"
+                                            },
+                                            "\n"
+                                        ]
+                                    ]
+                                }
+                            },
+                            "c:\\cfn\\hooks.d\\cfn-auto-reloader.conf": {
+                                "content": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "[cfn-auto-reloader-hook]\n",
+                                            "triggers=post.update\n",
+                                            "path=Resources.RDGateway1.Metadata.AWS::CloudFormation::Init\n",
+                                            "action=cfn-init.exe -v -c config -s ",
+                                            {
+                                                "Ref": "AWS::StackId"
+                                            },
+                                            " -r RDGateway1",
+                                            " --region ",
+                                            {
+                                                "Ref": "AWS::Region"
+                                            },
+                                            "\n"
+                                        ]
+                                    ]
+                                }
+                            },
+                            "c:\\cfn\\scripts\\Configure-RDGW.ps1": {
+                                "source": "https://s3.amazonaws.com/aws-quickstart/quickstart-microsoft-activedirectory/scripts/Configure-RDGW.ps1"
+                            }
+                        },
+                        "services": {
+                            "windows": {
+                                "cfn-hup": {
+                                    "enabled": "true",
+                                    "ensureRunning": "true",
+                                    "files": [
+                                        "c:\\cfn\\cfn-hup.conf",
+                                        "c:\\cfn\\hooks.d\\cfn-auto-reloader.conf"
+                                    ]
+                                }
+                            }
+                        },
+                        "commands": {
+                            "a-set-execution-policy": {
+                                "command": "powershell.exe -command Set-ExecutionPolicy RemoteSigned -Force",
+                                "waitAfterCompletion": "0"
+                            }
+                        }
+                    },
+                    "rename": {
+                        "commands": {
+                            "1-execute-powershell-script-RenameComputer": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "powershell.exe -Command Rename-Computer -NewName RDGW1 -Restart"
+                                        ]
+                                    ]
+                                },
+                                "waitAfterCompletion": "forever"
+                            }
+                        }
+                    },
+                    "join": {
+                        "commands": {
+                            "a-join-domain": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "powershell.exe -Command \"",
+                                            "Add-Computer -DomainName ",
+                                            {
+                                                "Ref": "DomainDNSName"
+                                            },
+                                            " -Credential ",
+                                            "(New-Object System.Management.Automation.PSCredential('",
+                                            {
+                                                "Ref": "DomainNetBIOSName"
+                                            },
+                                            "\\admin",
+                                            "',",
+                                            "(ConvertTo-SecureString ",
+                                            "'",
+                                            {
+                                                "Ref": "DomainAdminPassword"
+                                            },
+                                            "'",
+                                            " -AsPlainText -Force))) ",
+                                            "-Restart\""
+                                        ]
+                                    ]
+                                },
+                                "waitAfterCompletion": "forever"
+                            }
+                        }
+                    },
+                    "installRDS": {
+                        "commands": {
+                            "a-install-rds": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "powershell.exe -Command \"Install-WindowsFeature RDS-Gateway,RSAT-RDS-Gateway\""
+                                        ]
+                                    ]
+                                }
+                            },
+                            "b-configure-rdgw": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "powershell.exe -ExecutionPolicy RemoteSigned",
+                                            " C:\\cfn\\scripts\\Configure-RDGW.ps1 -ServerFQDN RDGW1.",
+                                            {
+                                                "Ref": "DomainDNSName"
+                                            },
+                                            " -DomainNetBiosName ",
+                                            {
+                                                "Ref": "DomainNetBIOSName"
+                                            },
+                                            " -GroupName 'domain admins'"
+                                        ]
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "finalize": {
+                        "commands": {
+                            "1-signal-success": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "cfn-signal.exe -e 0 \"",
+                                            {
+                                                "Ref": "RDGW1WaitHandle"
+                                            },
+                                            "\""
+                                        ]
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "Properties": {
+                "ImageId": {
+                    "Fn::FindInMap": [
+                        "AWSAMIRegionMap",
+                        {
+                            "Ref": "AWS::Region"
+                        },
+                        "WS2012R2"
+                    ]
+                },
+                "InstanceType": {
+                    "Ref": "RDGWInstanceType"
+                },
+                "SubnetId": {
+                    "Ref": "PublicSubnet1"
+                },
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": "RDGW1"
+                    }
+                ],
+                "BlockDeviceMappings": [
+                    {
+                        "DeviceName": "/dev/sda1",
+                        "Ebs": {
+                            "VolumeSize": "50",
+                            "VolumeType": "gp2"
+                        }
+                    }
+                ],
+                "SecurityGroupIds": [
+                    {
+                        "Ref": "RDGWSecurityGroup"
+                    },
+                    {
+                        "Ref": "DomainMemberSG"
+                    }
+                ],
+                "KeyName": {
+                    "Ref": "KeyPairName"
+                },
+                "UserData": {
+                    "Fn::Base64": {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "<script>\n",
+                                "cfn-init.exe -v -c config -s ",
+                                {
+                                    "Ref": "AWS::StackId"
+                                },
+                                " -r RDGateway1",
+                                " --region ",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                "\n",
+                                "</script>\n"
+                            ]
+                        ]
+                    }
+                }
+            }
+        },
+        "RDGateway2": {
+            "Type": "AWS::EC2::Instance",
+            "DependsOn": "VPCDHCPOptionsAssociation",
+            "Metadata": {
+                "AWS::CloudFormation::Init": {
+                    "configSets": {
+                        "config": [
+                            "setup",
+                            "rename",
+                            "join",
+                            "installRDS",
+                            "finalize"
+                        ]
+                    },
+                    "setup": {
+                        "files": {
+                            "c:\\cfn\\cfn-hup.conf": {
+                                "content": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "[main]\n",
+                                            "stack=",
+                                            {
+                                                "Ref": "AWS::StackName"
+                                            },
+                                            "\n",
+                                            "region=",
+                                            {
+                                                "Ref": "AWS::Region"
+                                            },
+                                            "\n"
+                                        ]
+                                    ]
+                                }
+                            },
+                            "c:\\cfn\\hooks.d\\cfn-auto-reloader.conf": {
+                                "content": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "[cfn-auto-reloader-hook]\n",
+                                            "triggers=post.update\n",
+                                            "path=Resources.RDGateway2.Metadata.AWS::CloudFormation::Init\n",
+                                            "action=cfn-init.exe -v -c config -s ",
+                                            {
+                                                "Ref": "AWS::StackId"
+                                            },
+                                            " -r RDGateway2",
+                                            " --region ",
+                                            {
+                                                "Ref": "AWS::Region"
+                                            },
+                                            "\n"
+                                        ]
+                                    ]
+                                }
+                            },
+                            "c:\\cfn\\scripts\\Configure-RDGW.ps1": {
+                                "source": "https://s3.amazonaws.com/aws-quickstart/quickstart-microsoft-activedirectory/scripts/Configure-RDGW.ps1"
+                            }
+                        },
+                        "services": {
+                            "windows": {
+                                "cfn-hup": {
+                                    "enabled": "true",
+                                    "ensureRunning": "true",
+                                    "files": [
+                                        "c:\\cfn\\cfn-hup.conf",
+                                        "c:\\cfn\\hooks.d\\cfn-auto-reloader.conf"
+                                    ]
+                                }
+                            }
+                        },
+                        "commands": {
+                            "a-set-execution-policy": {
+                                "command": "powershell.exe -command Set-ExecutionPolicy RemoteSigned -Force",
+                                "waitAfterCompletion": "0"
+                            }
+                        }
+                    },
+                    "rename": {
+                        "commands": {
+                            "1-execute-powershell-script-RenameComputer": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "powershell.exe -Command Rename-Computer -NewName RDGW2 -Restart"
+                                        ]
+                                    ]
+                                },
+                                "waitAfterCompletion": "forever"
+                            }
+                        }
+                    },
+                    "join": {
+                        "commands": {
+                            "a-join-domain": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "powershell.exe -Command \"",
+                                            "Add-Computer -DomainName ",
+                                            {
+                                                "Ref": "DomainDNSName"
+                                            },
+                                            " -Credential ",
+                                            "(New-Object System.Management.Automation.PSCredential('",
+                                            {
+                                                "Ref": "DomainNetBIOSName"
+                                            },
+                                            "\\admin",
+                                            "',",
+                                            "(ConvertTo-SecureString ",
+                                            "'",
+                                            {
+                                                "Ref": "DomainAdminPassword"
+                                            },
+                                            "'",
+                                            " -AsPlainText -Force))) ",
+                                            "-Restart\""
+                                        ]
+                                    ]
+                                },
+                                "waitAfterCompletion": "forever"
+                            }
+                        }
+                    },
+                    "installRDS": {
+                        "commands": {
+                            "a-install-rds": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "powershell.exe -Command \"Install-WindowsFeature RDS-Gateway,RSAT-RDS-Gateway\""
+                                        ]
+                                    ]
+                                }
+                            },
+                            "b-configure-rdgw": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "powershell.exe -ExecutionPolicy RemoteSigned",
+                                            " C:\\cfn\\scripts\\Configure-RDGW.ps1 -ServerFQDN RDGW2.",
+                                            {
+                                                "Ref": "DomainDNSName"
+                                            },
+                                            " -DomainNetBiosName ",
+                                            {
+                                                "Ref": "DomainNetBIOSName"
+                                            },
+                                            " -GroupName 'domain admins'"
+                                        ]
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "finalize": {
+                        "commands": {
+                            "1-signal-success": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "cfn-signal.exe -e 0 \"",
+                                            {
+                                                "Ref": "RDGW2WaitHandle"
+                                            },
+                                            "\""
+                                        ]
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "Properties": {
+                "ImageId": {
+                    "Fn::FindInMap": [
+                        "AWSAMIRegionMap",
+                        {
+                            "Ref": "AWS::Region"
+                        },
+                        "WS2012R2"
+                    ]
+                },
+                "InstanceType": {
+                    "Ref": "RDGWInstanceType"
+                },
+                "SubnetId": {
+                    "Ref": "PublicSubnet2"
+                },
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": "RDGW2"
+                    }
+                ],
+                "BlockDeviceMappings": [
+                    {
+                        "DeviceName": "/dev/sda1",
+                        "Ebs": {
+                            "VolumeSize": "50",
+                            "VolumeType": "gp2"
+                        }
+                    }
+                ],
+                "SecurityGroupIds": [
+                    {
+                        "Ref": "RDGWSecurityGroup"
+                    },
+                    {
+                        "Ref": "DomainMemberSG"
+                    }
+                ],
+                "KeyName": {
+                    "Ref": "KeyPairName"
+                },
+                "UserData": {
+                    "Fn::Base64": {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "<script>\n",
+                                "cfn-init.exe -v -c config -s ",
+                                {
+                                    "Ref": "AWS::StackId"
+                                },
+                                " -r RDGateway2",
+                                " --region ",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                "\n",
+                                "</script>\n"
+                            ]
+                        ]
+                    }
+                }
+            }
+        },
+        "RDGW1WaitCondition": {
+            "Type": "AWS::CloudFormation::WaitCondition",
+            "DependsOn": "RDGateway1",
+            "Properties": {
+                "Handle": {
+                    "Ref": "RDGW1WaitHandle"
+                },
+                "Timeout": "3000"
+            }
+        },
+        "RDGW1WaitHandle": {
+            "Type": "AWS::CloudFormation::WaitConditionHandle"
+        },
+        "RDGW2WaitCondition": {
+            "Type": "AWS::CloudFormation::WaitCondition",
+            "DependsOn": "RDGateway2",
+            "Properties": {
+                "Handle": {
+                    "Ref": "RDGW2WaitHandle"
+                },
+                "Timeout": "3000"
+            }
+        },
+        "RDGW2WaitHandle": {
+            "Type": "AWS::CloudFormation::WaitConditionHandle"
+        },
+        "DomainMemberSG": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "GroupDescription": "Domain Members",
+                "VpcId": {
+                    "Ref": "VPC"
+                },
+                "SecurityGroupIngress": [
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "5985",
+                        "ToPort": "5985",
+                        "CidrIp": {
+                            "Ref": "PrivateSubnet1CIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "53",
+                        "ToPort": "53",
+                        "CidrIp": {
+                            "Ref": "PrivateSubnet1CIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "udp",
+                        "FromPort": "53",
+                        "ToPort": "53",
+                        "CidrIp": {
+                            "Ref": "PrivateSubnet1CIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "49152",
+                        "ToPort": "65535",
+                        "CidrIp": {
+                            "Ref": "PrivateSubnet1CIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "udp",
+                        "FromPort": "49152",
+                        "ToPort": "65535",
+                        "CidrIp": {
+                            "Ref": "PrivateSubnet1CIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "5985",
+                        "ToPort": "5985",
+                        "CidrIp": {
+                            "Ref": "PrivateSubnet2CIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "53",
+                        "ToPort": "53",
+                        "CidrIp": {
+                            "Ref": "PrivateSubnet2CIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "udp",
+                        "FromPort": "53",
+                        "ToPort": "53",
+                        "CidrIp": {
+                            "Ref": "PrivateSubnet2CIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "49152",
+                        "ToPort": "65535",
+                        "CidrIp": {
+                            "Ref": "PrivateSubnet2CIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "udp",
+                        "FromPort": "49152",
+                        "ToPort": "65535",
+                        "CidrIp": {
+                            "Ref": "PrivateSubnet2CIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "3389",
+                        "ToPort": "3389",
+                        "CidrIp": {
+                            "Ref": "PublicSubnet1CIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "3389",
+                        "ToPort": "3389",
+                        "CidrIp": {
+                            "Ref": "PublicSubnet2CIDR"
+                        }
+                    }
+                ]
+            }
+        },
+        "RDGWSecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "GroupDescription": "Enable RDP access from the Internet",
+                "VpcId": {
+                    "Ref": "VPC"
+                },
+                "SecurityGroupIngress": [
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "3389",
+                        "ToPort": "3389",
+                        "CidrIp": "0.0.0.0/0"
+                    },
+                    {
+                        "IpProtocol": "icmp",
+                        "FromPort": "-1",
+                        "ToPort": "-1",
+                        "CidrIp": "0.0.0.0/0"
+                    }
+                ]
+            }
+        }
+    },
+    "Outputs": {
+        "RDGW1ElasticIP": {
+            "Value": {
+                "Ref": "RDGW1EIP"
+            },
+            "Description": "Elastic IP address of the first Remote Desktop Gateway (RDGW1) in AZ1"
+        },
+        "RootCert1": {
+            "Value": "c:\\RDGW1.cer",
+            "Description": "Location of the root SSL certificate on the first Remote Desktop Gateway (RDGW1) in AZ1"
+        },
+        "RDGW2ElasticIP": {
+            "Value": {
+                "Ref": "RDGW2EIP"
+            },
+            "Description": "Elastic IP address of the second Remote Desktop Gateway (RDGW2) in AZ2"
+        },
+        "RootCert2": {
+            "Value": "c:\\RDGW2.cer",
+            "Description": "Location of the root SSL certificate on the first Remote Desktop Gateway (RDGW2) in AZ2"
+        },
+        "DomainAdmin": {
+            "Value": {
+                "Fn::Join": [
+                    "",
+                    [
+                        {
+                            "Ref": "DomainNetBIOSName"
+                        },
+                        "\\admin"
+                    ]
+                ]
+            },
+            "Description": "Domain administrator account"
+        },
+        "VPCID": {
+            "Value": {
+                "Ref": "VPC"
+            },
+            "Description": "VPC ID"
+        },
+        "VPCCIDR": {
+            "Value": {
+                "Ref": "VPCCIDR"
+            },
+            "Description": "VPC CIDR"
+        },
+        "PublicSubnet1ID": {
+            "Value": {
+                "Ref": "PublicSubnet1"
+            },
+            "Description": "Public Subnet ID in AZ1"
+        },
+        "PublicSubnet2ID": {
+            "Value": {
+                "Ref": "PublicSubnet2"
+            },
+            "Description": "Public Subnet ID in AZ2"
+        },
+        "PrivateSubnet1ID": {
+            "Value": {
+                "Ref": "PrivateSubnet1"
+            },
+            "Description": "Private Subnet ID in AZ1"
+        },
+        "PrivateSubnet2ID": {
+            "Value": {
+                "Ref": "PrivateSubnet2"
+            },
+            "Description": "Private Subnet ID in AZ2"
+        },
+        "DomainMemberSGID": {
+            "Value": {
+                "Ref": "DomainMemberSG"
+            },
+            "Description": "Domain Member Security Group ID"
+        }
+    }
+}
