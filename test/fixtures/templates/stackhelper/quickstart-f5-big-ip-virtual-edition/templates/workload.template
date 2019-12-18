@@ -1,0 +1,415 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+  This template deploys an auto scale group of BIG-IPs and demo applications **WARNING**
+  This template creates multiple AWS resources including an auto scale group of BIG-IPs,
+  two auto scale groups for applications, S3 bucket, SNS queue, lambda function, IAM
+  roles and related resources. You will be billed for the AWS resources used if you
+  create a stack from this template.(qs-1p2474b6a)
+Conditions:
+  GovCloudCondition: !Equals
+    - !Ref 'AWS::Region'
+    - us-gov-west-1
+  DemoCondition: !Equals
+    - !Ref 'deployDemoWebApp'
+    - 'Yes'
+Outputs:
+  appUrl:
+    Value: !GetAtt 'ExternalLBStack.Outputs.DnsName'
+  bigipAutoscaleGroup:
+    Value: !GetAtt 'BIGIPStack.Outputs.bigipAutoscaleGroup'
+  bigipS3Bucket:
+    Value: !GetAtt 'BIGIPStack.Outputs.bigipS3Bucket'
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Network Configuration
+        Parameters:
+          - vpc
+          - availabilityZones
+          - privateSubnet1ID
+          - privateSubnet2ID
+          - publicSubnet1ID
+          - publicSubnet2ID
+      - Label:
+          default: Amazon EC2 Configuration
+        Parameters:
+          - sshKey
+          - restrictedSrcAddress
+      - Label:
+          default: BIG-IP and Auto Scaling Configuration
+        Parameters:
+          - bigipImage
+          - bigipInstanceType
+          - bigipManagementGuiPort
+          - bigipScalingMinSize
+          - bigipScalingMaxSize
+      - Label:
+          default: Application Configuration
+        Parameters:
+          - application
+          - applicationPoolTagKey
+          - application1PoolTagValue
+          - application2PoolTagValue
+          - applicationRestrictedSrcAddr
+      - Label:
+          default: Analytics
+        Parameters:
+          - notificationEmail
+          - allowUsageAnalytics
+      - Label:
+          default: Web App Configuration
+        Parameters:
+          - deploymentName
+          - deployDemoWebApp
+      - Label:
+          default: AWS Quickstart Configuration
+        Parameters:
+          - qss3BucketName
+          - qss3KeyPrefix
+    ParameterLabels:
+      allowUsageAnalytics:
+        default: Send Anonymous Statistics to F5
+      application:
+        default: Application Name
+      applicationPoolTagKey:
+        default: Application Pool Tag Key
+      application1PoolTagValue:
+        default: Application1 Pool Tag Value
+      application2PoolTagValue:
+        default: Application2 Pool Tag Value
+      applicationRestrictedSrcAddr:
+        default: Application Restricted Source Address
+      availabilityZones:
+        default: Availability Zones
+      bigipImage:
+        default: BIG-IP Image
+      bigipInstanceType:
+        default: BIG-IP EC2 Instance Type
+      bigipManagementGuiPort:
+        default: Management Port
+      bigipScalingMaxSize:
+        default: Maximum No. of BIG-IP Instances
+      bigipScalingMinSize:
+        default: Minimum No. of BIG-IP Instances
+      deployDemoWebApp:
+        default: Deploy Demo Web App
+      deploymentName:
+        default: Deployment Name
+      notificationEmail:
+        default: Notification Email
+      privateSubnet1ID:
+        default: Private Subnet1 ID
+      privateSubnet2ID:
+        default: Private Subnet2 ID
+      publicSubnet1ID:
+        default: Public Subnet1 ID
+      publicSubnet2ID:
+        default: Public Subnet2 ID
+      restrictedSrcAddress:
+        default: Allowed Internal Access CIDR
+      qss3BucketName:
+        default: QuickStart S3 Bucket Name
+      qss3KeyPrefix:
+        default: Quick Start S3 Key Prefix
+      sshKey:
+        default: Key Pair Name
+      vpc:
+        default: VPC ID
+Parameters:
+  allowUsageAnalytics:
+    AllowedValues:
+      - 'Yes'
+      - 'No'
+    Default: 'No'
+    Description: This deployment can send anonymous statistics to F5 to help us determine
+      how to improve our solutions.If you select **No** statistics are not sent.
+    Type: String
+  application:
+    AllowedPattern: '[a-zA-Z0-9]+'
+    Description: An appropriate name that describes the use of this deployment.
+    Type: String
+    MaxLength: 20
+    Default: f5demoapp
+  applicationPoolTagKey:
+    Description: This is used to detect the auto-scaled instances by BIG-IP. BIG-IP
+      uses both application pool tag key and value to discover new instances of the
+      apps whether they are custom apps or the demo app.
+    Type: String
+    Default: f5demoapp
+  application1PoolTagValue:
+    Description: This is used to detect the auto-scaled instances by BIG-IP. BIG-IP
+      uses both application pool tag and value to discover new instances of the apps
+      whether they are custom apps or the demo app.
+    Type: String
+    Default: f5-demo-app-0.0.1
+  application2PoolTagValue:
+    Description: This is used to detect the auto-scaled instances by BIG-IP BIG-IP
+      uses both application pool tag value to discover new isntances of the apps whether
+      they are custom apps or the demo app.
+    Type: String
+    Default: f5-demo-app-0.0.2
+  applicationRestrictedSrcAddr:
+    AllowedPattern: ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/([0-9]|[1-2][0-9]|3[0-2]))$
+    ConstraintDescription: address must be in the form x.x.x.x/x
+    Description: Allowed CIDR block to the virtual service and web app.
+    Type: String
+  availabilityZones:
+    Description: 'List of Availability Zones to use for the subnets in the VPC. Note:
+      The logical order is preserved and only 2 AZs are used for this deployment.'
+    Type: List<AWS::EC2::AvailabilityZone::Name>
+  bigipImage:
+    Description: BIG-IP Image for BIG-IP VE.
+    Type: String
+    Default: PerAppVeLtm25Mbps
+    AllowedValues:
+      - Good25Mbps
+      - Good200Mbps
+      - Good1000Mbps
+      - Good5000Mbps
+      - Better25Mbps
+      - Better200Mbps
+      - Better1000Mbps
+      - Better5000Mbps
+      - Best25Mbps
+      - Best200Mbps
+      - Best1000Mbps
+      - Best5000Mbps
+      - PerAppVeLtm25Mbps
+      - PerAppVeLtm200Mbps
+    ConstraintDescription: Select the BIG-IP Image you want to use
+  bigipInstanceType:
+    Description: BIG-IP EC2 Instance Type.
+    Type: String
+    Default: m5.large
+    AllowedValues:
+      - t2.medium
+      - t2.large
+      - m3.large
+      - m3.xlarge
+      - m3.2xlarge
+      - m4.large
+      - m4.xlarge
+      - m4.2xlarge
+      - m4.4xlarge
+      - m4.10xlarge
+      - m5.large
+      - m5.xlarge
+      - m5.2xlarge
+      - m5.4xlarge
+      - c3.xlarge
+      - c3.2xlarge
+      - c3.4xlarge
+      - c3.8xlarge
+      - c4.xlarge
+      - c4.2xlarge
+      - c4.4xlarge
+      - c4.8xlarge
+      - c5.large
+      - c5.xlarge
+      - c5.2xlarge
+      - c5.4xlarge
+    ConstraintDescription: Must be a valid BIG-IP BEST virtual EC2 instance type.
+  bigipManagementGuiPort:
+    Description: Port for the BIG-IP management Configuration utility.
+    Type: Number
+    Default: 8443
+    ConstraintDescription: Must be a valid, unused port on the BIG-IP.
+  bigipScalingMaxSize:
+    Description: Maximum number of BIG-IP instances (1-8) that can be created in the
+      Auto Scale Group.
+    Default: '1'
+    ConstraintDescription: Must be a number between 1-8.
+    Type: Number
+    MaxValue: '8'
+    MinValue: '1'
+  bigipScalingMinSize:
+    Description: Minimum number of BIG-IP instances (1-8) you want available in the
+      Auto Scale Group.
+    Default: '1'
+    ConstraintDescription: Must be a number between 1-8
+    Type: Number
+    MaxValue: '8'
+    MinValue: '1'
+  deployDemoWebApp:
+    AllowedValues:
+      - 'Yes'
+      - 'No'
+    Default: 'No'
+    Description: This is used to deploy the demo WebApps.
+    Type: String
+  deploymentName:
+    Description: Name is used as a prefix for object names.
+    Type: String
+    MaxLength: 25
+    Default: f5awsqs
+  notificationEmail:
+    Description: Valid email address to send auto-scaling event notifications.
+    ConstraintDescription: Must be a valid email address.
+    AllowedPattern: .+@.+
+    Type: String
+  privateSubnet1ID:
+    Description: Private Subnet1 ID.
+    Type: AWS::EC2::Subnet::Id
+  privateSubnet2ID:
+    Description: Private Subnet2 ID.
+    Type: AWS::EC2::Subnet::Id
+  publicSubnet1ID:
+    Description: Public Subnet1 ID.
+    Type: AWS::EC2::Subnet::Id
+  publicSubnet2ID:
+    Description: Public Subnet2 ID.
+    Type: AWS::EC2::Subnet::Id
+  restrictedSrcAddress:
+    Description: ' The IP address range that can be used to SSH to the EC2 instances.'
+    Type: String
+    MinLength: '9'
+    MaxLength: '18'
+    AllowedPattern: (\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})
+    ConstraintDescription: must be a valid IP CIDR range of the form x.x.x.x/x.
+  qss3BucketName:
+    AllowedPattern: ^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$
+    ConstraintDescription: Quick Start bucket name can include numbers, lowercase
+      letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen
+      (-).
+    Default: aws-quickstart
+    Description: S3 bucket name for the Quick Start assets. Quick Start bucket name
+      can include numbers, lowercase letters, uppercase letters, and hyphens (-).
+      It cannot start or end with a hyphen (-).
+    Type: String
+  qss3KeyPrefix:
+    AllowedPattern: ^[0-9a-zA-Z-/]*$
+    ConstraintDescription: Quick Start key prefix can include numbers, lowercase letters,
+      uppercase letters, hyphens (-), and forward slash (/).
+    Default: quickstart-f5-big-ip-virtual-edition/
+    Description: S3 key prefix for the Quick Start assets. Quick Start key prefix
+      can include numbers, lowercase letters, uppercase letters, hyphens (-), and
+      forward slash (/).
+    Type: String
+  sshKey:
+    Description: Public/private key pairs allow you to securely connect to your instance
+      after it launches.
+    Type: AWS::EC2::KeyPair::KeyName
+  vpc:
+    Description: VPC Id for the deployment.
+    Type: AWS::EC2::VPC::Id
+Resources:
+  ExternalLBStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub
+        - https://${qss3BucketName}.${qss3Region}.amazonaws.com/${qss3KeyPrefix}templates/external-LB.template
+        - qss3Region: !If
+            - GovCloudCondition
+            - s3-us-gov-west-1
+            - s3
+      Parameters:
+        deploymentName: !Ref 'deploymentName'
+        application: !Ref 'application'
+        poolPort: '443'
+        vpc: !Ref 'vpc'
+        subnets: !Join
+          - ','
+          - - !Ref 'publicSubnet1ID'
+            - !Ref 'publicSubnet2ID'
+  BIGIPStack:
+    DependsOn: ExternalLBStack
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub
+        - https://${qss3BucketName}.${qss3Region}.amazonaws.com/${qss3KeyPrefix}templates/f5-bigip.template
+        - qss3Region: !If
+            - GovCloudCondition
+            - s3-us-gov-west-1
+            - s3
+      Parameters:
+        deploymentName: !Ref 'deploymentName'
+        vpc: !Ref 'vpc'
+        availabilityZones: !Join
+          - ','
+          - !Ref 'availabilityZones'
+        subnets: !Join
+          - ','
+          - - !Ref 'privateSubnet1ID'
+            - !Ref 'privateSubnet2ID'
+        restrictedSrcAddress: !Ref 'restrictedSrcAddress'
+        restrictedSrcAddressApp: !Ref 'applicationRestrictedSrcAddr'
+        bigipNetworkLoadBalancerTargetGroupsArns: !GetAtt 'ExternalLBStack.Outputs.TargetGroupArn'
+        qss3BucketName: !Ref 'qss3BucketName'
+        qss3KeyPrefix: !Ref 'qss3KeyPrefix'
+        qss3Region: !If
+          - GovCloudCondition
+          - s3-us-gov-west-1
+          - s3
+        sshKey: !Ref 'sshKey'
+        instanceType: !Ref 'bigipInstanceType'
+        imageName: !Ref 'bigipImage'
+        managementGuiPort: !Ref 'bigipManagementGuiPort'
+        timezone: UTC
+        ntpServer: '0.pool.ntp.org'
+        scalingMinSize: !Ref 'bigipScalingMinSize'
+        scalingMaxSize: !Ref 'bigipScalingMaxSize'
+        notificationEmail: !Ref 'notificationEmail'
+        allowUsageAnalytics: !Ref 'allowUsageAnalytics'
+        application: !Ref 'application'
+        applicationPoolTagKey: !Ref 'applicationPoolTagKey'
+        application1PoolTagValue: !Ref 'application1PoolTagValue'
+        application2PoolTagValue: !Ref 'application2PoolTagValue'
+        scaleDownBytesThreshold: '10000'
+        scaleUpBytesThreshold: '35000'
+        lowCpuThreshold: '0'
+        highCpuThreshold: '80'
+        virtualServicePort: '443'
+        applicationPort: '80'
+        environment: quickstart
+        group: quickstart
+        owner: quickstart
+        costcenter: quickstart
+  Application1Stack:
+    DependsOn: BIGIPStack
+    Condition: DemoCondition
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub
+        - https://${qss3BucketName}.${qss3Region}.amazonaws.com/${qss3KeyPrefix}templates/application.template
+        - qss3Region: !If
+            - GovCloudCondition
+            - s3-us-gov-west-1
+            - s3
+      Parameters:
+        deploymentName: !Ref 'deploymentName'
+        application: !Ref 'application'
+        applicationPoolTagKey: !Ref 'applicationPoolTagKey'
+        applicationPoolTagValue: !Ref 'application1PoolTagValue'
+        vpc: !Ref 'vpc'
+        applicationSubnets: !Join
+          - ','
+          - - !Ref 'privateSubnet1ID'
+            - !Ref 'privateSubnet2ID'
+        sshKey: !Ref 'sshKey'
+        restrictedSrcAddress: !Ref 'restrictedSrcAddress'
+        containerName: f5devcentral/f5-demo-app:0.0.1
+  Application2Stack:
+    DependsOn: BIGIPStack
+    Condition: DemoCondition
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub
+        - https://${qss3BucketName}.${qss3Region}.amazonaws.com/${qss3KeyPrefix}templates/application.template
+        - qss3Region: !If
+            - GovCloudCondition
+            - s3-us-gov-west-1
+            - s3
+      Parameters:
+        deploymentName: !Ref 'deploymentName'
+        application: !Ref 'application'
+        applicationPoolTagKey: !Ref 'applicationPoolTagKey'
+        applicationPoolTagValue: !Ref 'application2PoolTagValue'
+        vpc: !Ref 'vpc'
+        applicationSubnets: !Join
+          - ','
+          - - !Ref 'privateSubnet1ID'
+            - !Ref 'privateSubnet2ID'
+        sshKey: !Ref 'sshKey'
+        restrictedSrcAddress: !Ref 'restrictedSrcAddress'
+        containerName: f5devcentral/f5-demo-app:0.0.2

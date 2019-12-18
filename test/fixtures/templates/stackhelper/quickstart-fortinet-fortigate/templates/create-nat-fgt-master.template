@@ -1,0 +1,335 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "Deploys and configures FortiGates to the selected subnets in a VPC",
+    "Parameters": {
+        "QSS3BucketName": {
+            "Type": "String",
+            "AllowedPattern": "^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$",
+            "ConstraintDescription": "Quick Start bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-).",
+            "Description": "S3 bucket name for the Quick Start assets. Quick Start bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-)."
+        },
+        "QSS3KeyPrefix": {
+            "Type": "String",
+            "AllowedPattern": "^[0-9a-zA-Z-/]*$",
+            "ConstraintDescription": "Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).",
+            "Description": "S3 key prefix for the Quick Start assets. Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/)."
+        },
+        "CustomIdentifier": {
+            "Type": "String",
+            "MaxLength": "10",
+            "AllowedPattern": "[A-Za-z0-9]+",
+            "ConstraintDescription": "must only contain uppercase and lowercase letters and numbers",
+            "Description": "An identifier as resource name prefix. Must be at most 10 characters long and only contain uppercase, lowercase letters, and numbers."
+        },
+        "VpcId": {
+            "Type": "AWS::EC2::VPC::Id",
+            "Description": "Enter a valid VPC ID to deploy. The VPC must have the option 'DNS hostnames' enabled."
+        },
+        "SubnetId1": {
+            "Type": "AWS::EC2::Subnet::Id",
+            "Description": "The subnet ID for the primary network interface of the NAT Gateway #1."
+        },
+        "SubnetId2": {
+            "Type": "AWS::EC2::Subnet::Id",
+            "Description": "The subnet ID for the secondary network interface of the NAT Gateway #1."
+        },
+        "SubnetId3": {
+            "Type": "AWS::EC2::Subnet::Id",
+            "Description": "The subnet ID for the primary network interface of the NAT Gateway #2."
+        },
+        "SubnetId4": {
+            "Type": "AWS::EC2::Subnet::Id",
+            "Description": "The subnet ID for the secondary network interface of the NAT Gateway #2."
+        },
+        "FortiGateImageId": {
+            "Type": "String",
+            "Description": "FortiGate Official AMI ID."
+        },
+        "FortiGateInstanceType": {
+            "Type": "String",
+            "Description": "Instance Type."
+        },
+        "FortiGateAdminCidr": {
+            "Type": "String",
+            "AllowedPattern": "^(([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5]){1}(\\/([0-9]|[1-2][0-9]|3[0-2]))?$",
+            "ConstraintDescription": "must be a valid CIDR block format and 0.0.0.0/0 is not recommended.",
+            "MinLength": 9,
+            "Description": "CIDR block for external admin management access. **WARNING!** The default value 0.0.0.0/0 accepts connections from any IP address. Please consider hanging it to match your needs."
+        },
+        "KeyPairName": {
+            "Type": "AWS::EC2::KeyPair::KeyName",
+            "Description": "Amazon EC2 Key Pair for admin access."
+        },
+        "FortiGateAdminPort": {
+            "Type": "Number",
+            "MinValue": 1,
+            "MaxValue": 65535,
+            "ConstraintDescription": "must be a valid port number between 1 and 65535.",
+            "Description": "A port number for FortiGate administration. Default to 8443. Do not use: 443, 541, 514, 703."
+        }
+    },
+    "Conditions": {
+        "GovCloudCondition": {
+            "Fn::Equals": [
+                {
+                    "Ref": "AWS::Region"
+                },
+                "us-gov-west-1"
+            ]
+        }
+    },
+    "Resources": {
+        "sgFortiGateInstance": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "GroupDescription": "FortiGate instance base security group",
+                "SecurityGroupIngress": [
+                    {
+                        "IpProtocol": "tcp",
+                        "CidrIp": {
+                            "Ref": "FortiGateAdminCidr"
+                        },
+                        "FromPort": 22,
+                        "ToPort": 22
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "CidrIp": {
+                            "Ref": "FortiGateAdminCidr"
+                        },
+                        "FromPort": {
+                            "Ref": "FortiGateAdminPort"
+                        },
+                        "ToPort": {
+                            "Ref": "FortiGateAdminPort"
+                        }
+                    }
+                ],
+                "SecurityGroupEgress": [
+                    {
+                        "IpProtocol": "-1",
+                        "CidrIp": "0.0.0.0/0"
+                    }
+                ],
+                "VpcId": {
+                    "Ref": "VpcId"
+                }
+            }
+        },
+        "IamRoleFgtInstance": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "ManagedPolicyArns": [
+                    "arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess",
+                    "arn:aws:iam::aws:policy/AWSLambdaExecute"
+                ],
+                "AssumeRolePolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Principal": {
+                                "Service": "ec2.amazonaws.com"
+                            },
+                            "Action": "sts:AssumeRole"
+                        }
+                    ]
+                },
+                "Path": "/",
+                "Policies": [
+                    {
+                        "PolicyDocument": {
+                            "Version": "2012-10-17",
+                            "Statement": [
+                                {
+                                    "Action": [
+                                        "s3:GetObject"
+                                    ],
+                                    "Resource": {
+                                        "Fn::Sub": [
+                                            "arn:aws:s3:::${QSS3BucketName}/${QSS3KeyPrefix}*",
+                                            {
+                                                "QSS3BucketName": {
+                                                    "Ref": "QSS3BucketName"
+                                                },
+                                                "QSS3KeyPrefix": {
+                                                    "Ref": "QSS3KeyPrefix"
+                                                }
+                                            }
+                                        ]
+                                    },
+                                    "Effect": "Allow"
+                                }
+                            ]
+                        },
+                        "PolicyName": "aws-quick-start-s3-policy"
+                    }
+                ]
+            }
+        },
+        "IamInstanceProfileFgt": {
+            "Type": "AWS::IAM::InstanceProfile",
+            "Properties": {
+                "Roles": [
+                    {
+                        "Ref": "IamRoleFgtInstance"
+                    }
+                ]
+            }
+        },
+        "StackCreateFortiGateInstance1": {
+            "Type": "AWS::CloudFormation::Stack",
+            "Properties": {
+                "Parameters": {
+                    "CustomTagValue": {
+                        "Ref": "CustomIdentifier"
+                    },
+                    "FortiGateInstanceType": {
+                        "Ref": "FortiGateInstanceType"
+                    },
+                    "KeyPairName": {
+                        "Ref": "KeyPairName"
+                    },
+                    "FortiGateAdminPort": {
+                        "Ref": "FortiGateAdminPort"
+                    },
+                    "FortiGateSecurityGroupId": {
+                        "Ref": "sgFortiGateInstance"
+                    },
+                    "SubnetId1": {
+                        "Ref": "SubnetId1"
+                    },
+                    "SubnetId2": {
+                        "Ref": "SubnetId2"
+                    },
+                    "FortiGateImageId": {
+                        "Ref": "FortiGateImageId"
+                    },
+                    "InstanceProfile": {
+                        "Ref": "IamInstanceProfileFgt"
+                    }
+                },
+                "TemplateURL": {
+                    "Fn::Sub": [
+                        "https://${QSS3BucketName}.${QSS3Region}.amazonaws.com/${QSS3KeyPrefix}templates/create-fortigate.template",
+                        {
+                            "QSS3Region": {
+                                "Fn::If": [
+                                    "GovCloudCondition",
+                                    "s3-us-gov-west-1",
+                                    "s3"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                "TimeoutInMinutes": "10"
+            }
+        },
+        "StackCreateFortiGateInstance2": {
+            "Type": "AWS::CloudFormation::Stack",
+            "Properties": {
+                "Parameters": {
+                    "CustomTagValue": {
+                        "Ref": "CustomIdentifier"
+                    },
+                    "FortiGateInstanceType": {
+                        "Ref": "FortiGateInstanceType"
+                    },
+                    "KeyPairName": {
+                        "Ref": "KeyPairName"
+                    },
+                    "FortiGateAdminPort": {
+                        "Ref": "FortiGateAdminPort"
+                    },
+                    "FortiGateSecurityGroupId": {
+                        "Ref": "sgFortiGateInstance"
+                    },
+                    "SubnetId1": {
+                        "Ref": "SubnetId3"
+                    },
+                    "SubnetId2": {
+                        "Ref": "SubnetId4"
+                    },
+                    "FortiGateImageId": {
+                        "Ref": "FortiGateImageId"
+                    },
+                    "InstanceProfile": {
+                        "Ref": "IamInstanceProfileFgt"
+                    }
+                },
+                "TemplateURL": {
+                    "Fn::Sub": [
+                        "https://${QSS3BucketName}.${QSS3Region}.amazonaws.com/${QSS3KeyPrefix}templates/create-fortigate.template",
+                        {
+                            "QSS3Region": {
+                                "Fn::If": [
+                                    "GovCloudCondition",
+                                    "s3-us-gov-west-1",
+                                    "s3"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                "TimeoutInMinutes": "5"
+            }
+        }
+    },
+    "Outputs": {
+        "InstanceId1": {
+            "Description": "The instance ID of the FortiGate NAT Gateway #1.",
+            "Value": {
+                "Fn::GetAtt": [
+                    "StackCreateFortiGateInstance1",
+                    "Outputs.InstanceId"
+                ]
+            }
+        },
+        "InstanceId1Nic0Id": {
+            "Description": "The nic0 ID of the FortiGate NAT Gateway #1.",
+            "Value": {
+                "Fn::GetAtt": [
+                    "StackCreateFortiGateInstance1",
+                    "Outputs.NetworkInterface0Id"
+                ]
+            }
+        },
+        "InstanceId1Nic1Id": {
+            "Description": "The nic1 ID of the FortiGate NAT Gateway #1.",
+            "Value": {
+                "Fn::GetAtt": [
+                    "StackCreateFortiGateInstance1",
+                    "Outputs.NetworkInterface1Id"
+                ]
+            }
+        },
+        "InstanceId2": {
+            "Description": "The instance ID of the FortiGate NAT Gateway #2.",
+            "Value": {
+                "Fn::GetAtt": [
+                    "StackCreateFortiGateInstance2",
+                    "Outputs.InstanceId"
+                ]
+            }
+        },
+        "InstanceId2Nic0Id": {
+            "Description": "The nic0 ID of the FortiGate NAT Gateway #2.",
+            "Value": {
+                "Fn::GetAtt": [
+                    "StackCreateFortiGateInstance2",
+                    "Outputs.NetworkInterface0Id"
+                ]
+            }
+        },
+        "InstanceId2Nic1Id": {
+            "Description": "The nic1 ID of the FortiGate NAT Gateway #2.",
+            "Value": {
+                "Fn::GetAtt": [
+                    "StackCreateFortiGateInstance2",
+                    "Outputs.NetworkInterface1Id"
+                ]
+            }
+        }
+    }
+}

@@ -1,0 +1,1271 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+  McAfee-ePO Agent Handler Stack which manages the agent handler infrastructure
+  components.
+Metadata:
+  LICENSE: Apache License Version 2.0
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: McAfee ePolicy Orchestrator Platform Configuration
+        Parameters:
+          - Environment
+          - SubDomainName
+          - Availability
+          - KeyPairName
+      - Label:
+          default: Peer-Parent Stack Configuration
+        Parameters:
+          - ParentStack
+          - BaseStack
+      - Label:
+          default: ePO Application Server Configuration
+        Parameters:
+          - EPOAdminUserName
+          - EPOAdminPassword
+          - ConfirmEPOAdminPassword
+          - EPOServerDNSName
+          - EPOServerIp
+          - EPOConsolePort
+          - EPODatabaseName
+      - Label:
+          default: AH Stack Configuration
+        Parameters:
+          - AHImageId
+          - AHPort
+          - ClientAccessCIDR
+          - AHInstanceType
+          - AHInstanceSize
+          - AHBuildVersion
+      - Label:
+          default: ePO Database Configuration
+        Parameters:
+          - DBMasterUsername
+          - DBInstanceIdentifier
+      - Label:
+          default: Administration Configuration
+        Parameters:
+          - AdminEmailAddress
+      - Label:
+          default: AWS Quick Start Configuration
+        Parameters:
+        - QSS3BucketName
+        - QSS3KeyPrefix
+    ParameterLabels:
+      Environment:
+        default: Deployment Environment
+      SubDomainName:
+        default: Sub Domain Name
+      Availability:
+        default: High Availability
+      KeyPairName:
+        default: AWS Key Pair Name
+      ParentStack:
+        default: Parent Stack
+      BaseStack:
+        default: Base Stack
+      EPOAdminUserName:
+        default: Admin Username
+      EPOAdminPassword:
+        default: Admin Password
+      ConfirmEPOAdminPassword:
+        default: Confirm Admin Password
+      EPOServerDNSName:
+        default: EPO Server DNS Name
+      EPOServerIp:
+        default: EPO Server IP Address
+      EPOConsolePort:
+        default: Console Port
+      EPODatabaseName:
+        default: ePO Database Name
+      AHImageId:
+        default: AH ImageID
+      AHPort:
+        default: AH Port
+      ClientAccessCIDR:
+        default: External Access CIDR
+      AHInstanceType:
+        default: Instance Type
+      AHInstanceSize:
+        default: Allocated Storage
+      AHBuildVersion:
+        default: Build Version
+      DBMasterUsername:
+        default: DB Master Username
+      DBInstanceIdentifier:
+        default: DB Instance Identifier
+      AdminEmailAddress:
+        default: Operator Email
+      QSS3BucketName:
+        default: S3 Bucket Name
+      QSS3KeyPrefix:
+        default: S3 Key Prefix
+Parameters:
+  Environment:
+    AllowedValues:
+      - 'Production'
+      - 'Development'
+    Default: 'Production'
+    Description: What is the targeted deployment environment?
+    Type: String
+  SubDomainName:
+    Description: >-
+      The non-existant sub domain name to be used for managment solution. (e.g. manage.mcafee.com ). We recommend either to register AWS Route 53
+      domain name so that public DNS records can be propagated automatically OR add the sub domain Name Server(NS) records into your main domain server.
+    Default: ''
+    MaxLength: 256
+    Type: String
+  Availability:
+    AllowedValues:
+      - 'Yes'
+      - 'No'
+    Default: 'Yes'
+    Description: We recommend selecting 'Yes' for production environments. It is applicable for Agent Handlers, DXL Brokers, RDS.
+    Type: String
+  KeyPairName:
+    Description: The name of an existing public/private key pair, which allows you to securely connect to your instance after it launches.
+    Type: AWS::EC2::KeyPair::KeyName
+  ParentStack:
+    Description: Parent stack name by which pipeline stack is deriving if any.
+    MinLength: 1
+    MaxLength: 256
+    Type: String
+  BaseStack:
+    Description: Base stack name by which pipeline stack is deriving if any.
+    MinLength: 1
+    MaxLength: 256
+    Type: String
+  EPOAdminUserName:
+    Description: The global administrator username for ePO Console Access.
+    MaxLength: 256
+    MinLength: 2
+    Type: String
+  EPOAdminPassword:
+    AllowedPattern: '((?=.*\d)(?=.*\W)(?!.*\")(?!.*\\)(?!.*\s).{8,256})'
+    ConstraintDescription: Must be minimum of 8 characters and contain alpha, numeric, and a special character but it must not contain backslashes (\) or spaces or any double quotes (")'.
+    Description: 'The administrator password for ePO Console Access.  Must be a minimum of 8 characters and contain alpha, numeric, and a special character.'
+    MaxLength: 256
+    MinLength: 8
+    NoEcho: true
+    Type: String
+  ConfirmEPOAdminPassword:
+    AllowedPattern: '((?=.*\d)(?=.*\W)(?!.*\")(?!.*\\)(?!.*\s).{8,256})'
+    ConstraintDescription: Must be minimum of 8 characters and contain alpha, numeric, and a special character but it must not contain backslashes (\) or spaces or any double quotes (")'.
+    Description: 'Create a global administrator password for McAfee ePO console login. Must be a minimum of 8 characters and contain alpha, numeric, and a special character.'
+    MaxLength: 256
+    MinLength: 8
+    NoEcho: true
+    Type: String
+  EPOServerDNSName:
+    Description: EPO Server DNS Name
+    MinLength: 1
+    MaxLength: 256
+    Type: String
+  EPOServerIp:
+    Description: EPO Server IP Address
+    MinLength: 1
+    MaxLength: 64
+    Type: String
+  EPOConsolePort:
+    Default: '8443'
+    Description: The secure port number to access the ePO console.
+    MinLength: 1
+    MaxLength: 64
+    Type: String
+  EPODatabaseName:
+    Default: epo-hosted-db
+    Type: String
+    Description: EPO Database name.
+  AHImageId:
+    Type: String
+    Description: AH AMI ID, starts with ami-*.
+    MinLength: 1
+    MaxLength: 64
+  AHPort:
+    Default: '443'
+    Description: The agent server communication(ASC) port used by the McAfee Agent to securely communicate to server.
+    MinLength: 1
+    MaxLength: 64
+    Type: String
+  ClientAccessCIDR:
+    AllowedPattern: ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/([0-9]|[1-2][0-9]|3[0-2]))$
+    ConstraintDescription: CIDR block parameter must be in the form x.x.x.x/x
+    Description: >-
+      CIDR block that is allowed to connect from on premise endpoints to Agent Handler's/DXL Brokers.
+      e.g., x.x.x.x/16-28.
+    Type: String
+  AHInstanceType:
+    Default: 'c4.large'
+    Type: String
+    Description: AH instance type, must be valid instance size for the region.
+  AHInstanceSize:
+    Default: '128'
+    Type: String
+    Description: Allocated disk storage for AH Instance.
+  AHBuildVersion:
+    Default: '5.10.0.2000'
+    Type: String
+    Description: AH version with major.minor.patch.build-number
+  DBMasterUsername:
+    Description: Login ID for the master user for database, it must contain from 2 to 8 characters.
+    MaxLength: 8
+    MinLength: 2
+    Type: String
+  DBInstanceIdentifier:
+    Default: ''
+    MaxLength: 512
+    Description: 'Database instance identifier unique for this region.'
+    Type: String
+  AdminEmailAddress:
+    AllowedPattern: ([a-zA-Z0-9_\-\.]+)@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.)|(([a-zA-Z0-9\-]+\.)+))([a-zA-Z]{2,8}|[0-9]{1,3})(\]?)
+    ConstraintDescription: Must be a valid email address.
+    Description: Email address that notifications of any operations will be sent. In addition this will be used for tagging of ownership of resources.
+    Type: String
+  QSS3BucketName:
+    AllowedPattern: ^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$
+    ConstraintDescription: >-
+      Quick Start bucket name can include numbers, lowercase letters, uppercase letters, periods (.), and hyphens (-).
+      It cannot start or end with a hyphen (-) or period (.).
+    Default: aws-quickstart
+    Description: >-
+      S3 bucket name for the Quick Start assets. Quick Start bucket name can include numbers, lowercase letters, uppercase letters, periods (.), and hyphens (-).
+      It cannot start or end with a hyphen (-) or period (.).
+    Type: String
+  QSS3KeyPrefix:
+    AllowedPattern: ^[0-9a-zA-Z-/]*$
+    ConstraintDescription: >-
+      Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).
+      Prefix cannot start with a slash but must end with a slash unless it is the empty string.'
+    Default: quickstart-mcafee-epo/
+    Description: >-
+      The S3 key name prefix used to simulate a folder for your copy of Quick Start assets,
+      if you decide to customize or extend the Quick Start for your own use.This prefix can include numbers,
+      lowercase letters, uppercase letters, hyphens, and forward slashes.'
+    Type: String
+
+Mappings:
+  InstanceTypes:
+    us-east-1:
+      InstanceType: 'c4.large'
+    us-east-2:
+      InstanceType: 'c4.large'
+    us-west-1:
+      InstanceType: 'c4.large'
+    us-west-2:
+      InstanceType: 'c4.large'
+    ca-central-1:
+      InstanceType: 'c4.large'
+    eu-central-1:
+      InstanceType: 'c4.large'
+    eu-west-1:
+      InstanceType: 'c4.large'
+    eu-west-2:
+      InstanceType: 'c4.large'
+    eu-west-3:
+      InstanceType: 'c5.large'
+    ap-northeast-1:
+      InstanceType: 'c4.large'
+    ap-northeast-2:
+      InstanceType: 'c4.large'
+    ap-northeast-3:
+      InstanceType: 'c4.large'
+    ap-southeast-1:
+      InstanceType: 'c4.large'
+    ap-southeast-2:
+      InstanceType: 'c4.large'
+    ap-south-1:
+      InstanceType: 'c4.large'
+    sa-east-1:
+      InstanceType: 'c4.large'
+    us-gov-west-1:
+      InstanceType: 'c4.large'
+    us-gov-east-1:
+      InstanceType: 'c5.large'
+    cn-north-1:
+      InstanceType: 'c4.large'
+    cn-northwest-1:
+      InstanceType: 'c4.large'
+
+Conditions:
+  cHARequired: !Equals [ !Ref Availability, 'Yes']
+  cGovCloudCondition: !Or
+    - !Equals [ !Ref 'AWS::Region', us-gov-west-1 ]
+    - !Equals [ !Ref 'AWS::Region', us-gov-east-1 ]
+  cNotGovCloudCondition: !Not [ !Condition cGovCloudCondition ]
+
+Rules:
+  MatchPassword:
+    Assertions:
+      - Assert: !Equals
+            - !Ref EPOAdminPassword
+            - !Ref ConfirmEPOAdminPassword
+        AssertDescription:  ePO Admin passwords do not match.
+
+Resources:
+
+  # AH AWS ELB security group
+  AHELBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for AH Elastic Load Balancer.
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          FromPort: 0
+          ToPort: 65535
+          CidrIp: 0.0.0.0/0
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: !Ref AHPort
+          ToPort: !Ref AHPort
+          CidrIp: !Ref ClientAccessCIDR
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: !Ref ClientAccessCIDR
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-AHELBSecurityGroup
+        - Key: Owner
+          Value: !Ref AdminEmailAddress
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Product
+          Value: McAfee-ePO-AgentHandler
+        - Key: Solution
+          Value: McAfee-ePO
+        - Key: mcafee:cloudformation:stack-name
+          Value: !Sub ${ParentStack}
+      VpcId:
+        Fn::ImportValue:
+          !Sub '${BaseStack}-VPCID'
+
+  # AH Instance  internal security group
+  AHInstanceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for AH Instance.
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          FromPort: 0
+          ToPort: 65535
+          CidrIp: 0.0.0.0/0
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: !Ref AHPort
+          ToPort: !Ref AHPort
+          CidrIp:
+            Fn::ImportValue: !Sub ${BaseStack}-PublicSubnet1CIDR
+        - IpProtocol: tcp
+          FromPort: !Ref AHPort
+          ToPort: !Ref AHPort
+          CidrIp:
+            Fn::ImportValue: !Sub ${BaseStack}-PublicSubnet2CIDR
+        - IpProtocol: tcp
+          FromPort: !Ref AHPort
+          ToPort: !Ref AHPort
+          CidrIp:
+            Fn::ImportValue: !Sub ${BaseStack}-PrivateSubnet1CIDR
+        - IpProtocol: tcp
+          FromPort: !Ref AHPort
+          ToPort: !Ref AHPort
+          CidrIp:
+            Fn::ImportValue: !Sub ${BaseStack}-PrivateSubnet2CIDR
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp:
+            Fn::ImportValue: !Sub ${BaseStack}-PublicSubnet1CIDR
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp:
+            Fn::ImportValue: !Sub ${BaseStack}-PublicSubnet2CIDR
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp:
+            Fn::ImportValue: !Sub ${BaseStack}-PrivateSubnet1CIDR
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp:
+            Fn::ImportValue: !Sub ${BaseStack}-PrivateSubnet2CIDR
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-AHInstanceSecurityGroup
+        - Key: Owner
+          Value: !Ref AdminEmailAddress
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Product
+          Value: McAfee-ePO-AgentHandler
+        - Key: Solution
+          Value: McAfee-ePO
+        - Key: mcafee:cloudformation:stack-name
+          Value: !Sub ${ParentStack}
+      VpcId:
+        Fn::ImportValue:
+          !Sub '${BaseStack}-VPCID'
+
+  # AH AWS Elastic Load Balancer
+  AHLoadBalancer:
+    Type: AWS::ElasticLoadBalancing::LoadBalancer
+    Properties:
+      AccessLoggingPolicy:
+        EmitInterval: 60
+        Enabled: true
+        S3BucketName:
+          Fn::ImportValue: !Sub ${BaseStack}-DataStore
+        S3BucketPrefix: 'logs/elb/ah'
+      ConnectionDrainingPolicy:
+        Enabled: true
+        Timeout: 180
+      ConnectionSettings:
+        IdleTimeout: 600
+      CrossZone: true
+      HealthCheck:
+        HealthyThreshold: '3'
+        Interval: '30'
+        Target: !Join
+          - ''
+          - - 'SSL:'
+            - !Ref AHPort
+        Timeout: '15'
+        UnhealthyThreshold: '10'
+      Listeners:
+        - InstancePort: !Ref AHPort
+          InstanceProtocol: TCP
+          LoadBalancerPort: !Ref AHPort
+          PolicyNames: []
+          Protocol: TCP
+          SSLCertificateId: ''
+        - InstancePort: 80
+          InstanceProtocol: TCP
+          LoadBalancerPort: 80
+          PolicyNames: []
+          Protocol: TCP
+          SSLCertificateId: ''
+      Scheme: internet-facing
+      SecurityGroups:
+        - !Ref AHELBSecurityGroup
+      Subnets:
+          - Fn::ImportValue: !Sub ${BaseStack}-PublicSubnet1ID
+          - Fn::ImportValue: !Sub ${BaseStack}-PublicSubnet2ID
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-AHLoadBalancer
+        - Key: Owner
+          Value: !Ref AdminEmailAddress
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Product
+          Value: McAfee-ePO-AgentHandler
+        - Key: Solution
+          Value: McAfee-ePO
+        - Key: mcafee:cloudformation:stack-name
+          Value: !Sub ${ParentStack}
+
+  # IAM policy to add ePO as local agent handler in agent handler AWS ELB, during post deployment
+  UpdateELBwithEPOasAHPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: UpdateELBwithEPOasAHPolicy
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action:
+              - elasticloadbalancing:RegisterInstancesWithLoadBalancer
+              - elasticloadbalancing:DeregisterInstancesFromLoadBalancer
+            Resource: !Join
+                - ''
+                - - !Sub
+                    - 'arn:${Partition}:elasticloadbalancing:${AWS::Region}:${AWS::AccountId}:loadbalancer/'
+                    - Partition:
+                        !If [ cGovCloudCondition, aws-us-gov, aws ]
+                  - !Ref AHLoadBalancer
+      Roles:
+        - Fn::ImportValue: !Sub ${BaseStack}-PostDeployLambdaRole
+
+  # AH AWS Route53 Record Set
+  AHR53RecordSet:
+    Type: AWS::Route53::RecordSet
+    Condition: cNotGovCloudCondition
+    Properties:
+      AliasTarget:
+        DNSName: !GetAtt AHLoadBalancer.CanonicalHostedZoneName
+        HostedZoneId: !GetAtt AHLoadBalancer.CanonicalHostedZoneNameID
+      Comment: External AH DNS RecordSet.
+      HostedZoneId:
+        Fn::ImportValue: !Sub ${BaseStack}-R53PublicHostedZone
+      Name:  !Sub ah.${SubDomainName}
+      Type: A
+
+  # EC2 instance role
+  AHEC2Role:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+                - ssm.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: /
+      Policies:
+        - PolicyName: AHEC2Role
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - cloudwatch:PutMetricData
+                  - cloudwatch:GetMetricStatistics
+                  - cloudwatch:ListMetrics
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:DescribeLogStreams
+                  - logs:DescribeLogGroups
+                  - logs:PutLogEvents
+                  - logs:CreateLogGroup
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - cloudformation:Describe*
+                  - rds:Describe*
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - kms:Decrypt
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - ssm:GetParameters
+                  - ssm:GetParameter
+                  - ssm:GetParametersByPath
+                  - ssm:DescribeAssociation
+                  - ssm:GetDeployablePatchSnapshotForInstance
+                  - ssm:GetDocument
+                  - ssm:GetManifest
+                  - ssm:ListAssociations
+                  - ssm:ListInstanceAssociations
+                  - ssm:PutInventory
+                  - ssm:PutComplianceItems
+                  - ssm:PutConfigurePackageResult
+                  - ssm:UpdateAssociationStatus
+                  - ssm:UpdateInstanceAssociationStatus
+                  - ssm:UpdateInstanceInformation
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - ec2messages:AcknowledgeMessage
+                  - ec2messages:DeleteMessage
+                  - ec2messages:FailMessage
+                  - ec2messages:GetEndpoint
+                  - ec2messages:GetMessages
+                  - ec2messages:SendReply
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - ec2:DescribeInstanceStatus
+                Resource: '*'
+
+  # EC2 Instance Profile
+  AHEC2InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: /
+      Roles:
+        - !Ref AHEC2Role
+
+  # Agent Handler Launch config
+  AHLaunchConfig:
+    Type: AWS::AutoScaling::LaunchConfiguration
+    Metadata:
+      Version: !Ref AHBuildVersion
+      AWS::CloudFormation::Init:
+        configSets:
+          default:
+            - provison_cfn
+            - provison_ah
+        provison_cfn:
+          files:
+            c:\Users\Administrator\.aws\config:
+              content: !Sub |
+                [default]
+                  output=json
+                  region=${AWS::Region}
+            c:\cfn\cfn-hup.conf:
+              content: !Sub |
+                [main]
+                  stack=${AWS::StackId}
+                  region=${AWS::Region}
+            c:\cfn\hooks.d\cfn-auto-reloader.conf:
+              content: !Sub |
+                [cfn-auto-reloader-hook]
+                  triggers=post.update
+                  path=Resources.epo.Metadata.AWS::CloudFormation::Init
+                  action=cfn-init.exe -v -s ${AWS::StackName} -r AHLaunchConfig --region ${AWS::Region}
+            c:\Windows\System32\drivers\etc\hosts:
+              content: !Join
+                - ' '
+                - - !Sub ${EPOServerIp}
+                  - !Sub ${EPOServerDNSName}
+
+          services:
+            windows:
+              cfn-hup:
+                enabled: 'true'
+                ensureRunning: 'true'
+                files:
+                  - c:\cfn\cfn-hup.conf
+                  - c:\cfn\hooks.d\cfn-auto-reloader.conf
+        provison_ah:
+          commands:
+            0setup:
+              command: !Join
+                - ' '
+                - - !Sub cwa-config.bat ah ${AWS::Region} McAfee-ePO ${ParentStack}
+                  - Fn::ImportValue: !Sub ${BaseStack}-AHLogGroup
+              cwd: c:\provision\scripts\
+              waitAfterCompletion: '0'
+            1setup:
+              command: !Sub >
+                node provision.js --platform aws --component ah --region ${AWS::Region} --stackname ${AWS::StackName} --rootstackname ${ParentStack} --paramspath /mcafee/${ParentStack}
+                --threadsperchild 250 --db.username ${DBMasterUsername} --db.identifier ${DBInstanceIdentifier}  --db.database ${EPODatabaseName}
+                --epo.serverdns ${EPOServerDNSName} --epo.port 8080 --epo.secure_port ${EPOConsolePort}
+                --ah.port ${AHPort}
+              cwd: c:\provision\
+              waitAfterCompletion: '0'
+
+    Properties:
+      BlockDeviceMappings:
+        - DeviceName: /dev/sda1
+          Ebs:
+            VolumeSize: !Ref AHInstanceSize
+      IamInstanceProfile: !Ref AHEC2InstanceProfile
+      ImageId: !Ref AHImageId
+      InstanceType: !FindInMap [InstanceTypes, !Ref 'AWS::Region', InstanceType]
+      KeyName: !Ref KeyPairName
+      SecurityGroups:
+        - !Ref AHELBSecurityGroup
+        - !Ref AHInstanceSecurityGroup
+        -
+          Fn::ImportValue:
+            !Sub ${BaseStack}-RDPAdminSecurityGroup
+      UserData:
+        'Fn::Base64': !Sub |
+          <script>
+          cfn-init.exe -v -s ${AWS::StackName} --resource AHLaunchConfig --region ${AWS::Region}
+          cfn-signal.exe -e %ERRORLEVEL% --stack ${AWS::StackName} --resource AHAutoscalingGroup --region ${AWS::Region}
+          cscript C:\Windows\System32\Scregedit.wsf /ar 0
+          </script>
+
+  # AH autoscaling group
+  AHAutoscalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      DesiredCapacity: !If [cHARequired, 2, 1]
+      HealthCheckType: ELB
+      HealthCheckGracePeriod: 3600
+      LaunchConfigurationName: !Ref AHLaunchConfig
+      LoadBalancerNames:
+        - !Ref AHLoadBalancer
+      MetricsCollection:
+        - Granularity: 1Minute
+      MaxSize: 8
+      MinSize: !If [cHARequired, 2, 1]
+      Tags:
+        - Key: Name
+          PropagateAtLaunch: true
+          Value: !Sub ${ParentStack}-ah
+        - Key: Owner
+          PropagateAtLaunch: true
+          Value: !Ref AdminEmailAddress
+        - Key: Environment
+          PropagateAtLaunch: true
+          Value: !Ref Environment
+        - Key: Product
+          PropagateAtLaunch: true
+          Value: McAfee-ePO-AgentHandler
+        - Key: Solution
+          PropagateAtLaunch: true
+          Value: McAfee-ePO
+        - Key: mcafee:cloudformation:stack-name
+          PropagateAtLaunch: true
+          Value: !Sub ${ParentStack}
+      VPCZoneIdentifier:
+        - Fn::ImportValue: !Sub ${BaseStack}-PrivateSubnet1ID
+        - Fn::ImportValue: !Sub ${BaseStack}-PrivateSubnet2ID
+    UpdatePolicy:
+      AutoScalingReplacingUpdate:
+        WillReplace: 'true'
+    CreationPolicy:
+      AutoScalingCreationPolicy:
+        MinSuccessfulInstancesPercent: 50
+      ResourceSignal:
+        Count: 1
+        Timeout: PT90M
+
+  # update asg metrics lambda role
+  AHUpdateASGMetricsLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: /
+      Policies:
+        - PolicyName: AHUpdateASGMetricsLambdaRole
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - autoscaling:UpdateAutoScalingGroup
+                Resource:
+                  !Sub
+                  - 'arn:${Partition}:autoscaling:${AWS::Region}:${AWS::AccountId}:autoScalingGroup:*:autoScalingGroupName/*'
+                  - Partition:
+                      !If [ cGovCloudCondition, aws-us-gov, aws ]
+
+  # Update ASG metrics lambda
+  AHUpdateASGMetricsLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        S3Bucket: !Sub ${QSS3BucketName}
+        S3Key: !Sub ${QSS3KeyPrefix}functions/packages/modules/update-asg-metrics.zip
+      Description: Lambda for updating ASG metrics.
+      Handler: update-asg-metrics.handler
+      Role: !GetAtt AHUpdateASGMetricsLambdaRole.Arn
+      Runtime: python3.6
+      Timeout: 120
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-AHUpdateASGMetricsLambda
+        - Key: Owner
+          Value: !Ref AdminEmailAddress
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Product
+          Value: McAfee-ePO-AgentHandler
+        - Key: Solution
+          Value: McAfee-ePO
+        - Key: mcafee:cloudformation:stack-name
+          Value: !Sub ${ParentStack}
+
+  # Update ASG metrics lambda version
+  AHUpdateASGMetricsLambdaVersion1:
+    Type: AWS::Lambda::Version
+    Properties:
+      FunctionName: !Ref AHUpdateASGMetricsLambda
+
+  # Update ASG metrics lambda log group
+  AHUpdateASGMetricsLambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    DependsOn: AHUpdateASGMetricsLambda
+    Properties:
+      LogGroupName: !Join
+            - ''
+            - - '/aws/lambda/'
+              - !Ref AHUpdateASGMetricsLambda
+      RetentionInDays: 7
+
+  # AH ASG custom action to update the value of desired capacity once the
+  # lifecycle hooks are ready
+  AHASGMetricsCustomAction:
+    Type: Custom::AHASGMetricsCustomAction
+    DependsOn: AHUpdateASGMetricsLambdaLogGroup
+    Properties:
+      ServiceToken: !GetAtt AHUpdateASGMetricsLambda.Arn
+      AutoScalingGroupName: !Ref AHAutoscalingGroup
+      HealthCheckGracePeriod: 1200
+      DesiredCapacity: !If [cHARequired, 2, 1]
+      MaxSize: 8
+      MinSize: !If [cHARequired, 2, 1]
+
+  # AH scale up policy
+  AHScaleUpPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AdjustmentType: ChangeInCapacity
+      AutoScalingGroupName: !Ref AHAutoscalingGroup
+      Cooldown: 600
+      ScalingAdjustment: 1
+
+  # AH scale down policy
+  AHScaleDownPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AdjustmentType: ChangeInCapacity
+      AutoScalingGroupName: !Ref AHAutoscalingGroup
+      Cooldown: 300
+      ScalingAdjustment: -1
+
+  # AH Apache Active connection(Apache workers) busy Alarm
+  ApacheWorkersBusyAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub ${AWS::StackName}-ApacheWorkersBusyAlarm
+      AlarmActions:
+        - !Ref MetricAggregatorTopic
+      AlarmDescription: Alarm if 75 percent of Apache Workers are busy over 10 minutes
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: AutoScalingGroupName
+          Value: epo-ah-autoscaling-group
+        - Name: StackName
+          Value: !Ref ParentStack
+      EvaluationPeriods: 1
+      MetricName: apache_BusyWorkers
+      Namespace: McAfee-ePO
+      Period: 300
+      Statistic: Average
+      Threshold: 185
+
+  # AH Apache Active connection(Apache workers) idle Alarm
+  ApacheWorkersIdleAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmActions:
+        - !Ref AHScaleDownPolicy
+      AlarmDescription: Alarm if 50 percent of Apache Workers are idle over 10 minutes
+      ComparisonOperator: LessThanOrEqualToThreshold
+      Dimensions:
+        - Name: AutoScalingGroupName
+          Value: epo-ah-autoscaling-group
+        - Name: StackName
+          Value: !Ref ParentStack
+      EvaluationPeriods: 1
+      MetricName: apache_BusyWorkers
+      Namespace: McAfee-ePO
+      Period: 120
+      Statistic: Average
+      Threshold: 125
+
+  # DB Blocked connections for AH Alarm
+  DBBlockedConnectionsHighAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub ${AWS::StackName}-DBBlockedConnectionsHighAlarm
+      AlarmDescription: Alarm if over 50% percent of AH connections are blocked over 5 mins
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: Service
+          Value: Database
+        - Name: StackName
+          Value: !Ref ParentStack
+      EvaluationPeriods: 1
+      MetricName: database_BlockedConnectionPercent
+      Namespace: McAfee-ePO
+      Period: 300
+      Statistic: Average
+      Threshold: 50
+
+  # Aggregator Alarm which aggregates the different metrics and gives boolean
+  AggregatorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub ${AWS::StackName}-AggregatorAlarm
+      AlarmActions:
+        - !Ref AHScaleUpPolicy
+      AlarmDescription: Alarm If both ApacheWorkersBusyAlarm and DBBlockedConnectionsHighAlarm are in ALARM state.
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: AutoScalingGroupName
+          Value: epo-ah-autoscaling-group
+        - Name: StackName
+          Value: !Ref ParentStack
+      EvaluationPeriods: 1
+      MetricName: trigger
+      Namespace: McAfee-ePO
+      Period: 60
+      Statistic: Average
+      Threshold: 0
+
+  # Metric Aggregator Topic
+  MetricAggregatorTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      Subscription:
+        -
+          Endpoint:
+            Fn::GetAtt:
+              - AHMetricsAggregatorLamda
+              - Arn
+          Protocol: lambda
+
+  # Metric Aggregator Lambda Permission
+  AHMetricsAggregatorLamdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt
+          - AHMetricsAggregatorLamda
+          - Arn
+      Principal: sns.amazonaws.com
+      Action: lambda:InvokeFunction
+      SourceArn:
+        Ref: MetricAggregatorTopic
+
+  # Metric Aggregator Lambda role to simulate AWS Alarm with multi-metrics.
+  AHMetricAggregatorLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: /
+      Policies:
+        - PolicyName: AHMetricAggregatorLambdaRole
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - cloudwatch:DescribeAlarms
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - cloudwatch:putMetricData
+                Resource: '*'
+
+  # Metric Aggregator Lambda to simulate AWS Alarm with multi-metrics.
+  AHMetricsAggregatorLamda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        S3Bucket: !Sub ${QSS3BucketName}
+        S3Key: !Sub ${QSS3KeyPrefix}functions/packages/modules/ah/metric-aggregator.zip
+      Description: Lambda to simulate AWS Alarm with multi-metrics.
+      Environment:
+        Variables:
+          APACHE_BUSY_ALARM_NAME: !Sub ${AWS::StackName}-ApacheWorkersBusyAlarm
+          DB_BLOCKED_CONN_ALARM_NAME:  !Sub ${AWS::StackName}-DBBlockedConnectionsHighAlarm
+          AGGREGATOR_ALAM_NAME: !Sub ${AWS::StackName}-AggregatorAlarm
+      Handler: metric-aggregator.handler
+      Role: !GetAtt AHMetricAggregatorLambdaRole.Arn
+      Runtime: nodejs8.10
+      Timeout: 120
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-AHMetricsAggregatorLamda
+        - Key: Owner
+          Value: !Ref AdminEmailAddress
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Product
+          Value: McAfee-ePO-AgentHandler
+        - Key: Solution
+          Value: McAfee-ePO
+        - Key: mcafee:cloudformation:stack-name
+          Value: !Sub ${ParentStack}
+
+  # Metric Aggregator Lambda version
+  AHMetricsAggregatorLamdaVersion1:
+    Type: AWS::Lambda::Version
+    Properties:
+      FunctionName: !Ref AHMetricsAggregatorLamda
+
+  # Metric Aggregator Lambda log group
+  AHMetricsAggregatorLamdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    DependsOn: AHMetricsAggregatorLamda
+    Properties:
+      LogGroupName: !Join
+            - ''
+            - - '/aws/lambda/'
+              - !Ref AHMetricsAggregatorLamda
+      RetentionInDays: 7
+
+  # AH ASG autoscaling lifecycle hook role
+  AHASGLifecycleHookRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - autoscaling.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: /
+      Policies:
+        - PolicyName: AHASGLifecycleHookRole
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - sns:Publish
+                Resource: !Join
+                  - ''
+                  - - !Sub
+                      - 'arn:${Partition}:sns:${AWS::Region}:${AWS::AccountId}:'
+                      - Partition:
+                          !If [ cGovCloudCondition, aws-us-gov, aws ]
+                    - !GetAtt AHLifecycleHookTopic.TopicName
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: '*'
+
+  # AH ASG autoscaling lifecycle hook on instance termination
+  AHASGLifecycleHook:
+    Type: AWS::AutoScaling::LifecycleHook
+    Properties:
+      AutoScalingGroupName: !Ref AHAutoscalingGroup
+      HeartbeatTimeout: 300
+      LifecycleTransition: autoscaling:EC2_INSTANCE_TERMINATING
+      NotificationMetadata: !Sub 'ah|/mcafee/${ParentStack}'
+      NotificationTargetARN:
+        Ref: AHLifecycleHookTopic
+      RoleARN: !GetAtt AHASGLifecycleHookRole.Arn
+
+  # AH ASG Lifecyclehook Topic
+  AHLifecycleHookTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      Subscription:
+        -
+          Endpoint:
+            Fn::GetAtt:
+              - AHASGLifecycleHookLamda
+              - Arn
+          Protocol: lambda
+
+  # AH ASG Lifecycle Hook Lambda Permission
+  AHASGLifecycleHookLamdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt
+          - AHASGLifecycleHookLamda
+          - Arn
+      Principal: sns.amazonaws.com
+      Action: 'lambda:InvokeFunction'
+      SourceArn:
+        Ref: AHLifecycleHookTopic
+
+  # AH ASG autoscaling life cycle hook lambda role
+  AHASGLifecycelHookLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: /
+      Policies:
+        - PolicyName: AHASGLifecycelHookLambdaRole
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - ssm:SendCommand
+                  - ssm:ListCommandInvocations
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - autoscaling:CompleteLifecycleAction
+                Resource:
+                  !Sub
+                  - 'arn:${Partition}:autoscaling:${AWS::Region}:${AWS::AccountId}:autoScalingGroup:*:autoScalingGroupName/*'
+                  - Partition:
+                      !If [ cGovCloudCondition, aws-us-gov, aws ]
+
+  # AH ASG autoscaling life cycle hook lambda
+  AHASGLifecycleHookLamda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        S3Bucket: !Sub ${QSS3BucketName}
+        S3Key: !Sub ${QSS3KeyPrefix}functions/packages/modules/lifecycle-hook.zip
+      Description: Lambda for ASG lifecycle hook on instance termination
+      Handler: lifecycle-hook.handler
+      Role: !GetAtt AHASGLifecycelHookLambdaRole.Arn
+      Runtime: python3.6
+      Timeout: 300
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-AHASGLifecycleHookLamda
+        - Key: Owner
+          Value: !Ref AdminEmailAddress
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Product
+          Value: McAfee-ePO-AgentHandler
+        - Key: Solution
+          Value: McAfee-ePO
+        - Key: mcafee:cloudformation:stack-name
+          Value: !Sub ${ParentStack}
+
+  # AH ASG autoscaling life cycle hook lambda version
+  AHASGLifecycleHookLamdaVersion1:
+    Type: AWS::Lambda::Version
+    Properties:
+      FunctionName: !Ref AHASGLifecycleHookLamda
+
+  # AH ASG autoscaling life cycle hook lambda log group
+  AHASGLifecycleHookLamdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Join
+            - ''
+            - - '/aws/lambda/'
+              - !Ref AHASGLifecycleHookLamda
+      RetentionInDays: 7
+
+  # AH ASG Lifecycle hook wait lambda role
+  AHASGLifecycleHookWaitLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: /
+      Policies:
+        - PolicyName: root
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - autoscaling:DescribeAutoScalingGroups
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - autoscaling:UpdateAutoScalingGroup
+                Resource:
+                  !Sub
+                  - 'arn:${Partition}:autoscaling:${AWS::Region}:${AWS::AccountId}:autoScalingGroup:*:autoScalingGroupName/*'
+                  - Partition:
+                      !If [ cGovCloudCondition, aws-us-gov, aws ]
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: '*'
+
+  # AH ASG Lifecycle hook wait lambda role
+  AHASGLifecycleHookWaitLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        S3Bucket: !Sub ${QSS3BucketName}
+        S3Key: !Sub ${QSS3KeyPrefix}functions/packages/modules/lifecycle-hook-wait.zip
+      Description: Lambda function to wait AH lifecycle hook before deletion.
+      Handler: lifecycle-hook-wait.handler
+      Role: !GetAtt AHASGLifecycleHookWaitLambdaRole.Arn
+      Runtime: python3.6
+      Timeout: 300
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-AHASGLifecycleHookWaitLambda
+        - Key: Owner
+          Value: !Ref AdminEmailAddress
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Product
+          Value: McAfee-ePO-AgentHandler
+        - Key: Solution
+          Value: McAfee-ePO
+        - Key: mcafee:cloudformation:stack-name
+          Value: !Sub ${ParentStack}
+
+  # AH ASG Lifecycle hook wait lambda version
+  AHASGLifecycleHookWaitLambdaVersion1:
+    Type: AWS::Lambda::Version
+    Properties:
+      FunctionName: !Ref AHASGLifecycleHookWaitLambda
+
+  # AH ASG lifescycle hook wait in blue-green update scenario
+  AHASGLifecycleHookWaitLambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    DependsOn: AHASGLifecycleHookWaitLambda
+    Properties:
+      LogGroupName: !Join
+            - ''
+            - - '/aws/lambda/'
+              - !Ref AHASGLifecycleHookWaitLambda
+      RetentionInDays: 7
+
+  # AH ASG Lifecycle hook wait lambda custom action
+  AHASGLifecycleHookWaitAction:
+    Type: Custom::AHASGLifecycleHookWaitAction
+    DependsOn: AHASGLifecycleHookWaitLambdaLogGroup
+    Properties:
+      ServiceToken: !GetAtt AHASGLifecycleHookWaitLambda.Arn
+      AutoScalingGroupName: !Ref AHAutoscalingGroup
+
+
+
+Outputs:
+  AHServerDNSName:
+    Description: AH Server DNS Name
+    Value: !If
+      - cNotGovCloudCondition
+      - !Ref AHR53RecordSet
+      - !GetAtt [ AHLoadBalancer, CanonicalHostedZoneName ]
+  AHCommunicationPort:
+    Description: AH Communication Port
+    Value: !Ref AHPort
+  AHLoadBalancer:
+    Description: AH AWS Elastic Load Balancer
+    Value: !Ref AHLoadBalancer
+  AHLoadBalancerURL:
+    Description: AH AWS Elastic Load Balancer URL
+    Value: !GetAtt [ AHLoadBalancer, CanonicalHostedZoneName ]
+  AHAutoscalingGroup:
+    Description: AH Auto Scaling Group
+    Value: !Ref AHAutoscalingGroup
+  ApacheWorkersBusyAlarmARN:
+    Description: ARN of AH Apache busy alaram
+    Value: !GetAtt [ ApacheWorkersBusyAlarm, Arn ]

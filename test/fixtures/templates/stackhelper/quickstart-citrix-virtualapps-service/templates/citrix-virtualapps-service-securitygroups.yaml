@@ -1,0 +1,113 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: 'This template deploys VPC Security Groups for Citrix Cloud Connectors and Citrix VDA'
+Parameters:
+  VPCID:
+    Type: 'AWS::EC2::VPC::Id'
+  BastionSecurityGroupID:
+    Description: ID of the Bastion Security Group (e.g., sg-7f16e910),
+    Type: 'AWS::EC2::SecurityGroup::Id'
+  QSDeploymentID:
+    Type: 'AWS::SSM::Parameter::Value<String>'
+
+Resources:
+  CCSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub 'SG-CitrixCloudConnectors-${QSDeploymentID}'
+      GroupDescription: Security group which allows access to the Cloud Connectors
+      VpcId: !Ref VPCID
+      SecurityGroupIngress:
+        - SourceSecurityGroupId: !Ref BastionSecurityGroupID
+          IpProtocol: tcp
+          FromPort: 3389
+          ToPort: 3389
+      Tags:
+      - Key: Name
+        Value: !Sub 'AWS Quick Start Citrix Cloud Connector (QSDeployment ID: ${QSDeploymentID})'
+      - Key: App
+        Value: Citrix
+      - Key: QSDeplomentID
+        Value: !Sub ${QSDeploymentID}        
+
+  CCSecurityGroupTCPIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref CCSecurityGroup
+      IpProtocol: tcp
+      FromPort: '0'
+      ToPort: '65535'
+      SourceSecurityGroupId: !Ref CCSecurityGroup
+
+  VDARegistrationHTTPSecurityGroupTCPIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Description: VDA Registration HTTP 
+    Properties:
+      GroupId: !Ref CCSecurityGroup
+      IpProtocol: tcp
+      FromPort: '80'
+      ToPort: '80'
+      SourceSecurityGroupId: !Ref VDASecurityGroup
+
+  VDARegistrationHTTPSSecurityGroupTCPIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Description: VDA Registration HTTPS   
+    Properties:
+      GroupId: !Ref CCSecurityGroup
+      IpProtocol: tcp
+      FromPort: '443'
+      ToPort: '443'
+      SourceSecurityGroupId: !Ref VDASecurityGroup
+
+  VDASecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub 'SG-CitrixVDA-${QSDeploymentID}'    
+      GroupDescription: Security group which allows access to the VDA Workers
+      VpcId: !Ref VPCID
+      SecurityGroupIngress:
+        - IpProtocol: TCP
+          FromPort: 443
+          ToPort: 443
+          SourceSecurityGroupId: !Ref CCSecurityGroup
+        - IpProtocol: TCP
+          FromPort: 80
+          ToPort: 80
+          SourceSecurityGroupId: !Ref CCSecurityGroup
+        - IpProtocol: TCP
+          FromPort: 1494
+          ToPort: 1494
+          SourceSecurityGroupId: !Ref CCSecurityGroup
+        - IpProtocol: TCP
+          FromPort: 2598
+          ToPort: 2598
+          SourceSecurityGroupId: !Ref CCSecurityGroup
+        - IpProtocol: TCP
+          FromPort: 8008
+          ToPort: 8008
+          SourceSecurityGroupId: !Ref CCSecurityGroup
+        - SourceSecurityGroupId: !Ref BastionSecurityGroupID
+          IpProtocol: tcp
+          FromPort: 3389
+          ToPort: 3389
+      Tags:
+      - Key: Name
+        Value: !Sub 'AWS Quick Start Citrix VDA (QSDeployment ID: ${QSDeploymentID})'
+      - Key: App
+        Value: Citrix
+      - Key: QSDeplomentID
+        Value: !Sub ${QSDeploymentID}
+
+  VDASecurityGroupTCPIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref VDASecurityGroup
+      IpProtocol: tcp
+      FromPort: '0'
+      ToPort: '65535'
+      SourceSecurityGroupId: !Ref VDASecurityGroup
+
+Outputs:
+  CCSecurityGroup:
+    Value: !Ref CCSecurityGroup
+  VDASecurityGroup:
+    Value: !Ref VDASecurityGroup

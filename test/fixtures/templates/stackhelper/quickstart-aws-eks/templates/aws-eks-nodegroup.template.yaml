@@ -1,0 +1,448 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Deploys EKS nodes into an existing VPC (qs-1p7nknoid)
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Network Configuration
+        Parameters:
+          - VPCID
+          - PrivateSubnet1ID
+          - PrivateSubnet2ID
+          - PrivateSubnet3ID
+      - Label:
+          default: Amazon EC2 Configuration
+        Parameters:
+          - KeyPairName
+      - Label:
+          default: EKS Configuration
+        Parameters:
+          - NodeInstanceType
+          - NumberOfNodes
+          - NodeGroupName
+          - NodeVolumeSize
+    ParameterLabels:
+      KeyPairName:
+        default: SSH Key Name
+      PrivateSubnet1ID:
+        default: Private Subnet 1 ID
+      PrivateSubnet2ID:
+        default: Private Subnet 2 ID
+      PrivateSubnet3ID:
+        default: Private Subnet 3 ID
+      VPCID:
+        default: VPC ID
+      NodeInstanceType:
+        default: Nodes Instance Type
+      NumberOfNodes:
+        default: Number of Nodes
+      NodeGroupName:
+        default: Node Group Name
+      NodeVolumeSize:
+        default: Node Volume Size
+Parameters:
+  KeyPairName:
+    Description: Name of an existing EC2 key pair. All instances will launch with
+      this key pair.
+    Type: AWS::EC2::KeyPair::KeyName
+  PrivateSubnet1ID:
+    Description: ID of private subnet 1 in Availability Zone 1 for the Workload (e.g.,
+      subnet-a0246dcd)
+    Type: AWS::EC2::Subnet::Id
+  PrivateSubnet2ID:
+    Description: ID of private subnet 2 in Availability Zone 2 for the Workload (e.g.,
+      subnet-b1f432cd)
+    Type: AWS::EC2::Subnet::Id
+  PrivateSubnet3ID:
+    Description: ID of private subnet 3 in Availability Zone 3 for the Workload (e.g.,
+      subnet-b1f4a2cd)
+    Type: AWS::EC2::Subnet::Id
+  VPCID:
+    Description: ID of your existing VPC for deployment
+    Type: AWS::EC2::VPC::Id
+  NodeInstanceType:
+    Default: t2.medium
+    AllowedValues:
+      - t2.small
+      - t2.medium
+      - t2.large
+      - t2.xlarge
+      - t2.2xlarge
+      - t3.nano
+      - t3.micro
+      - t3.small
+      - t3.medium
+      - t3.large
+      - t3.xlarge
+      - t3.2xlarge
+      - m3.medium
+      - m3.large
+      - m3.xlarge
+      - m3.2xlarge
+      - m4.large
+      - m4.xlarge
+      - m4.2xlarge
+      - m4.4xlarge
+      - m4.10xlarge
+      - m5.large
+      - m5.xlarge
+      - m5.2xlarge
+      - m5.4xlarge
+      - m5.12xlarge
+      - m5.24xlarge
+      - c4.large
+      - c4.xlarge
+      - c4.2xlarge
+      - c4.4xlarge
+      - c4.8xlarge
+      - c5.large
+      - c5.xlarge
+      - c5.2xlarge
+      - c5.4xlarge
+      - c5.9xlarge
+      - c5.18xlarge
+      - i3.large
+      - i3.xlarge
+      - i3.2xlarge
+      - i3.4xlarge
+      - i3.8xlarge
+      - i3.16xlarge
+      - r3.xlarge
+      - r3.2xlarge
+      - r3.4xlarge
+      - r3.8xlarge
+      - r4.large
+      - r4.xlarge
+      - r4.2xlarge
+      - r4.4xlarge
+      - r4.8xlarge
+      - r4.16xlarge
+      - x1.16xlarge
+      - x1.32xlarge
+      - p2.xlarge
+      - p2.8xlarge
+      - p2.16xlarge
+      - p3.2xlarge
+      - p3.8xlarge
+      - p3.16xlarge
+      - r5.large
+      - r5.xlarge
+      - r5.2xlarge
+      - r5.4xlarge
+      - r5.12xlarge
+      - r5.24xlarge
+      - r5d.large
+      - r5d.xlarge
+      - r5d.2xlarge
+      - r5d.4xlarge
+      - r5d.12xlarge
+      - r5d.24xlarge
+      - z1d.large
+      - z1d.xlarge
+      - z1d.2xlarge
+      - z1d.3xlarge
+      - z1d.6xlarge
+      - z1d.12xlarge
+    ConstraintDescription: Must be a valid EC2 instance type
+    Description: Type of EC2 instance for the Node instances
+    Type: String
+  NumberOfNodes:
+    Default: '3'
+    Description: Number of EKS node instances
+    Type: Number
+  NodeGroupName:
+    Default: Default
+    Description: Name for EKS node group
+    Type: String
+  NodeVolumeSize:
+    Default: 20
+    Description: Size for node volumes
+    Type: String
+  EKSControlPlane:
+    Description: Name of the EKS cluster to join
+    Type: String
+  BootstrapArguments:
+    Description: Arguments to pass to the bootstrap script. See files/bootstrap.sh in https://github.com/awslabs/amazon-eks-ami
+    Type: String
+    Default: ""
+  ControlPlaneSecurityGroup:
+    Type: AWS::EC2::SecurityGroup::Id
+  NodeInstanceProfile:
+    Type: String
+  KubernetesVersion:
+    Type: String
+    AllowedValues: [ "1.11", "1.10" ]
+    Default: "1.11"
+  TargetGroupARNs:
+    Type: CommaDelimitedList
+    Default: ""
+Conditions:
+  DisableTargetGroups: !Equals
+    - !Join [",", !Ref 'TargetGroupARNs' ]
+    - ""
+Mappings:
+  K8sVersionMap:
+    "1.11":
+      STD: EKS111
+      GPU: EKS111GPU
+    "1.10":
+      STD: EKS110
+      GPU: EKS110GPU
+  InstanceTypes:
+    t2.small: { Type: STD }
+    t2.medium: { Type: STD }
+    t2.large: { Type: STD }
+    t2.xlarge: { Type: STD }
+    t2.2xlarge: { Type: STD }
+    t3.nano: { Type: STD }
+    t3.micro: { Type: STD }
+    t3.small: { Type: STD }
+    t3.medium: { Type: STD }
+    t3.large: { Type: STD }
+    t3.xlarge: { Type: STD }
+    t3.2xlarge: { Type: STD }
+    m3.medium: { Type: STD }
+    m3.large: { Type: STD }
+    m3.xlarge: { Type: STD }
+    m3.2xlarge: { Type: STD }
+    m4.large: { Type: STD }
+    m4.xlarge: { Type: STD }
+    m4.2xlarge: { Type: STD }
+    m4.4xlarge: { Type: STD }
+    m4.10xlarge: { Type: STD }
+    m5.large: { Type: STD }
+    m5.xlarge: { Type: STD }
+    m5.2xlarge: { Type: STD }
+    m5.4xlarge: { Type: STD }
+    m5.12xlarge: { Type: STD }
+    m5.24xlarge: { Type: STD }
+    c4.large: { Type: STD }
+    c4.xlarge: { Type: STD }
+    c4.2xlarge: { Type: STD }
+    c4.4xlarge: { Type: STD }
+    c4.8xlarge: { Type: STD }
+    c5.large: { Type: STD }
+    c5.xlarge: { Type: STD }
+    c5.2xlarge: { Type: STD }
+    c5.4xlarge: { Type: STD }
+    c5.9xlarge: { Type: STD }
+    c5.18xlarge: { Type: STD }
+    i3.large: { Type: STD }
+    i3.xlarge: { Type: STD }
+    i3.2xlarge: { Type: STD }
+    i3.4xlarge: { Type: STD }
+    i3.8xlarge: { Type: STD }
+    i3.16xlarge: { Type: STD }
+    r3.xlarge: { Type: STD }
+    r3.2xlarge: { Type: STD }
+    r3.4xlarge: { Type: STD }
+    r3.8xlarge: { Type: STD }
+    r4.large: { Type: STD }
+    r4.xlarge: { Type: STD }
+    r4.2xlarge: { Type: STD }
+    r4.4xlarge: { Type: STD }
+    r4.8xlarge: { Type: STD }
+    r4.16xlarge: { Type: STD }
+    x1.16xlarge: { Type: STD }
+    x1.32xlarge: { Type: STD }
+    p2.xlarge: { Type: GPU }
+    p2.8xlarge: { Type: GPU }
+    p2.16xlarge: { Type: GPU }
+    p3.2xlarge: { Type: GPU }
+    p3.8xlarge: { Type: GPU }
+    p3.16xlarge: { Type: GPU }
+    r5.large: { Type: STD }
+    r5.xlarge: { Type: STD }
+    r5.2xlarge: { Type: STD }
+    r5.4xlarge: { Type: STD }
+    r5.12xlarge: { Type: STD }
+    r5.24xlarge: { Type: STD }
+    r5d.large: { Type: STD }
+    r5d.xlarge: { Type: STD }
+    r5d.2xlarge: { Type: STD }
+    r5d.4xlarge: { Type: STD }
+    r5d.12xlarge: { Type: STD }
+    r5d.24xlarge: { Type: STD }
+    z1d.large: { Type: STD }
+    z1d.xlarge: { Type: STD }
+    z1d.2xlarge: { Type: STD }
+    z1d.3xlarge: { Type: STD }
+    z1d.6xlarge: { Type: STD }
+    z1d.12xlarge: { Type: STD }
+  AWSAMIRegionMap:
+    AMI:
+      EKS111: amazon-eks-node-1.11-v20
+      EKS111GPU: amazon-eks-gpu-node-1.11-v20
+      EKS110: amazon-eks-node-1.10-v20
+      EKS110GPU: amazon-eks-gpu-node-1.10-v20
+    ap-northeast-1:
+      EKS111: ami-0f0e8066383e7a2cb
+      EKS111GPU: ami-036b3969c5eb8d3cf
+      EKS110: ami-06398bdd37d76571d
+      EKS110GPU: ami-0afc9d14b2fe11ad9
+    ap-northeast-2:
+      EKS111: ami-0b7baa90de70f683f
+      EKS111GPU: ami-0b7f163f7194396f7
+      EKS110: ami-08a87e0a7c32fa649
+      EKS110GPU: ami-0d75b9ab57bfc8c9a
+    ap-southeast-1:
+      EKS111: ami-019966ed970c18502
+      EKS111GPU: ami-093f742654a955ee6
+      EKS110: ami-0ac3510e44b5bf8ef
+      EKS110GPU: ami-0ecce0670cb66d17b
+    ap-southeast-2:
+      EKS111: ami-06ade0abbd8eca425
+      EKS111GPU: ami-05e09575123ff498b
+      EKS110: ami-0d2c929ace88cfebe
+      EKS110GPU: ami-03b048bd9d3861ce9
+    eu-central-1:
+      EKS111: ami-010caa98bae9a09e2
+      EKS111GPU: ami-0d6f0554fd4743a9d
+      EKS110: ami-08eb700778f03ea94
+      EKS110GPU: ami-000622b1016d2a5bf
+    eu-north-1:
+      EKS111: ami-06ee67302ab7cf838
+      EKS111GPU: ami-0b159b75
+      EKS110: ami-068b8a1efffd30eda
+      EKS110GPU: ami-cc149ab2
+    eu-west-1:
+      EKS111: ami-01e08d22b9439c15a
+      EKS111GPU: ami-097978e7acde1fd7c
+      EKS110: ami-0de10c614955da932
+      EKS110GPU: ami-0dafd3a1dc43781f7
+    us-east-1:
+      EKS111: ami-0c24db5df6badc35a
+      EKS111GPU: ami-0ff0241c02b279f50
+      EKS110: ami-04358410d28eaab63
+      EKS110GPU: ami-0131c0ca222183def
+    us-east-2:
+      EKS111: ami-0c2e8d28b1f854c68
+      EKS111GPU: ami-006a12f54eaafc2b1
+      EKS110: ami-0b779e8ab57655b4b
+      EKS110GPU: ami-0abfb3be33c196cbf
+    us-west-2:
+      EKS111: ami-0a2abab4107669c1b
+      EKS111GPU: ami-0c9e5e2d8caa9fb5e
+      EKS110: ami-09e1df3bad220af0b
+      EKS110GPU: ami-0ebf0561e61a2be02
+Resources:
+  NodeSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for all nodes in the node group
+      VpcId: !Ref VPCID
+      Tags:
+        - Key: !Sub "kubernetes.io/cluster/${EKSControlPlane}"
+          Value: 'owned'
+  NodeSecurityGroupIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      Description: Allow nodes to communicate with each other
+      GroupId: !Ref NodeSecurityGroup
+      SourceSecurityGroupId: !Ref NodeSecurityGroup
+      IpProtocol: '-1'
+      FromPort: 0
+      ToPort: 65535
+  NodeSecurityGroupFromControlPlaneIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      Description: Allow worker Kubelets and pods to receive communication from the cluster control plane
+      GroupId: !Ref NodeSecurityGroup
+      SourceSecurityGroupId: !Ref ControlPlaneSecurityGroup
+      IpProtocol: tcp
+      FromPort: 1025
+      ToPort: 65535
+  ControlPlaneEgressToNodeSecurityGroup:
+    Type: AWS::EC2::SecurityGroupEgress
+    Properties:
+      Description: Allow the cluster control plane to communicate with worker Kubelet and pods
+      GroupId: !Ref ControlPlaneSecurityGroup
+      DestinationSecurityGroupId: !Ref NodeSecurityGroup
+      IpProtocol: tcp
+      FromPort: 1025
+      ToPort: 65535
+  NodeSecurityGroupFromControlPlaneOn443Ingress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      Description: Allow pods running extension API servers on port 443 to receive communication from cluster control plane
+      GroupId: !Ref NodeSecurityGroup
+      SourceSecurityGroupId: !Ref ControlPlaneSecurityGroup
+      IpProtocol: tcp
+      FromPort: 443
+      ToPort: 443
+  ControlPlaneEgressToNodeSecurityGroupOn443:
+    Type: AWS::EC2::SecurityGroupEgress
+    Properties:
+      Description: Allow the cluster control plane to communicate with pods running extension API servers on port 443
+      GroupId: !Ref ControlPlaneSecurityGroup
+      DestinationSecurityGroupId: !Ref NodeSecurityGroup
+      IpProtocol: tcp
+      FromPort: 443
+      ToPort: 443
+  ClusterControlPlaneSecurityGroupIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      Description: Allow pods to communicate with the cluster API Server
+      GroupId: !Ref ControlPlaneSecurityGroup
+      SourceSecurityGroupId: !Ref NodeSecurityGroup
+      IpProtocol: tcp
+      ToPort: 443
+      FromPort: 443
+  NodeGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      DesiredCapacity: !Ref NumberOfNodes
+      LaunchConfigurationName: !Ref NodeLaunchConfig
+      MinSize: !Ref NumberOfNodes
+      MaxSize: !Ref NumberOfNodes
+      VPCZoneIdentifier: [ !Ref PrivateSubnet1ID, !Ref PrivateSubnet2ID, !Ref PrivateSubnet3ID ]
+      TargetGroupARNs: !If [ DisableTargetGroups, !Ref "AWS::NoValue", !Ref TargetGroupARNs ]
+      Tags:
+        - Key: Name
+          Value: !Sub "${EKSControlPlane}-${NodeGroupName}-Node"
+          PropagateAtLaunch: true
+        - Key: !Sub 'kubernetes.io/cluster/${EKSControlPlane}'
+          Value: 'owned'
+          PropagateAtLaunch: true
+    UpdatePolicy:
+      AutoScalingRollingUpdate:
+        MinInstancesInService: 1
+        MaxBatchSize: 1
+  NodeLaunchConfig:
+    Type: AWS::AutoScaling::LaunchConfiguration
+    Properties:
+      AssociatePublicIpAddress: true
+      IamInstanceProfile: !Ref NodeInstanceProfile
+      ImageId: !FindInMap
+        - AWSAMIRegionMap
+        - !Ref "AWS::Region"
+        - !FindInMap
+          - K8sVersionMap
+          - !Ref KubernetesVersion
+          - !FindInMap
+            - InstanceTypes
+            - !Ref NodeInstanceType
+            - Type
+      InstanceType: !Ref NodeInstanceType
+      KeyName: !Ref KeyPairName
+      SecurityGroups:
+        - !Ref NodeSecurityGroup
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            VolumeSize: !Ref NodeVolumeSize
+            VolumeType: gp2
+            DeleteOnTermination: true
+      UserData:
+        Fn::Base64:
+          !Sub |
+          #!/bin/bash
+          set -o xtrace
+          /etc/eks/bootstrap.sh ${EKSControlPlane} ${BootstrapArguments}
+          /opt/aws/bin/cfn-signal --exit-code $? \
+                --stack  ${AWS::StackName} \
+                --resource NodeGroup  \
+                --region ${AWS::Region}
+Outputs:
+  EKSNodeSecurityGroup:
+    Value: !Ref NodeSecurityGroup

@@ -1,0 +1,195 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Creates the IBM InfoSphere DataStage Client Windows EC2 instance. This template creates EC2 instances and related resources. You will be billed for the AWS resources used if you create a stack from this template. (qs-1pjbembrj)
+Parameters:
+  DSClientInstanceType:
+    AllowedValues:
+      - t3.large
+      - t3.xlarge
+      - t3.2xlarge
+      - t3a.large
+      - t3a.xlarge
+      - t3a.2xlarge
+      - m5.large
+      - m5.xlarge
+      - m5.2xlarge
+      - m5.4xlarge
+      - m5.8xlarge
+      - m5a.large
+      - m5a.xlarge
+      - m5a.2xlarge
+      - m5a.4xlarge
+      - m5a.8xlarge
+    ConstraintDescription: Must contain valid instance type
+    Default: t3.xlarge
+    Description: Type of EC2 instance for the DataStage Windows Client instance
+    Type: String
+  IBMDataStageClientICN:
+    AllowedPattern: '[0-9]+'
+    Description: ICN associated with your license
+    NoEcho: 'true'
+    Type: String
+  IBMDataStageClientPartNumber:
+    AllowedPattern: '[a-zA-Z0-9]+'
+    Description: Part number associated with your DataStage client license
+    Type: String
+  KeyPairName:
+    Description: The name of an existing public/private key pair, which allows you to securely connect to your instance after it launches
+    Type: AWS::EC2::KeyPair::KeyName
+  LicenseAgreement:
+    Description: Choose Accept to acknowledge that you have read and agree to the license terms for IBM InfoSphere DataStage v11.7.1 (http://ibm.biz/isds1171) and IBM Infosphere DataStage and Quality Stage Designer v11.7.1 (http://ibm.biz/isdsc1171).
+    Type: String
+    Default: '-'
+    AllowedValues:
+      - I agree
+      - '-'
+  PublicSubnet1ID:
+    Description: ID of public subnet in Availability Zone 1
+    Type: AWS::EC2::Subnet::Id
+  RemoteAccessCIDR:
+    AllowedPattern: '^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/([0-9]|[1-2][0-9]|3[0-2]))$'
+    ConstraintDescription: CIDR block parameter must be in the form x.x.x.x/x
+    Description: The CIDR IP range that is permitted to access the instances. We recommend that you set this value to a trusted IP range.
+    Type: String
+  ResourceTag:
+    AllowedPattern: '[a-z0-9]+'
+    ConstraintDescription: Non-empty. Must be lower case letters and numbers only.
+    Default: ds1
+    Description: This will be used to label AWS resources and the DataStage Kubernetes namespace. Ensure that every InfoSphere DataStage deployment on your AWS account uses a unique resource tag.
+    Type: String
+  VPCCIDR:
+    AllowedPattern: '^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/(1[6-9]|2[0-8]))$'
+    ConstraintDescription: CIDR block parameter must be in the form x.x.x.x/16-28
+    Default: 10.0.0.0/16
+    Description: CIDR block for the VPC
+    Type: String
+  VPCID:
+    Description: ID of your existing VPC for deployment
+    Type: AWS::EC2::VPC::Id
+
+Rules:
+  LicenseAgreementRule:
+    Assertions:
+      - Assert: !Contains
+          - - I agree
+          - !Ref 'LicenseAgreement'
+        AssertDescription: User must agree to the terms of the license agreement
+
+Resources:
+  # This function obtains access to the DataStage Windows Client AMI and returns the latest ami-id for this region
+  AMIInfo:
+    Type: Custom::AMIInfo
+    Properties:
+      ServiceToken: !GetAtt 'AMIInfoFunction.Arn'
+      ICN: !Ref 'IBMDataStageClientICN'
+      PartNumber: !Ref 'IBMDataStageClientPartNumber'
+      Region: !Ref 'AWS::Region'
+      AccountId: !Ref 'AWS::AccountId'
+  AMIInfoFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        ZipFile: |
+          import botocore.vendored.requests as requests
+          import cfnresponse
+          import json
+          ENDPOINT='https://arzw423wzk.execute-api.ca-central-1.amazonaws.com/default/ami_sharing'
+          def handler(event, context):
+              responseData = {}
+              try:
+                  print(event['RequestType'], 'request received.')
+                  if (event['RequestType'] == 'Delete' or event['RequestType'] == 'Update'):
+                      cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData)
+                      return
+                  data = {
+                      'icn': event['ResourceProperties']['ICN'],
+                      'part_number': event['ResourceProperties']['PartNumber'],
+                      'region': event['ResourceProperties']['Region'],
+                      'account_id': event['ResourceProperties']['AccountId']
+                  }
+                  r = requests.post(ENDPOINT, json=data)
+                  if r.status_code != 200:
+                      print('**FAILURE_REASON: Validation API returned non-200 response code. Please ensure that ICN and Part Number are correct')
+                      cfnresponse.send(event, context, cfnresponse.FAILED, responseData)
+                      return
+                  response = r.json()
+                  responseData['Id']=response['ami_id']
+              except Exception as err:
+                  print('**FAILURE_REASON:', type(err).__name__, str(err))
+                  cfnresponse.send(event, context, cfnresponse.FAILED, responseData)
+              else:
+                  cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData)
+      Handler: index.handler
+      Role: !GetAtt 'LambdaExecutionRole.Arn'
+      Runtime: python3.7
+      Timeout: 60
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: /
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+  DataStageClientSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow RDP access to the DataStage Client instances
+      GroupName: !Sub '${ResourceTag}-DSClientSG'
+      VpcId: !Ref 'VPCID'
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 3389
+          ToPort: 3389
+          CidrIp: !Ref 'RemoteAccessCIDR'
+        - IpProtocol: tcp
+          FromPort: 19443
+          ToPort: 19443
+          CidrIp: !Ref 'VPCCIDR'
+
+  DataStageClientLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: !Sub '${ResourceTag}-DSClientLT'
+      LaunchTemplateData:
+        BlockDeviceMappings:
+          - DeviceName: /dev/sda1
+            Ebs:
+              VolumeSize: 200
+              VolumeType: gp2
+        ImageId: !GetAtt 'AMIInfo.Id'
+        InstanceType: !Ref 'DSClientInstanceType'
+        KeyName: !Ref 'KeyPairName'
+        SecurityGroupIds:
+          - !GetAtt 'DataStageClientSecurityGroup.GroupId'
+  DataStageClientInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      LaunchTemplate:
+        LaunchTemplateId: !Ref 'DataStageClientLaunchTemplate'
+        Version: !GetAtt 'DataStageClientLaunchTemplate.DefaultVersionNumber'
+      SubnetId: !Ref 'PublicSubnet1ID'
+      Tags:
+        - Key: Name
+          Value: !Sub '${ResourceTag}-DS-Client'
+  DataStageClientEIP:
+    Type: AWS::EC2::EIP
+    Properties:
+      InstanceId: !Ref DataStageClientInstance
+
+Outputs:
+  DataStageClientFQDN:
+    Value: !GetAtt DataStageClientInstance.PrivateDnsName
+  DataStageClientPrivateIp:
+    Value: !GetAtt DataStageClientInstance.PrivateIp
+  DataStageClientPublicIp:
+    Value: !GetAtt DataStageClientInstance.PublicIp
+  DataStageClientPublicDnsName:
+    Value: !GetAtt DataStageClientInstance.PublicDnsName

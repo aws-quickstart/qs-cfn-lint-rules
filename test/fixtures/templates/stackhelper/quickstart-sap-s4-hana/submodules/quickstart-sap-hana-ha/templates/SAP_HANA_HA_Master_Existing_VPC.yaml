@@ -1,0 +1,662 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: SAP HANA High Availability - Existing VPC Setup
+Parameters:
+  VPCID:
+     Type: 'AWS::EC2::VPC::Id'
+     Description: The existing Amazon VPC where you want to deploy SAP HANA.
+  PublicSubnet1CIDR:
+     ConstraintDescription :  CIDR block parameter must be in the form x.x.x.x/16-28
+     Default : ''
+     Description : CIDR block for the public DMZ subnet 1 located in Availability Zone 1
+     Type :  String
+  PrivateSubnet1CIDR:
+     ConstraintDescription : CIDR block parameter must be in the form x.x.x.x/16-28
+     Default : ''
+     Description : CIDR block for the private subnet 1 located in Availability Zone 1
+     Type : String
+  PrivateSubnet2CIDR:
+     ConstraintDescription : CIDR block parameter must be in the form x.x.x.x/16-28
+     Default : ''
+     Description : CIDR block for the private subnet 2 located in Availability Zone 2
+     Type : String
+  ApplicationCIDR:
+     ConstraintDescription : CIDR block parameter must be in the form x.x.x.x/16-28
+     Default : '0.0.0.0/0'
+     Description : CIDR block for the private subnet where Application will be installed
+     Type :  String
+  PublicSubnet1ID:
+     ConstraintDescription :  Subnet ID must be in format subnet-xxxxxxxx
+     Description : Public DMZ subnet
+     Type :  'AWS::EC2::Subnet::Id'
+  PrivateSubnet1ID:
+     ConstraintDescription : Subnet ID must be in format subnet-xxxxxxxx
+     Description : Private subnet 1 in Availability Zone 1
+     Type : 'AWS::EC2::Subnet::Id'
+  PrivateSubnet2ID:
+     ConstraintDescription : Subnet ID must be in format subnet-xxxxxxxx
+     Description : Private subnet 2 in Availability Zone 2
+     Type : 'AWS::EC2::Subnet::Id'
+  RemoteAccessCIDR:
+    Description: CIDR block from where you want to access your RDP instance.
+    Type: String
+    MinLength: '9'
+    MaxLength: '18'
+    Default: 0.0.0.0/0
+    AllowedPattern: '(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})'
+    ConstraintDescription: This must be a valid CIDR range in the format x.x.x.x/x.
+  DomainName:
+    Type: String
+    Description: Name to use for fully qualified domain names.
+    Default: local
+  HANAHostnamePrimary:
+    Type: String
+    Description: Host name to use for SAP HANA Primary node (DNS short name).
+    Default: prihana
+  HANAHostnameSecondary:
+    Type: String
+    Description: Host name to use for SAP HANA Secondary node (DNS short name).
+    Default: sechana
+  PrivateBucket:
+    Description: Main build bucket where templates and scripts are located.
+    Type: String
+    Default: aws-quickstart/quickstart-sap-hana
+  CustomStorageConfig:
+    Description: S3 location where custom storage configuration file is localted.
+    Type: String
+    Default: aws-quickstart/quickstart-sap-hana/scripts
+  Proxy:
+    Description: Proxy address for http access (e.g., http://xyz.abc.com:8080 or http://10.x.x.x:8080).
+    Type: String
+    Default: ''
+  KeyName:
+    Type: 'AWS::EC2::KeyPair::KeyName'
+    Default: home
+    Description: Name of an existing Amazon EC2 key pair. All instances will launch with this key pair.
+  HANAInstallMedia:
+    Description: Full path to Amazon S3 location of SAP HANA software files (e.g. s3://myhanabucket/sap-hana-sps11/).
+    Default: ''
+    Type: String
+  QSS3BucketName:
+    AllowedPattern: "^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*[^/]$"
+    ConstraintDescription: Quick Start bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-) but should not end with forward slash (/)
+    Default: aws-quickstart
+    Description: S3 bucket name for the Quick Start assets. Quick Start bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-).
+    Type: String
+  QSS3KeyPrefix:
+    AllowedPattern: "^[0-9a-zA-Z-/]*[^/]$"
+    ConstraintDescription: Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/) but should not end with forward slash (/).
+    Default: quickstart-sap-hana-ha
+    Description: S3 key prefix for the Quick Start assets.
+    Type: String
+  EnableLogging:
+    Description: Enable (Yes) or disable (No) logging with AWS CloudTrail and AWS Config.
+    Default: 'No'
+    Type: String
+    AllowedValues:
+      - 'Yes'
+      - 'No'
+  CloudTrailS3Bucket:
+    Description: Name of S3 bucket where AWS CloudTrail trails and AWS Config log files can be stored (e.g., mycloudtrail).
+    Default: ''
+    Type: String
+  Encryption:
+    Type: String
+    Description: Enable (Yes) or disable (No) encryption on EBS volumes.
+    Default: 'No'
+    AllowedValues:
+      - 'Yes'
+      - 'No'
+  VolumeTypeHanaData:
+    Type: String
+    Description: 'EBS volume type for SAP HANA Data: General Purpose SSD (gp2) or Provisioned IOPS SSD (io1).'
+    Default: gp2
+    AllowedValues:
+      - gp2
+      - io1
+  VolumeTypeHanaLog:
+    Type: String
+    Description: 'EBS volume type for SAP HANA Log: General Purpose SSD (gp2) or Provisioned IOPS SSD (io1).'
+    Default: gp2
+    AllowedValues:
+      - gp2
+      - io1
+  MyOS:
+    Type: String
+    Description: Operating system (SLES for SAP) and version for master nodes.
+    Default: SuSELinux12SP4ForSAP
+    AllowedValues:
+      - SuSELinux12SP2ForSAP
+      - SuSELinux12SP3ForSAP
+      - SuSELinux12SP4ForSAP
+      - SuSELinux15ForSAP
+      - SuSELinux12SP1ForSAP-BYOS
+      - SuSELinux12SP2ForSAP-BYOS
+      - SuSELinux12SP3ForSAP-BYOS
+      - SuSELinux12SP4ForSAP-BYOS
+      - SuSELinux15ForSAP-BYOS
+      - RedHatLinux74ForSAP-With-HA-US
+      - RedHatLinux75ForSAP-With-HA-US
+      - RedHatLinux76ForSAP-With-HA-US
+  SLESBYOSRegCode:
+    Type: String
+    Default: ''
+    Description: Registration code for SUSE BYOS (Applicable only if you use BYOS Option).
+  InstallRDPInstance:
+    Type: String
+    Description: Install (Yes) or don't install (No) optional Windows RDP instance.
+    Default: 'No'
+    AllowedValues:
+      - 'Yes'
+      - 'No'
+  InstallHANA:
+    Type: String
+    Description: Install (Yes) or don't install (No) HANA. When set to No, only AWS infrastructure is provisioned.
+    Default: 'Yes'
+    AllowedValues:
+      - 'Yes'
+      - 'No'
+  RDPInstanceType:
+    Type: String
+    Description: Instance type for Windows RDP instance.
+    Default: c4.large
+    AllowedValues:
+      - c4.large
+      - c4.xlarge
+      - c5.large
+      - c5.xlarge
+      - m4.large
+      - m4.xlarge
+      - m5.large
+      - m5.xlarge
+  MyInstanceType:
+    Type: String
+    Description: Instance type for SAP HANA host.
+    Default: r5.4xlarge
+    AllowedValues:
+      - r3.8xlarge
+      - r3.4xlarge
+      - r3.2xlarge
+      - r4.16xlarge
+      - r4.8xlarge
+      - r4.4xlarge
+      - r4.2xlarge
+      - r5.2xlarge
+      - r5.4xlarge
+      - r5.12xlarge
+      - r5.24xlarge
+      - x1.16xlarge
+      - x1.32xlarge
+      - x1e.xlarge
+      - x1e.2xlarge
+      - x1e.4xlarge
+      - x1e.32xlarge
+      - u-6tb1.metal
+      - u-9tb1.metal
+      - u-12tb1.metal
+      - u-18tb1.metal
+      - u-24tb1.metal
+  SID:
+    Type: String
+    Default: HDB
+    Description: SAP HANA system ID for installation and setup.
+    AllowedPattern: '([A-Z]{1}[0-9A-Z]{2})'
+    ConstraintDescription: This value must consist of 3 characters.
+  SAPInstanceNum:
+    Type: String
+    Default: '00'
+    Description: SAP HANA instance number to use for installation and setup, and to open ports for security groups.
+    AllowedPattern: '([0-8]{1}[0-9]{1}|[9]{1}[0-7]{1})'
+    ConstraintDescription: Instance number must be between 00 and 97.
+  HANAMasterPass:
+    Type: String
+    Description: SAP HANA password to use during installation.
+    NoEcho: 'true'
+    MinLength: '8'
+    AllowedPattern: '^(?=.*?[a-z])(?=.*?[A-Z])(?=.*[0-9]).*'
+    ConstraintDescription: This must be at least 8 characters, including uppercase, lowercase, and numeric values.
+  SAPTZ:
+    AllowedValues:
+      - PT
+      - CT
+      - ET
+      - UC
+    ConstraintDescription: This value must consist of 2 characters.
+    Default: UC
+    Description: 'The TimeZone of your SAP HANA Server (PT, CT, ET, or UTC)'
+    Type: String
+  PrimaryHANASite:
+    Description: Primary HANA Site Name for HSR
+    Type: String
+    Default: HAP
+  SecondaryHANASite:
+    Description: Secondary HANA Site Name for HSR
+    Type: String
+    Default: HAS
+  VirtualIPAddress:
+    Description: Virtual/Overlay IP Address (Should not be already assigned to any instance)
+    Type: String
+    Default: 192.168.1.99
+    AllowedPattern: '(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})'
+  PaceMakerTag:
+    Description: Pacemaker Tag name (Should not be already assigned to any instance)
+    Type: String
+    Default: PaceTag
+  DedicatedHostId:
+    Description: Existing dedicated host(s) where you want to launch your EC2 instance(s). Use comma to provide multiple hosts. Mandatory for Amazon EC2 High Memory Instances.
+    Type: CommaDelimitedList
+    Default: ''
+Metadata:
+  'AWS::CloudFormation::Interface':
+    ParameterGroups:
+      - Label:
+          default: Network infrastructure configuration
+        Description:
+          default: ''
+        Parameters:
+          - VPCID
+          - AvailabilityZones
+          - PrivateSubnet1ID
+          - PrivateSubnet2ID
+          - PublicSubnet1ID
+          - PrivateSubnet1CIDR
+          - PrivateSubnet2CIDR
+          - PublicSubnet1CIDR
+      - Label:
+          default: Server and storage configuration
+        Description:
+          default: ''
+        Parameters:
+          - MyOS
+          - SLESBYOSRegCode
+          - MyInstanceType
+          - DedicatedHostId
+          - KeyName
+          - VolumeTypeHanaData
+          - VolumeTypeHanaLog
+          - Encryption
+      - Label:
+          default: SAP HANA database configuration
+        Description:
+          default: ''
+        Parameters:
+          - DomainName
+          - HANAHostnamePrimary
+          - HANAHostnameSecondary
+          - SID
+          - SAPInstanceNum
+          - HANAMasterPass
+          - SAPTZ
+          - HANAInstallMedia
+          - InstallHANA
+      - Label :
+          default : SAP HANA High Availability configuration
+        Description:
+          default: ''
+        Parameters:
+          - PrimaryHANASite
+          - SecondaryHANASite
+          - VirtualIPAddress
+          - PaceMakerTag
+      - Label:
+          default: Optional configuration
+        Description:
+          default: ''
+        Parameters:
+          - InstallRDPInstance
+          - RDPInstanceType
+          - RemoteAccessCIDR
+          - EnableLogging
+          - CloudTrailS3Bucket
+          - ApplicationCIDR
+          - Proxy
+      - Label:
+          default: Advanced configuration (Do not modify unless directed by AWS Support)
+        Description:
+          default: ''
+        Parameters:
+          - PrivateBucket
+          - CustomStorageConfig
+          - QSS3BucketName
+          - QSS3KeyPrefix
+    ParameterLabels:
+      VPCID:
+        default: Choose VPC ID
+      PublicSubnet1CIDR:
+        default: Enter CIDR block for Public subnet 1
+      PrivateSubnet1CIDR:
+        default: CIDR block for Private subnet 1
+      PrivateSubnet2CIDR:
+        default: CIDR block for Private subnet 2
+      PrivateSubnet1ID:
+        default: Private Subnet ID for HANA Primary Instance
+      PrivateSubnet2ID:
+        default: Private Subnet ID for HANA Secondary Instance
+      PublicSubnet1ID:
+        default: Public Subnet ID for RDP Instance
+      RemoteAccessCIDR:
+        default: Enter CIDR block for RDP access
+      ApplicationCIDR:
+        default: Enter CIDR for Application instances
+      DomainName:
+        default: Enter domain name
+      HANAHostnamePrimary:
+        default: Enter SAP HANA Primary host name
+      HANAHostnameSecondary:
+        default: Enter SAP HANA Secondary host name
+      HANAInstallMedia:
+        default: Enter Amazon S3 URL for SAP HANA software
+      QSS3BucketName:
+        default: S3 Bucket containg SAP HANA-HA assets
+      QSS3KeyPrefix:
+        default: Prefix for SAP HANA-HA assets Bucket
+      CloudTrailS3Bucket:
+        default: Enter S3 bucket name to store AWS CloudTrail trails and AWS Config logs
+      PrivateBucket:
+        default: S3 Bucket containg SAP HANA assets
+      CustomStorageConfig:
+        default: Enter custom storage configuration location
+      Proxy:
+        default: Enter proxy server address
+      KeyName:
+        default: Choose key pair
+      InstallRDPInstance:
+        default: Do you need a Windows RDP instance?
+      InstallHANA:
+        default: Install SAP HANA software?
+      Encryption:
+        default: Would you like to turn on encryption?
+      VolumeTypeHanaData:
+        default: Choose storage volume type for SAP HANA Data
+      VolumeTypeHanaLog:
+        default: Choose storage volume type for SAP HANA Log
+      MyOS:
+        default: Choose operating system for SAP HANA
+      SLESBYOSRegCode:
+        default: Enter SUSE BYOS Registration Code
+      MyInstanceType:
+        default: Choose instance type for SAP HANA
+      SID:
+        default: Enter SAP HANA system ID
+      SAPInstanceNum:
+        default: Enter SAP HANA instance number
+      HANAMasterPass:
+        default: Enter SAP HANA password
+      RDPInstanceType:
+        default: Choose instance type for RDP host
+      EnableLogging:
+        default: Would you like to enable AWS CloudTrail trails and AWS Config?
+      SAPTZ:
+        default: Enter SAP HANA Server timezone
+      PrimaryHANASite:
+        default: HANA Primary Site Name
+      SecondaryHANASite:
+        default: HANA Secondary Site Name
+      VirtualIPAddress:
+        default: Overlay IP Address
+      PaceMakerTag:
+        default: Pacemaker Tag Name
+      DedicatedHostId:
+        default: Enter Dedicated Host ID
+
+Conditions:
+  InstallHANAorNot: !Equals [ !Ref InstallHANA, 'Yes' ]
+  IfDedicatedHost: !Not [!Equals [!Select [0, !Ref DedicatedHostId], '']]
+
+Resources:
+
+  PreTasks:
+    Type: 'AWS::CloudFormation::Stack'
+    Properties:
+      TemplateURL: !Sub https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}/templates/SAP_HANA_HA_PreTasks.yaml
+      Parameters:
+        MyS3Bucket: ''
+        QSS3BucketName: !Ref QSS3BucketName
+        QSS3KeyPrefix: !Sub ${QSS3KeyPrefix}/scripts
+      TimeoutInMinutes: '7200'
+
+  ValidateParameters:
+    Type: 'AWS::CloudFormation::Stack'
+    DependsOn: PreTasks
+    Properties:
+      TemplateURL: !Sub https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}/templates/SAP_HANA_HA_ValidateParameters.yaml
+      Parameters:
+        LambdaBucket: !GetAtt
+                            - PreTasks
+                            - Outputs.MyS3Bucket
+        LambdaBucketPreFix: !Sub ${QSS3KeyPrefix}/scripts
+        PrimarySubnetId: !Ref PrivateSubnet1ID
+        SecondarySubnetId: !Ref PrivateSubnet2ID
+        VPCID: !Ref VPCID
+        PaceMakerTag: !Ref PaceMakerTag
+        VirtualIPAddress: !Ref VirtualIPAddress
+      TimeoutInMinutes: '7200'
+
+  PrimaryInstance:
+    DependsOn: ValidateParameters
+    Type: 'AWS::CloudFormation::Stack'
+    Properties:
+      TemplateURL: !Sub https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}/submodules/quickstart-sap-hana/templates/SAP-HANA-BaseNodes.template
+      Parameters:
+        PrivSubCIDR: !Ref PrivateSubnet1CIDR
+        DMZCIDR: !Ref PublicSubnet1CIDR
+        ApplicationCIDR: !Ref ApplicationCIDR
+        VPCID: !Ref VPCID
+        HANASubnet: !Ref PrivateSubnet1ID
+        DMZSubnet: !Ref PublicSubnet1ID
+        DomainName: !Ref DomainName
+        RemoteAccessCIDR: !Ref RemoteAccessCIDR
+        VolumeTypeHanaData: !Ref VolumeTypeHanaData
+        VolumeTypeHanaLog: !Ref VolumeTypeHanaLog
+        HANAMasterHostname: !Ref HANAHostnamePrimary
+        HANAWorkerHostname: dummy
+        PlacementGroupName: !Ref 'AWS::NoValue'
+        PrivateBucket: !Ref PrivateBucket
+        CustomStorageConfig: !Ref CustomStorageConfig
+        Proxy: !Ref Proxy
+        KeyName: !Ref KeyName
+        MyOS: !Ref MyOS
+        MyInstanceType: !Ref MyInstanceType
+        RDPInstanceType: !Ref RDPInstanceType
+        InstallRDPInstance: !Ref InstallRDPInstance
+        InstallHANA: !Ref InstallHANA
+        Encryption: !Ref Encryption
+        HostCount: '1'
+        SID: !Ref SID
+        SAPInstanceNum: !Ref SAPInstanceNum
+        HANAMasterPass: !Ref HANAMasterPass
+        HANAInstallMedia: !Ref HANAInstallMedia
+        AutoRecovery: 'No'
+        CloudTrailS3Bucket: !Ref CloudTrailS3Bucket
+        EnableLogging: !Ref EnableLogging
+        SAPTZ: !Ref SAPTZ
+        SLESBYOSRegCode: !Ref SLESBYOSRegCode
+        DedicatedHostId:  !If [IfDedicatedHost, !Select [0, !Ref DedicatedHostId], '']
+      TimeoutInMinutes: '7200'
+
+  SecondaryInstance:
+    DependsOn: ValidateParameters
+    Type: 'AWS::CloudFormation::Stack'
+    Properties:
+      TemplateURL: !Sub https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}/submodules/quickstart-sap-hana/templates/SAP-HANA-BaseNodes.template
+      Parameters:
+        PrivSubCIDR: !Ref PrivateSubnet2CIDR
+        DMZCIDR: !Ref PublicSubnet1CIDR
+        ApplicationCIDR: !Ref ApplicationCIDR
+        VPCID: !Ref VPCID
+        HANASubnet: !Ref PrivateSubnet2ID
+        DMZSubnet: !Ref PublicSubnet1ID
+        DomainName: !Ref DomainName
+        RemoteAccessCIDR: !Ref RemoteAccessCIDR
+        HANAMasterHostname: !Ref HANAHostnameSecondary
+        HANAWorkerHostname: dummy
+        PlacementGroupName: !Ref 'AWS::NoValue'
+        PrivateBucket: !Ref PrivateBucket
+        CustomStorageConfig: !Ref CustomStorageConfig
+        Proxy: !Ref Proxy
+        KeyName: !Ref KeyName
+        MyOS: !Ref MyOS
+        MyInstanceType: !Ref MyInstanceType
+        RDPInstanceType: !Ref RDPInstanceType
+        InstallRDPInstance: 'No'
+        InstallHANA: !Ref InstallHANA
+        Encryption: !Ref Encryption
+        HostCount: '1'
+        SID: !Ref SID
+        SAPInstanceNum: !Ref SAPInstanceNum
+        HANAMasterPass: !Ref HANAMasterPass
+        HANAInstallMedia: !Ref HANAInstallMedia
+        AutoRecovery: 'No'
+        CloudTrailS3Bucket: !Ref CloudTrailS3Bucket
+        EnableLogging: !Ref EnableLogging
+        SAPTZ: !Ref SAPTZ
+        SLESBYOSRegCode: !Ref SLESBYOSRegCode
+        VolumeTypeHanaData: !Ref VolumeTypeHanaData
+        VolumeTypeHanaLog: !Ref VolumeTypeHanaLog
+        DedicatedHostId:  !If [IfDedicatedHost, !Select [1, !Ref DedicatedHostId], '']
+      TimeoutInMinutes: '7200'
+
+  PreHAConfig:
+    DependsOn:
+        - PrimaryInstance
+        - SecondaryInstance
+    Type: 'AWS::CloudFormation::Stack'
+    Condition: InstallHANAorNot
+    Properties:
+      TemplateURL: !Sub https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}/templates/SAP_HANA_HA_PreHAConfig.yaml
+      Parameters:
+          HANAPrimaryInstanceId: !GetAtt
+                        - PrimaryInstance
+                        - Outputs.HANAMasterInstanceId
+          HANASecondaryInstanceId: !GetAtt
+                        - SecondaryInstance
+                        - Outputs.HANAMasterInstanceId
+          HANAPrimaryIPAddress: !GetAtt
+                            - PrimaryInstance
+                            - Outputs.HANAMasterInstanceIP
+          HANASecondaryIPAddress: !GetAtt
+                            - SecondaryInstance
+                            - Outputs.HANAMasterInstanceIP
+          LambdaBucket: !GetAtt
+                            - PreTasks
+                            - Outputs.MyS3Bucket
+          LambdaBucketPreFix: !Sub ${QSS3KeyPrefix}/scripts
+          SID: !Ref SID
+          HANAMasterPass: !Ref HANAMasterPass
+          SAPInstanceNum: !Ref SAPInstanceNum
+          PrivSubnet1: !Ref PrivateSubnet1ID
+          PrivSubnet2: !Ref PrivateSubnet2ID
+          HANAPrimarySecurityGroup: !GetAtt
+                            - PrimaryInstance
+                            - Outputs.HANAMasterSecurityGroup
+          HANASecondarySecurityGroup: !GetAtt
+                            - SecondaryInstance
+                            - Outputs.HANAMasterSecurityGroup
+          MyOS: !Ref MyOS
+      TimeoutInMinutes: '7200'
+
+  HAConfig:
+    DependsOn:
+        - PreHAConfig
+    Type: 'AWS::CloudFormation::Stack'
+    Condition: InstallHANAorNot
+    Properties:
+        TemplateURL: !Sub https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}/templates/SAP_HANA_HA_HAConfig.yaml
+        Parameters:
+          HANAPrimaryInstanceId: !GetAtt
+                        - PrimaryInstance
+                        - Outputs.HANAMasterInstanceId
+          HANASecondaryInstanceId: !GetAtt
+                        - SecondaryInstance
+                        - Outputs.HANAMasterInstanceId
+          HANAHostnamePrimary: !Ref HANAHostnamePrimary
+          HANAHostnameSecondary: !Ref HANAHostnameSecondary
+          PublicSubnet1CIDR: !Ref PublicSubnet1CIDR
+          PaceMakerTag: !Ref PaceMakerTag
+          VirtualIPAddress: !Ref VirtualIPAddress
+          PrimaryHANASite: !Ref PrimaryHANASite
+          SecondaryHANASite: !Ref SecondaryHANASite
+          PrimarySubnetId: !Ref PrivateSubnet1ID
+          SecondarySubnetId: !Ref PrivateSubnet2ID
+          SID: !Ref SID
+          VPCID: !Ref VPCID
+          HANAMasterPass: !Ref HANAMasterPass
+          SAPInstanceNum: !Ref SAPInstanceNum
+          HANAPrimaryIPAddress: !GetAtt
+                            - PrimaryInstance
+                            - Outputs.HANAMasterInstanceIP
+          HANASecondaryIPAddress: !GetAtt
+                            - SecondaryInstance
+                            - Outputs.HANAMasterInstanceIP
+          DomainName: !Ref DomainName
+          MyS3Bucket: !GetAtt
+                            - PreTasks
+                            - Outputs.MyS3Bucket
+          MyS3BucketPreFix: !Sub ${QSS3KeyPrefix}/scripts
+          HANAPrimaryInstanceRole: !GetAtt
+                            - PrimaryInstance
+                            - Outputs.HANAMasterInstanceRole
+          HANASecondaryInstanceRole: !GetAtt
+                            - SecondaryInstance
+                            - Outputs.HANAMasterInstanceRole
+          HANAPrimarySecurityGroup: !GetAtt
+                            - PrimaryInstance
+                            - Outputs.HANAMasterSecurityGroup
+          HANASecondarySecurityGroup: !GetAtt
+                            - SecondaryInstance
+                            - Outputs.HANAMasterSecurityGroup
+          MyOS: !Ref MyOS
+        TimeoutInMinutes: '7200'
+
+Outputs:
+  PrimaryIP:
+    Description: HANA Primary Node IP Address
+    Value: !GetAtt
+      - PrimaryInstance
+      - Outputs.HANAMasterInstanceIP
+  SecondaryIP:
+    Description: HANA Secondary Node IP Address
+    Value: !GetAtt
+      - SecondaryInstance
+      - Outputs.HANAMasterInstanceIP
+  SecurityGroupIdPrimary:
+    Description: Security Group ID Primary Instance
+    Value: !GetAtt
+      - PrimaryInstance
+      - Outputs.HANAMasterSecurityGroup
+  SecurityGroupIdSecondary:
+    Description: Security Group ID Secondary Instance
+    Value: !GetAtt
+      - SecondaryInstance
+      - Outputs.HANAMasterSecurityGroup
+  PrimaryIAMRoleName:
+    Description: Primary Instance Role Name
+    Value: !GetAtt
+      - PrimaryInstance
+      - Outputs.HANAMasterInstanceRole
+  SecondaryIAMRoleName:
+    Description: Secondary Instance Role Name
+    Value: !GetAtt
+      - SecondaryInstance
+      - Outputs.HANAMasterInstanceRole
+  PrimaryInstanceId:
+    Description: Primary Instance Id
+    Value: !GetAtt
+      - PrimaryInstance
+      - Outputs.HANAMasterInstanceId
+  SecondaryInstanceId:
+    Description: Secondary Instance Id
+    Value: !GetAtt
+      - SecondaryInstance
+      - Outputs.HANAMasterInstanceId
+  ResultsPreHAConfig:
+    Condition: InstallHANAorNot
+    Description: Disable DNS Results
+    Value: !GetAtt
+      - PreHAConfig
+      - Outputs.ResultsPreHAConfig
+  ResultsHAConfig:
+    Condition: InstallHANAorNot
+    Description: HA Config. Results
+    Value: !GetAtt
+      - HAConfig
+      - Outputs.ResultsHAConfig

@@ -178,7 +178,6 @@ def evaluate_fn_ref(expression):
 
 def find_in_map_lookup(mappings_map, first_key, final_key):
     global mappings
-    print(mappings)
     step1 = mappings[mappings_map.strip("'")]
     step2 = step1[first_key.strip("'")]
     result = step2[final_key.strip("'")]

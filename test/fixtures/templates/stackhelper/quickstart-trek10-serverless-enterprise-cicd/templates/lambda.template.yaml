@@ -1,0 +1,624 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  (qs-1ph8nehap) 
+  Serverless CICD Quick Start
+  Custom Lambda function resources to operate on cross-account resources
+  and dynamically create pipelines.
+
+Parameters:
+  DevAwsAccountId:
+    Description: AWS account ID for development account
+    Type: String
+    AllowedPattern: (\d{12}|^$)
+    ConstraintDescription: Must be an AWS account ID
+  ProdAwsAccountId:
+    Description: AWS account ID for production account
+    Type: String
+    AllowedPattern: (\d{12}|^$)
+    ConstraintDescription: Must be an AWS account ID
+  AppName:
+    Description: Application name, used for the repository and child stack name
+    Type: String
+    Default: Sample
+  QSS3BucketName:
+    AllowedPattern: "^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$"
+    ConstraintDescription: Quick Start bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-).
+    Default: aws-quickstart
+    Description: S3 bucket name for the Quick Start assets. This string can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-)
+    Type: String
+  QSS3KeyPrefix:
+    AllowedPattern: "^[0-9a-zA-Z-/]*$"
+    ConstraintDescription: AWS Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/). It cannot start or end with forward slash (/) because they are automatically appended.
+    Default: quickstart-cicd-serverless
+    Description: S3 key prefix for the AWS Quick Start assets. AWS Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/). It cannot start or end with forward slash (/) because they are automatically appended
+    Type: String
+  PipelineServiceRoleArn:
+    Description: Pipeline service role ARN
+    Type: String
+  ArtifactBucket:
+    Description: Artifact bucket
+    Type: String
+  SamTranslationBucket:
+    Description: S3 bucket for SAM translations
+    Type: String
+
+Resources:
+  QuickStartStackMakerLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service: lambda.amazonaws.com
+          Action: sts:AssumeRole
+      Path: /
+      Policies:
+      - PolicyName: CfnStackAssumeRole
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - logs:CreateLogGroup
+            - logs:CreateLogStream
+            - logs:PutLogEvents
+            Resource:
+            - arn:aws:logs:*:*:*
+          - Effect: Allow
+            Action:
+            - sts:AssumeRole
+            Resource: "*"
+          - Effect: Allow
+            Action:
+            - lambda:AddPermission
+            - lambda:RemovePermission
+            Resource:  "*"
+          - Effect: Allow
+            Action:
+            - events:PutRule
+            - events:DeleteRule
+            - events:PutTargets
+            - events:RemoveTargets
+            Resource:  "*"
+
+  QuickStartStackMakerLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: index.lambda_handler
+      MemorySize: 128
+      Role: !GetAtt QuickStartStackMakerLambdaRole.Arn
+      Runtime: python3.6
+      Timeout: 900
+      Code:
+        ZipFile: |
+          import os, boto3, json, signal, traceback
+          from botocore.vendored import requests
+
+          def get_cfn_parameters(e):
+              params = []
+              cfnp = e['ResourceProperties']['CfnParameters']
+              for p in cfnp.keys():
+                  params.append({"ParameterKey": p, "ParameterValue": cfnp[p]})
+              return params
+
+          def get_client(service, e, c):
+              sts_client = boto3.client('sts')
+              response = sts_client.assume_role(RoleArn=e['ResourceProperties']['RoleArn'],RoleSessionName='QuickStartCfnStack')
+              session = boto3.Session(aws_access_key_id=response['Credentials']['AccessKeyId'],aws_secret_access_key=response['Credentials']['SecretAccessKey'],aws_session_token=response['Credentials']['SessionToken'])
+              return session.client(service)
+
+          def update(e, c):
+              cf_client = get_client("cloudformation", e, c)
+              rp = e['ResourceProperties']
+              try:
+                response = cf_client.update_stack(
+                    StackName=e["PhysicalResourceId"],
+                    TemplateBody=rp['TemplateBody'],
+                    Parameters=get_cfn_parameters(e),
+                    Capabilities=rp['Capabilities']
+                )
+              except ClientError as er:
+                if "No updates are to be performed" not in str(er):
+                    raise
+              waiter = cf_client.get_waiter('stack_update_complete')
+              waiter.wait(StackName=e["PhysicalResourceId"])
+              return response['StackId']
+
+          def create(e, c):
+              cf_client = get_client("cloudformation", e, c)
+              rp = e['ResourceProperties']
+              response = cf_client.create_stack(
+                StackName=rp['StackName'],
+                TemplateBody=rp['TemplateBody'],
+                Parameters=get_cfn_parameters(e),
+                Capabilities=rp['Capabilities']
+              )
+              waiter = cf_client.get_waiter('stack_create_complete')
+              waiter.wait(StackName=rp['StackName'])
+              return response['StackId']
+
+          def delete(e, c):
+              cf_client = get_client("cloudformation", e, c)
+              response = cf_client.delete_stack(StackName=e["PhysicalResourceId"])
+              waiter = cf_client.get_waiter('stack_delete_complete')
+              waiter.wait(StackName=e["PhysicalResourceId"])
+              return True
+
+          def lambda_handler(e, c):
+              signal.alarm(int(c.get_remaining_time_in_millis() / 1000) - 1)
+              try:
+                  print('event: {}'.format(json.dumps(e)))
+                  if e['RequestType'] == 'Create':
+                      e['PhysicalResourceId'] = create(e, c)
+                      send_response(e, c, "SUCCESS", {"Message": "Resource creation successful!"})
+                  elif e['RequestType'] == 'Update':
+                      e['PhysicalResourceId'] = update(e, c)
+                      send_response(e, c, "SUCCESS", {"Message": "Resource update successful!"})
+                  elif e['RequestType'] == 'Delete':
+                      delete(e, c)
+                      send_response(e, c, "SUCCESS", {"Message": "Resource deletion successful!"})
+                  else:
+                      send_response(e, c, "FAILED", {"Message": "Unexpected event received from CF"})
+              except Exception as er:
+                  traceback.print_exc()
+                  send_response(e, c, "FAILED", {"Message": "Exception during processing"})
+
+          def send_response(e, c, response_status, response_data):
+              if not e.get('PhysicalResourceId'):
+                  e['PhysicalResourceId'] = c.log_stream_name
+              _rb = {
+                  "Status": response_status,
+                  "Reason": "See the details in CloudWatch Log Stream: " + c.log_stream_name,
+                  "StackId": e['StackId'],
+                  "RequestId": e['RequestId'],
+                  "LogicalResourceId": e['LogicalResourceId'],
+                  "PhysicalResourceId": e['PhysicalResourceId'],
+                  "Data": response_data
+              }
+              rb = json.dumps(_rb)
+
+              print('ResponseBody: %s', rb)
+              headers = {
+                  'content-type': '',
+                  'content-length': str(len(rb))
+              }
+              try:
+                  response = requests.put(e['ResponseURL'], data=rb, headers=headers)
+                  print("CF returned status code: " + response.reason)
+              except Exception as e:
+                  print("send(..) failed executing requests.put(..): " + str(e))
+                  raise
+
+          def timeout_handler(_signal, _frame):
+              raise Exception('Time exceeded')
+
+          signal.signal(signal.SIGALRM, timeout_handler)
+
+  DynamicPipelineCleanupLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service: lambda.amazonaws.com
+          Action: sts:AssumeRole
+      Path: /
+      Policies:
+      - PolicyName: DynamicPipelineCleanup
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - logs:CreateLogGroup
+            - logs:CreateLogStream
+            - logs:PutLogEvents
+            Resource:
+            - arn:aws:logs:*:*:*
+          - Effect: Allow
+            Action:
+              - sts:AssumeRole
+            Resource:
+              - !Sub arn:aws:iam::${DevAwsAccountId}:role/CodePipelineServiceRole-${AWS::Region}-${DevAwsAccountId}-dev
+              - !Sub arn:aws:iam::${ProdAwsAccountId}:role/CodePipelineServiceRole-${AWS::Region}-${ProdAwsAccountId}-prod
+
+  DynamicPipelineCleanupLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: index.lambda_handler
+      MemorySize: 128
+      Runtime: python3.6
+      Timeout: 900
+      Role: !GetAtt DynamicPipelineCleanupLambdaRole.Arn
+      Environment:
+        Variables:
+          LOGGING_LEVEL: INFO
+          AppName: !Ref AppName
+      Code:
+        ZipFile: |
+          import os, boto3, logging, json, signal, traceback
+          from botocore.vendored import requests
+
+          logger = logging.getLogger()
+          logging.basicConfig()
+          LOGGING_LEVEL = os.environ['LOGGING_LEVEL']
+          logger.setLevel(LOGGING_LEVEL)
+
+          def delete_stack(event, context):
+              sts_client = boto3.client('sts')
+              response = sts_client.assume_role(
+                  RoleArn=event['ResourceProperties']['RoleArn'],
+                  RoleSessionName='CleanupChildStacks'
+              )
+              session = boto3.Session(
+                  aws_access_key_id=response['Credentials']['AccessKeyId'],
+                  aws_secret_access_key=response['Credentials']['SecretAccessKey'],
+                  aws_session_token=response['Credentials']['SessionToken']
+              )
+              cf_client = session.client('cloudformation')
+              StackName = event['ResourceProperties']['StackName']
+              response = cf_client.delete_stack(
+                  StackName=StackName
+              )
+              waiter = cf_client.get_waiter('stack_delete_complete')
+              waiter.wait(StackName=StackName)
+              logger.info('successfully deleted CloudFormation stack:{}'.format(StackName))
+              return True
+
+          def lambda_handler(event, context):
+              '''Handle Lambda event from AWS'''
+              # Setup alarm for remaining runtime minus a second
+              signal.alarm(int(context.get_remaining_time_in_millis() / 1000) - 1)
+              try:
+                  logger.info('event: {}'.format(json.dumps(event)))
+                  if event['RequestType'] == 'Create':
+                      logger.info('CREATE!')
+                      send_response(event, context, "SUCCESS",
+                                    {"Message": "Resource creation successful!"})
+                  elif event['RequestType'] == 'Update':
+                      logger.info('UPDATE!')
+                      send_response(event, context, "SUCCESS",
+                                    {"Message": "Resource update successful!"})
+                  elif event['RequestType'] == 'Delete':
+                      logger.info('DELETE!')
+                      delete_stack(event, context)
+                      send_response(event, context, "SUCCESS",
+                                    {"Message": "Resource deletion successful!"})
+                  else:
+                      logger.info('FAILED!')
+                      send_response(event, context, "FAILED",
+                                    {"Message": "Unexpected event received from CloudFormation"})
+              except: #pylint: disable=W0702
+                  logger.info('FAILED!')
+                  traceback.print_exc()
+                  send_response(event, context, "FAILED", {
+                      "Message": "Exception during processing"})
+
+
+          def send_response(event, context, response_status, response_data):
+              response_body = json.dumps({
+                  "Status": response_status,
+                  "Reason": "See the details in CloudWatch Log Stream: " + context.log_stream_name,
+                  "PhysicalResourceId": context.log_stream_name,
+                  "StackId": event['StackId'],
+                  "RequestId": event['RequestId'],
+                  "LogicalResourceId": event['LogicalResourceId'],
+                  "Data": response_data
+              })
+
+              headers = {
+                  'content-type': '',
+                  'content-length': str(len(response_body))
+              }
+              response = requests.put(event['ResponseURL'],
+                                      data=response_body,
+                                      headers=headers)
+              logger.info("CloudFormation returned status code: " + response.reason)
+
+          def timeout_handler(_signal, _frame):
+              raise Exception('Time exceeded')
+
+
+          signal.signal(signal.SIGALRM, timeout_handler)
+
+  DynamicPipelineMakerLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service: lambda.amazonaws.com
+          Action: sts:AssumeRole
+      Path: /
+      Policies:
+      - PolicyName: DynamicPipelineCleanup
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - logs:CreateLogGroup
+            - logs:CreateLogStream
+            - logs:PutLogEvents
+            Resource:
+            - arn:aws:logs:*:*:*
+          - Effect: Allow
+            Action:
+              - cloudformation:CreateStack
+              - cloudformation:DescribeStacks
+              - cloudformation:DeleteStack
+            Resource: !Sub arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${AWS::StackName}-ProjectPipelineStack-branch-*/*
+          - Effect: Allow
+            Action:
+              - codebuild:CreateProject
+              - codebuild:DeleteProject
+            Resource:
+              - !Sub arn:aws:codebuild:${AWS::Region}:${AWS::AccountId}:project/DeployDevProject-*
+              - !Sub arn:aws:codebuild:${AWS::Region}:${AWS::AccountId}:project/SmokeTestDevProject-*
+              - !Sub arn:aws:codebuild:${AWS::Region}:${AWS::AccountId}:project/BuildProject-*
+          - Effect: Allow
+            Action:
+              - iam:PassRole
+            Resource:
+              - !Ref PipelineServiceRoleArn
+              - !Sub arn:aws:iam::${DevAwsAccountId}:role/CodePipelineDeploymentRole-${AWS::Region}-${DevAwsAccountId}-dev
+              - !Sub arn:aws:iam::${DevAwsAccountId}:role/CodePipelineServiceRole-${AWS::Region}-${DevAwsAccountId}-dev
+          - Effect: Allow
+            Action:
+              - codepipeline:CreatePipeline
+              - codepipeline:GetPipeline
+              - codepipeline:GetPipelineState
+              - codepipeline:DeletePipeline
+            Resource: !Sub arn:aws:codepipeline:${AWS::Region}:${AWS::AccountId}:${AWS::StackName}-ProjectPipelineStack-branch-*
+          - Effect: Allow
+            Action:
+              - lambda:InvokeFunction
+            Resource: !GetAtt DynamicPipelineCleanupLambda.Arn
+          - Effect: Allow
+            Action:
+              - s3:GetObject
+            Resource:
+              - !Sub arn:aws:s3:::${QSS3BucketName}/${QSS3KeyPrefix}*
+
+  DynamicPipelineMakerLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: index.lambda_handler
+      MemorySize: 128
+      Runtime: python3.6
+      Timeout: 900
+      Role: !GetAtt DynamicPipelineMakerLambdaRole.Arn
+      Environment:
+        Variables:
+          LOGGING_LEVEL: INFO
+          TemplateURL: !Sub https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}templates/pipeline.template.yaml
+          StackName: !Ref AWS::StackName
+          DynamicPipelineCleanupLambdaArn: !GetAtt DynamicPipelineCleanupLambda.Arn
+      Code:
+        ZipFile: |
+          import os, boto3, logging, json, re, concurrent.futures
+
+          logger = logging.getLogger()
+          logging.basicConfig()
+          LOGGING_LEVEL = os.environ['LOGGING_LEVEL']
+          logger.setLevel(LOGGING_LEVEL)
+
+          # override boto3 logging configuration
+          logging.getLogger('boto3').setLevel(logging.ERROR)
+          logging.getLogger('boto3').propagate = False
+          logging.getLogger('botocore').setLevel(logging.ERROR)
+          logging.getLogger('botocore').propagate = False
+
+          max_workers = 5
+
+          cf_client = boto3.client('cloudformation')
+
+          def sanitize_branch_name(branch):
+              suffix = re.sub('[^0-9a-zA-Z]+', '-', branch)
+              StackName = '{}-ProjectPipelineStack-branch-{}'.format(os.environ['StackName'], suffix)
+              return suffix, StackName
+
+          def create_pipeline_stack(branch, customParameters):
+              suffix, StackName = sanitize_branch_name(branch)
+              logger.info('creating stack: {}'.format(StackName))
+              response = cf_client.create_stack(
+                  StackName=StackName,
+                  TemplateURL=os.environ['TemplateURL'],
+                  Parameters=[
+                      {
+                          'ParameterKey': 'Branch',
+                          'ParameterValue': branch
+                      },
+                      {
+                          'ParameterKey': 'Suffix',
+                          'ParameterValue': suffix
+                      },
+                      {
+                          'ParameterKey': 'DynamicPipelineCleanupLambdaArn',
+                          'ParameterValue': os.environ['DynamicPipelineCleanupLambdaArn']
+                      },
+                  ]+list(map(lambda x: {"ParameterKey": x, "ParameterValue": customParameters[x]}, customParameters))
+              )
+              waiter = cf_client.get_waiter('stack_create_complete')
+              waiter.wait(StackName=StackName)
+              logger.info('successfully created new CloudFormation stack:{}'.format(StackName))
+              return True
+
+          def delete_pipeline_stack(branch):
+              suffix, StackName = sanitize_branch_name(branch)
+              response = cf_client.delete_stack(
+                  StackName=StackName
+              )
+              waiter = cf_client.get_waiter('stack_delete_complete')
+              waiter.wait(StackName=StackName)
+              logger.info('successfully deleted CloudFormation stack:{}'.format(StackName))
+              return True
+
+          def lambda_handler(event, context):
+              logger.info('event:{}'.format(json.dumps(event)))
+              result_futures = []
+              with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+                  for record in event['Records']:
+                      for reference in record['codecommit']['references']:
+                          logger.info('reference:{}'.format(json.dumps(reference)))
+                          if reference['ref'].split('/')[1] == 'heads':
+                              # it is branch
+                              branch = reference['ref'].split('/',2)[-1]
+                              if branch == 'master':
+                                  logger.info('skipping branch master, pipeline for this branch created by main stack')
+                                  continue
+                              if reference.get('created'):
+                                  logger.info('created new branch:{}, creating pipeline for this branch'.format(branch))
+                                  future = executor.submit(create_pipeline_stack, branch, json.loads(record['customData']))
+                                  result_futures.append(future)
+                              elif reference.get('deleted'):
+                                  logger.info('deleted old branch:{}, deleting pipeline for this branch'.format(branch))
+                                  future = executor.submit(delete_pipeline_stack, branch)
+                                  result_futures.append(future)
+
+              for future in result_futures:
+                  future.result()
+
+              return
+
+  CleanUpBucketsLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service: lambda.amazonaws.com
+          Action: sts:AssumeRole
+      Path: /
+      Policies:
+      - PolicyName: CleanUpBucketsLambda
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - logs:CreateLogGroup
+            - logs:CreateLogStream
+            - logs:PutLogEvents
+            Resource:
+            - arn:aws:logs:*:*:*
+          - Effect: Allow
+            Action:
+              - s3:*
+            Resource:
+              - !Sub arn:aws:s3:::${ArtifactBucket}
+              - !Sub arn:aws:s3:::${ArtifactBucket}/*
+              - !Sub arn:aws:s3:::${SamTranslationBucket}
+              - !Sub arn:aws:s3:::${SamTranslationBucket}/*
+
+  CleanUpBucketsLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: index.handler
+      Role: !GetAtt CleanUpBucketsLambdaRole.Arn
+      Runtime: python3.6
+      Timeout: 30
+      Code:
+        ZipFile: |
+          import json
+          import cfnresponse
+          import boto3
+          from botocore.exceptions import ClientError
+          s3 = boto3.resource('s3')
+          def handler(event, context):
+              bucket = s3.Bucket(event['ResourceProperties']['Bucket'])
+              if event['RequestType'] == 'Delete':
+                  try:
+                      bucket.objects.all().delete()
+                      return cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
+                  except ClientError as e:
+                      print(e)
+                      return cfnresponse.send(event, context, cfnresponse.FAILED, {})
+              else:
+                  return cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
+
+  CodecommitCredentialsLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service: lambda.amazonaws.com
+          Action: sts:AssumeRole
+      Path: /
+      Policies:
+      - PolicyName: CodecommitCredentialsLambda
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - logs:CreateLogGroup
+            - logs:CreateLogStream
+            - logs:PutLogEvents
+            Resource:
+            - arn:aws:logs:*:*:*
+          - Effect: Allow
+            Action:
+              - iam:*
+            Resource:
+              - !Sub arn:aws:iam::${AWS::AccountId}:user/AWS-CICD-Quickstart-${AppName}-${AWS::Region}-${AWS::AccountId}
+
+  CodecommitCredentialsLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: index.handler
+      Role: !GetAtt CodecommitCredentialsLambdaRole.Arn
+      Runtime: python3.6
+      Timeout: 30
+      Code:
+        ZipFile: |
+          import json
+          import cfnresponse
+          import boto3
+          from botocore.exceptions import ClientError
+          client = boto3.client('iam')
+          def handler(event, context):
+              print(json.dumps(event))
+              UserName = event['ResourceProperties']['IAM_USER_NAME']
+              if event['RequestType'] == 'Create':
+                  try:
+                      credential = client.create_service_specific_credential(UserName=UserName, ServiceName='codecommit.amazonaws.com')['ServiceSpecificCredential']
+                      return cfnresponse.send(event, context, cfnresponse.SUCCESS, {'UserName': credential['ServiceUserName'], 'Password': credential['ServicePassword']})
+                  except ClientError as e:
+                      print(e)
+                      return cfnresponse.send(event, context, cfnresponse.FAILED, {})
+              if event['RequestType'] == 'Delete':
+                  try:
+                      for credential in client.list_service_specific_credentials(UserName=UserName, ServiceName='codecommit.amazonaws.com')['ServiceSpecificCredentials']:
+                          client.delete_service_specific_credential(UserName=UserName, ServiceSpecificCredentialId=credential['ServiceSpecificCredentialId'])
+                      for key in client.list_ssh_public_keys(UserName=UserName)['SSHPublicKeys']:
+                          client.delete_ssh_public_key(UserName=UserName, SSHPublicKeyId=key['SSHPublicKeyId'])
+                      return cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
+                  except ClientError as e:
+                      print(e)
+                      return cfnresponse.send(event, context, cfnresponse.FAILED, {})
+              else:
+                  return cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
+
+Outputs:
+  QuickStartStackMakerLambda:
+    Value: !GetAtt QuickStartStackMakerLambda.Arn
+  DynamicPipelineCleanupLambda:
+    Value: !GetAtt DynamicPipelineCleanupLambda.Arn
+  DynamicPipelineMakerLambda:
+    Value: !GetAtt DynamicPipelineMakerLambda.Arn
+  CleanUpBucketsLambda:
+    Value: !GetAtt CleanUpBucketsLambda.Arn
+  CodecommitCredentialsLambda:
+    Value: !GetAtt CodecommitCredentialsLambda.Arn

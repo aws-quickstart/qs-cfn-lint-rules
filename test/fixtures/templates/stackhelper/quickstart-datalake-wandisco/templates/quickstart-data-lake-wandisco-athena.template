@@ -1,0 +1,391 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "WANdisco Fusion Getting Started stack template: This template will deploy an Athena db and table to access replicated data in wandisco fusion.(qs-1nmjm7280)",
+    "Metadata": {
+        "AWS::CloudFormation::Interface": {
+            "ParameterGroups": [
+                {
+                    "Label": {
+                        "default": "Athena Configuration"
+                    },
+                    "Parameters": [
+                        "AthenaBucket",
+                        "S3Bucket"
+                    ]
+                }
+            ],
+            "ParameterLabels": {
+                "AthenaBucket": {
+                    "default": "Athena Output Bucket"
+                },
+                "S3Bucket": {
+                    "default": "S3 Bucket"
+                }
+            }
+        }
+    },
+    "Outputs": {
+        "AthenaDatabase": {
+            "Description": "Sample Athena Database",
+            "Value": {
+                "Fn::Sub": "wandisco_fusion_db_lab_${AWS::StackName}"
+            }
+        },
+        "AthenaTable": {
+            "Description": "Sample table for demo Taxi data",
+            "Value": "taxi_tripdata"
+        }
+    },
+    "Parameters": {
+        "AthenaBucket": {
+            "Description": "Athena Output Bucket",
+            "Type": "String"
+        },
+        "S3Bucket": {
+            "AllowedPattern": "^[0-9a-zA-Z-]+(/[0-9a-zA-Z-]+)*$",
+            "ConstraintDescription": "Must provide valid S3 Bucket name",
+            "Description": "The name of S3 bucket to replicate local Hadoop HDFS drive data.",
+            "Type": "String"
+        }
+    },
+    "Resources": {
+        "AthenaCreateDbLambda": {
+            "DependsOn": [
+                "AthenaLambdaRole"
+            ],
+            "Properties": {
+                "Code": {
+                    "ZipFile": {
+                        "Fn::Join": [
+                            "\n",
+                            [
+                                "#!/usr/bin/python",
+                                "import time",
+                                "import boto3",
+                                "import logging",
+                                "import cfnresponse",
+                                "import re",
+                                "logger=logging.getLogger()",
+                                "logger.setLevel(logging.INFO)",
+                                "athena=boto3.client('athena')",
+                                "CFN_REQUEST_TYPE=\"RequestType\"",
+                                "CFN_RESOURCE_PROPERTIES=\"ResourceProperties\"",
+                                "SUCCEEDED=\"SUCCEEDED\"",
+                                "FAILED=\"FAILED\"",
+                                "CANCELLED=\"CANCELLED\"",
+                                "class AthenaCloudFormationResource(object):",
+                                " def __init__(self):",
+                                "  self._delegate={'Create':self.create,'Update':self.update,'Delete':self.delete}",
+                                " def __call__(self,event,context):",
+                                "  try:",
+                                "   request=event[CFN_REQUEST_TYPE]",
+                                "   self._delegate[request](event,context)",
+                                "  except Exception as e:",
+                                "   logger.exception(\"Unable to complete CFN request {}\".format(str(e)))",
+                                "   cfnresponse.send(event,context,cfnresponse.FAILED,{})",
+                                " def create(self,event,context):",
+                                "  logger.info(\"Got Event: {}\".format(event))",
+                                "  props=event[CFN_RESOURCE_PROPERTIES]",
+                                "  tmp_bucket=props[\"AthenaBucket\"]",
+                                "  database_name=re.sub(\"[^A-Za-z0-9]+\",\"_\",props[\"DatabaseName\"])",
+                                "  database_result='s3://{}'.format(tmp_bucket)",
+                                "  result=AthenaCloudFormationResource.__create_db(database_name,database_result)",
+                                "  if result:",
+                                "   cfnresponse.send(event,context,cfnresponse.SUCCESS,{})",
+                                "  else:",
+                                "   cfnresponse.send(event,context,cfnresponse.FAILED,{})",
+                                " def update(self,event,context):",
+                                "  cfnresponse.send(event,context,cfnresponse.SUCCESS,{})",
+                                " def delete(self,event,context):",
+                                "  props=event[CFN_RESOURCE_PROPERTIES]",
+                                "  tmp_bucket=props[\"AthenaBucket\"]",
+                                "  database_name=re.sub(\"[^A-Za-z0-9]+\",\"_\",props[\"DatabaseName\"])",
+                                "  database_result='s3://{}'.format(tmp_bucket)",
+                                "  if AthenaCloudFormationResource.__drop_db(database_name,database_result):",
+                                "   s3=boto3.resource('s3')",
+                                "   bucket=s3.Bucket(tmp_bucket)",
+                                "   bucket.objects.all().delete()",
+                                "   cfnresponse.send(event,context,cfnresponse.SUCCESS,{})",
+                                "  else:",
+                                "   cfnresponse.send(event,context,cfnresponse.FAILED,{})",
+                                " @staticmethod",
+                                " def __create_db(name,database_result):",
+                                "  query='CREATE DATABASE IF NOT EXISTS {} LOCATION \\'{}/\\''.format(name,database_result)",
+                                "  logger.info(\"Execute: {}\".format(query))",
+                                "  response=athena.start_query_execution(QueryString=query,ResultConfiguration={'OutputLocation':'{}/output'.format(database_result)})",
+                                "  logger.info(\"ExecuteResponse: {}\".format(response))",
+                                "  return AthenaCloudFormationResource.__check_state(response['QueryExecutionId'])",
+                                " @staticmethod",
+                                " def __drop_db(name,database_result):",
+                                "  response=athena.start_query_execution(QueryString='DROP DATABASE {}'.format(name),ResultConfiguration={'OutputLocation':'{}/output'.format(database_result)})",
+                                "  logger.info(\"ExecuteResponse: {}\".format(response))",
+                                "  return AthenaCloudFormationResource.__check_state(response['QueryExecutionId'])",
+                                " @staticmethod",
+                                " def __check_state(execution_id):",
+                                "  running=True",
+                                "  while running:",
+                                "   execution_response=athena.get_query_execution(QueryExecutionId=execution_id)",
+                                "   logger.info(\"QueryResponse: {}\".format(execution_response))",
+                                "   execution_state=execution_response['QueryExecution']['Status']['State']",
+                                "   if execution_state in[SUCCEEDED]:",
+                                "    return True",
+                                "   elif execution_state in[FAILED,CANCELLED]:",
+                                "    return False",
+                                "   else:",
+                                "    time.sleep(1)",
+                                "handler=AthenaCloudFormationResource()",
+                                "# Created by pyminifier (https://github.com/liftoff/pyminifier)",
+                                ""
+                            ]
+                        ]
+                    }
+                },
+                "Handler": "index.handler",
+                "MemorySize": 128,
+                "Role": {
+                    "Fn::GetAtt": [
+                        "AthenaLambdaRole",
+                        "Arn"
+                    ]
+                },
+                "Runtime": "python3.6",
+                "Timeout": 300
+            },
+            "Type": "AWS::Lambda::Function"
+        },
+        "AthenaCreateTableLambda": {
+            "DependsOn": [
+                "AthenaLambdaRole"
+            ],
+            "Properties": {
+                "Code": {
+                    "ZipFile": {
+                        "Fn::Join": [
+                            "\n",
+                            [
+                                "#!/usr/bin/python",
+                                "import time",
+                                "import boto3",
+                                "import logging",
+                                "import cfnresponse",
+                                "import re",
+                                "logger=logging.getLogger()",
+                                "logger.setLevel(logging.INFO)",
+                                "athena=boto3.client('athena')",
+                                "CFN_REQUEST_TYPE=\"RequestType\"",
+                                "CFN_RESOURCE_PROPERTIES=\"ResourceProperties\"",
+                                "SUCCEEDED=\"SUCCEEDED\"",
+                                "FAILED=\"FAILED\"",
+                                "CANCELLED=\"CANCELLED\"",
+                                "class AthenaCloudFormationResource(object):",
+                                " def __init__(self):",
+                                "  self._delegate={'Create':self.create,'Update':self.update,'Delete':self.delete}",
+                                " def __call__(self,event,context):",
+                                "  try:",
+                                "   request=event[CFN_REQUEST_TYPE]",
+                                "   self._delegate[request](event,context)",
+                                "  except Exception as e:",
+                                "   logger.exception(\"Unable to complete CFN request {}\".format(str(e)))",
+                                "   cfnresponse.send(event,context,cfnresponse.FAILED,{})",
+                                " def create(self,event,context):",
+                                "  logger.info(\"Got Event: {}\".format(event))",
+                                "  props=event[CFN_RESOURCE_PROPERTIES]",
+                                "  tmp_bucket=props[\"AthenaBucket\"]",
+                                "  sync_bucket=props[\"SyncBucket\"]",
+                                "  database_name=re.sub(\"[^A-Za-z0-9]+\",\"_\",props[\"DatabaseName\"])",
+                                "  database_result='s3://{}'.format(tmp_bucket)",
+                                "  sync_result='s3://{}'.format(sync_bucket)",
+                                "  result=AthenaCloudFormationResource.__create_taxi_table('{}.taxi_tripdata'.format(database_name),sync_result,database_result)",
+                                "  if result:",
+                                "   cfnresponse.send(event,context,cfnresponse.SUCCESS,{})",
+                                "  else:",
+                                "   cfnresponse.send(event,context,cfnresponse.FAILED,{})",
+                                " def update(self,event,context):",
+                                "  cfnresponse.send(event,context,cfnresponse.SUCCESS,{})",
+                                " def delete(self,event,context):",
+                                "  props=event[CFN_RESOURCE_PROPERTIES]",
+                                "  tmp_bucket=props[\"AthenaBucket\"]",
+                                "  database_name=re.sub(\"[^A-Za-z0-9]+\",\"_\",props[\"DatabaseName\"])",
+                                "  database_result='s3://{}'.format(tmp_bucket)",
+                                "  if AthenaCloudFormationResource.__drop_table('{}.taxi_tripdata'.format(database_name),database_result):",
+                                "   cfnresponse.send(event,context,cfnresponse.SUCCESS,{})",
+                                "  else:",
+                                "   cfnresponse.send(event,context,cfnresponse.FAILED,{})",
+                                " @staticmethod",
+                                " def __create_taxi_table(name,sync_result,database_result):",
+                                "  query_string=\"\"\"",
+                                "          CREATE EXTERNAL TABLE IF NOT EXISTS {} (vendor_id TINYINT, lpep_pickup_datetime TIMESTAMP, lpep_dropoff_datetime TIMESTAMP, store_and_fwd_flag VARCHAR(1), rate_code_id TINYINT, pickup_longitude DOUBLE, pickup_latitude DOUBLE, dropoff_longitude DOUBLE, dropoff_latitude DOUBLE, passenger_count TINYINT, trip_distance FLOAT, fare_amount DECIMAL(10,2), extra DECIMAL(10,2), mta_tax DECIMAL(10,2), tip_amount DECIMAL(10,2), tolls_amount DECIMAL(10,2), ehail_fee DECIMAL(10,2), improvement_surcharge DECIMAL(10,2), total_amount DECIMAL(10,2), payment_type TINYINT, trip_type TINYINT ) ",
+                                "            ROW FORMAT DELIMITED FIELDS TERMINATED BY ','",
+                                "            STORED AS TEXTFILE ",
+                                "            LOCATION '{}/'",
+                                "        \"\"\"  .format(name, sync_result)",
+                                "  response=athena.start_query_execution(QueryString=query_string,ResultConfiguration={'OutputLocation':'{}/output'.format(database_result)})",
+                                "  logger.info(query_string)",
+                                "  logger.info(\"ExecuteResponse: {}\".format(response))",
+                                "  return AthenaCloudFormationResource.__check_state(response['QueryExecutionId'])",
+                                " @staticmethod",
+                                " def __drop_table(name,database_result):",
+                                "  response=athena.start_query_execution(QueryString='DROP TABLE {}'.format(name),ResultConfiguration={'OutputLocation':'{}/output'.format(database_result)})",
+                                "  logger.info(\"ExecuteResponse: {}\".format(response))",
+                                "  return AthenaCloudFormationResource.__check_state(response['QueryExecutionId'])",
+                                " @staticmethod",
+                                " def __check_state(execution_id):",
+                                "  running=True",
+                                "  while running:",
+                                "   execution_response=athena.get_query_execution(QueryExecutionId=execution_id)",
+                                "   logger.info(\"QueryResponse: {}\".format(execution_response))",
+                                "   execution_state=execution_response['QueryExecution']['Status']['State']",
+                                "   if execution_state in[SUCCEEDED]:",
+                                "    return True",
+                                "   elif execution_state in[FAILED,CANCELLED]:",
+                                "    return False",
+                                "   else:",
+                                "    time.sleep(1)",
+                                "handler=AthenaCloudFormationResource()",
+                                "# Created by pyminifier (https://github.com/liftoff/pyminifier)",
+                                ""
+                            ]
+                        ]
+                    }
+                },
+                "Handler": "index.handler",
+                "MemorySize": 128,
+                "Role": {
+                    "Fn::GetAtt": [
+                        "AthenaLambdaRole",
+                        "Arn"
+                    ]
+                },
+                "Runtime": "python3.6",
+                "Timeout": 300
+            },
+            "Type": "AWS::Lambda::Function"
+        },
+        "AthenaLambdaRole": {
+            "Properties": {
+                "AssumeRolePolicyDocument": {
+                    "Statement": [
+                        {
+                            "Action": [
+                                "sts:AssumeRole"
+                            ],
+                            "Effect": "Allow",
+                            "Principal": {
+                                "Service": [
+                                    "lambda.amazonaws.com"
+                                ]
+                            }
+                        }
+                    ],
+                    "Version": "2012-10-17"
+                },
+                "Policies": [
+                    {
+                        "PolicyDocument": {
+                            "Statement": [
+                                {
+                                    "Action": [
+                                        "logs:CreateLogStream",
+                                        "logs:PutLogEvents",
+                                        "logs:CreateLogGroup"
+                                    ],
+                                    "Effect": "Allow",
+                                    "Resource": [
+                                        {
+                                            "Fn::Sub": "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:*"
+                                        }
+                                    ]
+                                }
+                            ],
+                            "Version": "2012-10-17"
+                        },
+                        "PolicyName": "lambda-log-access"
+                    },
+                    {
+                        "PolicyDocument": {
+                            "Statement": [
+                                {
+                                    "Action": [
+                                        "athena:StartQueryExecution",
+                                        "athena:GetQueryExecution"
+                                    ],
+                                    "Effect": "Allow",
+                                    "Resource": [
+                                        "*"
+                                    ]
+                                },
+                                {
+                                    "Action": [
+                                        "s3:*"
+                                    ],
+                                    "Effect": "Allow",
+                                    "Resource": [
+                                        {
+                                            "Fn::Sub": "arn:aws:s3:::${AthenaBucket}"
+                                        },
+                                        {
+                                            "Fn::Sub": "arn:aws:s3:::${AthenaBucket}/*"
+                                        }
+                                    ]
+                                }
+                            ],
+                            "Version": "2012-10-17"
+                        },
+                        "PolicyName": "lambda-athena-access"
+                    }
+                ],
+                "ManagedPolicyArns": [
+                    "arn:aws:iam::aws:policy/AWSGlueConsoleFullAccess"
+                ]
+            },
+            "Type": "AWS::IAM::Role"
+        },
+        "LabAthenaDb": {
+            "DependsOn": [
+                "AthenaCreateDbLambda"
+            ],
+            "Properties": {
+                "AthenaBucket": {
+                    "Ref": "AthenaBucket"
+                },
+                "DatabaseName": {
+                    "Fn::Sub": "wandisco_fusion_db_lab_${AWS::StackName}"
+                },
+                "ServiceToken": {
+                    "Fn::GetAtt": [
+                        "AthenaCreateDbLambda",
+                        "Arn"
+                    ]
+                },
+                "SyncBucket": {
+                    "Ref": "S3Bucket"
+                }
+            },
+            "Type": "Custom::AthenaTripDb"
+        },
+        "LabAthenaTable": {
+            "DependsOn": [
+                "LabAthenaDb",
+                "AthenaCreateTableLambda"
+            ],
+            "Properties": {
+                "AthenaBucket": {
+                    "Ref": "AthenaBucket"
+                },
+                "DatabaseName": {
+                    "Fn::Sub": "wandisco_fusion_db_lab_${AWS::StackName}"
+                },
+                "ServiceToken": {
+                    "Fn::GetAtt": [
+                        "AthenaCreateTableLambda",
+                        "Arn"
+                    ]
+                },
+                "SyncBucket": {
+                    "Ref": "S3Bucket"
+                }
+            },
+            "Type": "Custom::AthenaTripDb"
+        }
+    }
+}

@@ -1,0 +1,178 @@
+Description: >
+  This template deploys an RDS Database
+
+Parameters:
+
+  EnvironmentName:
+    Description: An environment name that will be prefixed to resource names
+    Type: String
+
+  VPC:
+    Type: 'AWS::EC2::VPC::Id'
+    Description: Choose which VPC the Application Load Balancer should be deployed to
+
+  LoadBalancerSecurityGroup:
+    Description: Select the Load Balancer Security Group to use for the cluster hosts
+    Type: AWS::EC2::SecurityGroup::Id
+
+  Subnets:
+    Description: Choose which subnets the Application Load Balancer should be deployed to
+    Type: 'List<AWS::EC2::Subnet::Id>'
+
+  DatabaseName:
+    Description: The database name
+    Type: String
+    MinLength: '1'
+    MaxLength: '64'
+    AllowedPattern: '[a-zA-Z][a-zA-Z0-9]*'
+    ConstraintDescription: must begin with a letter and contain only alphanumeric characters.
+
+  DatabaseUsername:
+    Default: root
+    NoEcho: 'true'
+    Description: The database admin account username
+    Type: String
+    MinLength: '1'
+    MaxLength: '16'
+    AllowedPattern: '[a-zA-Z][a-zA-Z0-9]*'
+    ConstraintDescription: must begin with a letter and contain only alphanumeric characters.
+
+  DatabasePassword:
+    NoEcho: 'true'
+    Description: The database admin account password
+    Type: String
+    MinLength: '8'
+    MaxLength: '41'
+    AllowedPattern: '[a-zA-Z0-9]*'
+    ConstraintDescription: must contain only alphanumeric characters.
+
+  DatabasePort:
+    Default: '3306'
+    Description: Database Port
+    Type: Number
+
+  DatabaseClass:
+    Default: db.m3.medium
+    Description: Database instance class
+    Type: String
+    AllowedValues:
+      - db.t2.medium
+      - db.m3.medium
+      - db.t2.large
+      - db.m4.large
+      - db.m4.xlarge
+      - db.m4.2xlarge
+      - db.m4.4xlarge
+    ConstraintDescription: must select a valid database instance type.
+
+  MultiAZDatabase:
+    Default: 'false'
+    Description: Create a multi-AZ MySQL Amazon RDS database instance
+    Type: String
+    AllowedValues:
+      - 'true'
+      - 'false'
+    ConstraintDescription: must be either true or false.
+
+  StorageEncrypted:
+    Default: 'false'
+    Description: Enable encryption for Database (RDS)
+    Type: String
+    AllowedValues:
+      - 'true'
+      - 'false'
+    ConstraintDescription: must be either true or false.
+
+  DBAllocatedStorage:
+    Default: '10'
+    Description: The size of the database (Gb)
+    Type: Number
+    MinValue: '5'
+    MaxValue: '1024'
+    ConstraintDescription: must be between 5 and 1024Gb.
+
+  DeletionPolicy:
+    Default: 'Snapshot'
+    Type: String
+    Description: 'RDS Deletion Policy'
+
+Resources:
+
+  DBSubnetGroup:
+    Type: 'AWS::RDS::DBSubnetGroup'
+    Properties:
+      DBSubnetGroupDescription: Subnets available for the RDS DB Instance
+      SubnetIds: !Ref Subnets
+      Tags:
+        - Key: Name
+          Value: !Join 
+            - '-'
+            - - !Ref 'EnvironmentName'
+              - DBSubnetGroup
+
+  RDSSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: Open database for access
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: '3306'
+          ToPort: '3306'
+          SourceSecurityGroupId: !Ref LoadBalancerSecurityGroup
+      Tags:
+        - Key: Name
+          Value: !Join 
+            - '-'
+            - - !Ref 'EnvironmentName'
+              - RDS-SecurityGroup
+
+  RDS:
+    Type: 'AWS::RDS::DBInstance'
+    DeletionPolicy: 'Delete'
+    Properties:
+      DBName: !Ref DatabaseName
+      MultiAZ: !Ref MultiAZDatabase
+      StorageEncrypted: true
+      DBInstanceIdentifier: !Join 
+        - '-'
+        - - !Ref 'EnvironmentName'
+          - RDS
+      AllocatedStorage: !Ref DBAllocatedStorage
+      BackupRetentionPeriod: '7'
+      PreferredBackupWindow: '01:30-03:00'
+      PreferredMaintenanceWindow: 'sat:04:00-sat:05:30'
+      DBInstanceClass: !Ref DatabaseClass
+      Engine: MySQL
+      EngineVersion: '5.7'
+      MasterUsername: !Ref DatabaseUsername
+      MasterUserPassword: !Ref DatabasePassword
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      VPCSecurityGroups:
+        - !GetAtt 
+          - RDSSecurityGroup
+          - GroupId
+      Tags:
+        - Key: Name
+          Value: !Join 
+            - '-'
+            - - !Ref 'EnvironmentName'
+              - RDS
+Outputs:
+
+  DatabaseHost:
+    Description: A reference to RDS
+    Value: !GetAtt 
+            - RDS
+            - Endpoint.Address
+  DatabaseName:
+    Value: !Ref DatabaseName
+    Description: The database name
+
+  DatabaseUsername:
+    Value: !Ref DatabaseUsername
+    Description: The database user name
+
+  DatabasePassword:
+    Value: !Ref DatabasePassword
+    Description: The database user password

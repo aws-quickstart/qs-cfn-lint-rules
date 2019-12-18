@@ -1,0 +1,73 @@
+AWSTemplateFormatVersion: '2010-09-09'
+
+Description: This template deploys a custom resource lambda function to generate a unique deployment ID used during the Citrix Cloud deployment.
+
+Resources:
+  # Lambda Function for generating the deployment ID
+  GenQSDeploymentID:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      Code:
+        ZipFile: |
+          import random
+          import string
+          import cfnresponse
+          def id_generator(size, chars=string.ascii_lowercase + string.digits):
+            return ''.join(random.choice(chars) for _ in range(size))
+          def handler(event, context):
+            if event['RequestType'] == 'Delete':
+              cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
+            if event['RequestType'] == 'Create':
+              deployment_id = ("%s" % (id_generator(4)))
+              responseData = {}
+              responseData['DeploymentID'] = deployment_id
+              cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData)
+              return token
+      Handler: "index.handler"
+      Runtime: "python2.7"
+      Timeout: "5"
+      Role: !GetAtt LambdaExecutionRole.Arn
+
+  # A Custom resource that uses the lambda function to generate a random deployment id to be used in the naming of Citrix Cloud components.
+  QSDeploymentID:
+    Type: "Custom::GenerateQSDeploymentID"
+    Version: "1.0"
+    Properties:
+      ServiceToken: !GetAtt GenQSDeploymentID.Arn
+
+  # IAM role for Lambda function for generating kubeadm token
+  LambdaExecutionRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+        - Effect: "Allow"
+          Principal:
+            Service: ["lambda.amazonaws.com"]
+          Action: "sts:AssumeRole"
+      Path: "/"
+      Policies:
+      - PolicyName: "lambda_policy"
+        PolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+          - Effect: "Allow"
+            Action:
+            - "logs:CreateLogGroup"
+            - "logs:CreateLogStream"
+            - "logs:PutLogEvents"
+            Resource: "arn:aws:logs:*:*:*"
+  
+  ParameterQSDeploymentID:
+    Type: "AWS::SSM::Parameter"
+    Properties:
+      Name: !Sub 'QSDeploymentID-${AWS::StackName}'
+      Type: "String"
+      Value: !GetAtt QSDeploymentID.DeploymentID
+      Description: "Unique Quickstart Deployment ID"            
+
+Outputs:
+  ParameterQSDeploymentID:
+    Value: !Ref ParameterQSDeploymentID
+    Description: Unique Quickstart Deployment ID

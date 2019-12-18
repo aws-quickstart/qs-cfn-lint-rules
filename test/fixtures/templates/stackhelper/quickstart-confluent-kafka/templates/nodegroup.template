@@ -1,0 +1,884 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "CloudFormation sub-template for Auto-scaling group deployment",
+    "Parameters": {
+        "AssignPublicIP": {
+            "AllowedValues": [
+                "true",
+                "false"
+            ],
+            "ConstraintDescription": "Either true or false",
+            "Default": "true",
+            "Description": "Allociate a public IP address to each instance",
+            "Type": "String"
+        },
+        "BootDiskSize": {
+            "ConstraintDescription": "Deployment supports 8 to 128 GB for boot volumes",
+            "Default": "24",
+            "Description": "Allocated EBS storage for boot disk",
+            "MaxValue": "128",
+            "MinValue": "8",
+            "Type": "Number"
+        },
+        "ClusterInfoHandle": {
+            "Description": "",
+            "Type": "String"
+        },
+        "ClusterName": {
+            "AllowedPattern": "([A-Za-z]{1}[0-9A-Za-z_-]*)",
+            "ConstraintDescription": "The ClusterName value must be alphanumeric",
+            "Default": "awsmk",
+            "Description": "Confluent Cluster ID",
+            "Type": "String"
+        },
+        "ConfluentEdition": {
+            "AllowedValues": [
+                "Confluent Open Source",
+                "Confluent Enterprise"
+            ],
+            "Default": "Confluent Enterprise",
+            "Description": "Confluent Software Edition",
+            "Type": "String"
+        },
+        "ConfluentSecurity": {
+            "AllowedValues": [
+                "Disabled",
+                "Enabled"
+            ],
+            "Default": "Disabled",
+            "Description": "Enable strong authentication for cluster access",
+            "Type": "String"
+        },
+        "ConfluentVersion": {
+            "ConstraintDescription": "Supported versions of Confluent Platform within AWS Marketplace",
+            "Default": "3.3.1",
+            "Description": "Confluent Software Version",
+            "Type": "String"
+        },
+        "ConnectorURLs": {
+            "Default": "",
+            "Description": "Public locations (comma-separated list) from which to download additional Kafka Connect jars (eg https://s3.amazonaws.com/connector-bucket/dynamo)",
+            "Type": "String"
+        },
+        "InstanceProfile": {
+            "Description": "IAM Profile for the deployment",
+            "Type": "String"
+        },
+        "InstanceRole": {
+            "Description": "IAM Role for the deployment. The EC2 instances must be able to access this role using the instance profile.",
+            "Type": "String"
+        },
+        "KeyPairName": {
+            "Description": "Name of an existing EC2 key pair within the AWS region; all instances will launch with this key pair",
+            "Type": "AWS::EC2::KeyPair::KeyName"
+        },
+        "LinuxOSAMI": {
+            "AllowedValues": [
+                "CentOS-7-HVM",
+                "Ubuntu-Server-16.04-LTS-HVM",
+                "Amazon-Linux-HVM"
+            ],
+            "ConstraintDescription": "Supported versions of Linux AMIs for Confluent deployments",
+            "Default": "CentOS-7-HVM",
+            "Description": "Operating system AMI for cluster instances",
+            "Type": "String"
+        },
+        "NodeDesignation": {
+            "Default": "unspecified",
+            "Description": "Tag for deployed instances",
+            "Type": "String"
+        },
+        "NodeInstanceType": {
+            "AllowedValues": [
+                "t2.medium",
+                "t2.large",
+                "m3.medium",
+                "m3.large",
+                "m3.xlarge",
+                "m3.2xlarge",
+                "m4.large",
+                "m4.xlarge",
+                "m4.2xlarge",
+                "m4.4xlarge",
+                "c3.xlarge",
+                "c3.2xlarge",
+                "c3.4xlarge",
+                "d2.xlarge",
+                "d2.2xlarge",
+                "d2.4xlarge",
+                "d2.8xlarge",
+                "i2.xlarge",
+                "i2.2xlarge"
+            ],
+            "ConstraintDescription": "Must be a valid EC2 instance type.",
+            "Default": "d2.xlarge",
+            "Description": "Instance Type",
+            "Type": "String"
+        },
+        "NodeSecurityGroup": {
+            "Description": "Comma separated list of security groups for the members of the cluster (e.g. sg-7f16e910,sg-4be93ca2); The security groups must be in the same VPC as the subnets",
+            "Type": "List<AWS::EC2::SecurityGroup::Id>"
+        },
+        "NodeSpotPrice": {
+            "AllowedPattern": "([0-9]{1}[.]{1}[0-9]{2})",
+            "ConstraintDescription": "Must be decimal numeric value",
+            "Default": "0.00",
+            "Description": "Spot Price to bid for requested instances (0.00 will result in using on-demand instances)",
+            "Type": "String"
+        },
+        "NumNodes": {
+            "Default": "3",
+            "Description": "Number of Nodes in Auto-scaling Group",
+            "MaxValue": "9",
+            "MinValue": "1",
+            "Type": "Number"
+        },
+        "ParentStackName": {
+            "Description": "Wrapper stack for this deployment",
+            "Type": "String"
+        },
+        "PersistentStorage": {
+            "ConstraintDescription": "No more than 4000 GiB per device (16 TB per node).",
+            "Default": "0",
+            "Description": "Allocated EBS storage for each block device (in GiB; 4 devs per node); 0 indicates ephemeral storage only",
+            "MaxValue": "4000",
+            "MinValue": "0",
+            "Type": "Number"
+        },
+        "PersistentStorageType": {
+            "AllowedValues": [
+                "",
+                "gp2",
+                "sc1",
+                "st1"
+            ],
+            "Default": "",
+            "Description": "EBS volume type (blank indicates default type for ami/region).  sc1 and st1 volumes must be at least 500 GiB in size.",
+            "Type": "String"
+        },
+        "QSS3BucketName": {
+            "AllowedPattern": "^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$",
+            "ConstraintDescription": "Quick Start bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-).",
+            "Default": "aws-quickstart",
+            "Description": "S3 bucket name for the Quick Start assets. Quick Start bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-).",
+            "Type": "String"
+        },
+        "QSS3KeyPrefix": {
+            "AllowedPattern": "^[0-9a-zA-Z-/]*$",
+            "ConstraintDescription": "Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).",
+            "Default": "quickstart-confluent-kafka/",
+            "Description": "S3 key prefix for the Quick Start assets. Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).",
+            "Type": "String"
+        },
+        "SubnetID": {
+            "Description": "Comma separated list of VPC subnet IDs for the cluster deployment (e.g. subnet-4b8d329f,subnet-bd73afc8); VPC must exist with proper configuration for Confluent cluster access (internal and external)and the subnets must be in the same VPC as the security groups",
+            "Type": "List<AWS::EC2::Subnet::Id>"
+        }
+    },
+    "Mappings": {
+        "AWSAMIRegionMap": {
+            "AMI": {
+                "AMZNLINUXHVM": "amzn-ami-hvm-2018.03.0.20190611-x86_64-gp2",
+                "CENTOS7HVM": "CentOS Linux 7 x86_64 HVM EBS ENA 1901_01-0722b432-8459-49b6-9b90-79b42624d25d-ami-05713873c6794f575.4",
+                "US1604HVM": "ubuntu/images/hvm-ssd/ubuntu-xenial-16.04-amd64-server-20190628"
+            },
+            "ap-northeast-1": {
+                "AMZNLINUXHVM": "ami-0ab3e16f9c414dee7",
+                "CENTOS7HVM": "ami-045f38c93733dd48d",
+                "US1604HVM": "ami-014cc8d7cb6d26dc8"
+            },
+            "ap-northeast-2": {
+                "AMZNLINUXHVM": "ami-0e1e385b0a934254a",
+                "CENTOS7HVM": "ami-06cf2a72dadf92410",
+                "US1604HVM": "ami-004b3430b806f3b1a"
+            },
+            "ap-south-1": {
+                "AMZNLINUXHVM": "ami-02913db388613c3e1",
+                "CENTOS7HVM": "ami-02e60be79e78fef21",
+                "US1604HVM": "ami-0f59afa4a22fad2f0"
+            },
+            "ap-southeast-1": {
+                "AMZNLINUXHVM": "ami-05c859630889c79c8",
+                "CENTOS7HVM": "ami-0b4dd9d65556cac22",
+                "US1604HVM": "ami-08b3278ea6e379084"
+            },
+            "ap-southeast-2": {
+                "AMZNLINUXHVM": "ami-07cc15c3ba6f8e287",
+                "CENTOS7HVM": "ami-08bd00d7713a39e7d",
+                "US1604HVM": "ami-00d7116c396e73b04"
+            },
+            "ca-central-1": {
+                "AMZNLINUXHVM": "ami-04070f04f450607dc",
+                "CENTOS7HVM": "ami-033e6106180a626d0",
+                "US1604HVM": "ami-0086bcfbab4b22f60"
+            },
+            "eu-central-1": {
+                "AMZNLINUXHVM": "ami-010fae13a16763bb4",
+                "CENTOS7HVM": "ami-04cf43aca3e6f3de3",
+                "US1604HVM": "ami-0062c497b55437b01"
+            },
+            "eu-west-1": {
+                "AMZNLINUXHVM": "ami-028188d9b49b32a80",
+                "CENTOS7HVM": "ami-0ff760d16d9497662",
+                "US1604HVM": "ami-0987ee37af7792903"
+            },
+            "eu-west-2": {
+                "AMZNLINUXHVM": "ami-04de2b60dd25fbb2e",
+                "CENTOS7HVM": "ami-0eab3a90fc693af19",
+                "US1604HVM": "ami-05945867d79b7d926"
+            },
+            "sa-east-1": {
+                "AMZNLINUXHVM": "ami-0e2c2c29d8017dd99",
+                "CENTOS7HVM": "ami-0b8d86d4bf91850af",
+                "US1604HVM": "ami-0fb487b6f6ab53ff4"
+            },
+            "us-east-1": {
+                "AMZNLINUXHVM": "ami-00eb20669e0990cb4",
+                "CENTOS7HVM": "ami-02eac2c0129f6376b",
+                "US1604HVM": "ami-09f9d773751b9d606"
+            },
+            "us-east-2": {
+                "AMZNLINUXHVM": "ami-0c64dd618a49aeee8",
+                "CENTOS7HVM": "ami-0f2b4fc905b0bd1f1",
+                "US1604HVM": "ami-0891395d749676c2e"
+            },
+            "us-west-1": {
+                "AMZNLINUXHVM": "ami-0bce08e823ed38bdd",
+                "CENTOS7HVM": "ami-074e2d6769f445be5",
+                "US1604HVM": "ami-0c0e5a396959508b0"
+            },
+            "us-west-2": {
+                "AMZNLINUXHVM": "ami-08d489468314a58df",
+                "CENTOS7HVM": "ami-01ed306a12b7d1c96",
+                "US1604HVM": "ami-0bbe9b07c5fe8e86e"
+            }
+        },
+        "LinuxAMINameMap": {
+            "Amazon-Linux-HVM": {
+                "Code": "AMZNLINUXHVM"
+            },
+            "CentOS-7-HVM": {
+                "Code": "CENTOS7HVM"
+            },
+            "Ubuntu-Server-16.04-LTS-HVM": {
+                "Code": "US1604HVM"
+            }
+        },
+        "Linux2BootDisk": {
+            "Amazon-Linux-HVM": {
+                "BootDisk": "/dev/xvda"
+            },
+            "CentOS-7-HVM": {
+                "BootDisk": "/dev/sda1"
+            },
+            "Ubuntu-Server-16.04-LTS-HVM": {
+                "BootDisk": "/dev/sda1"
+            }
+        }
+    },
+    "Conditions": {
+        "EphemeralStorage": {
+            "Fn::Equals": [
+                {
+                    "Ref": "PersistentStorage"
+                },
+                "0"
+            ]
+        },
+        "OnDemandInstances": {
+            "Fn::Equals": [
+                {
+                    "Ref": "NodeSpotPrice"
+                },
+                "0.00"
+            ]
+        },
+        "UseDefaultVT": {
+            "Fn::Equals": [
+                {
+                    "Ref": "PersistentStorageType"
+                },
+                ""
+            ]
+        }
+    },
+    "Resources": {
+        "NodesReadyHandle": {
+            "Type": "AWS::CloudFormation::WaitConditionHandle"
+        },
+        "NodesReadyCondition": {
+            "Type": "AWS::CloudFormation::WaitCondition",
+            "Properties": {
+                "Handle": {
+                    "Ref": "NodesReadyHandle"
+                },
+                "Timeout": "2400",
+                "Count": {
+                    "Ref": "NumNodes"
+                }
+            }
+        },
+        "Nodes": {
+            "Type": "AWS::AutoScaling::AutoScalingGroup",
+            "Properties": {
+                "VPCZoneIdentifier": {
+                    "Ref": "SubnetID"
+                },
+                "LaunchConfigurationName": {
+                    "Ref": "NodeLaunchConfig"
+                },
+                "MinSize": 0,
+                "MaxSize": {
+                    "Ref": "NumNodes"
+                },
+                "DesiredCapacity": {
+                    "Ref": "NumNodes"
+                }
+            },
+            "CreationPolicy": {
+                "ResourceSignal": {
+                    "Count": {
+                        "Ref": "NumNodes"
+                    },
+                    "Timeout": "PT30M"
+                }
+            }
+        },
+        "NodeLaunchConfig": {
+            "Type": "AWS::AutoScaling::LaunchConfiguration",
+            "Metadata": {
+                "AWS::CloudFormation::Authentication": {
+                    "S3AccessCreds": {
+                        "type": "S3",
+                        "roleName": {
+                            "Ref": "InstanceRole"
+                        },
+                        "buckets": [
+                            {
+                                "Ref": "QSS3BucketName"
+                            }
+                        ]
+                    }
+                },
+                "AWS::CloudFormation::Init": {
+                    "config": {
+                        "files": {
+                            "/tmp/sbin/compute-heap-opts": {
+                                "source": {
+                                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}scripts/compute-heap-opts"
+                                },
+                                "mode": "000755",
+                                "owner": "root",
+                                "group": "root",
+                                "authentication": "S3AccessCreds"
+                            },
+                            "/tmp/sbin/cp-deploy.sh": {
+                                "source": {
+                                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}scripts/cp-deploy.sh"
+                                },
+                                "mode": "000755",
+                                "owner": "root",
+                                "group": "root"
+                            },
+                            "/tmp/sbin/cp-install.sh": {
+                                "source": {
+                                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}scripts/cp-install.sh"
+                                },
+                                "mode": "000755",
+                                "owner": "root",
+                                "group": "root",
+                                "authentication": "S3AccessCreds"
+                            },
+                            "/tmp/sbin/cp-retrieve-connect-jars.sh": {
+                                "source": {
+                                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}scripts/cp-retrieve-connect-jars.sh"
+                                },
+                                "mode": "000755",
+                                "owner": "root",
+                                "group": "root",
+                                "authentication": "S3AccessCreds"
+                            },
+                            "/tmp/sbin/cp-retrieve-scripts.sh": {
+                                "source": {
+                                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}scripts/cp-retrieve-scripts.sh"
+                                },
+                                "mode": "000755",
+                                "owner": "root",
+                                "group": "root",
+                                "authentication": "S3AccessCreds"
+                            },
+                            "/tmp/sbin/gen-cluster-hosts.sh": {
+                                "source": {
+                                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}scripts/gen-cluster-hosts.sh"
+                                },
+                                "mode": "000755",
+                                "owner": "root",
+                                "group": "root",
+                                "authentication": "S3AccessCreds"
+                            },
+                            "/tmp/sbin/prep-cp-instance.sh": {
+                                "source": {
+                                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}scripts/prep-cp-instance.sh"
+                                },
+                                "mode": "000755",
+                                "owner": "root",
+                                "group": "root",
+                                "authentication": "S3AccessCreds"
+                            },
+                            "/tmp/sbin/prepare-disks.sh": {
+                                "source": {
+                                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}scripts/prepare-disks.sh"
+                                },
+                                "mode": "000755",
+                                "owner": "root",
+                                "group": "root",
+                                "authentication": "S3AccessCreds"
+                            },
+                            "/tmp/sbin/post-cp-info.sh": {
+                                "source": {
+                                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}scripts/post-cp-info.sh"
+                                },
+                                "mode": "000755",
+                                "owner": "root",
+                                "group": "root",
+                                "authentication": "S3AccessCreds"
+                            },
+                            "/tmp/sbin/wait-for-child-resource.sh": {
+                                "source": {
+                                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}scripts/wait-for-child-resource.sh"
+                                },
+                                "mode": "000755",
+                                "owner": "root",
+                                "group": "root",
+                                "authentication": "S3AccessCreds"
+                            },
+                            "/tmp/sbin/wait-for-resource.sh": {
+                                "source": {
+                                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}scripts/wait-for-resource.sh"
+                                },
+                                "mode": "000755",
+                                "owner": "root",
+                                "group": "root",
+                                "authentication": "S3AccessCreds"
+                            }
+                        }
+                    }
+                }
+            },
+            "Properties": {
+                "BlockDeviceMappings": {
+                    "Fn::If": [
+                        "EphemeralStorage",
+                        [
+                            {
+                                "DeviceName": {
+                                    "Fn::FindInMap": [
+                                        "Linux2BootDisk",
+                                        {
+                                            "Ref": "LinuxOSAMI"
+                                        },
+                                        "BootDisk"
+                                    ]
+                                },
+                                "Ebs": {
+                                    "VolumeSize": {
+                                        "Ref": "BootDiskSize"
+                                    },
+                                    "DeleteOnTermination": "True"
+                                }
+                            },
+                            {
+                                "DeviceName": "/dev/sdb",
+                                "VirtualName": "ephemeral0"
+                            },
+                            {
+                                "DeviceName": "/dev/sdc",
+                                "VirtualName": "ephemeral1"
+                            },
+                            {
+                                "DeviceName": "/dev/sdd",
+                                "VirtualName": "ephemeral2"
+                            },
+                            {
+                                "DeviceName": "/dev/sde",
+                                "VirtualName": "ephemeral3"
+                            },
+                            {
+                                "DeviceName": "/dev/sdf",
+                                "VirtualName": "ephemeral4"
+                            },
+                            {
+                                "DeviceName": "/dev/sdg",
+                                "VirtualName": "ephemeral5"
+                            },
+                            {
+                                "DeviceName": "/dev/sdh",
+                                "VirtualName": "ephemeral6"
+                            },
+                            {
+                                "DeviceName": "/dev/sdi",
+                                "VirtualName": "ephemeral7"
+                            },
+                            {
+                                "DeviceName": "/dev/sdj",
+                                "VirtualName": "ephemeral8"
+                            },
+                            {
+                                "DeviceName": "/dev/sdk",
+                                "VirtualName": "ephemeral9"
+                            },
+                            {
+                                "DeviceName": "/dev/sdl",
+                                "VirtualName": "ephemeral10"
+                            },
+                            {
+                                "DeviceName": "/dev/sdm",
+                                "VirtualName": "ephemeral11"
+                            }
+                        ],
+                        [
+                            {
+                                "DeviceName": {
+                                    "Fn::FindInMap": [
+                                        "Linux2BootDisk",
+                                        {
+                                            "Ref": "LinuxOSAMI"
+                                        },
+                                        "BootDisk"
+                                    ]
+                                },
+                                "Ebs": {
+                                    "VolumeSize": {
+                                        "Ref": "BootDiskSize"
+                                    },
+                                    "DeleteOnTermination": "True"
+                                }
+                            },
+                            {
+                                "DeviceName": "/dev/sdb",
+                                "Ebs": {
+                                    "VolumeSize": {
+                                        "Ref": "PersistentStorage"
+                                    },
+                                    "VolumeType": {
+                                        "Fn::If": [
+                                            "UseDefaultVT",
+                                            {
+                                                "Ref": "AWS::NoValue"
+                                            },
+                                            {
+                                                "Ref": "PersistentStorageType"
+                                            }
+                                        ]
+                                    },
+                                    "DeleteOnTermination": "True"
+                                }
+                            },
+                            {
+                                "DeviceName": "/dev/sdc",
+                                "Ebs": {
+                                    "VolumeSize": {
+                                        "Ref": "PersistentStorage"
+                                    },
+                                    "VolumeType": {
+                                        "Fn::If": [
+                                            "UseDefaultVT",
+                                            {
+                                                "Ref": "AWS::NoValue"
+                                            },
+                                            {
+                                                "Ref": "PersistentStorageType"
+                                            }
+                                        ]
+                                    },
+                                    "DeleteOnTermination": "True"
+                                }
+                            },
+                            {
+                                "DeviceName": "/dev/sdd",
+                                "Ebs": {
+                                    "VolumeSize": {
+                                        "Ref": "PersistentStorage"
+                                    },
+                                    "VolumeType": {
+                                        "Fn::If": [
+                                            "UseDefaultVT",
+                                            {
+                                                "Ref": "AWS::NoValue"
+                                            },
+                                            {
+                                                "Ref": "PersistentStorageType"
+                                            }
+                                        ]
+                                    },
+                                    "DeleteOnTermination": "True"
+                                }
+                            },
+                            {
+                                "DeviceName": "/dev/sde",
+                                "Ebs": {
+                                    "VolumeSize": {
+                                        "Ref": "PersistentStorage"
+                                    },
+                                    "VolumeType": {
+                                        "Fn::If": [
+                                            "UseDefaultVT",
+                                            {
+                                                "Ref": "AWS::NoValue"
+                                            },
+                                            {
+                                                "Ref": "PersistentStorageType"
+                                            }
+                                        ]
+                                    },
+                                    "DeleteOnTermination": "True"
+                                }
+                            }
+                        ]
+                    ]
+                },
+                "ImageId": {
+                    "Fn::FindInMap": [
+                        "AWSAMIRegionMap",
+                        {
+                            "Ref": "AWS::Region"
+                        },
+                        {
+                            "Fn::FindInMap": [
+                                "LinuxAMINameMap",
+                                {
+                                    "Ref": "LinuxOSAMI"
+                                },
+                                "Code"
+                            ]
+                        }
+                    ]
+                },
+                "SecurityGroups": {
+                    "Ref": "NodeSecurityGroup"
+                },
+                "InstanceType": {
+                    "Ref": "NodeInstanceType"
+                },
+                "SpotPrice": {
+                    "Fn::If": [
+                        "OnDemandInstances",
+                        {
+                            "Ref": "AWS::NoValue"
+                        },
+                        {
+                            "Ref": "NodeSpotPrice"
+                        }
+                    ]
+                },
+                "KeyName": {
+                    "Ref": "KeyPairName"
+                },
+                "AssociatePublicIpAddress": {
+                    "Ref": "AssignPublicIP"
+                },
+                "IamInstanceProfile": {
+                    "Ref": "InstanceProfile"
+                },
+                "UserData": {
+                    "Fn::Base64": {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "#!/bin/bash\n",
+                                "\n",
+                                "function error_exit\n",
+                                "{\n",
+                                " cfn-signal -e 1 --stack ",
+                                {
+                                    "Ref": "AWS::StackName"
+                                },
+                                " --region ",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                " --resource Nodes\n",
+                                " exit 1\n",
+                                "}\n",
+                                "\n",
+                                "PATH=$PATH:/usr/local/bin \n",
+                                "\n",
+                                "##Yum and Apt repo update\n",
+                                "[ `which yum` ] && yum install -y epel-release \n",
+                                "[ `which apt-get` ] && apt-get -y update \n",
+                                "## Install core O/S packages\n",
+                                "if [ ! -f /usr/bin/sshpass ] ; then \n",
+                                "  [ `which yum` ] && yum install -y sshpass \n",
+                                "  [ `which apt-get` ] && apt-get -y install sshpass \n",
+                                "fi \n",
+                                "\n",
+                                "which pip &> /dev/null \n",
+                                "if [ $? -ne 0 ] ; then \n",
+                                "  [ `which yum` ] && yum install -y python-pip\n",
+                                "  [ `which apt-get` ] && apt-get -y install python-pip\n",
+                                "fi \n",
+                                "python -m pip install --upgrade pip\n",
+                                "python -m pip install awscli --ignore-installed six\n",
+                                "\n",
+                                "## Install and Update CloudFormation\n",
+                                "easy_install https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-latest.tar.gz\n",
+                                "\n",
+                                "## Signal that the node is up\n",
+                                "cfn-signal -e 0 --stack ",
+                                {
+                                    "Ref": "AWS::StackName"
+                                },
+                                " --region ",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                " --resource Nodes\n",
+                                "\n",
+                                "## Save off other cluster details in prep for configuration\n",
+                                "echo ",
+                                {
+                                    "Ref": "ClusterName"
+                                },
+                                " > /tmp/clustername\n",
+                                "echo ",
+                                {
+                                    "Ref": "ConfluentEdition"
+                                },
+                                " > /tmp/cedition\n",
+                                "echo ",
+                                {
+                                    "Ref": "ConfluentSecurity"
+                                },
+                                " > /tmp/csecurity\n",
+                                "[ \"",
+                                {
+                                    "Ref": "ConfluentSecurity"
+                                },
+                                "\" = 'Disabled' ] && rm /tmp/csecurity\n",
+                                "echo ",
+                                {
+                                    "Ref": "ConfluentVersion"
+                                },
+                                " > /tmp/cversion\n",
+                                "\n",
+                                "## Retrieve scripts to deploy Confluent on the instances \n",
+                                "##  cfn-init downloads everything \n",
+                                "##  and then we're off to the races \n",
+                                "cfn-init -v ",
+                                "         --stack ",
+                                {
+                                    "Ref": "AWS::StackName"
+                                },
+                                "         --resource NodeLaunchConfig ",
+                                "         --region ",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                "\n",
+                                "AMI_SBIN=/tmp/sbin \n",
+                                "\n",
+                                "## Prepare the instance \n",
+                                "$AMI_SBIN/prep-cp-instance.sh \n",
+                                ". $AMI_SBIN/prepare-disks.sh \n",
+                                "\n",
+                                "## Wait for all nodes to come on-line\n",
+                                "$AMI_SBIN/wait-for-child-resource.sh ",
+                                {
+                                    "Ref": "ParentStackName"
+                                },
+                                " ZookeeperStack Nodes\n",
+                                "$AMI_SBIN/wait-for-child-resource.sh ",
+                                {
+                                    "Ref": "ParentStackName"
+                                },
+                                " BrokerStack Nodes\n",
+                                "$AMI_SBIN/wait-for-child-resource.sh ",
+                                {
+                                    "Ref": "ParentStackName"
+                                },
+                                " WorkerStack Nodes\n",
+                                "\n",
+                                "## Now find the private IP addresses of all deployed nodes\n",
+                                "##   (generating /tmp/cphosts and /tmp/<role> files)\n",
+                                "$AMI_SBIN/gen-cluster-hosts.sh ",
+                                {
+                                    "Ref": "ParentStackName"
+                                },
+                                "\n",
+                                "\n",
+                                "## Tag the instance (now that we're sure of launch index)\n",
+                                "##   NOTE: ami_launch_index is correct only within a single subnet)\n",
+                                "instance_id=$(curl -f http://169.254.169.254/latest/meta-data/instance-id)\n",
+                                "ami_launch_index=$(curl -f http://169.254.169.254/latest/meta-data/ami-launch-index)\n",
+                                "launch_node=$(grep -w `hostname -s` /tmp/",
+                                {
+                                    "Ref": "NodeDesignation"
+                                },
+                                "s | awk '{print $2}')\n",
+                                "if [ -n \"$launch_node\" ] ; then\n",
+                                "  launch_index=${launch_node#*NODE}\n",
+                                "else\n",
+                                "  launch_index=${ami_launch_index}\n",
+                                "fi\n",
+                                "if [ -n \"$instance_id\" ] ; then\n",
+                                "  instance_tag=",
+                                {
+                                    "Ref": "ClusterName"
+                                },
+                                "-",
+                                {
+                                    "Ref": "NodeDesignation"
+                                },
+                                "-${launch_index}\n",
+                                "  aws ec2 create-tags",
+                                " --region ",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                " --resources $instance_id --tags Key=Name,Value=$instance_tag\n",
+                                "fi\n",
+                                "## Run the steps to install the software, \n",
+                                "## then configure and start the services \n",
+                                "$AMI_SBIN/cp-install.sh 2> /tmp/cp-install.err \n",
+                                "$AMI_SBIN/cp-deploy.sh 2> /tmp/cp-deploy.err \n",
+                                "\n",
+                                "CONNECTOR_URLS=",
+                                {
+                                    "Ref": "ConnectorURLs"
+                                },
+                                " \n",
+                                "if [ -n \"$CONNECTOR_URLS\" ] ; then \n",
+                                "  for csrc in ${CONNECTOR_URLS//,/ } ; do \n",
+                                "    $AMI_SBIN/cp-retrieve-connect-jars.sh $csrc 2>&1 | tee -a /tmp/cp-retrieve-connect-jars.err \n",
+                                "  done \n",
+                                "fi\n",
+                                "\n",
+                                "## [ OPTIONAL ] Open up ssh to allow direct login\n",
+                                "#sed -i 's/ChallengeResponseAuthentication .*no$/ChallengeResponseAuthentication yes/' /etc/ssh/sshd_config\n",
+                                "#service sshd restart\n",
+                                "\n",
+                                "## If all went well, signal success (must be done by ALL nodes in group)\n",
+                                "cfn-signal -e 0 -r 'Confluent Platform node deployment complete' '",
+                                {
+                                    "Ref": "NodesReadyHandle"
+                                },
+                                "'\n",
+                                "\n",
+                                "## Wait for all nodes to issue the signal\n",
+                                "$AMI_SBIN/wait-for-resource.sh NodesReadyCondition \n",
+                                "\n",
+                                "## Signal back information for outputs (now that all nodes are up) \n",
+                                "$AMI_SBIN/post-cp-info.sh '",
+                                {
+                                    "Ref": "ClusterInfoHandle"
+                                },
+                                "'\n",
+                                "\n"
+                            ]
+                        ]
+                    }
+                }
+            }
+        }
+    }
+}

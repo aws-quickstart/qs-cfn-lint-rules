@@ -1,0 +1,494 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Deploys Suse Cloud Application Platform into a new EKS cluster in an existing VPC (qs-1p817shor)
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+    - Label:
+        default: Network configuration
+      Parameters:
+        - VPCID
+        - PrivateSubnet1ID
+        - PrivateSubnet2ID
+        - PrivateSubnet3ID
+        - PublicSubnet1ID
+        - PublicSubnet2ID
+        - PublicSubnet3ID
+        - RemoteAccessCIDR
+    - Label:
+        default: Amazon EC2 configuration
+      Parameters:
+        - KeyPairName
+    - Label:
+        default: Route 53 DNS configuration
+      Parameters:
+        - HostedZoneID
+        - DomainName
+        - SubDomainPrefix
+    - Label:
+        default: Amazon EKS configuration
+      Parameters:
+        - NodeInstanceType
+        - NumberOfInfraNodes
+        - NumberOfAppNodes
+        - NodeGroupName
+        - NodeVolumeSize
+        - AdditionalEKSAdminArns
+    - Label:
+        default: SUSE Cloud Application Platform configuration
+      Parameters:
+        - StratosWebConsole
+        - UaaReplicas
+        - UaaMysqlReplicas
+        - TcpRouterReplicas
+        - ScfMysqlReplicas
+        - RoutingApiReplicas
+        - RouterReplicas
+        - NatsReplicas
+        - DiegoSshReplicas
+        - DiegoBrainReplicas
+        - DiegoApiReplicas
+        - CcUploaderReplicas
+        - AdapterReplicas
+        - ApiGroupReplicas
+        - CcClockReplicas
+        - CcWorkerReplicas
+        - CfUsbReplicas
+    - Label:
+        default: AWS Quick Start configuration
+      Parameters:
+        - QSS3BucketName
+        - QSS3KeyPrefix
+        - LambdaZipsBucketName
+    ParameterLabels:
+      KeyPairName:
+        default: SSH Key Name
+      QSS3BucketName:
+        default: Quick Start S3 bucket name
+      QSS3KeyPrefix:
+        default: Quick Start S3 key prefix
+      RemoteAccessCIDR:
+        default: Allowed external access CIDR
+      NodeInstanceType:
+        default: Nodes instance type
+      NumberOfAppNodes:
+        default: Number of application nodes
+      NumberOfInfraNodes:
+        default: Number of infrastructure nodes
+      NodeGroupName:
+        default: Node group name
+      NodeVolumeSize:
+        default: Node volume size
+      AdditionalEKSAdminArns:
+        default: Additional EKS admin ARNs
+      LambdaZipsBucketName:
+        default: Lambda zips bucket name
+      HostedZoneID:
+        default: Hosted zone ID
+      DomainName:
+        default: Domain name
+      SubDomainPrefix:
+        default: Sub-domain prefix
+      UaaMysqlReplicas:
+        default: Number of UAA MySQL replicas
+      UaaReplicas:
+        default: Number of UAA replicas
+      TcpRouterReplicas:
+        default: Number of TCP router replicas
+      ScfMysqlReplicas:
+        default: Number of SCF MySQL replicas
+      RoutingApiReplicas:
+        default: Number of routing api replicas
+      RouterReplicas:
+        default: Number of router replicas
+      NatsReplicas:
+        default: Number of NATS replicas
+      DiegoSshReplicas:
+        default: Number of diego SSH replicas
+      DiegoBrainReplicas:
+        default: Number of diego brain replicas
+      DiegoApiReplicas:
+        default: Number of diego API replicas
+      CcUploaderReplicas:
+        default: Number of CC uploader replicas
+      AdapterReplicas:
+        default: Number of adapter replicas
+      ApiGroupReplicas:
+        default: Number of API group replicas
+      CcClockReplicas:
+        default: Number of CC clock replicas
+      CcWorkerReplicas:
+        default: Number of CC worker replicas
+      CfUsbReplicas:
+        default: Number of CF USB replicas
+      PublicSubnet1ID:
+        default: Public subnet 1 ID
+      PublicSubnet2ID:
+        default: Public subnet 2 ID
+      PublicSubnet3ID:
+        default: Public subnet 3 ID
+      PrivateSubnet1ID:
+        default: Private subnet 1 ID
+      PrivateSubnet2ID:
+        default: Private subnet 2 ID
+      PrivateSubnet3ID:
+        default: Private subnet 3 ID
+      VPCID:
+        default: VPC ID
+      StratosWebConsole:
+        default: Stratos web console
+  LintSpellExclude:
+    - Suse
+    - Cloud
+    - Application
+    - Platform
+    - foundry
+    - dcd
+    - vpc
+    - kubernetes
+    - uploader
+    - Stratos
+Parameters:
+  KeyPairName:
+    Description: The name of an existing public/private key pair, which allows you
+      to securely connect to your instance after it launches.
+    Type: AWS::EC2::KeyPair::KeyName
+  QSS3BucketName:
+    AllowedPattern: ^[0-9a-zA-Z\.]+([0-9a-zA-Z-\.]*[0-9a-zA-Z\.])*$
+    ConstraintDescription: Quick Start bucket name can include numbers, lowercase
+      letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen
+      (-).
+    Default: aws-quickstart
+    Description: S3 bucket name for the Quick Start assets. This string can include
+      numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start
+      or end with a hyphen (-).
+    Type: String
+  QSS3KeyPrefix:
+    AllowedPattern: ^[0-9a-zA-Z-/\.]*$
+    ConstraintDescription: Quick Start key prefix can include numbers, lowercase letters,
+      uppercase letters, hyphens (-), and forward slash (/).
+    Default: quickstart-suse-cloud-application-platform/
+    Description: S3 key prefix for the Quick Start assets. Quick Start key prefix
+      can include numbers, lowercase letters, uppercase letters, hyphens (-), and
+      forward slash (/).
+    Type: String
+  RemoteAccessCIDRs:
+    Description: A comma seperated list of CIDR IP ranges that are permitted to access the instances. We recommend
+      that you set this value to a trusted IP range. If using NAT gateways in this VPC, the public IP addresses of
+      the NAT gateways must be included in this list
+    Type: CommaDelimitedList
+  AdditionalEKSAdminArns:
+    Default: ""
+    Description: "[OPTIONAL] A comma-separated list of IAM users/roles to be granted administrative access to the
+      Amazon EKS cluster."
+    Type: CommaDelimitedList
+  NodeInstanceType:
+    Default: m5.large
+    AllowedValues:
+      - t2.large
+      - t2.xlarge
+      - t2.2xlarge
+      - t3.large
+      - t3.xlarge
+      - t3.2xlarge
+      - m3.xlarge
+      - m3.2xlarge
+      - m4.large
+      - m4.xlarge
+      - m4.2xlarge
+      - m4.4xlarge
+      - m4.10xlarge
+      - m5.large
+      - m5.xlarge
+      - m5.2xlarge
+      - m5.4xlarge
+      - m5.12xlarge
+      - m5.24xlarge
+      - c4.2xlarge
+      - c4.4xlarge
+      - c4.8xlarge
+      - c5.xlarge
+      - c5.2xlarge
+      - c5.4xlarge
+      - c5.9xlarge
+      - c5.18xlarge
+      - i3.large
+      - i3.xlarge
+      - i3.2xlarge
+      - i3.4xlarge
+      - i3.8xlarge
+      - i3.16xlarge
+      - r3.xlarge
+      - r3.2xlarge
+      - r3.4xlarge
+      - r3.8xlarge
+      - r4.large
+      - r4.xlarge
+      - r4.2xlarge
+      - r4.4xlarge
+      - r4.8xlarge
+      - r4.16xlarge
+      - x1.16xlarge
+      - x1.32xlarge
+      - p2.xlarge
+      - p2.8xlarge
+      - p2.16xlarge
+      - p3.2xlarge
+      - p3.8xlarge
+      - p3.16xlarge
+      - r5.large
+      - r5.xlarge
+      - r5.2xlarge
+      - r5.4xlarge
+      - r5.12xlarge
+      - r5.24xlarge
+      - r5d.large
+      - r5d.xlarge
+      - r5d.2xlarge
+      - r5d.4xlarge
+      - r5d.12xlarge
+      - r5d.24xlarge
+      - z1d.large
+      - z1d.xlarge
+      - z1d.2xlarge
+      - z1d.3xlarge
+      - z1d.6xlarge
+      - z1d.12xlarge
+    ConstraintDescription: Must be a valid EC2 instance type
+    Description: Type of EC2 instance for the worker node instances
+    Type: String
+  NumberOfInfraNodes:
+    Default: 3
+    Description: The number of Amazon EKS worker node instances in the infrastructure AutoScaling group.
+    Type: Number
+  NumberOfAppNodes:
+    Default: 3
+    Description: The number of Amazon EKS worker node instances in the customer applications AutoScaling group.
+    Type: Number
+  NodeGroupName:
+    Default: Default
+    Description: The name for the Amazon EKS node group.
+    Type: String
+  NodeVolumeSize:
+    Default: 80
+    Description: The size for of the node volumes.
+    Type: String
+  LambdaZipsBucketName:
+    Description: '[OPTIONAL] The name of the S3 bucket where the AWS Lambda zip files should be placed. If you leave
+      this setting  blank, the Quick Start will create a bucket.'
+    Type: String
+    Default: ''
+  HostedZoneID:
+    Description: 'The Route 53 hosted zone ID to use as a base domain.'
+    Type: String
+  DomainName:
+    Description: 'The domain name to use as a base domain.'
+    Type: String
+  SubDomainPrefix:
+    Default: 'scf'
+    Type: String
+    Description: 'The prefix to add to the base domain to create a new Route 53 hosted zone. Before you launch the
+      Quick Start, make sure that a hosted zone with this name does not exist.'
+  UaaMysqlReplicas:
+    Default: 2
+    Type: Number
+    Description: "The number of UAA MySQL replicas to deploy."
+  UaaReplicas:
+    Default: 2
+    Type: Number
+    Description: "The number of UAA replicas to deploy."
+  TcpRouterReplicas:
+    Default: 2
+    Type: Number
+    Description: "The number of TCP router replicas to deploy."
+  ScfMysqlReplicas:
+    Default: 2
+    Type: Number
+    Description: "The number of SCF MySQL replicas to deploy."
+  RoutingApiReplicas:
+    Default: 2
+    Type: Number
+    Description: "The number of routing API replicas to deploy."
+  RouterReplicas:
+    Default: 2
+    Type: Number
+    Description: "The number of router replicas to deploy."
+  NatsReplicas:
+    Default: 2
+    Type: Number
+    Description: "The number of NATS replicas to deploy."
+  DiegoSshReplicas:
+    Default: 2
+    Type: Number
+    Description: "The number of Diego SSH replicas to deploy."
+  DiegoBrainReplicas:
+    Default: 2
+    Type: Number
+    Description: "The number of Diego brain replicas to deploy."
+  DiegoApiReplicas:
+    Default: 2
+    Type: Number
+    Description: "The number of Diego API replicas to deploy."
+  CcUploaderReplicas:
+    Default: 2
+    Type: Number
+    Description: "The number of CC uploader replicas to deploy."
+  AdapterReplicas:
+    Default: 2
+    Type: Number
+    Description: "The number of adapter replicas to deploy."
+  ApiGroupReplicas:
+    Default: 2
+    Type: Number
+    Description: "The number of API group replicas to deploy."
+  CcClockReplicas:
+    Default: 2
+    Type: Number
+    Description: "The number of CC clock replicas to deploy."
+  CcWorkerReplicas:
+    Default: 2
+    Type: Number
+    Description: "The number of CC worker replicas to deploy."
+  CfUsbReplicas:
+    Default: 2
+    Type: Number
+    Description: "The number of CF USB replicas to deploy."
+  VPCID:
+    Type: "AWS::EC2::VPC::Id"
+    Description: The ID of your existing VPC (e.g., vpc-0343606e)
+  PublicSubnet1ID:
+    Type: "AWS::EC2::Subnet::Id"
+    Description: The ID of the public subnet in Availability Zone 1 in your existing VPC (e.g., subnet-a0246dcd)
+  PublicSubnet2ID:
+    Type: "AWS::EC2::Subnet::Id"
+    Description: The ID of the public subnet in Availability Zone 2 in your existing VPC (e.g., subnet-b1236eea)
+  PublicSubnet3ID:
+    Type: "AWS::EC2::Subnet::Id"
+    Description: The ID of the public subnet in Availability Zone 3 in your existing VPC (e.g., subnet-c3456aba)
+  PrivateSubnet1ID:
+    Type: "AWS::EC2::Subnet::Id"
+    Description: The ID of the private subnet in Availability Zone 1 in your existing VPC (e.g., subnet-fe9a8b32)
+  PrivateSubnet2ID:
+    Type: "AWS::EC2::Subnet::Id"
+    Description: The ID of the private subnet in Availability Zone 2 in your existing VPC (e.g., subnet-be8b01ea)
+  PrivateSubnet3ID:
+    Type: "AWS::EC2::Subnet::Id"
+    Description: The ID of the private subnet in Availability Zone 3 in your existing VPC (e.g., subnet-abd39039)
+  StratosWebConsole:
+    Type: String
+    AllowedValues: ["Enabled", "Disabled"]
+    Default: "Disabled"
+    Description: The Stratos web console provides a web based UI
+Resources:
+  EKSStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub 'https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}submodules/quickstart-amazon-eks/templates/amazon-eks.template.yaml'
+      Parameters:
+        PublicSubnet1ID: !Ref PublicSubnet1ID
+        PublicSubnet2ID: !Ref PublicSubnet2ID
+        PublicSubnet3ID: !Ref PublicSubnet3ID
+        KeyPairName: !Ref KeyPairName
+        QSS3BucketName: !Ref QSS3BucketName
+        QSS3KeyPrefix: !Sub "${QSS3KeyPrefix}submodules/quickstart-amazon-eks/"
+        PrivateSubnet1ID: !Ref PrivateSubnet1ID
+        PrivateSubnet2ID: !Ref PrivateSubnet2ID
+        PrivateSubnet3ID: !Ref PrivateSubnet3ID
+        NumberOfNodes: !Ref NumberOfAppNodes
+        NodeGroupName: !Ref NodeGroupName
+        NodeVolumeSize: !Ref NodeVolumeSize
+        LambdaZipsBucketName: !Ref LambdaZipsBucketName
+        NodeInstanceType: !Ref NodeInstanceType
+        RemoteAccessCIDR: !Select [0, !Ref RemoteAccessCIDRs]
+        AdditionalEKSAdminArns: !Join [ ",", !Ref AdditionalEKSAdminArns ]
+        VPCID: !Ref VPCID
+        KubernetesVersion: "1.12"
+        BastionOS: SUSE-SLES-15-HVM
+        NodeAMIOS: SUSE-SLES-15-HVM
+        BootstrapArguments: "--kubelet-extra-args --node-labels=nodegroup=Default"
+        BastionBootstrapScript: !Sub 'https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}scripts/bastion_bootstrap.sh'
+  CapStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub 'https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}templates/suse-cap.template.yaml'
+      Parameters:
+        KubeManifestLambdaArn: !GetAtt EKSStack.Outputs.KubeManifestLambdaArn
+        KubeGetLambdaArn: !GetAtt EKSStack.Outputs.KubeGetLambdaArn
+        KubeConfigPath: !GetAtt EKSStack.Outputs.KubeConfigPath
+        KubeConfigKmsContext: "EKSQuickStart"
+        ControlPlaneSecurityGroup: !GetAtt EKSStack.Outputs.ControlPlaneSecurityGroup
+        EKSClusterName: !GetAtt EKSStack.Outputs.EKSClusterName
+        NodeInstanceProfile: !GetAtt EKSStack.Outputs.NodeInstanceProfile
+        KubernetesVersion: "1.12"
+        PrivateSubnet1ID: !Ref PrivateSubnet1ID
+        PrivateSubnet2ID: !Ref PrivateSubnet2ID
+        PrivateSubnet3ID: !Ref PrivateSubnet3ID
+        VPCID: !Ref VPCID
+        HelmLambdaArn: !GetAtt EKSStack.Outputs.HelmLambdaArn
+        AdminPassword: !Join ['', ['{{resolve:secretsmanager:', !Ref AdminPassword, ':SecretString:password}}' ]]
+        QSS3BucketName: !Ref QSS3BucketName
+        QSS3KeyPrefix: !Ref QSS3KeyPrefix
+        KeyPairName: !Ref KeyPairName
+        UaaPassword: !Join ['', ['{{resolve:secretsmanager:', !Ref UaaPassword, ':SecretString:password}}' ]]
+        DomainName: !Ref DomainName
+        HostedZoneID: !Ref HostedZoneID
+        NodeInstanceRoleName: !GetAtt EKSStack.Outputs.NodeInstanceRoleName
+        NodeGroupSecurityGroup: !GetAtt EKSStack.Outputs.NodeGroupSecurityGroup
+        SubDomainPrefix: !Ref SubDomainPrefix
+        UaaMysqlReplicas: !Ref UaaMysqlReplicas
+        UaaReplicas: !Ref UaaReplicas
+        TcpRouterReplicas: !Ref TcpRouterReplicas
+        ScfMysqlReplicas: !Ref ScfMysqlReplicas
+        RoutingApiReplicas: !Ref RoutingApiReplicas
+        RouterReplicas: !Ref RouterReplicas
+        NatsReplicas: !Ref NatsReplicas
+        DiegoSshReplicas: !Ref DiegoSshReplicas
+        DiegoBrainReplicas: !Ref DiegoBrainReplicas
+        DiegoApiReplicas: !Ref DiegoApiReplicas
+        CcUploaderReplicas: !Ref CcUploaderReplicas
+        DiegoCellReplicas: !Ref NumberOfAppNodes
+        CcClockReplicas: !Ref CcClockReplicas
+        CcWorkerReplicas: !Ref CcWorkerReplicas
+        CfUsbReplicas: !Ref CfUsbReplicas
+        AdapterReplicas: !Ref AdapterReplicas
+        ApiGroupReplicas: !Ref ApiGroupReplicas
+        ConsoleChartVersion: "2.3.0"
+        StratosWebConsole: !Ref StratosWebConsole
+        RemoteAccessCIDRs: !Sub
+          - '${BastionIP}/32,${Others}'
+          - BastionIP: !GetAtt EKSStack.Outputs.BastionIP
+            Others: !Join [",", !Ref RemoteAccessCIDRs]
+        NumberOfNodes: !Ref NumberOfInfraNodes
+        BastionSecurityGroupID: !GetAtt EKSStack.Outputs.BastionSecurityGroup
+        StratosAZ: !Sub '${AWS::Region}a'
+        CleanupSecurityGroupDependenciesLambdaArn: !GetAtt 'EKSStack.Outputs.CleanupSecurityGroupDependenciesLambdaArn'
+  AdminPassword:
+    Type: 'AWS::SecretsManager::Secret'
+    Properties:
+      GenerateSecretString:
+        SecretStringTemplate: '{}'
+        GenerateStringKey: "password"
+        PasswordLength: 30
+        ExcludePunctuation: true
+  UaaPassword:
+    Type: 'AWS::SecretsManager::Secret'
+    Properties:
+      GenerateSecretString:
+        SecretStringTemplate: '{}'
+        GenerateStringKey: "password"
+        PasswordLength: 30
+        ExcludePunctuation: true
+Outputs:
+  KubeConfigPath:
+    Value: !GetAtt EKSStack.Outputs.KubeConfigPath
+  BastionIP:
+    Value: !GetAtt EKSStack.Outputs.BastionIP
+  UaaEndpoint:
+    Value: !GetAtt CapStack.Outputs.UaaEndpoint
+  CfApiEndpoint:
+    Value: !GetAtt CapStack.Outputs.CfApiEndpoint
+  AdminPassword:
+    Value: !Ref AdminPassword
+  UaaPassword:
+    Value: !Ref UaaPassword
+  ConsoleEndpoint:
+    Value: !GetAtt CapStack.Outputs.StratosConsoleEndpoint

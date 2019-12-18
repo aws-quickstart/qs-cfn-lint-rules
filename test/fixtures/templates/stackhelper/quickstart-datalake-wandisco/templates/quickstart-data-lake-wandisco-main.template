@@ -1,0 +1,654 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "This template will deploy Hybrid Datalake solution using WANdisco Fusion and other AWS Services into a new VPC. **WARNING** You will be billed for the AWS resources used if you create a stack from this template.(qs-1nmjm728b)",
+    "Conditions": {
+        "AthenaBucketExistingCondition": {
+            "Fn::And": [
+                {
+                    "Condition": "AthenaCreateCondition"
+                },
+                {
+                    "Fn::Equals": [
+                        {
+                            "Ref": "AthenaBucketExisting"
+                        },
+                        "false"
+                    ]
+                }
+            ]
+        },
+        "AthenaCreateCondition": {
+            "Fn::Equals": [
+                {
+                    "Ref": "AthenaCreateTable"
+                },
+                "true"
+            ]
+        },
+        "S3BucketExistingCondition": {
+            "Fn::Equals": [
+                {
+                    "Ref": "S3BucketExisting"
+                },
+                "false"
+            ]
+        }
+    },
+    "Metadata": {
+        "AWS::CloudFormation::Interface": {
+            "ParameterGroups": [
+                {
+                    "Label": {
+                        "default": "Network Configuration"
+                    },
+                    "Parameters": [
+                        "AvailabilityZones",
+                        "VPCCIDR",
+                        "PublicSubnet1CIDR",
+                        "PublicSubnet2CIDR"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "WANdisco Fusion Cluster Configuration"
+                    },
+                    "Parameters": [
+                        "ClusterName",
+                        "ClusterNodeType",
+                        "PersistentStorage",
+                        "ClusterInstanceCount",
+                        "KeyName",
+                        "LocalFusionAccess",
+                        "AdminFusionAccess"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "WANdisco Fusion Data Storage Configuration"
+                    },
+                    "Parameters": [
+                        "S3BucketExisting",
+                        "S3Bucket",
+                        "KMSKey",
+                        "S3ServerEncryption"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "WANdisco Fusion Application Configuration"
+                    },
+                    "Parameters": [
+                        "ZoneName",
+                        "Username",
+                        "Password",
+                        "SubscribeARN",
+                        "EMRVersion",
+                        "FusionLicense"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "Athena Configuration"
+                    },
+                    "Parameters": [
+                        "AthenaCreateTable",
+                        "AthenaBucketExisting",
+                        "AthenaBucket"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "AWS Quick Start Configuration"
+                    },
+                    "Parameters": [
+                        "QSS3BucketName",
+                        "QSS3KeyPrefix"
+                    ]
+                }
+            ],
+            "ParameterLabels": {
+                "AdminFusionAccess": {
+                    "default": "Administration Access CIDR"
+                },
+                "AthenaBucket": {
+                    "default": "Athena Output Bucket"
+                },
+                "AthenaBucketExisting": {
+                    "default": "Athena Output to Existing Bucket"
+                },
+                "AthenaCreateTable": {
+                    "default": "Create Athena Table"
+                },
+                "AvailabilityZones": {
+                    "default": "Availability Zones"
+                },
+                "ClusterInstanceCount": {
+                    "default": "Cluster Instance Count"
+                },
+                "ClusterName": {
+                    "default": "Cluster Name"
+                },
+                "ClusterNodeType": {
+                    "default": "Cluster Node Type"
+                },
+                "EMRVersion": {
+                    "default": "EMR Version"
+                },
+                "FusionLicense": {
+                    "default": "Fusion License (Optional)"
+                },
+                "KMSKey": {
+                    "default": "KMS Key (Optional)"
+                },
+                "KeyName": {
+                    "default": "EC2 key pair name"
+                },
+                "LocalFusionAccess": {
+                    "default": "Local Fusion Access CIDR"
+                },
+                "Password": {
+                    "default": "Fusion Admin Password"
+                },
+                "PersistentStorage": {
+                    "default": "Fusion server storage (in GB)"
+                },
+                "PublicSubnet1CIDR": {
+                    "default": "Public Subnet 1 CIDR"
+                },
+                "PublicSubnet2CIDR": {
+                    "default": "Public Subnet 2 CIDR"
+                },
+                "QSS3BucketName": {
+                    "default": "AWS Quick Start Bucket Name"
+                },
+                "QSS3KeyPrefix": {
+                    "default": "AWS Quick Start Version"
+                },
+                "S3Bucket": {
+                    "default": "Data Replication S3 Bucket"
+                },
+                "S3BucketExisting": {
+                    "default": "Replicate to Existing Bucket"
+                },
+                "S3ServerEncryption": {
+                    "default": "S3 Server-side Encryption Algorithm"
+                },
+                "SubscribeARN": {
+                    "default": "ARN Topic to publish messages to (Optional)"
+                },
+                "Username": {
+                    "default": "Fusion Admin Username"
+                },
+                "VPCCIDR": {
+                    "default": "VPC CIDR"
+                },
+                "ZoneName": {
+                    "default": "Zone Name"
+                }
+            }
+        }
+    },
+    "Outputs": {
+        "AdminSecurityGroupID": {
+            "Description": "SecurityGroup ID used on WANdisco Fusion for administrator access",
+            "Value": {
+                "Fn::GetAtt": [
+                    "FusionStack",
+                    "Outputs.AdminSecurityGroupID"
+                ]
+            }
+        },
+        "AthenaBucketResourceArn": {
+            "Condition": "AthenaBucketExistingCondition",
+            "Description": "Athena bucket Amazon Resource Name (ARN) of the specified bucket",
+            "Value": {
+                "Fn::GetAtt": [
+                    "FusionStack",
+                    "Outputs.AthenaBucketResourceArn"
+                ]
+            }
+        },
+        "AthenaBucketResourceBucket": {
+            "Condition": "AthenaBucketExistingCondition",
+            "Description": "Athena bucket name",
+            "Value": {
+                "Fn::GetAtt": [
+                    "FusionStack",
+                    "Outputs.AthenaBucketResourceBucket"
+                ]
+            }
+        },
+        "AthenaBucketResourceDomainName": {
+            "Condition": "AthenaBucketExistingCondition",
+            "Description": "Athena IPv4 DNS name of the specified bucket",
+            "Value": {
+                "Fn::GetAtt": [
+                    "FusionStack",
+                    "Outputs.AthenaBucketResourceDomainName"
+                ]
+            }
+        },
+        "AthenaDatabase": {
+            "Condition": "AthenaCreateCondition",
+            "Description": "Sample Athena Database",
+            "Value": {
+                "Fn::GetAtt": [
+                    "FusionStack",
+                    "Outputs.AthenaDatabase"
+                ]
+            }
+        },
+        "AthenaTable": {
+            "Condition": "AthenaCreateCondition",
+            "Description": "Sample table for demo Taxi data",
+            "Value": {
+                "Fn::GetAtt": [
+                    "FusionStack",
+                    "Outputs.AthenaTable"
+                ]
+            }
+        },
+        "PublicSubnet1": {
+            "Description": "Subnet ID of 1st public subnet",
+            "Value": {
+                "Fn::GetAtt": [
+                    "VPCStack",
+                    "Outputs.PublicSubnet1ID"
+                ]
+            }
+        },
+        "PublicSubnet2": {
+            "Description": "Subnet ID of 2nd public subnet",
+            "Value": {
+                "Fn::GetAtt": [
+                    "VPCStack",
+                    "Outputs.PublicSubnet2ID"
+                ]
+            }
+        },
+        "S3BucketResourceArn": {
+            "Condition": "S3BucketExistingCondition",
+            "Description": "Amazon Resource Name (ARN) of the specified bucket",
+            "Value": {
+                "Fn::GetAtt": [
+                    "FusionStack",
+                    "Outputs.S3BucketResourceArn"
+                ]
+            }
+        },
+        "S3BucketResourceBucket": {
+            "Condition": "S3BucketExistingCondition",
+            "Description": "Fusion replication bucket name",
+            "Value": {
+                "Fn::GetAtt": [
+                    "FusionStack",
+                    "Outputs.S3BucketResourceBucket"
+                ]
+            }
+        },
+        "S3BucketResourceDomainName": {
+            "Condition": "S3BucketExistingCondition",
+            "Description": "Fusion replication IPv4 DNS name of the specified bucket",
+            "Value": {
+                "Fn::GetAtt": [
+                    "FusionStack",
+                    "Outputs.S3BucketResourceDomainName"
+                ]
+            }
+        },
+        "SecurityGroupID": {
+            "Description": "SecurityGroup ID used on WANdisco Fusion instance",
+            "Value": {
+                "Fn::GetAtt": [
+                    "FusionStack",
+                    "Outputs.SecurityGroupID"
+                ]
+            }
+        },
+        "VPCID": {
+            "Description": "VPC ID of the newly created VPC",
+            "Value": {
+                "Fn::GetAtt": [
+                    "VPCStack",
+                    "Outputs.VPCID"
+                ]
+            }
+        }
+    },
+    "Parameters": {
+        "AdminFusionAccess": {
+            "AllowedPattern": "^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\\/([0-9]|[1-2][0-9]|3[0-2]))$",
+            "ConstraintDescription": "CIDR block parameter must be in the form x.x.x.x/x",
+            "Description": "CIDR block for administration access",
+            "Type": "String"
+        },
+        "AthenaBucket": {
+            "Description": "Athena Output Bucket",
+            "Type": "String"
+        },
+        "AthenaBucketExisting": {
+            "AllowedValues": [
+                "true",
+                "false"
+            ],
+            "Default": "false",
+            "Description": "Specify if athena output bucket is an existing S3 bucket. If set to false, the template will create a new bucket (with the name specified below). Othewrise, expects an existing bucket with the name specified below.",
+            "Type": "String"
+        },
+        "AthenaCreateTable": {
+            "AllowedValues": [
+                "true",
+                "false"
+            ],
+            "Default": "true",
+            "Description": "Specify true to create athena table",
+            "Type": "String"
+        },
+        "AvailabilityZones": {
+            "Description": "The list of Availability Zones to use for the subnets in the VPC. You must specify two Availability Zones. By default, the Quick Start preserves the logical order you specify.",
+            "Type": "List<AWS::EC2::AvailabilityZone::Name>"
+        },
+        "ClusterInstanceCount": {
+            "Default": "1",
+            "Description": "Size of Fusion Server cluster",
+            "MinValue": "1",
+            "Type": "Number"
+        },
+        "ClusterName": {
+            "AllowedPattern": "[0-9A-z]+",
+            "ConstraintDescription": "The Cluster Name must be alphanumeric",
+            "Default": "awsfs",
+            "Description": "Fusion Cluster ID",
+            "Type": "String"
+        },
+        "ClusterNodeType": {
+            "AllowedValues": [
+                "m4.xlarge",
+                "m4.2xlarge",
+                "m4.4xlarge",
+                "m4.10xlarge",
+                "m4.16xlarge",
+                "c4.2xlarge",
+                "c4.4xlarge",
+                "c4.8xlarge",
+                "r4.large",
+                "r4.2xlarge",
+                "r4.4xlarge",
+                "r4.8xlarge",
+                "r4.16xlarge",
+                "i3.large",
+                "i3.xlarge",
+                "i3.2xlarge",
+                "i3.4xlarge",
+                "i3.8xlarge",
+                "i3.16xlarge"
+            ],
+            "Default": "m4.2xlarge",
+            "Description": "Instance Type for Fusion nodes",
+            "Type": "String"
+        },
+        "EMRVersion": {
+            "AllowedValues": [
+                "5.3.0",
+                "5.4.0"
+            ],
+            "Default": "5.4.0",
+            "Description": "The version of Amazon EMR, if you decide to attach an Amazon EMR cluster to replicate data back to your on-premises server after deployment. The two options are 5.3.0 and 5.4.0.",
+            "Type": "String"
+        },
+        "FusionLicense": {
+            "Description": "S3 Path (format: s3://bucket-name/path) or URL of Fusion License (leave blank for a trial license)",
+            "Type": "String"
+        },
+        "KMSKey": {
+            "AllowedPattern": ".*",
+            "ConstraintDescription": "Must be a valid ARN",
+            "Default": "",
+            "Description": "ARN for KMS Encryption Key ID (leave blank to disable KMS encryption)",
+            "Type": "String"
+        },
+        "KeyName": {
+            "ConstraintDescription": "Must be the name of an existing EC2 KeyPair.",
+            "Description": "Name of an existing EC2 KeyPair within the AWS account; all instances will launch with this KeyPair",
+            "Type": "AWS::EC2::KeyPair::KeyName"
+        },
+        "LocalFusionAccess": {
+            "AllowedPattern": "^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\\/([0-9]|[1-2][0-9]|3[0-2]))$",
+            "ConstraintDescription": "CIDR block parameter must be in the form x.x.x.x/x",
+            "Description": "CIDR block for local fusion access",
+            "Type": "String"
+        },
+        "Password": {
+            "AllowedPattern": "[!@#$&*0-9A-z]+",
+            "ConstraintDescription": "The password value must be alphanumeric or special character (!@#$&*)",
+            "Description": "The password for the WD Fusion admin. Password value must be alphanumeric and include one of these special characters (!@#$&*)",
+            "NoEcho": true,
+            "Type": "String"
+        },
+        "PersistentStorage": {
+            "ConstraintDescription": "No more than 1024 GB per device (4 TB per node).",
+            "Default": "0",
+            "Description": "Allocated EBS storage for each block device (in GB; 4 devices per node); 0 indicates ephemeral storage only. No more than 1024 GB per device (4 TB per node)",
+            "MaxValue": "1024",
+            "MinValue": "0",
+            "Type": "Number"
+        },
+        "PublicSubnet1CIDR": {
+            "AllowedPattern": "^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\\/(1[6-9]|2[0-8]))$",
+            "ConstraintDescription": "CIDR block parameter must be in the form x.x.x.x/16-28",
+            "Default": "10.0.128.0/20",
+            "Description": "CIDR block for the public DMZ subnet 1 located in Availability Zone 1",
+            "Type": "String"
+        },
+        "PublicSubnet2CIDR": {
+            "AllowedPattern": "^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\\/(1[6-9]|2[0-8]))$",
+            "ConstraintDescription": "CIDR block parameter must be in the form x.x.x.x/16-28",
+            "Default": "10.0.144.0/20",
+            "Description": "CIDR block for the public DMZ subnet 2 located in Availability Zone 2",
+            "Type": "String"
+        },
+        "QSS3BucketName": {
+            "AllowedPattern": "^[0-9a-zA-Z-]+(/[0-9a-zA-Z-]+)*$",
+            "ConstraintDescription": "must be a valid s3 bucket name",
+            "Default": "aws-quickstart",
+            "Description": "Quick Start S3 bucket name",
+            "Type": "String"
+        },
+        "QSS3KeyPrefix": {
+            "AllowedPattern": "^[0-9a-zA-Z-/]*$",
+            "ConstraintDescription": "Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).",
+            "Default": "quickstart-datalake-wandisco/",
+            "Description": "S3 key prefix for the Quick Start assets. Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).",
+            "Type": "String"
+        },
+        "S3Bucket": {
+            "AllowedPattern": "^[0-9a-zA-Z-]+(/[0-9a-zA-Z-]+)*$",
+            "ConstraintDescription": "Must provide valid S3 Bucket name",
+            "Description": "The name of S3 bucket to replicate local Hadoop HDFS drive data.",
+            "Type": "String"
+        },
+        "S3BucketExisting": {
+            "AllowedValues": [
+                "true",
+                "false"
+            ],
+            "Default": "false",
+            "Description": "Specify if destination bucket is an existing S3 bucket. If set to false, the template will create a new bucket (with the name specified below). Othewrise, expects an existing bucket with the name specified below.",
+            "Type": "String"
+        },
+        "S3ServerEncryption": {
+            "AllowedValues": [
+                "Yes",
+                "No"
+            ],
+            "ConstraintDescription": "Must respond \"Yes\" or \"No\"",
+            "Default": "Yes",
+            "Description": "Enable server-side encryption on S3",
+            "Type": "String"
+        },
+        "SubscribeARN": {
+            "Description": "(Optional) ARN of topic to email.",
+            "Type": "String"
+        },
+        "Username": {
+            "AllowedPattern": "[0-9A-z]+",
+            "ConstraintDescription": "The username value must be alphanumeric",
+            "Default": "admin",
+            "Description": "The name of the default admin user for WD Fusion",
+            "Type": "String"
+        },
+        "VPCCIDR": {
+            "AllowedPattern": "^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\\/(1[6-9]|2[0-8]))$",
+            "ConstraintDescription": "CIDR block parameter must be in the form x.x.x.x/16-28",
+            "Default": "10.0.0.0/16",
+            "Description": "CIDR block for the VPC",
+            "Type": "String"
+        },
+        "ZoneName": {
+            "AllowedPattern": "^[^ ].+",
+            "ConstraintDescription": "ZoneName should not start with a space",
+            "Default": "AWSCloud",
+            "Description": "Name used to identify the zone in which the server operates",
+            "Type": "String"
+        }
+    },
+    "Resources": {
+        "FusionStack": {
+            "DependsOn": [
+                "VPCStack"
+            ],
+            "Properties": {
+                "Parameters": {
+                    "AdminFusionAccess": {
+                        "Ref": "AdminFusionAccess"
+                    },
+                    "AthenaBucket": {
+                        "Ref": "AthenaBucket"
+                    },
+                    "AthenaBucketExisting": {
+                        "Ref": "AthenaBucketExisting"
+                    },
+                    "AthenaCreateTable": {
+                        "Ref": "AthenaCreateTable"
+                    },
+                    "ClusterInstanceCount": {
+                        "Ref": "ClusterInstanceCount"
+                    },
+                    "ClusterName": {
+                        "Ref": "ClusterName"
+                    },
+                    "ClusterNodeType": {
+                        "Ref": "ClusterNodeType"
+                    },
+                    "EMRVersion": {
+                        "Ref": "EMRVersion"
+                    },
+                    "FusionLicense": {
+                        "Ref": "FusionLicense"
+                    },
+                    "KMSKey": {
+                        "Ref": "KMSKey"
+                    },
+                    "KeyName": {
+                        "Ref": "KeyName"
+                    },
+                    "LocalFusionAccess": {
+                        "Ref": "LocalFusionAccess"
+                    },
+                    "Password": {
+                        "Ref": "Password"
+                    },
+                    "PersistentStorage": {
+                        "Ref": "PersistentStorage"
+                    },
+                    "QSS3BucketName": {
+                        "Ref": "QSS3BucketName"
+                    },
+                    "QSS3KeyPrefix": {
+                        "Ref": "QSS3KeyPrefix"
+                    },
+                    "S3Bucket": {
+                        "Ref": "S3Bucket"
+                    },
+                    "S3BucketExisting": {
+                        "Ref": "S3BucketExisting"
+                    },
+                    "S3ServerEncryption": {
+                        "Ref": "S3ServerEncryption"
+                    },
+                    "SubnetIdA": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.PublicSubnet1ID"
+                        ]
+                    },
+                    "SubnetIdB": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.PublicSubnet2ID"
+                        ]
+                    },
+                    "SubscribeARN": {
+                        "Ref": "SubscribeARN"
+                    },
+                    "Username": {
+                        "Ref": "Username"
+                    },
+                    "VPCID": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.VPCID"
+                        ]
+                    },
+                    "ZoneName": {
+                        "Ref": "ZoneName"
+                    }
+                },
+                "TemplateURL": {
+                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}templates/quickstart-data-lake-wandisco.template"
+                }
+            },
+            "Type": "AWS::CloudFormation::Stack"
+        },
+        "VPCStack": {
+            "Properties": {
+                "Parameters": {
+                    "AvailabilityZones": {
+                        "Fn::Join": [
+                            ",",
+                            {
+                                "Ref": "AvailabilityZones"
+                            }
+                        ]
+                    },
+                    "CreatePrivateSubnets": "false",
+                    "KeyPairName": {
+                        "Ref": "KeyName"
+                    },
+                    "NumberOfAZs": 2,
+                    "PublicSubnet1CIDR": {
+                        "Ref": "PublicSubnet1CIDR"
+                    },
+                    "PublicSubnet2CIDR": {
+                        "Ref": "PublicSubnet2CIDR"
+                    },
+                    "VPCCIDR": {
+                        "Ref": "VPCCIDR"
+                    }
+                },
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackName"
+                        }
+                    }
+                ],
+                "TemplateURL": {
+                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}submodules/quickstart-aws-vpc/templates/aws-vpc.template"
+                }
+            },
+            "Type": "AWS::CloudFormation::Stack"
+        }
+    }
+}

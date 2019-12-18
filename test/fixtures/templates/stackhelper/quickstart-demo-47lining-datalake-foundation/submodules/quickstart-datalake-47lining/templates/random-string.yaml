@@ -1,0 +1,78 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: AWS CloudFormation template to create Random Strings.
+Resources:
+  RandomString:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        ZipFile: |
+          import base64
+          import json
+          import logging
+          import string
+          import random
+          import boto3
+          from botocore.vendored import requests
+          import cfnresponse
+
+          logger = logging.getLogger()
+          logger.setLevel(logging.INFO)
+
+          def random_string(size=6):
+            return ''.join(random.choice(string.ascii_uppercase + string.digits) for _ in range(size))
+
+          def lambda_handler(event, context):
+            logger.info('got event {}'.format(event))
+            responseData = {}
+
+            if event['RequestType'] == 'Create':
+              number = int(event['ResourceProperties'].get('Number', 6))
+              rs = random_string(number)
+              responseData['upper'] = rs.upper()
+              responseData['lower'] = rs.lower()
+
+            else: # delete / update
+              rs = event['PhysicalResourceId'] 
+              responseData['upper'] = rs.upper()
+              responseData['lower'] = rs.lower()
+                          
+            logger.info('responseData {}'.format(responseData))
+            cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData, responseData['lower'])
+
+      #FunctionName: !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:random-string"
+      Handler: "index.lambda_handler"
+      Timeout: 30
+      Role: !GetAtt "LambdaRole.Arn"
+      Runtime: python3.6
+  # The LambdaRole is very simple for this use case, because it only need to have access to write logs
+  # If the lambda is going to access AWS services using boto3, this role must be
+  # extended to give lambda the appropriate permissions.
+  LambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: /
+      Policies:
+        - PolicyName: "lambda-logs"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource:
+                  - "arn:aws:logs:*:*:*"
+Outputs:
+  RandomStringArn:
+    Description: The ARN for the lambda function that was created
+    Value: !GetAtt "RandomString.Arn"

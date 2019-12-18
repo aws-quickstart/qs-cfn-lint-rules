@@ -1,0 +1,439 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "AWS Cloudformation template to create EC2 instance and run Management Console app. **WARNING** This template creates an Amazon EC2 instance. You will be billed for the AWS resources used if you create a stack from this template.",
+    "Parameters": {
+        "AfStructureDatabase": {
+            "Description": "Name of Asset Framework Database to which Connector Agent will connect, for example \"NuGreen\". Required only if you adopted Asset Framework Server in your OSIsoft system. This Quick Start can independently connect to PI Data Archive and Asset Framework Server.",
+            "Type": "String"
+        },
+        "ApplicationPassword": {
+            "AllowedPattern": "^(?=.*[A-Z])(?=.*[a-z])(?=.*[0-9])[A-Za-z0-9!#$%&()*+,.:;<=>?\\[\\]^_`{|}~-]*$",
+            "Description": "Password for Management Console User. Password must contain 8 to 64 printable ASCII characters excluding: /, \", ', \\ and @. It must contain 1 uppercase letter, 1 lowercase letter, and 1 number.",
+            "MaxLength": 64,
+            "MinLength": 8,
+            "NoEcho": "true",
+            "Type": "String"
+        },
+        "ApplicationUser": {
+            "AllowedPattern": "^[\\x00-\\x7F]*$",
+            "ConstraintDescription": "User name must contain 1 to 64 ASCII characters.",
+            "Default": "ConsoleAdmin",
+            "Description": "The user name for the Management Console. Consisting of 1-64 ASCII characters.",
+            "MaxLength": "64",
+            "MinLength": "1",
+            "Type": "String"
+        },
+        "AthenaDatabaseName": {
+            "Description": "Athena database name with table with managed feeds",
+            "Type": "String"
+        },
+        "AthenaTableName": {
+            "Description": "Athena table name with managed feeds",
+            "Type": "String"
+        },
+        "CuratedDatasetsBucketName": {
+            "Type": "String"
+        },
+        "EventsStatusTableName": {
+            "Description": "Table name for DynamoDB database which holds state of point updates",
+            "Type": "String"
+        },
+        "IncomingQueueName": {
+            "Description": "Name of incomning SQS queue",
+            "Type": "String"
+        },
+        "InstanceType": {
+            "AllowedValues": [
+                "t2.nano",
+                "t2.micro",
+                "t2.small",
+                "t2.medium",
+                "t2.large",
+                "m4.large",
+                "m4.xlarge",
+                "m4.2xlarge",
+                "m5.large",
+                "m5.xlarge",
+                "m5.2xlarge"
+            ],
+            "ConstraintDescription": "must be a valid EC2 instance type.",
+            "Default": "t2.micro",
+            "Description": "Management Console EC2 instance type",
+            "Type": "String"
+        },
+        "KeyName": {
+            "ConstraintDescription": "Can contain only ASCII characters.",
+            "Description": "Name of an existing EC2 KeyPair to enable SSH access to the instance",
+            "Type": "AWS::EC2::KeyPair::KeyName"
+        },
+        "ManagementConsoleInstanceProfileARN": {
+            "Type": "String"
+        },
+        "NumWebServerInstances": {
+            "Default": 1,
+            "Description": "Number or web server instances in Auto scaling group",
+            "Type": "Number"
+        },
+        "PiPointsTableName": {
+            "Description": "PI points table name",
+            "Type": "String"
+        },
+        "PrivateSubnet1ID": {
+            "Description": "Management Console subnet 1",
+            "Type": "AWS::EC2::Subnet::Id"
+        },
+        "PrivateSubnet2ID": {
+            "Description": "Management Console subnet 2",
+            "Type": "AWS::EC2::Subnet::Id"
+        },
+        "PublicSubnet1ID": {
+            "Description": "Elastic load balancer subnet 1",
+            "Type": "AWS::EC2::Subnet::Id"
+        },
+        "PublicSubnet2ID": {
+            "Description": "Elastic load balancer subnet 2",
+            "Type": "AWS::EC2::Subnet::Id"
+        },
+        "PublishedDataBucketName": {
+            "Type": "String"
+        },
+        "QSDeploymentSuffix": {
+            "AllowedPattern": "[a-z0-9]+",
+            "ConstraintDescription": "Deployment suffix can include numbers, lowercase letters and should have the maximum length of 7 characters.",
+            "Default": "qs",
+            "Description": "You can deploy this Quick Start multiple times in the same region if you provide a different suffix that is added to resource names to make them unique per each deployment. Use this parameter to support deployment of production and test environments in the same region in the same AWS account.",
+            "MaxLength": 7,
+            "MinLength": 1,
+            "Type": "String"
+        },
+        "QSS3BucketName": {
+            "AllowedPattern": "^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$",
+            "ConstraintDescription": "Quick Start bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-).",
+            "Default": "aws-quickstart",
+            "Description": "S3 bucket where the templates and scripts are installed. Use this parameter to specify the S3 bucket name you've created for your copy of Quick Start assets, if you decide to customize or extend the Quick Start for your own use. The bucket name can include numbers, lowercase letters, uppercase letters, and hyphens, but should not start or end with a hyphen.",
+            "Type": "String"
+        },
+        "QSS3KeyPrefix": {
+            "AllowedPattern": "^[0-9a-zA-Z-][0-9a-zA-Z-/]*/$",
+            "ConstraintDescription": "Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).",
+            "Default": "osisoft/47lining/latest/",
+            "Description": "S3 key prefix for the Quick Start assets. Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).",
+            "Type": "String"
+        },
+        "VPCCIDR": {
+            "Description": "CIDR block for the VPC",
+            "Type": "String"
+        },
+        "VpcId": {
+            "Description": "Management Console server VPC",
+            "Type": "AWS::EC2::VPC::Id"
+        }
+    },
+    "Mappings": {
+        "AWSAMIRegionMap": {
+            "AMI": {
+                "AMZNLINUXHVM": "amzn-ami-hvm-2017.09.1.20180307-x86_64-gp2"
+            },
+            "eu-west-1": {
+                "AMZNLINUXHVM": "ami-3bfab942"
+            },
+            "us-east-1": {
+                "AMZNLINUXHVM": "ami-1853ac65"
+            },
+            "us-west-2": {
+                "AMZNLINUXHVM": "ami-d874e0a0"
+            }
+        }
+    },
+    "Resources": {
+        "ELBSecurityGroup": {
+            "Properties": {
+                "GroupDescription": "Enable Elastic Load Balancer access via port 80",
+                "SecurityGroupIngress": [
+                    {
+                        "CidrIp": "0.0.0.0/0",
+                        "FromPort": "80",
+                        "IpProtocol": "tcp",
+                        "ToPort": "80"
+                    }
+                ],
+                "VpcId": {
+                    "Ref": "VpcId"
+                }
+            },
+            "Type": "AWS::EC2::SecurityGroup"
+        },
+        "ElasticLoadBalancer": {
+            "Properties": {
+                "ConnectionSettings": {
+                    "IdleTimeout": "180"
+                },
+                "Listeners": [
+                    {
+                        "InstancePort": "4000",
+                        "LoadBalancerPort": "80",
+                        "Protocol": "HTTP"
+                    }
+                ],
+                "SecurityGroups": [
+                    {
+                        "Ref": "ELBSecurityGroup"
+                    }
+                ],
+                "Subnets": [
+                    {
+                        "Ref": "PublicSubnet1ID"
+                    },
+                    {
+                        "Ref": "PublicSubnet2ID"
+                    }
+                ]
+            },
+            "Type": "AWS::ElasticLoadBalancing::LoadBalancer"
+        },
+        "InstanceSecurityGroup": {
+            "Properties": {
+                "GroupDescription": "Enable access via port 4000 for Management Console and via port 22 from Bastion",
+                "SecurityGroupIngress": [
+                    {
+                        "FromPort": "4000",
+                        "IpProtocol": "tcp",
+                        "SourceSecurityGroupId": {
+                            "Ref": "ELBSecurityGroup"
+                        },
+                        "ToPort": "4000"
+                    },
+                    {
+                        "CidrIp": {
+                            "Ref": "VPCCIDR"
+                        },
+                        "FromPort": "22",
+                        "IpProtocol": "tcp",
+                        "ToPort": "22"
+                    }
+                ],
+                "VpcId": {
+                    "Ref": "VpcId"
+                }
+            },
+            "Type": "AWS::EC2::SecurityGroup"
+        },
+        "WebAppAutoScalingGroup": {
+            "CreationPolicy": {
+                "ResourceSignal": {
+                    "Count": {
+                        "Ref": "NumWebServerInstances"
+                    },
+                    "Timeout": "PT15M"
+                }
+            },
+            "Properties": {
+                "Cooldown": "300",
+                "DesiredCapacity": {
+                    "Ref": "NumWebServerInstances"
+                },
+                "LaunchConfigurationName": {
+                    "Ref": "WebAppLaunchConfiguration"
+                },
+                "LoadBalancerNames": [
+                    {
+                        "Ref": "ElasticLoadBalancer"
+                    }
+                ],
+                "MaxSize": {
+                    "Ref": "NumWebServerInstances"
+                },
+                "MinSize": {
+                    "Ref": "NumWebServerInstances"
+                },
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "PropagateAtLaunch": "true",
+                        "Value": {
+                            "Fn::Sub": "WebappManagementConsole-${QSDeploymentSuffix}"
+                        }
+                    }
+                ],
+                "VPCZoneIdentifier": [
+                    {
+                        "Ref": "PrivateSubnet1ID"
+                    },
+                    {
+                        "Ref": "PrivateSubnet2ID"
+                    }
+                ]
+            },
+            "Type": "AWS::AutoScaling::AutoScalingGroup",
+            "UpdatePolicy": {
+                "AutoScalingReplacingUpdate": {
+                    "WillReplace": true
+                }
+            }
+        },
+        "WebAppLaunchConfiguration": {
+            "Metadata": {
+                "AWS::CloudFormation::Init": {
+                    "config": {
+                        "commands": {
+                            "1_run_bootstrap": {
+                                "command": "sh -e /etc/bootstrap.sh"
+                            },
+                            "9_run_webserver": {
+                                "command": "runuser -l ec2-user -c \"python3.5 /home/ec2-user/assets/webapp_management_console/app.py --config /etc/production.ini > server.log 2>&1 &\""
+                            }
+                        },
+                        "files": {
+                            "/etc/bootstrap.sh": {
+                                "content": {
+                                    "Fn::Join": [
+                                        "\n",
+                                        [
+                                            "# Install npm",
+                                            "curl --silent --location https://rpm.nodesource.com/setup_8.x | bash -",
+                                            "yum -y install nodejs",
+                                            "# Download files from S3",
+                                            "cd /home/ec2-user",
+                                            {
+                                                "Fn::Sub": "aws s3 cp s3://${QSS3BucketName}/${QSS3KeyPrefix}assets/assets.zip ."
+                                            },
+                                            "unzip assets.zip",
+                                            "rm assets.zip",
+                                            "# Install dependencies and build webapp",
+                                            "cd /home/ec2-user/assets/webapp_management_console/app",
+                                            "npm install",
+                                            "npm run build",
+                                            "# Install Python requirements",
+                                            "cd /home/ec2-user/assets",
+                                            "pip-3.5 install -r /home/ec2-user/assets/webapp_management_console/webapp-requirements.txt",
+                                            "python3.5 setup.py develop",
+                                            "chown -R ec2-user:ec2-user /home/ec2-user"
+                                        ]
+                                    ]
+                                },
+                                "group": "ec2-user",
+                                "mode": "000770",
+                                "owner": "ec2-user"
+                            },
+                            "/etc/production.ini": {
+                                "content": {
+                                    "Fn::Join": [
+                                        "\n",
+                                        [
+                                            "[general]",
+                                            {
+                                                "Fn::Sub": "region=${AWS::Region}"
+                                            },
+                                            "[webapp]",
+                                            "port=4000",
+                                            {
+                                                "Fn::Sub": "webapp_username=${ApplicationUser}"
+                                            },
+                                            {
+                                                "Fn::Sub": "webapp_password=${ApplicationPassword}"
+                                            },
+                                            "[aws]",
+                                            {
+                                                "Fn::Sub": "curated_datasets_bucket_name=${CuratedDatasetsBucketName}"
+                                            },
+                                            {
+                                                "Fn::Sub": "published_datasets_bucket_name=${PublishedDataBucketName}"
+                                            },
+                                            {
+                                                "Fn::Sub": "incoming_queue_name=${IncomingQueueName}"
+                                            },
+                                            {
+                                                "Fn::Sub": "af_structure_database=${AfStructureDatabase}"
+                                            },
+                                            {
+                                                "Fn::Sub": "pi_points_table_name=${PiPointsTableName}"
+                                            },
+                                            {
+                                                "Fn::Sub": "events_status_table_name=${EventsStatusTableName}"
+                                            },
+                                            {
+                                                "Fn::Sub": "athena_table_name=${AthenaTableName}"
+                                            },
+                                            {
+                                                "Fn::Sub": "athena_database_name=${AthenaDatabaseName}"
+                                            },
+                                            "s3_rule_bucket_key_prefix=rules"
+                                        ]
+                                    ]
+                                },
+                                "group": "ec2-user",
+                                "mode": "000444",
+                                "owner": "ec2-user"
+                            }
+                        },
+                        "packages": {
+                            "yum": {
+                                "python35": [],
+                                "python35-devel": [],
+                                "python35-pip": []
+                            }
+                        }
+                    }
+                },
+                "Comment": "Install Management Console Server"
+            },
+            "Properties": {
+                "IamInstanceProfile": {
+                    "Ref": "ManagementConsoleInstanceProfileARN"
+                },
+                "ImageId": {
+                    "Fn::FindInMap": [
+                        "AWSAMIRegionMap",
+                        {
+                            "Ref": "AWS::Region"
+                        },
+                        "AMZNLINUXHVM"
+                    ]
+                },
+                "InstanceType": {
+                    "Ref": "InstanceType"
+                },
+                "KeyName": {
+                    "Ref": "KeyName"
+                },
+                "SecurityGroups": [
+                    {
+                        "Ref": "InstanceSecurityGroup"
+                    }
+                ],
+                "UserData": {
+                    "Fn::Base64": {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "#!/bin/bash\n",
+                                "yum update -y\n",
+                                "yum install -y aws-cfn-bootstrap\n",
+                                "# Install the files and packages from the metadata\n",
+                                {
+                                    "Fn::Sub": "/opt/aws/bin/cfn-init -v --stack ${AWS::StackName} --resource WebAppLaunchConfiguration --region ${AWS::Region}\n"
+                                },
+                                "# Signal the status from cfn-init\n",
+                                {
+                                    "Fn::Sub": "/opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource WebAppAutoScalingGroup --region ${AWS::Region}\n"
+                                }
+                            ]
+                        ]
+                    }
+                }
+            },
+            "Type": "AWS::AutoScaling::LaunchConfiguration"
+        }
+    },
+    "Outputs": {
+        "ManagementConsoleEndpoint": {
+            "Value": {
+                "Fn::GetAtt": [
+                    "ElasticLoadBalancer",
+                    "CanonicalHostedZoneName"
+                ]
+            },
+            "Description": "Management Console URL"
+        }
+    }
+}

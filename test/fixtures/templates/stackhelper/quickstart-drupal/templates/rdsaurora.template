@@ -1,0 +1,264 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "Drupal RDS Aurora-MySQL Template. (qs-1nqqf5kob)",
+    "Parameters": {
+        "Subnets": {
+            "ConstraintDescription": "must be list of existing subnet Ids",
+            "Description": "Atleast two existing Subnets in separate Availability Zones your Virtual Private Cloud (VPC)",
+            "Type": "List<AWS::EC2::Subnet::Id>"
+        },
+        "AuroraRDSSecurityGroup": {
+            "Description": "Aurora Security Group",
+            "Type": "AWS::EC2::SecurityGroup::Id"
+        },
+        "DBAutoMinorVersionUpgrade": {
+            "AllowedValues": [
+                "true",
+                "false"
+            ],
+            "Default": "true",
+            "Description": "Select true/false to setup Auto Minor Version upgrade",
+            "Type": "String"
+        },
+        "DBBackupRetentionPeriod": {
+            "Default": "7",
+            "Description": "The number of days for which automatic DB snapshots are retained.",
+            "Type": "String"
+        },
+        "DBInstanceClass": {
+            "AllowedValues": [
+                "db.t1.micro",
+                "db.m1.small",
+                "db.m3.medium",
+                "db.m3.large",
+                "db.m3.xlarge",
+                "db.m3.2xlarge",
+                "db.m4.2xlarge",
+                "db.r3.large",
+                "db.r3.xlarge",
+                "db.r3.2xlarge",
+                "db.r3.4xlarge",
+                "db.r3.8xlarge",
+                "db.t2.micro",
+                "db.t2.small",
+                "db.t2.medium",
+                "db.m2.xlarge",
+                "db.m2.2xlarge",
+                "db.m2.4xlarge",
+                "db.cr1.8xlarge",
+                "db.m1.medium",
+                "db.m1.large",
+                "db.m1.xlarge"
+            ],
+            "ConstraintDescription": "Must select a valid database instance type.",
+            "Default": "db.m4.2xlarge",
+            "Description": "The name of the compute and memory capacity class of the DB instance.",
+            "Type": "String"
+        },
+        "DBName": {
+            "AllowedPattern": "[a-zA-Z][a-zA-Z0-9]*",
+            "Default": "QuickstartAuroraDB",
+            "Description": "Name of Aurora DB for Drupal Stack",
+            "MaxLength": "64",
+            "MinLength": "5",
+            "Type": "String"
+        },
+        "DBMasterUsername": {
+            "AllowedPattern": "[a-zA-Z][a-zA-Z0-9]*",
+            "ConstraintDescription": "must begin with a letter and contain only alphanumeric characters.",
+            "Default": "admin",
+            "Description": "The database admin account username",
+            "MaxLength": "16",
+            "MinLength": "1",
+            "NoEcho": "true",
+            "Type": "String"
+        },
+        "DBMasterUserPassword": {
+            "AllowedPattern": "(?=\\S)[^@\/\"\\r\\n\\t\\f\\s]*",
+            "ConstraintDescription": "Min 8 alphanumeric. Cannot contain white space, @, /, \"",
+            "Description": "The database admin account password",
+            "MaxLength": "41",
+            "MinLength": "8",
+            "NoEcho": "True",
+            "Type": "String"
+        },
+        "DBMultiAZ": {
+            "AllowedValues": [
+                "true",
+                "false"
+            ],
+            "Default": "true",
+            "Description": "Specifies if the database instance is a multiple Availability Zone deployment.",
+            "Type": "String"
+        }
+    },
+    "Conditions": {
+        "CreateReadReplica": {
+            "Fn::Equals": [
+                {
+                    "Ref": "DBMultiAZ"
+                },
+                "true"
+            ]
+        }
+    },
+    "Resources": {
+        "AuroraDBSubnetGroup": {
+            "Type": "AWS::RDS::DBSubnetGroup",
+            "Properties": {
+                "DBSubnetGroupDescription": "Subnets available for the RDS Aurora DB Instance",
+                "SubnetIds": {
+                    "Ref": "Subnets"
+                }
+            }
+        },
+        "AuroraDBCluster": {
+            "Type": "AWS::RDS::DBCluster",
+            "Properties": {
+                "BackupRetentionPeriod": {
+                    "Ref": "DBBackupRetentionPeriod"
+                },
+                "DBSubnetGroupName": {
+                    "Ref": "AuroraDBSubnetGroup"
+                },
+                "Engine": "aurora",
+                "EngineVersion": "5.6",
+                "MasterUsername": {
+                    "Ref": "DBMasterUsername"
+                },
+                "MasterUserPassword": {
+                    "Ref": "DBMasterUserPassword"
+                },
+                "VpcSecurityGroupIds": [
+                    {
+                        "Ref": "AuroraRDSSecurityGroup"
+                    }
+                ],
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": "Drupal-Aurora-DB-Cluster"
+                    }
+                ]
+            }
+        },
+        "AuroraDBPrimaryInstance": {
+            "Type": "AWS::RDS::DBInstance",
+            "Properties": {
+                "Engine": "aurora",
+                "EngineVersion": "5.6",
+                "DBClusterIdentifier": {
+                    "Ref": "AuroraDBCluster"
+                },
+                "DBInstanceClass": {
+                    "Ref": "DBInstanceClass"
+                },
+                "DBSubnetGroupName": {
+                    "Ref": "AuroraDBSubnetGroup"
+                },
+                "AutoMinorVersionUpgrade": {
+                    "Ref": "DBAutoMinorVersionUpgrade"
+                },
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": "Drupal-Aurora-PrimaryDB"
+                    }
+                ]
+            }
+        },
+        "AuroraDBSecondaryInstance": {
+            "Type": "AWS::RDS::DBInstance",
+            "Condition": "CreateReadReplica",
+            "Properties": {
+                "Engine": "aurora",
+                "EngineVersion": "5.6",
+                "DBClusterIdentifier": {
+                    "Ref": "AuroraDBCluster"
+                },
+                "DBInstanceClass": {
+                    "Ref": "DBInstanceClass"
+                },
+                "DBSubnetGroupName": {
+                    "Ref": "AuroraDBSubnetGroup"
+                },
+                "AutoMinorVersionUpgrade": {
+                    "Ref": "DBAutoMinorVersionUpgrade"
+                },
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": "Drupal-Aurora-SecondaryDB"
+                    }
+                ]
+            }
+        }
+    },
+    "Outputs": {
+        "AuroraEndPoints": {
+            "Description": "Aurora Cluster Endpoint to connect",
+            "Value": {
+                "Fn::Join": [
+                    "",
+                    [
+                        {
+                            "Fn::GetAtt": [
+                                "AuroraDBCluster",
+                                "Endpoint.Address"
+                            ]
+                        },
+                        ":",
+                        {
+                            "Fn::GetAtt": [
+                                "AuroraDBCluster",
+                                "Endpoint.Port"
+                            ]
+                        },
+                        "/",
+                        {
+                            "Ref": "DBName"
+                        }
+                    ]
+                ]
+            }
+        },
+        "DBName": {
+            "Description": "Aurora DBName",
+            "Value": {
+                "Ref": "DBName"
+            }
+        },
+        "AuroraEndPointAddress": {
+            "Description": "Aurora Endpoint to connect",
+            "Value": {
+                "Fn::Join": [
+                    "",
+                    [
+                        {
+                            "Fn::GetAtt": [
+                                "AuroraDBCluster",
+                                "Endpoint.Address"
+                            ]
+                        }
+                    ]
+                ]
+            }
+        },
+        "AuroraEndPointPort": {
+            "Description": "Aurora Endpoint to connect",
+            "Value": {
+                "Fn::Join": [
+                    "",
+                    [
+                        {
+                            "Fn::GetAtt": [
+                                "AuroraDBCluster",
+                                "Endpoint.Port"
+                            ]
+                        }
+                    ]
+                ]
+            }
+        }
+    }
+}

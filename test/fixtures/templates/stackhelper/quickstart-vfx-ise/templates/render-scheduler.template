@@ -1,0 +1,234 @@
+---
+AWSTemplateFormatVersion: 2010-09-09
+Description: Provides configuration for a VFX Render Scheduler Instance.
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Region Configuration
+        Parameters:
+          - pAvailabilityZones
+
+      - Label:
+          default: Network (existing Management VPC config)
+        Parameters:
+          - pManagementVPC
+          - pMgmtAppPrivateSubnetA
+          - pMgmtAppPrivateSubnetB
+
+      - Label:
+          default: Render Scheduler Configuration
+        Parameters:
+          - pRenderSchedulerInstanceType
+          - pRenderSchedulerAmi
+          - pRenderSchedulerMinCapacity
+          - pRenderSchedulerDesiredCapacity
+          - pRenderSchedulerMaxCapacity
+
+Parameters:
+  pAvailabilityZones:
+    Description: The list of Availability Zones to use for the subnets in the VPC.
+      This template uses two Availability Zones from your list and preserves the logical order you specify.
+    Type: List<AWS::EC2::AvailabilityZone::Name>
+
+  pManagementVPC:
+    Description: Management VPC
+    Type: AWS::EC2::VPC::Id
+
+  pMgmtAppPrivateSubnetA:
+    Description: Render Scheduler Subnet A
+    Type: AWS::EC2::Subnet::Id
+
+  pMgmtAppPrivateSubnetB:
+    Description: Render Scheduler Subnet B
+    Type: AWS::EC2::Subnet::Id
+
+  pRenderSchedulerInstanceType:
+    Description: Instance type for the Render Scheduler
+    Type: String
+
+  pRenderSchedulerAmi:
+    Description: Which Render Scheduler AMI do you want to use?
+    Type: AWS::EC2::Image::Id
+
+  pRenderSchedulerMinCapacity:
+    Description: The minimum number of instances that can run in your auto scale group
+    Type: String
+
+  pRenderSchedulerDesiredCapacity:
+    Description: The desired capacity must be less than or equal to the maximum capacity
+    Type: String
+
+  pRenderSchedulerMaxCapacity:
+    Description: The maximum number of instances that you can run in your auto scale group
+    Type: String
+
+  pEnvironment:
+    AllowedValues:
+      - DEV
+      - TEST
+      - PROD
+    Default: DEV
+    Description: Environment (Dev, Test or Prod)
+    Type: String
+
+Resources:
+  rRenderSchedulerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for Render Scheduler Instances
+      VpcId: !Ref pManagementVPC
+      Tags:
+        - Key: Name
+          Value: render-scheduler-sg
+        - Key: Environment
+          Value: !Ref pEnvironment
+
+  rRenderSchedulerInstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: /
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonEC2RoleforSSM
+        - arn:aws:iam::aws:policy/AmazonEC2ReadOnlyAccess
+
+  rRenderSchedulerInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: /
+      Roles:
+        - !Ref rRenderSchedulerInstanceRole
+
+  rRenderSchedulerLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      RetentionInDays: 90
+
+  rRenderSchedulerLaunchConfiguration:
+    Type: AWS::AutoScaling::LaunchConfiguration
+    Metadata:
+      AWS::CloudFormation::Init:
+        config:
+          packages:
+            yum:
+              jq: []
+              awslogs: []
+          files:
+            /etc/awslogs/awslogs.conf:
+              content: !Sub |
+                [general]
+                state_file = /var/lib/awslogs/agent-state
+
+                [/var/log/messages]
+                file = /var/log/messages
+                log_group_name = ${rRenderSchedulerLogGroup}
+                log_stream_name = %INSTANCE_ID/var/log/messages
+                datetime_format = %b %d %H:%M:%S
+                initial_position = start_of_file
+            /tmp/awslog_init.sh:
+              content: !Sub |
+                #!/bin/bash -xe
+                INSTANCE_ID=$(curl -s http://instance-data/latest/meta-data/instance-id)
+                sed -i "s|%INSTANCE_ID|$INSTANCE_ID|g" /etc/awslogs/awslogs.conf
+                sed -i -e "s/region = us-east-1/region = ${AWS::Region}/g" /etc/awslogs/awscli.conf
+                systemctl enable awslogsd.service
+                systemctl start awslogsd.service
+              mode: '755'
+          commands:
+            01_check_data:
+              command: |
+                while [ ! -e /dev/xvdh ]; do
+                  udevadm trigger -y '*nvme*'
+                  sleep 5
+                done
+            02_mkfs:
+              command: mkfs -t ext4 /dev/xvdh
+            03_mkdir:
+              command: mkdir -p /data
+            04_mount:
+              command: mount /dev/xvdh /data
+            05_fstab:
+              command: echo '/dev/xvdh /data ext4 defaults,nofail 0 2' >> /etc/fstab
+            06_awslogs:
+              command: /tmp/awslog_init.sh
+    Properties:
+      AssociatePublicIpAddress: false
+      ImageId: !Ref pRenderSchedulerAmi
+      IamInstanceProfile: !Ref rRenderSchedulerInstanceProfile
+      InstanceType: !Ref pRenderSchedulerInstanceType
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvdh
+          Ebs:
+            VolumeSize: 10
+            VolumeType: gp2
+            Encrypted: true
+      SecurityGroups:
+        - !Ref rRenderSchedulerSecurityGroup
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash -xe
+          yum update --security -y
+          yum update aws-cfn-bootstrap -y
+
+          /opt/aws/bin/cfn-init -v --stack ${AWS::StackName} --resource rRenderSchedulerLaunchConfiguration --region ${AWS::Region}
+          # Signal the status from cfn-init
+          /opt/aws/bin/cfn-signal --exit-code $? --stack ${AWS::StackName} --resource rRenderSchedulerAutoScalingGroup --region ${AWS::Region}
+
+  rRenderSchedulerAutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      AvailabilityZones:
+        - !Select [0, !Ref pAvailabilityZones]
+        - !Select [1, !Ref pAvailabilityZones]
+      VPCZoneIdentifier:
+        - !Ref pMgmtAppPrivateSubnetA
+        - !Ref pMgmtAppPrivateSubnetB
+      LaunchConfigurationName: !Ref rRenderSchedulerLaunchConfiguration
+      MinSize: !Ref pRenderSchedulerMinCapacity
+      DesiredCapacity: !Ref pRenderSchedulerDesiredCapacity
+      MaxSize: !Ref pRenderSchedulerMaxCapacity
+      HealthCheckType: EC2
+      HealthCheckGracePeriod: 0
+      Tags:
+        - Key: Name
+          Value: vfx-render-scheduler
+          PropagateAtLaunch: true
+        - Key: Environment
+          Value: !Ref pEnvironment
+          PropagateAtLaunch: true
+    CreationPolicy:
+      ResourceSignal:
+        Count: 1
+        Timeout: 'PT5M'
+    UpdatePolicy:
+      AutoScalingRollingUpdate:
+        MinInstancesInService: 0
+        MaxBatchSize: 1
+        PauseTime: 'PT2M'
+        WaitOnResourceSignals: true
+      AutoScalingReplacingUpdate:
+        WillReplace: true
+
+Outputs:
+  rRenderSchedulerSecurityGroup:
+    Value: !Ref rRenderSchedulerSecurityGroup
+    Export:
+      Name: eRenderSchedulerSecurityGroup
+
+  rRenderSchedulerLaunchConfiguration:
+    Value: !Ref rRenderSchedulerLaunchConfiguration
+
+  rRenderSchedulerAutoScalingGroup:
+    Value: !Ref rRenderSchedulerAutoScalingGroup
+
+  rRenderSchedulerInstanceRole:
+    Value: !Ref rRenderSchedulerInstanceRole

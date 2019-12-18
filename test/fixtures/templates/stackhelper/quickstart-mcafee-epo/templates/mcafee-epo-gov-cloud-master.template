@@ -1,0 +1,641 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: McAfee-ePO Deploys McAfee Enterprise Security Management Platform on
+  AWS (New VPC) (qs-1oknn9kad)
+Metadata:
+  LICENSE: Apache License Version 2.0
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+    - Label:
+        default: Network Configuration
+      Parameters:
+      - AvailabilityZones
+      - VPCCIDR
+      - PrivateSubnet1CIDR
+      - PrivateSubnet2CIDR
+      - PublicSubnet1CIDR
+      - PublicSubnet2CIDR
+      - RemoteAccessCIDR
+    - Label:
+        default: McAfee ePolicy Orchestrator Platform Configuration
+      Parameters:
+      - ProtectedInstances
+      - Environment
+      - DomainName
+      - SubDomainName
+      - Availability
+      - KeyPairName
+    - Label:
+        default: On-Premise Domain Configuration
+      Parameters:
+      - OnPremiseDomainName
+      - OnPremiseServerDNS
+    - Label:
+        default: ePO Application Server Configuration
+      Parameters:
+      - EPOLicenseKey
+      - EPOAdminUserName
+      - EPOAdminPassword
+      - ConfirmEPOAdminPassword
+      - EPOPassphraseDR
+      - ConfirmEPOPassphraseDR
+      - EPOConsolePort
+      - TelemetryOption
+      - EPOELBCertificateARN
+      - EPOAccessCIDR
+    - Label:
+        default: ePO Database - Amazon RDS (SQL Server) Configuration
+      Parameters:
+      - DBMasterUsername
+      - DBMasterUserPassword
+      - ConfirmDBMasterUserPassword
+      - DBPort
+      - DBAllocatedStorage
+      - DBBackupRetentionPeriod
+      - DBInstanceIdentifier
+    - Label:
+        default: Client Communication Configuration
+      Parameters:
+      - AHPort
+      - DXLPort
+      - ClientAccessCIDR
+    - Label:
+        default: Administration Configuration
+      Parameters:
+      - EnableAutoUpdate
+      - AutoApproval
+      - ApproverEmailAddress
+      - AdminEmailAddress
+      - AutoCleanup
+    - Label:
+        default: AWS Quick Start Configuration
+      Parameters:
+      - QSS3BucketName
+      - QSS3KeyPrefix
+    ParameterLabels:
+      ProtectedInstances:
+        default: Number of Endpoints
+      Environment:
+        default: Deployment Environment
+      Availability:
+        default: High Availability
+      KeyPairName:
+        default: AWS Key Pair Name
+      AvailabilityZones:
+        default: Availability Zones
+      VPCCIDR:
+        default: VPC CIDR
+      PrivateSubnet1CIDR:
+        default: Private Subnet 1 CIDR
+      PrivateSubnet2CIDR:
+        default: Private Subnet 2 CIDR
+      PublicSubnet1CIDR:
+        default: Public Subnet 1 CIDR
+      PublicSubnet2CIDR:
+        default: Public Subnet 2 CIDR
+      RemoteAccessCIDR:
+        default: External Bastion Access CIDR
+      OnPremiseDomainName:
+        default: On Premises Domain Name
+      OnPremiseServerDNS:
+        default: On Premises Server DNS
+      EPOLicenseKey:
+        default: License Key
+      EPOAdminUserName:
+        default: Admin Username
+      EPOAdminPassword:
+        default: Admin Password
+      ConfirmEPOAdminPassword:
+        default: Confirm Admin Password
+      EPOPassphraseDR:
+        default: DR Passphrase
+      ConfirmEPOPassphraseDR:
+        default: Confirm DR Passphrase
+      EPOConsolePort:
+        default: Console Port
+      TelemetryOption:
+        default: Enable Product Improvement Program
+      EPOELBCertificateARN:
+        default: Load Balancer Certificate ARN
+      EPOAccessCIDR:
+        default: External Access CIDR
+      DBMasterUsername:
+        default: DB Master Username
+      DBMasterUserPassword:
+        default: DB Master Password
+      ConfirmDBMasterUserPassword:
+        default: Confirm DB Master Password
+      DBPort:
+        default: DB Port
+      DBAllocatedStorage:
+        default: Allocated Storage
+      DBBackupRetentionPeriod:
+        default: DB Backup Retention Period
+      DBInstanceIdentifier:
+        default: DB Instance Identifier
+      AHPort:
+        default: Agent Handler Port
+      DXLPort:
+        default: DXL Port
+      ClientAccessCIDR:
+        default: External Access CIDR
+      AdminEmailAddress:
+        default: Operator Email
+      AutoCleanup:
+        default: Auto Cleanup
+      QSS3BucketName:
+        default: S3 Bucket Name
+      QSS3KeyPrefix:
+        default: S3 Key Prefix
+Parameters:
+  ProtectedInstances:
+    AllowedValues:
+    - '1-10K'
+    - '10K-25K'
+    - '25K-75K'
+    - '75K-150K'
+    - '150K-250K'
+    - '250K-400K'
+    - '400K-500K'
+    Default: '1-10K'
+    Description: Select the number of endpoints that you want to manage.
+    Type: String
+  Environment:
+    AllowedValues:
+    - 'Production'
+    - 'Development'
+    Default: 'Production'
+    Description: What is the targeted deployment environment?
+    Type: String
+  Availability:
+    AllowedValues:
+    - 'Yes'
+    - 'No'
+    Default: 'Yes'
+    Description: We recommend selecting 'Yes' for production environments. It is applicable
+      for Agent Handlers, DXL Brokers, RDS.
+    Type: String
+  KeyPairName:
+    Description: The name of an existing public/private key pair.If you do not have
+      one to select, then you need to create one. This is required to securely connect
+      to instances.
+    Type: AWS::EC2::KeyPair::KeyName
+  AvailabilityZones:
+    Description: >-
+      Select 2 Availability Zones (AZs) to use for the subnets in the VPC. The logical
+      order is preserved.
+    Type: List<AWS::EC2::AvailabilityZone::Name>
+  VPCCIDR:
+    AllowedPattern: ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/(1[6-9]|2[0-8]))$
+    ConstraintDescription: 'Must be a valid IP CIDR range of the form x.x.x.x/x. (e.g.
+      10.0.0.0/16)'
+    Default: 10.0.0.0/16
+    Description: CIDR block should be used to create the VPC (e.g. 10.0.0.0/16)
+    Type: String
+  PrivateSubnet1CIDR:
+    AllowedPattern: ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/(1[6-9]|2[0-8]))$
+    ConstraintDescription: Must be a valid IP CIDR range of the form x.x.x.x/x. (e.g.
+      10.0.2.0/24)
+    Default: 10.0.2.0/24
+    Description: CIDR block should be used to create the private subnet in Availability
+      Zone 1 (e.g. 10.0.2.0/24)
+    Type: String
+  PrivateSubnet2CIDR:
+    AllowedPattern: ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/(1[6-9]|2[0-8]))$
+    ConstraintDescription: Must be a valid IP CIDR range of the form x.x.x.x/x. (e.g.
+      10.0.3.0/24)
+    Default: 10.0.3.0/24
+    Description: CIDR block should be used to create the private subnet in Availability
+      Zone 2 (e.g. 10.0.3.0/24)
+    Type: String
+  PublicSubnet1CIDR:
+    AllowedPattern: ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/(1[6-9]|2[0-8]))$
+    ConstraintDescription: Must be a valid IP CIDR range of the form x.x.x.x/x. (e.g.
+      10.0.0.0/24)
+    Default: 10.0.0.0/24
+    Description: CIDR block should be used to create the public subnet in Availability
+      Zone 1 (e.g. 10.0.0.0/24)
+    Type: String
+  PublicSubnet2CIDR:
+    AllowedPattern: ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/(1[6-9]|2[0-8]))$
+    ConstraintDescription: Must be a valid IP CIDR range of the form x.x.x.x/x. (e.g.
+      10.0.1.0/24)
+    Default: 10.0.1.0/24
+    Description: CIDR block should be used to create the public subnet in Availability
+      Zone 2 (e.g. 10.0.1.0/24)
+    Type: String
+  RemoteAccessCIDR:
+    AllowedPattern: ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/([0-9]|[1-2][0-9]|3[0-2]))$
+    ConstraintDescription: CIDR block parameter must be in the form x.x.x.x/x.
+    Description: >-
+      CIDR block that's allowed external SSH access to the bastion hosts,
+      e.g., x.x.x.x/16-28. We recommend that you set this value to a trusted
+      CIDR block. For example, you might want to restrict access to your
+      corporate network.
+    Type: String
+  OnPremiseDomainName:
+    AllowedPattern: ^$|^(?!.{256})([a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9]\.){1,}([a-zA-Z]{2,8})$
+    Description: >-
+      [Optional] The on-premises domain name that you want to resolve from inside
+      the VPC (e.g. mcafee.com).
+      This is required for DNS resolution between the ePO instance in the VPC and
+      on-premises services like LDAP(ldap.mcafee.com).
+      Note: This is only required if you are planning to use Active Directory and
+      if you are planning to use
+      a domain name instead of an IP address for the LDAP server.
+    Default: ''
+    Type: String
+  OnPremiseServerDNS:
+    Default: ''
+    Description: >-
+      [Optional] The on-premises DNS (e.g. 192.168.1.1) that will be used to resolve
+      the domain name queries.
+      This is required for DNS resolution between the ePO instance in VPC and services
+      like LDAP(ldap.mcafee.com).
+      Note: This is only required if you are planning to use Active Directory if you
+      are planning to use
+      a domain name instead of an IP address for the LDAP server.
+    MaxLength: 256
+    Type: String
+  EPOLicenseKey:
+    Default: ''
+    Description: Enter your McAfee ePO license key (xxx-xxx-xxx-xxxx).  If no license
+      key is entered, environment will launch in evaluation mode.
+    Type: String
+  EPOAdminUserName:
+    Description: Create a global administrator username for McAfee ePO console login.
+    MaxLength: 256
+    MinLength: 2
+    Type: String
+  EPOAdminPassword:
+    AllowedPattern: '((?=.*\d)(?=.*\W)(?!.*\")(?!.*\\)(?!.*\s).{8,256})'
+    ConstraintDescription: Must be minimum of 8 characters and contain alpha, numeric,
+      and a special character but it must not contain backslashes (\) or spaces or
+      any double quotes (")'.
+    Description: 'Your global administrator password for McAfee ePO console login.
+      Must be a minimum of 8 characters and contain alpha, numeric, and a special
+      character.'
+    MaxLength: 256
+    MinLength: 8
+    NoEcho: true
+    Type: String
+  ConfirmEPOAdminPassword:
+    AllowedPattern: '((?=.*\d)(?=.*\W)(?!.*\")(?!.*\\)(?!.*\s).{8,256})'
+    ConstraintDescription: Must be minimum of 8 characters and contain alpha, numeric,
+      and a special character but it must not contain backslashes (\) or spaces or
+      any double quotes (")'.
+    Description: 'Confirm your global administrator password for McAfee ePO console
+      login. Must be a minimum of 8 characters and contain alpha, numeric, and a special
+      character.'
+    MaxLength: 256
+    MinLength: 8
+    NoEcho: true
+    Type: String
+  EPOPassphraseDR:
+    AllowedPattern: '^[^\"\\\s]*$'
+    ConstraintDescription: 'It must be 14 to 200 characters in length. It must not
+      contain backslashes (\) or spaces or any double quotes (")'
+    Description: 'Create a keystore encryption passphrase. This is required for disaster
+      recovery. Server recovery passphrase must be 14 to 200 characters in length.
+      It must not contain backslashes (\) or spaces or any double quotes (")'
+    MaxLength: 200
+    MinLength: 14
+    NoEcho: true
+    Type: String
+  ConfirmEPOPassphraseDR:
+    AllowedPattern: '^[^\"\\\s]*$'
+    ConstraintDescription: 'It must be 14 to 200 characters in length. It must not
+      contain backslashes (\) or spaces or any double quotes (")'
+    Description: 'Confirm the keystore encryption passphrase. This is required for
+      disaster recovery. Server recovery passphrase must be 14 to 200 characters in
+      length. It must not contain backslashes (\) or spaces or any double quotes (")'
+    MaxLength: 200
+    MinLength: 14
+    NoEcho: true
+    Type: String
+  EPOConsolePort:
+    Default: '8443'
+    Description: The secure port number to access the ePO console.
+    MinLength: 1
+    MaxLength: 64
+    Type: String
+  TelemetryOption:
+    AllowedValues:
+    - 'Yes'
+    - 'No'
+    Default: 'Yes'
+    Description: Allow the collection of product performance and usage information
+      to help McAfee provide better products and services.
+    Type: String
+  EPOELBCertificateARN:
+    AllowedPattern: ^$|((arn:aws:)|(arn:aws-us-gov:))([a-z])([a-z0-9/:-])*([a-z0-9])$
+    Default: ''
+    Description: >-
+      [ Optional ] ARN of the certificate stored in  Amazon Certifcate Manager(ACM)
+      or imported in AWS IAM.
+      Generally the certificate associated with the sub domain needs to be presented.
+      Certificate will be attached with ePO load balancer. e.g., arn:aws:*:us-west-1:*:certificate/*
+      or arn:aws-us-gov:*:us-west-1:*:certificate/* .
+    MaxLength: 256
+    Type: String
+  EPOAccessCIDR:
+    AllowedPattern: ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/([0-9]|[1-2][0-9]|3[0-2]))$
+    ConstraintDescription: CIDR block parameter must be in the form x.x.x.x/x
+    Description: >-
+      CIDR block that's allowed external access to the ePO Console.
+      e.g., x.x.x.x/16-28. We recommend that you set this value to a trusted
+      CIDR block. For example, you might want to restrict access to your
+      corporate network.
+    Type: String
+  DBMasterUsername:
+    Description: Create a login ID for the master user for the database, it must contain
+      from 2 to 8 characters.
+    MaxLength: 8
+    MinLength: 2
+    Type: String
+  DBMasterUserPassword:
+    AllowedPattern: '[^@\/\"]+'
+    ConstraintDescription: It can contain any printable ASCII character except "/",
+      """, or "@". Must contain from 8 to 255 characters
+    Description: >-
+      Create a password for the master user for the database. This password can contain
+      any printable ASCII character except "/", """, or "@".
+      Must contain from 8 to 255 characters
+    MaxLength: 255
+    MinLength: 8
+    NoEcho: true
+    Type: String
+  ConfirmDBMasterUserPassword:
+    AllowedPattern: '[^@\/\"]+'
+    ConstraintDescription: It can contain any printable ASCII character except "/",
+      """, or "@". Must contain from 8 to 255 characters
+    Description: >-
+      Confirm the password for the master user for the database. This password can
+      contain
+      any printable ASCII character except "/", """, or "@".
+      Must contain from 8 to 255 characters
+    MaxLength: 255
+    MinLength: 8
+    NoEcho: true
+    Type: String
+  DBPort:
+    Default: '1433'
+    Description: Enter TCP/IP port which the DB instance will use for application
+      connections.
+    MinLength: 1
+    MaxLength: 64
+    Type: String
+  DBAllocatedStorage:
+    Default: ''
+    MaxLength: 16
+    Description: Applicable for new database instance. Specify how much storage to
+      allocate to ePO database. Leave it blank to pick default recommended size.
+    Type: String
+  DBBackupRetentionPeriod:
+    Default: '7'
+    MinLength: 1
+    MaxLength: 3
+    Description: Applicable for new database instance. The number of days for which
+      automatic DB snapshots are retained.
+    Type: String
+  DBInstanceIdentifier:
+    Default: ''
+    MaxLength: 512
+    Description: Specify your existing database instance identifier. Leave it blank
+      to create new database instance.
+    Type: String
+  AHPort:
+    Default: '443'
+    Description: The agent server communication(ASC) port used by the McAfee Agent
+      to securely communicate to server.
+    MinLength: 1
+    MaxLength: 64
+    Type: String
+  DXLPort:
+    Default: '8883'
+    Description: The DXL communication port used by the DXL client to enable secure
+      messaging to DXL fabric.
+    MinLength: 1
+    MaxLength: 64
+    Type: String
+  ClientAccessCIDR:
+    AllowedPattern: ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/([0-9]|[1-2][0-9]|3[0-2]))$
+    ConstraintDescription: CIDR block parameter must be in the form x.x.x.x/x
+    Description: >-
+      CIDR block that is allowed to connect from on-premises endpoints to Agent Handler's/DXL
+      Brokers.
+      e.g., x.x.x.x/16-28.
+    Type: String
+  AdminEmailAddress:
+    AllowedPattern: ([a-zA-Z0-9_\-\.]+)@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.)|(([a-zA-Z0-9\-]+\.)+))([a-zA-Z]{2,8}|[0-9]{1,3})(\]?)
+    ConstraintDescription: Must be a valid email address.
+    Description: Email address that notifications of any operations will be sent.
+      In addition this will be used for tagging of ownership of resources.
+    Type: String
+  AutoCleanup:
+    AllowedValues:
+    - Enable
+    - Disable
+    Default: Enable
+    Description: Auto cleanup of backup logs and data in Amazon S3.
+    Type: String
+  QSS3BucketName:
+    AllowedPattern: ^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$
+    ConstraintDescription: >-
+      Quick Start bucket name can include numbers, lowercase letters, uppercase letters,
+      periods (.), and hyphens (-).
+      It cannot start or end with a hyphen (-) or period (.).
+    Default: aws-quickstart
+    Description: >-
+      S3 bucket name for the Quick Start assets. Quick Start bucket name can include
+      numbers, lowercase letters, uppercase letters, periods (.), and hyphens (-).
+      It cannot start or end with a hyphen (-) or period (.).
+    Type: String
+  QSS3KeyPrefix:
+    AllowedPattern: ^[0-9a-zA-Z-/]*$
+    ConstraintDescription: >-
+      Quick Start key prefix can include numbers, lowercase letters, uppercase letters,
+      hyphens (-), and forward slash (/).
+      Prefix cannot start with a slash but must end with a slash unless it is the
+      empty string.'
+    Default: quickstart-mcafee-epo/
+    Description: >-
+      The S3 key name prefix used to simulate a folder for your copy of Quick Start
+      assets,
+      if you decide to customize or extend the Quick Start for your own use.This prefix
+      can include numbers,
+      lowercase letters, uppercase letters, hyphens, and forward slashes.'
+    Type: String
+
+
+Rules:
+  KeyPairsNotEmpty:
+    Assertions:
+    - Assert: !Not
+      - 'Fn::EachMemberEquals':
+        - 'Fn::RefAll': 'AWS::EC2::KeyPair::KeyName'
+        - ''
+      AssertDescription: AWS Key Pair Name parameters must not be empty
+  ValidateEPOandAHPort:
+    Assertions:
+    - Assert: !Not
+      - !Equals
+        - !Ref EPOConsolePort
+        - !Ref AHPort
+      AssertDescription: ePO console port and AH port should be different.
+  MatchPassword:
+    Assertions:
+    - Assert: !Equals
+      - !Ref EPOAdminPassword
+      - !Ref ConfirmEPOAdminPassword
+      AssertDescription: ePO Admin passwords do not match.
+    - Assert: !Equals
+      - !Ref EPOPassphraseDR
+      - !Ref ConfirmEPOPassphraseDR
+      AssertDescription: ePO DR Passphrases do not match.
+    - Assert: !Equals
+      - !Ref DBMasterUserPassword
+      - !Ref ConfirmDBMasterUserPassword
+      AssertDescription: DB Master Passwords do not match.
+
+Mappings:
+  AWSAMIRegionMap:
+    AMI:
+      MFEBASTIONHVM: McAfee Bastion Image
+    us-gov-west-1:
+      MFEBASTIONHVM: ami-a8f2bec9
+
+    us-gov-east-1:
+      MFEBASTIONHVM: ami-02cb4322c10cfb30a
+Resources:
+
+  # Network layer stack to create network resources like VPC, Subnets, NAT, & Routing Table
+  Network:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      Parameters:
+        Environment: !Ref Environment
+        ParentStack: !Ref AWS::StackName
+        AvailabilityZones: !Join
+        - ','
+        - !Ref AvailabilityZones
+        VPCCIDR: !Ref VPCCIDR
+        PublicSubnet1CIDR: !Ref PublicSubnet1CIDR
+        PublicSubnet2CIDR: !Ref PublicSubnet2CIDR
+        PrivateSubnet1CIDR: !Ref PrivateSubnet1CIDR
+        PrivateSubnet2CIDR: !Ref PrivateSubnet2CIDR
+        AdminEmailAddress: !Ref AdminEmailAddress
+      Tags:
+      - Key: Name
+        Value: !Sub ${AWS::StackName}-Network
+      - Key: Owner
+        Value: !Ref AdminEmailAddress
+      - Key: Environment
+        Value: !Ref Environment
+      - Key: Product
+        Value: McAfee-ePO-Stack
+      - Key: Solution
+        Value: McAfee-ePO
+      - Key: mcafee:cloudformation:stack-name
+        Value: !Sub ${AWS::StackName}
+      TemplateURL: !Sub https://${QSS3BucketName}.s3-us-gov-west-1.amazonaws.com/${QSS3KeyPrefix}templates/mcafee-network.template
+
+  # Bastion stack for remote management
+  Bastion:
+    Type: AWS::CloudFormation::Stack
+    DependsOn: Network
+    Properties:
+      Parameters:
+        Environment: !Ref Environment
+        KeyPairName: !Ref KeyPairName
+        VPCID: !GetAtt Network.Outputs.VPCID
+        PublicSubnet1ID: !GetAtt Network.Outputs.PublicSubnet1ID
+        PublicSubnet2ID: !GetAtt Network.Outputs.PublicSubnet2ID
+        ParentStack: !Ref AWS::StackName
+        ImageID: !FindInMap [AWSAMIRegionMap, !Ref 'AWS::Region', MFEBASTIONHVM]
+        RemoteAccessCIDR: !Ref RemoteAccessCIDR
+        AdminEmailAddress: !Ref AdminEmailAddress
+      Tags:
+      - Key: Name
+        Value: !Sub '${AWS::StackName}-Bastion'
+      - Key: Owner
+        Value: !Ref AdminEmailAddress
+      - Key: Environment
+        Value: !Ref Environment
+      - Key: Product
+        Value: McAfee-ePO-Stack
+      - Key: Solution
+        Value: McAfee-ePO
+      - Key: mcafee:cloudformation:stack-name
+        Value: !Sub ${AWS::StackName}
+      TemplateURL: !Sub https://${QSS3BucketName}.s3-us-gov-west-1.amazonaws.com/${QSS3KeyPrefix}templates/mcafee-bastion.template
+
+  # Workload stack which creates the workload for McAfee ePO platform stack
+  McAfeeEPO:
+    Type: AWS::CloudFormation::Stack
+    DependsOn: [Network, Bastion]
+    Properties:
+      Parameters:
+        ProtectedInstances: !Ref ProtectedInstances
+        Environment: !Ref Environment
+        Availability: !Ref Availability
+        KeyPairName: !Ref KeyPairName
+        AvailabilityZones: !Join
+        - ','
+        - !Ref AvailabilityZones
+        VPCID: !GetAtt Network.Outputs.VPCID
+        PublicSubnet1ID: !GetAtt Network.Outputs.PublicSubnet1ID
+        PublicSubnet2ID: !GetAtt Network.Outputs.PublicSubnet2ID
+        PrivateSubnet1ID: !GetAtt Network.Outputs.PrivateSubnet1ID
+        PrivateSubnet2ID: !GetAtt Network.Outputs.PrivateSubnet2ID
+        BastionSecurityGroupID: !GetAtt Bastion.Outputs.BastionSecurityGroupID
+        OnPremiseDomainName: !Ref OnPremiseDomainName
+        OnPremiseServerDNS: !Ref OnPremiseServerDNS
+        EPOLicenseKey: !Ref EPOLicenseKey
+        EPOAdminUserName: !Ref EPOAdminUserName
+        EPOAdminPassword: !Ref EPOAdminPassword
+        ConfirmEPOAdminPassword: !Ref ConfirmEPOAdminPassword
+        EPOPassphraseDR: !Ref EPOPassphraseDR
+        ConfirmEPOPassphraseDR: !Ref ConfirmEPOPassphraseDR
+        EPOConsolePort: !Ref EPOConsolePort
+        TelemetryOption: !Ref TelemetryOption
+        EPOELBCertificateARN: !Ref EPOELBCertificateARN
+        EPOAccessCIDR: !Ref EPOAccessCIDR
+        DBMasterUsername: !Ref DBMasterUsername
+        DBMasterUserPassword: !Ref DBMasterUserPassword
+        ConfirmDBMasterUserPassword: !Ref ConfirmDBMasterUserPassword
+        DBPort: !Ref DBPort
+        DBAllocatedStorage: !Ref DBAllocatedStorage
+        DBBackupRetentionPeriod: !Ref DBBackupRetentionPeriod
+        DBInstanceIdentifier: !Ref DBInstanceIdentifier
+        AHPort: !Ref AHPort
+        DXLPort: !Ref DXLPort
+        ClientAccessCIDR: !Ref ClientAccessCIDR
+        AdminEmailAddress: !Ref AdminEmailAddress
+        AutoCleanup: !Ref AutoCleanup
+        QSS3BucketName: !Ref QSS3BucketName
+        QSS3KeyPrefix: !Ref QSS3KeyPrefix
+      Tags:
+      - Key: Name
+        Value: !Sub '${AWS::StackName}-McAfeeEPO'
+      - Key: Owner
+        Value: !Ref AdminEmailAddress
+      - Key: Environment
+        Value: !Ref Environment
+      - Key: Product
+        Value: McAfee-ePO-Stack
+      - Key: Solution
+        Value: McAfee-ePO
+      - Key: mcafee:cloudformation:stack-name
+        Value: !Sub ${AWS::StackName}
+      TemplateURL: !Sub https://${QSS3BucketName}.s3-us-gov-west-1.amazonaws.com/${QSS3KeyPrefix}templates/mcafee-epo-gov-cloud.template
+
+Outputs:
+  ePOConsoleLBURL:
+    Description: McAfee ePO console URL via AWS Elastic Load Balancer
+    Value: !GetAtt McAfeeEPO.Outputs.ePOConsoleLBURL
+  DashboardURL:
+    Description: McAfee ePO solution Dashboard URL.
+    Value: !GetAtt McAfeeEPO.Outputs.DashboardURL
+  DataStoreLocation:
+    Description: McAfee ePO data and logs backup Amazon S3 location
+    Value: !GetAtt McAfeeEPO.Outputs.DataStoreLocation

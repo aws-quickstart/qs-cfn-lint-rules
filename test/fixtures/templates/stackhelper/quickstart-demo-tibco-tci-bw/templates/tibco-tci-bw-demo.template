@@ -1,0 +1,475 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "TIBCO BW 2.4.2 Demo template.",
+    "Parameters": {
+        "AdminIngressLocation": {
+            "AllowedPattern": "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})",
+            "ConstraintDescription": "must be a valid IP CIDR range of the form x.x.x.x/x.",
+            "Description": "CIDR block (IP address range) to allow SSH and VNC access to your TCI-BW studio instance. Use 0.0.0.0/0 to allow access from all locations. You can always manually change this later if needed.",
+            "MaxLength": "18",
+            "MinLength": "9",
+            "Type": "String"
+        },
+        "DBPassword": {
+            "ConstraintDescription": "This password needs to be set for your postgres DB. The max length of this password is 12 characters, the min length is 8 characters",
+            "Description": "Password to access the postgresDB",
+            "MaxLength": 12,
+            "MinLength": 8,
+            "NoEcho": "true",
+            "Type": "String"
+        },
+        "CIDRBlockCluster": {
+            "AllowedPattern": "^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\\/(1[6-9]|2[0-8]))$",
+            "ConstraintDescription": "CIDR block parameter must be in the form x.x.x.x/16-28",
+            "Default": "10.0.0.0/16",
+            "Description": "CIDR block for the VPC",
+            "Type": "String"
+        },
+        "PublicSubnet1ID": {
+            "Description": "ID of public subnet 1 in Availability Zone 1 for the ELB load balancer (e.g., subnet-0ba63bb)",
+            "Type": "AWS::EC2::Subnet::Id"
+        },
+        "PublicSubnet2ID": {
+            "Description": "ID of public subnet 2 in Availability Zone 2 for the ELB load balancer (e.g., subnet-e323d09)",
+            "Type": "AWS::EC2::Subnet::Id"
+        },
+        "LoadBalancer": {
+            "Description": "LoadBalancer ARN",
+            "Type": "String"
+        },
+        "ECSCluster": {
+            "Description": "ECS Cluster",
+            "Type": "String"
+        },
+        "ECSHostSecurityGroup": {
+            "Description": "ECS Host Security Group Id",
+            "Type": "AWS::EC2::SecurityGroup::Id"
+        },
+        "LoadBalancerSecurityGroup": {
+            "Description": "Load Balancer Security Group Id",
+            "Type": "AWS::EC2::SecurityGroup::Id"
+        },
+        "VPCID": {
+            "Description": "ID of your existing VPC for deployment",
+            "Type": "AWS::EC2::VPC::Id"
+        },
+        "NAT1EIP": {
+            "Description": "NAT 1 IP address",
+            "Type": "String"
+        },
+        "NAT2EIP": {
+            "Description": "NAT 1 IP address",
+            "Type": "String"
+        }
+    },
+    "Resources": {
+        "LBSecurityGroupIngress": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "Properties": {
+                "GroupId": {
+                    "Ref": "LoadBalancerSecurityGroup"
+                },
+                "IpProtocol": "tcp",
+                "FromPort": 8081,
+                "ToPort": 16686,
+                "CidrIp": {
+                    "Ref": "AdminIngressLocation"
+                }
+            }
+        },
+        "LBSecurityGroupIngressFromNAT1": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "Properties": {
+                "GroupId": {
+                    "Ref": "LoadBalancerSecurityGroup"
+                },
+                "IpProtocol": "tcp",
+                "FromPort": 8080,
+                "ToPort": 16686,
+                "CidrIp": {
+                    "Fn::Sub": "${NAT1EIP}/32"
+                }
+            }
+        },
+        "LBSecurityGroupIngressFromNAT2": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "Properties": {
+                "GroupId": {
+                    "Ref": "LoadBalancerSecurityGroup"
+                },
+                "IpProtocol": "tcp",
+                "FromPort": 8080,
+                "ToPort": 16686,
+                "CidrIp": {
+                    "Fn::Sub": "${NAT2EIP}/32"
+                }
+            }
+        },
+        "ECSHostSecurityGroupIngress": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "Properties": {
+                "GroupId": {
+                    "Ref": "ECSHostSecurityGroup"
+                },
+                "IpProtocol": "tcp",
+                "FromPort": 8081,
+                "ToPort": 16686,
+                "CidrIp": {
+                    "Ref": "CIDRBlockCluster"
+                }
+            }
+        },
+        "DatabaseSecurityGroupEC2": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "VPCID"
+                },
+                "GroupDescription": "Access to the DB.",
+                "SecurityGroupIngress": [
+                    {
+                        "CidrIp": {
+                            "Ref": "CIDRBlockCluster"
+                        },
+                        "IpProtocol": "tcp",
+                        "FromPort": "5432",
+                        "ToPort": "5432"
+                    }
+                ],
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": {
+                            "Fn::Sub": "${AWS::StackName}-DataBase"
+                        }
+                    }
+                ]
+            }
+        },
+        "CustomerTargetGroup": {
+            "Type": "AWS::ElasticLoadBalancingV2::TargetGroup",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "VPCID"
+                },
+                "Port": 8081,
+                "Protocol": "HTTP",
+                "HealthCheckPath": "/_ping",
+                "HealthCheckPort": 7777,
+                "HealthCheckProtocol": "HTTP",
+                "Matcher": {
+                    "HttpCode": "200,302"
+                },
+                "HealthCheckIntervalSeconds": 30,
+                "HealthCheckTimeoutSeconds": 5,
+                "HealthyThresholdCount": 3,
+                "UnhealthyThresholdCount": 2
+            }
+        },
+        "ConsulTargetGroup": {
+            "Type": "AWS::ElasticLoadBalancingV2::TargetGroup",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "VPCID"
+                },
+                "Port": 8500,
+                "Protocol": "HTTP",
+                "Matcher": {
+                    "HttpCode": "200,301"
+                }
+            }
+        },
+        "JaegerTargetGroup": {
+            "Type": "AWS::ElasticLoadBalancingV2::TargetGroup",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "VPCID"
+                },
+                "Port": 16686,
+                "Protocol": "HTTP",
+                "Matcher": {
+                    "HttpCode": "200,301"
+                }
+            }
+        },
+        "LoadBalancerListenerCustomer": {
+            "Type": "AWS::ElasticLoadBalancingV2::Listener",
+            "Properties": {
+                "LoadBalancerArn": {
+                    "Ref": "LoadBalancer"
+                },
+                "Port": 8081,
+                "Protocol": "HTTP",
+                "DefaultActions": [
+                    {
+                        "Type": "forward",
+                        "TargetGroupArn": {
+                            "Ref": "CustomerTargetGroup"
+                        }
+                    }
+                ]
+            }
+        },
+        "LoadBalancerListenerConsul": {
+            "Type": "AWS::ElasticLoadBalancingV2::Listener",
+            "Properties": {
+                "LoadBalancerArn": {
+                    "Ref": "LoadBalancer"
+                },
+                "Port": 8500,
+                "Protocol": "HTTP",
+                "DefaultActions": [
+                    {
+                        "Type": "forward",
+                        "TargetGroupArn": {
+                            "Ref": "ConsulTargetGroup"
+                        }
+                    }
+                ]
+            }
+        },
+        "LoadBalancerListenerJaeger": {
+            "Type": "AWS::ElasticLoadBalancingV2::Listener",
+            "Properties": {
+                "LoadBalancerArn": {
+                    "Ref": "LoadBalancer"
+                },
+                "Port": 16686,
+                "Protocol": "HTTP",
+                "DefaultActions": [
+                    {
+                        "Type": "forward",
+                        "TargetGroupArn": {
+                            "Ref": "JaegerTargetGroup"
+                        }
+                    }
+                ]
+            }
+        },
+        "jaegerTaskDefinition": {
+            "Type": "AWS::ECS::TaskDefinition",
+            "Properties": {
+                "ContainerDefinitions": [
+                    {
+                        "Image": "jaegertracing/all-in-one:1.8",
+                        "Memory": 1024,
+                        "Name": "jaeger",
+                        "PortMappings": [
+                            {
+                                "ContainerPort": 5775,
+                                "HostPort": 5775,
+                                "Protocol": "udp"
+                            },
+                            {
+                                "ContainerPort": 6831,
+                                "HostPort": 6831,
+                                "Protocol": "udp"
+                            },
+                            {
+                                "ContainerPort": 6832,
+                                "HostPort": 6832,
+                                "Protocol": "udp"
+                            },
+                            {
+                                "ContainerPort": 5778,
+                                "HostPort": 5778,
+                                "Protocol": "tcp"
+                            },
+                            {
+                                "ContainerPort": 16686,
+                                "HostPort": 16686,
+                                "Protocol": "tcp"
+                            },
+                            {
+                                "ContainerPort": 14268,
+                                "HostPort": 14268,
+                                "Protocol": "tcp"
+                            },
+                            {
+                                "ContainerPort": 9411,
+                                "HostPort": 9411,
+                                "Protocol": "tcp"
+                            }
+                        ],
+                        "Environment": [
+                            {
+                                "Name": "COLLECTOR_ZIPKIN_HTTP_PORT",
+                                "Value": 9411
+                            }
+                        ]
+                    }
+                ],
+                "Family": "jaeger"
+            }
+        },
+        "jaegerService": {
+            "Type": "AWS::ECS::Service",
+            "DependsOn": "LoadBalancerListenerJaeger",
+            "Properties": {
+                "Cluster": {
+                    "Ref": "ECSCluster"
+                },
+                "DesiredCount": 1,
+                "ServiceName": "jaeger",
+                "TaskDefinition": {
+                    "Ref": "jaegerTaskDefinition"
+                },
+                "LoadBalancers": [
+                    {
+                        "ContainerName": "jaeger",
+                        "ContainerPort": 16686,
+                        "TargetGroupArn": {
+                            "Ref": "JaegerTargetGroup"
+                        }
+                    }
+                ]
+            }
+        },
+        "consulTaskDefinition": {
+            "Type": "AWS::ECS::TaskDefinition",
+            "Properties": {
+                "ContainerDefinitions": [
+                    {
+                        "Command": [
+                            "-server",
+                            "-bootstrap",
+                            "-ui-dir",
+                            "/ui"
+                        ],
+                        "Image": "progrium/consul",
+                        "Memory": 1024,
+                        "Name": "consul",
+                        "PortMappings": [
+                            {
+                                "ContainerPort": 8400,
+                                "HostPort": 8400,
+                                "Protocol": "tcp"
+                            },
+                            {
+                                "ContainerPort": 8500,
+                                "HostPort": 8500,
+                                "Protocol": "tcp"
+                            },
+                            {
+                                "ContainerPort": 8600,
+                                "HostPort": 53,
+                                "Protocol": "udp"
+                            }
+                        ],
+                        "Hostname": "node1"
+                    }
+                ],
+                "Family": "consul"
+            }
+        },
+        "consulService": {
+            "Type": "AWS::ECS::Service",
+            "DependsOn": "LoadBalancerListenerConsul",
+            "Properties": {
+                "Cluster": {
+                    "Ref": "ECSCluster"
+                },
+                "DesiredCount": 1,
+                "ServiceName": "consul",
+                "TaskDefinition": {
+                    "Ref": "consulTaskDefinition"
+                },
+                "LoadBalancers": [
+                    {
+                        "ContainerName": "consul",
+                        "ContainerPort": 8500,
+                        "TargetGroupArn": {
+                            "Ref": "ConsulTargetGroup"
+                        }
+                    }
+                ]
+            }
+        },
+        "dbSubnetGroup": {
+            "Type": "AWS::RDS::DBSubnetGroup",
+            "Properties": {
+                "DBSubnetGroupDescription": "Subnet group for DB instances needed for banqio demo.",
+                "SubnetIds": [
+                    {
+                        "Ref": "PublicSubnet1ID"
+                    },
+                    {
+                        "Ref": "PublicSubnet2ID"
+                    }
+                ]
+            }
+        },
+        "BanqPostgresCust": {
+            "Type": "AWS::RDS::DBInstance",
+            "Properties": {
+                "AllocatedStorage": "10",
+                "DBInstanceClass": "db.t2.micro",
+                "DBInstanceIdentifier": "banqpostgrescust",
+                "DBSubnetGroupName": { "Ref": "dbSubnetGroup" },
+                "PubliclyAccessible": true,
+                "DBName": "customer",
+                "Engine": "postgres",
+                "VPCSecurityGroups": [
+                    {
+                        "Ref": "DatabaseSecurityGroupEC2"
+                    }
+                ],
+                "MasterUsername": "tibco",
+                "MasterUserPassword": {
+                    "Ref": "DBPassword"
+                }
+            }
+        },
+        "BanqPostgresAcct": {
+            "Type": "AWS::RDS::DBInstance",
+            "Properties": {
+                "AllocatedStorage": "10",
+                "DBInstanceClass": "db.t2.micro",
+                "DBInstanceIdentifier": "banqpostgressacct",
+                "DBSubnetGroupName": { "Ref": "dbSubnetGroup" },
+                "PubliclyAccessible": true,
+                "DBName": "account",
+                "Engine": "postgres",
+                "VPCSecurityGroups": [
+                    {
+                        "Ref": "DatabaseSecurityGroupEC2"
+                    }
+                ],
+                "MasterUsername": "tibco",
+                "MasterUserPassword": {
+                    "Ref": "DBPassword"
+                }
+            }
+        }
+    },
+    "Outputs": {
+        "AccountDBUrl": {
+            "Description": "Account DB Url",
+            "Value": {
+                "Fn::Sub": [
+                    "jdbc:postgresql://${DBEndPoint}:${DBPort}/account",
+                    {
+                        "DBEndPoint":  {"Fn::GetAtt": ["BanqPostgresAcct","Endpoint.Address"]},
+                        "DBPort": {"Fn::GetAtt": ["BanqPostgresAcct","Endpoint.Port"]}
+                    }
+                ]
+            }
+        },
+        "CustomerDBUrl": {
+            "Description": "Customer DB Url",
+            "Value": {
+                "Fn::Sub": [
+                    "jdbc:postgresql://${DBEndPoint}:${DBPort}/customer",
+                    {
+                        "DBEndPoint":  {"Fn::GetAtt": ["BanqPostgresCust","Endpoint.Address"]},
+                        "DBPort": {"Fn::GetAtt": ["BanqPostgresCust","Endpoint.Port"]}
+                    }
+                ]
+            }
+        },
+        "DBUserName": {
+            "Description": "DB User name",
+            "Value": "tibco"
+        }
+    }
+}

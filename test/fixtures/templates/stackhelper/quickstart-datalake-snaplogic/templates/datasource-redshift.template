@@ -1,0 +1,234 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "Redshift Stack",
+    "Metadata": {
+        "AWS::CloudFormation::Interface": {
+            "ParameterGroups": [
+                {
+                    "Label": {
+                        "default": "Redshift Configurations"
+                    },
+                    "Parameters": [
+                        "RedshiftSubnetA",
+                        "RedshiftSubnetB",
+                        "RedshiftUsername",
+                        "RedshiftPassword",
+                        "RedshiftDbName",
+                        "RedshiftPort",
+                        "RedshiftNodeType",
+                        "RedshiftNumberOfNodes"
+                    ]
+                }
+            ]
+        }
+    },
+    "Parameters": {
+        "VpcId": {
+            "Description": "VPC to which security groups belong",
+            "Type": "AWS::EC2::VPC::Id"
+        },
+        "RedshiftSubnetA": {
+            "Description": "Redshift subnet A",
+            "Type": "AWS::EC2::Subnet::Id"
+        },
+        "RedshiftSubnetB": {
+            "Description": "Redshift subnet B",
+            "Type": "AWS::EC2::Subnet::Id"
+        },
+        "RedshiftUsername": {
+            "Description": "RedShift Username",
+            "Type": "String"
+        },
+        "RedshiftPassword": {
+            "Description": "RedShift Password",
+            "NoEcho": true,
+            "Type": "String"
+        },
+        "RedshiftDbName": {
+            "Description": "RedShift Database name",
+            "Type": "String"
+        },
+        "RedshiftPort": {
+            "Description": "RedShift Port",
+            "Type": "String",
+            "Default": "5439"
+        },
+        "RedshiftNodeType": {
+            "AllowedValues": [
+                "dc2.large",
+                "dc2.8xlarge",
+                "ds2.xlarge",
+                "ds2.8xlarge"
+            ],
+            "ConstraintDescription": "must be a valid RedShift node type.",
+            "Default": "dc2.large",
+            "Description": "The node type to for the Redshift cluster",
+            "Type": "String"
+        },
+        "RedshiftNumberOfNodes": {
+            "Default": "1",
+            "Description": "The number of nodes in the Redshift cluster.",
+            "Type": "Number"
+        }
+    },
+    "Mappings": {
+    },
+    "Conditions": {
+        "IsMultiNodeCluster": {
+            "Fn::Not": [
+                {
+                    "Fn::Equals": [
+                        "1",
+                        {
+                            "Ref": "RedshiftNumberOfNodes"
+                        }
+                    ]
+                }
+            ]
+        }
+    },
+    "Resources": {
+        "RedshiftSecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "VpcId"
+                },
+                "GroupDescription": "Allow access to Redshift from Studio, Bastion, and external CIDR on RedshiftPort (5439).",
+                "SecurityGroupIngress": [
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": {
+                            "Ref": "RedshiftPort"
+                        },
+                        "ToPort": {
+                            "Ref": "RedshiftPort"
+                        }
+                    }
+                ]
+            }
+        },
+        "RedshiftSubnetGroup": {
+            "Type": "AWS::Redshift::ClusterSubnetGroup",
+            "Properties": {
+                "Description": "RedShift Subnet linked to both private database subnets",
+                "SubnetIds": [
+                    {
+                        "Ref": "RedshiftSubnetA"
+                    },
+                    {
+                        "Ref": "RedshiftSubnetB"
+                    }
+                ]
+            }
+        },
+        "RedshiftInstance": {
+            "Type": "AWS::Redshift::Cluster",
+            "Properties": {
+                "ClusterSubnetGroupName": {
+                    "Ref": "RedshiftSubnetGroup"
+                },
+                "ClusterType": {
+                    "Fn::If": [
+                        "IsMultiNodeCluster",
+                        "multi-node",
+                        "single-node"
+                    ]
+                },
+                "NodeType": {
+                    "Ref": "RedshiftNodeType"
+                },
+                "NumberOfNodes": {
+                    "Fn::If": [
+                        "IsMultiNodeCluster",
+                        {
+                            "Ref": "RedshiftNumberOfNodes"
+                        },
+                        {
+                            "Ref": "AWS::NoValue"
+                        }
+                    ]
+                },
+                "VpcSecurityGroupIds": [
+                    {
+                        "Ref": "RedshiftSecurityGroup"
+                    }
+                ],
+                "DBName": {
+                    "Ref": "RedshiftDbName"
+                },
+                "MasterUsername": {
+                    "Ref": "RedshiftUsername"
+                },
+                "MasterUserPassword": {
+                    "Ref": "RedshiftPassword"
+                },
+                "Port": {
+                    "Ref": "RedshiftPort"
+                },
+                "PubliclyAccessible": false
+            }
+        }
+    },
+    "Outputs": {
+        "RedshiftSecurityGroupID": {
+            "Value": {
+                "Fn::GetAtt": [
+                    "RedshiftSecurityGroup",
+                    "GroupId"
+                ]
+            },
+            "Export": {
+                "Name": {
+                    "Fn::Sub": "${AWS::StackName}:RedshiftSecurityGroupID"
+                }
+            }
+        },
+        "RedshiftClusterId": {
+            "Value": {
+                "Ref": "RedshiftInstance"
+            },
+            "Export": {
+                "Name": {
+                    "Fn::Sub": "${AWS::StackName}:RedshiftClusterId"
+                }
+            }
+        },
+        "RedshiftEndpoint": {
+            "Value": {
+                "Fn::GetAtt": [
+                    "RedshiftInstance",
+                    "Endpoint.Address"
+                ]
+            },
+            "Export": {
+                "Name": {
+                    "Fn::Sub": "${AWS::StackName}:RedshiftEndpoint"
+                }
+            }
+        },
+        "RedshiftPort": {
+            "Value": {
+                "Fn::GetAtt": [
+                    "RedshiftInstance",
+                    "Endpoint.Port"
+                ]
+            },
+            "Export": {
+                "Name": {
+                    "Fn::Sub": "${AWS::StackName}:RedshiftPort"
+                }
+            }
+        },
+        "RedshiftJdbcUrl": {
+            "Value": {
+                "Fn::Sub": "jdbc:redshift://${RedshiftInstance.Endpoint.Address}:${RedshiftInstance.Endpoint.Port}/${RedshiftDbName}"
+            },
+            "Export": {
+                "Name": {
+                    "Fn::Sub": "${AWS::StackName}:RedshiftJdbcUrl"
+                }
+            }
+        }
+    }
+}

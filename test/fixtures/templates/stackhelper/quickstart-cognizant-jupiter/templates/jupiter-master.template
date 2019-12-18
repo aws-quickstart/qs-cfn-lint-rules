@@ -1,0 +1,693 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "This templates deploys a stack for JUPITER in a new VPC. This template provisions all of the resources that are specific to the Quick Start. Leveraged Quick Starts (VPC, LinuxBastion). **WARNING** You will be billed for the AWS resources used if you create a stack from this template. (qs-1ogq8r0ml)",
+    "Metadata": {
+        "AWS::CloudFormation::Interface": {
+            "ParameterGroups": [
+                {
+                    "Label": {
+                        "default": "Network Configuration"
+                    },
+                    "Parameters": [
+                        "AvailabilityZones",
+                        "VPCCIDR",
+                        "PrivateSubnet1CIDR",
+                        "PrivateSubnet2CIDR",
+                        "PublicSubnet1CIDR",
+                        "PublicSubnet2CIDR",
+                        "RemoteAccessCIDR"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "AWS Elastic Beanstalk"
+                    },
+                    "Parameters": [
+                        "SolutionStackName",
+                        "KeyPairName",
+                        "JupiterSSLCert",
+                        "JupiterInstanceType"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "Database Configuration"
+                    },
+                    "Parameters": [
+                        "DBName",
+                        "DbEngine",
+                        "DbClass",
+                        "MasterDBUser",
+                        "MasterDBPassword"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "Amazon EMR Configuration"
+                    },
+                    "Parameters": [
+                        "CreateEmr",
+                        "EmrMasterInstanceType",
+                        "EmrCoreInstanceType",
+                        "EmrCoreNodes",
+                        "EmrLogBucket"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "Quick Start Configuration"
+                    },
+                    "Parameters": [
+                        "QSS3BucketName",
+                        "QSS3KeyPrefix"
+                    ]
+                }
+            ],
+            "ParameterLabels": {
+                "QSS3BucketName": {
+                    "default": "Quick Start S3 Bucket"
+                },
+                "QSS3KeyPrefix": {
+                    "default": "Quick Start S3 Key Prefix"
+                },
+                "SolutionStackName": {
+                    "default": "AWS Elastic Beanstalk technology stack"
+                },
+                "KeyPairName": {
+                    "default": "Key Pair Name"
+                },
+                "JupiterSSLCert": {
+                    "default": "Jupiter SSL Certificate"
+                },
+                "JupiterInstanceType": {
+                    "default": "EC2 Instance Type"
+                },
+                "DBName": {
+                    "default": "Database Name"
+                },
+                "DbEngine": {
+                    "default": "Database Engine"
+                },
+                "DbClass": {
+                    "default": "Database Instance Type"
+                },
+                "MasterDBUser": {
+                    "default": "Database Master Username"
+                },
+                "MasterDBPassword": {
+                    "default": "Password for Database Master User"
+                },
+                "CreateEmr": {
+                    "default": "Create Amazon EMR cluster"
+                },
+                "EmrMasterInstanceType": {
+                    "default": "Amazon EMR Master Instance Type"
+                },
+                "EmrCoreInstanceType": {
+                    "default": "Amazon EMR Core Instance Type"
+                },
+                "EmrCoreNodes": {
+                    "default": "Amazon EMR Core Nodes"
+                },
+                "EmrLogBucket": {
+                    "default": "Amazon EMR Log Bucket"
+                },
+                "AvailabilityZones": {
+                    "default": "Availability Zones"
+                },
+                "PrivateSubnet1CIDR": {
+                    "default": "Private Subnet 1 CIDR"
+                },
+                "PrivateSubnet2CIDR": {
+                    "default": "Private Subnet 2 CIDR"
+                },
+                "PublicSubnet1CIDR": {
+                    "default": "Public Subnet 1 CIDR"
+                },
+                "PublicSubnet2CIDR": {
+                    "default": "Public Subnet 2 CIDR"
+                },
+                "RemoteAccessCIDR": {
+                    "default": "Remote Access CIDR"
+                },
+                "VPCCIDR": {
+                    "default": "VPC CIDR"
+                }
+            }
+        }
+    },
+    "Parameters": {
+        "AvailabilityZones": {
+            "Description": "List of Availability Zones to use for the subnets in the VPC. Note: The logical order is preserved and only 2 AZs are used for this deployment.",
+            "Type": "List<AWS::EC2::AvailabilityZone::Name>"
+        },
+        "CreateEmr": {
+            "AllowedValues": [
+                "true",
+                "false"
+            ],
+            "Default": "true",
+            "Description": "Set this to true to create a new Amazon EMR cluster. If you do not wish to use Amazon EMR or want to use an existing Amazon EMR cluster, set this to false.",
+            "Type": "String"
+        },
+        "DBName": {
+            "AllowedPattern": "[a-zA-Z][a-zA-Z0-9]*",
+            "ConstraintDescription": "must begin with a letter and contain only alphanumeric characters.",
+            "Default": "jupiterdb",
+            "Description": "The database name",
+            "MaxLength": "64",
+            "MinLength": "1",
+            "Type": "String"
+        },
+        "DbClass": {
+            "AllowedValues": [
+                "db.t2.micro",
+                "db.t2.small",
+                "db.t2.medium",
+                "db.t2.large",
+                "db.m4.large",
+                "db.m4.xlarge",
+                "db.m4.2xlarge",
+                "db.m4.4xlarge",
+                "db.m4.10xlarge",
+                "db.r3.large",
+                "db.r3.xlarge",
+                "db.r3.2xlarge",
+                "db.r3.4xlarge",
+                "db.r3.8xlarge"
+            ],
+            "Default": "db.t2.micro",
+            "Description": "Instance class of Amazon RDS instance",
+            "Type": "String"
+        },
+        "DbEngine": {
+            "AllowedValues": [
+                "mysql",
+                "postgres"
+            ],
+            "Default": "mysql",
+            "Description": "Type of Amazon RDS instance",
+            "Type": "String"
+        },
+        "EmrCoreInstanceType": {
+            "AllowedValues": [
+                "m1.medium",
+                "m1.large",
+                "m1.xlarge",
+                "m2.xlarge",
+                "m2.2xlarge",
+                "m2.4xlarge",
+                "m3.xlarge",
+                "m3.2xlarge",
+                "m4.large",
+                "m4.xlarge",
+                "m4.2xlarge",
+                "m4.4xlarge",
+                "m4.10xlarge",
+                "m4.16xlarge",
+                "c4.xlarge",
+                "c4.2xlarge",
+                "c4.4xlarge",
+                "c4.8xlarge",
+                "r4.large",
+                "r4.xlarge",
+                "r4.2xlarge",
+                "r4.4xlarge",
+                "r4.8xlarge",
+                "r4.16xlarge",
+                "d2.xlarge",
+                "d2.2xlarge",
+                "d2.4xlarge",
+                "d2.8xlarge",
+                "i3.large",
+                "i3.xlarge",
+                "i3.2xlarge",
+                "i3.4xlarge",
+                "i3.8xlarge",
+                "i3.16xlarge"
+            ],
+            "Default": "m1.medium",
+            "Description": "Instance type for the Amazon EMR core nodes",
+            "Type": "String"
+        },
+        "EmrCoreNodes": {
+            "Default": "1",
+            "Description": "Number of Amazon EMR core Nodes. Minimum 1",
+            "MaxValue": "500",
+            "MinValue": "1",
+            "Type": "Number"
+        },
+        "EmrLogBucket": {
+            "AllowedPattern": "^[0-9a-zA-Z]+([0-9a-zA-Z-.]*[0-9a-zA-Z])*$",
+            "ConstraintDescription": "S3 bucket name can include numbers, lowercase letters, uppercase letters, periods (.), and hyphens (-). It cannot start or end with a hyphen (-) or period (.).",
+            "Description": "S3 bucket used to store the EMR logs. Only needed if EMR is used.  This bucket must be in the same region where this stack is being deployed. Bucket name can include numbers, lowercase letters, uppercase letters, periods (.), and hyphens (-). It cannot start or end with a hyphen (-) or period (.).",
+            "Type": "String"
+        },
+        "EmrMasterInstanceType": {
+            "AllowedValues": [
+                "m1.medium",
+                "m1.large",
+                "m1.xlarge",
+                "m2.xlarge",
+                "m2.2xlarge",
+                "m2.4xlarge",
+                "m3.xlarge",
+                "m3.2xlarge",
+                "m4.large",
+                "m4.xlarge",
+                "m4.2xlarge",
+                "m4.4xlarge",
+                "m4.10xlarge",
+                "m4.16xlarge",
+                "c4.xlarge",
+                "c4.2xlarge",
+                "c4.4xlarge",
+                "c4.8xlarge",
+                "r4.large",
+                "r4.xlarge",
+                "r4.2xlarge",
+                "r4.4xlarge",
+                "r4.8xlarge",
+                "r4.16xlarge",
+                "d2.xlarge",
+                "d2.2xlarge",
+                "d2.4xlarge",
+                "d2.8xlarge",
+                "i3.large",
+                "i3.xlarge",
+                "i3.2xlarge",
+                "i3.4xlarge",
+                "i3.8xlarge",
+                "i3.16xlarge"
+            ],
+            "Default": "m1.medium",
+            "Description": "Instance type for the Amazon EMR master node",
+            "Type": "String"
+        },
+        "JupiterInstanceType": {
+            "AllowedValues": [
+                "t1.micro",
+                "t2.micro",
+                "t2.small",
+                "t2.medium",
+                "m1.small",
+                "m1.medium",
+                "m1.large",
+                "m1.xlarge",
+                "m2.xlarge",
+                "m2.2xlarge",
+                "m2.4xlarge",
+                "m3.medium",
+                "m3.large",
+                "m3.xlarge",
+                "m3.2xlarge",
+                "c1.medium",
+                "c1.xlarge",
+                "c3.large",
+                "c3.xlarge",
+                "c3.2xlarge",
+                "c3.4xlarge",
+                "c3.8xlarge",
+                "c4.large",
+                "c4.xlarge",
+                "c4.2xlarge",
+                "c4.4xlarge",
+                "c4.8xlarge",
+                "g2.2xlarge",
+                "r3.large",
+                "r3.xlarge",
+                "r3.2xlarge",
+                "r3.4xlarge",
+                "r3.8xlarge",
+                "i2.xlarge",
+                "i2.2xlarge",
+                "i2.4xlarge",
+                "i2.8xlarge",
+                "d2.xlarge",
+                "d2.2xlarge",
+                "d2.4xlarge",
+                "d2.8xlarge",
+                "hi1.4xlarge",
+                "hs1.8xlarge",
+                "cr1.8xlarge",
+                "cc2.8xlarge",
+                "cg1.4xlarge"
+            ],
+            "ConstraintDescription": "must be a valid EC2 instance type.",
+            "Default": "t2.micro",
+            "Description": "JUPITER EC2 instance type",
+            "Type": "String"
+        },
+        "JupiterSSLCert": {
+            "ConstraintDescription": "Leave blank to disable SSL",
+            "Default": "",
+            "Description": "ARN of the SSL certificate for terminating HTTPS connections on the load balancer; leave this blank to disable SSL, however it is strongly recommended to turn on SSL in production environments",
+            "Type": "String"
+        },
+        "KeyPairName": {
+            "Description": "Public/private key pairs allow you to securely connect to your instance after it launches",
+            "Type": "AWS::EC2::KeyPair::KeyName"
+        },
+        "MasterDBPassword": {
+            "AllowedPattern": "[a-zA-Z0-9!^*\\-_+]*",
+            "ConstraintDescription": "Can only contain alphanumeric characters or the following special characters !^*-_+",
+            "Description": "Master user password for database. Can only contain alphanumeric characters or the following special characters !^*-_+",
+            "MaxLength": 28,
+            "MinLength": 8,
+            "NoEcho": true,
+            "Type": "String"
+        },
+        "MasterDBUser": {
+            "AllowedPattern": "[a-zA-Z][a-zA-Z0-9]*",
+            "ConstraintDescription": "must begin with a letter and contain only alphanumeric characters.",
+            "Default": "jupiter",
+            "Description": "Master user name for database",
+            "MaxLength": "16",
+            "MinLength": "1",
+            "Type": "String"
+        },
+        "PrivateSubnet1CIDR": {
+            "AllowedPattern": "^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\\/(1[6-9]|2[0-8]))$",
+            "ConstraintDescription": "CIDR block parameter must be in the form x.x.x.x/16-28",
+            "Default": "10.0.0.0/19",
+            "Description": "CIDR block for private subnet 1 located in Availability Zone 1.",
+            "Type": "String"
+        },
+        "PrivateSubnet2CIDR": {
+            "AllowedPattern": "^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\\/(1[6-9]|2[0-8]))$",
+            "ConstraintDescription": "CIDR block parameter must be in the form x.x.x.x/16-28",
+            "Default": "10.0.32.0/19",
+            "Description": "CIDR block for private subnet 2 located in Availability Zone 2.",
+            "Type": "String"
+        },
+        "PublicSubnet1CIDR": {
+            "AllowedPattern": "^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\\/(1[6-9]|2[0-8]))$",
+            "ConstraintDescription": "CIDR block parameter must be in the form x.x.x.x/16-28",
+            "Default": "10.0.128.0/20",
+            "Description": "CIDR Block for the public DMZ subnet 1 located in Availability Zone 1",
+            "Type": "String"
+        },
+        "PublicSubnet2CIDR": {
+            "AllowedPattern": "^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\\/(1[6-9]|2[0-8]))$",
+            "ConstraintDescription": "CIDR block parameter must be in the form x.x.x.x/16-28",
+            "Default": "10.0.144.0/20",
+            "Description": "CIDR Block for the public DMZ subnet 2 located in Availability Zone 2",
+            "Type": "String"
+        },
+        "QSS3BucketName": {
+            "AllowedPattern": "^[0-9a-zA-Z]+([0-9a-zA-Z-.]*[0-9a-zA-Z])*$",
+            "ConstraintDescription": "Quick Start bucket name can include numbers, lowercase letters, uppercase letters, periods (.), and hyphens (-). It cannot start or end with a hyphen (-) or period (.).",
+            "Default": "aws-quickstart",
+            "Description": "S3 bucket name for the Quick Start assets. Quick Start bucket name can include numbers, lowercase letters, uppercase letters, periods (.), and hyphens (-). It cannot start or end with a hyphen (-) or period (.).",
+            "Type": "String"
+        },
+        "QSS3KeyPrefix": {
+            "AllowedPattern": "^[0-9a-zA-Z-/]*$",
+            "ConstraintDescription": "Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).  Prefix cannot start with a slash but must end with a slash unless it is the empty string.",
+            "Default": "quickstart-cognizant-jupiter/",
+            "Description": "The S3 key name prefix used to simulate a folder for your copy of Quick Start assets, if you decide to customize or extend the Quick Start for your own use. This prefix can include numbers, lowercase letters, uppercase letters, hyphens, and forward slashes",
+            "Type": "String"
+        },
+        "RemoteAccessCIDR": {
+            "AllowedPattern": "^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\\/([0-9]|[1-2][0-9]|3[0-2]))$",
+            "ConstraintDescription": "CIDR block parameter must be in the form x.x.x.x/x",
+            "Description": "You can provide a single IP or IP range from which you would be connecting to the AWS Elastic Beanstalk Load balancer. By default, HTTP and HTTPS access is restricted to the IP address(es) provided.",
+            "Type": "String"
+        },
+        "SolutionStackName": {
+            "AllowedValues": [
+                "64bit Amazon Linux 2018.03 v3.0.7 running Tomcat 8 Java 8",
+                "64bit Amazon Linux 2018.03 v3.0.7 running Tomcat 7 Java 7",
+                "64bit Amazon Linux 2018.03 v3.0.7 running Tomcat 7 Java 6"
+            ],
+            "ConstraintDescription": "Must be a valid and supported technology stack on AWS Elastic Beanstalk",
+            "Default": "64bit Amazon Linux 2018.03 v3.0.7 running Tomcat 8 Java 8",
+            "Description": "AWS Elastic Beanstalk technology stack",
+            "Type": "String"
+        },
+        "VPCCIDR": {
+            "AllowedPattern": "^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\\/(1[6-9]|2[0-8]))$",
+            "ConstraintDescription": "CIDR block parameter must be in the form x.x.x.x/16-28",
+            "Default": "10.0.0.0/16",
+            "Description": "CIDR Block for the VPC",
+            "Type": "String"
+        }
+    },
+    "Conditions": {
+        "CreateEmrCondition": {
+            "Fn::Equals": [
+                "true",
+                {
+                    "Ref": "CreateEmr"
+                }
+            ]
+        },
+        "NoSSL": {
+            "Fn::Equals": [
+                "",
+                {
+                    "Ref": "JupiterSSLCert"
+                }
+            ]
+        }
+    },
+    "Rules": {
+        "SubnetsInVPC": {
+            "Assertions": [
+                {
+                    "Assert": {
+                        "Fn::EachMemberIn": [
+                            {
+                                "Fn::ValueOfAll": [
+                                    "AWS::EC2::Subnet::Id",
+                                    "VpcId"
+                                ]
+                            },
+                            {
+                                "Fn::RefAll": "AWS::EC2::VPC::Id"
+                            }
+                        ]
+                    },
+                    "AssertDescription": "Subnets must belong to specified VPC"
+                }
+            ]
+        }
+    },
+    "Resources": {
+        "VPCStack": {
+            "Type": "AWS::CloudFormation::Stack",
+            "Properties": {
+                "TemplateURL": {
+                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}submodules/quickstart-aws-vpc/templates/aws-vpc.template"
+                },
+                "Parameters": {
+                    "AvailabilityZones": {
+                        "Fn::Join": [
+                            ",",
+                            {
+                                "Ref": "AvailabilityZones"
+                            }
+                        ]
+                    },
+                    "KeyPairName": {
+                        "Ref": "KeyPairName"
+                    },
+                    "NumberOfAZs": "2",
+                    "PrivateSubnet1ACIDR": {
+                        "Ref": "PrivateSubnet1CIDR"
+                    },
+                    "PrivateSubnet2ACIDR": {
+                        "Ref": "PrivateSubnet2CIDR"
+                    },
+                    "PublicSubnet1CIDR": {
+                        "Ref": "PublicSubnet1CIDR"
+                    },
+                    "PublicSubnet2CIDR": {
+                        "Ref": "PublicSubnet2CIDR"
+                    },
+                    "VPCCIDR": {
+                        "Ref": "VPCCIDR"
+                    }
+                }
+            }
+        },
+        "JupiterStack": {
+            "DependsOn": "VPCStack",
+            "Type": "AWS::CloudFormation::Stack",
+            "Properties": {
+                "Parameters": {
+                    "CreateEmr": {
+                        "Ref": "CreateEmr"
+                    },
+                    "DBName": {
+                        "Ref": "DBName"
+                    },
+                    "DbClass": {
+                        "Ref": "DbClass"
+                    },
+                    "DbEngine": {
+                        "Ref": "DbEngine"
+                    },
+                    "EmrCoreInstanceType": {
+                        "Ref": "EmrCoreInstanceType"
+                    },
+                    "EmrCoreNodes": {
+                        "Ref": "EmrCoreNodes"
+                    },
+                    "EmrLogBucket": {
+                        "Ref": "EmrLogBucket"
+                    },
+                    "EmrMasterInstanceType": {
+                        "Ref": "EmrMasterInstanceType"
+                    },
+                    "JupiterInstanceType": {
+                        "Ref": "JupiterInstanceType"
+                    },
+                    "JupiterSSLCert": {
+                        "Ref": "JupiterSSLCert"
+                    },
+                    "KeyPairName": {
+                        "Ref": "KeyPairName"
+                    },
+                    "MasterDBPassword": {
+                        "Ref": "MasterDBPassword"
+                    },
+                    "MasterDBUser": {
+                        "Ref": "MasterDBUser"
+                    },
+                    "PrivateSubnetIds": {
+                        "Fn::Join": [
+                            ",",
+                            [
+                                {
+                                    "Fn::GetAtt": [
+                                        "VPCStack",
+                                        "Outputs.PrivateSubnet1AID"
+                                    ]
+                                },
+                                {
+                                    "Fn::GetAtt": [
+                                        "VPCStack",
+                                        "Outputs.PrivateSubnet2AID"
+                                    ]
+                                }
+                            ]
+                        ]
+                    },
+                    "PublicSubnetIds": {
+                        "Fn::Join": [
+                            ",",
+                            [
+                                {
+                                    "Fn::GetAtt": [
+                                        "VPCStack",
+                                        "Outputs.PublicSubnet1ID"
+                                    ]
+                                },
+                                {
+                                    "Fn::GetAtt": [
+                                        "VPCStack",
+                                        "Outputs.PublicSubnet2ID"
+                                    ]
+                                }
+                            ]
+                        ]
+                    },
+                    "QSS3BucketName": {
+                        "Ref": "QSS3BucketName"
+                    },
+                    "QSS3KeyPrefix": {
+                        "Ref": "QSS3KeyPrefix"
+                    },
+                    "RemoteAccessCIDR": {
+                        "Ref": "RemoteAccessCIDR"
+                    },
+                    "SolutionStackName": {
+                        "Ref": "SolutionStackName"
+                    },
+                    "VpcId": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.VPCID"
+                        ]
+                    }
+                },
+                "TemplateURL": {
+                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}templates/jupiter.template"
+                }
+            }
+        }
+    },
+    "Outputs": {
+        "JupiterAppEndpoint": {
+            "Value": {
+                "Fn::If": [
+                    "NoSSL",
+                    {
+                        "Fn::Join": [
+                            "/",
+                            [
+                                "http:/",
+                                {
+                                    "Fn::GetAtt": [
+                                        "JupiterStack",
+                                        "Outputs.JupiterAppEndpoint"
+                                    ]
+                                }
+                            ]
+                        ]
+                    },
+                    {
+                        "Fn::Join": [
+                            "/",
+                            [
+                                "https:/",
+                                {
+                                    "Fn::GetAtt": [
+                                        "JupiterStack",
+                                        "Outputs.JupiterAppEndpoint"
+                                    ]
+                                }
+                            ]
+                        ]
+                    }
+                ]
+            },
+            "Description": "JUPITER Application URL",
+            "Export": {
+                "Name": {
+                    "Fn::Sub": "${AWS::StackName}:JupiterAppEndpoint"
+                }
+            }
+        },
+        "JupiterDBEndpoint": {
+            "Value": {
+                "Fn::GetAtt": [
+                    "JupiterStack",
+                    "Outputs.JupiterDBEndpoint"
+                ]
+            },
+            "Description": "Database endpoint hostname",
+            "Export": {
+                "Name": {
+                    "Fn::Sub": "${AWS::StackName}:JupiterDBEndpoint"
+                }
+            }
+        },
+        "JupiterEmr": {
+            "Condition": "CreateEmrCondition",
+            "Value": {
+                "Fn::GetAtt": [
+                    "JupiterStack",
+                    "Outputs.JupiterEmr"
+                ]
+            },
+            "Description": "Amazon EMR master node endpoint",
+            "Export": {
+                "Name": {
+                    "Fn::Sub": "${AWS::StackName}:JupiterEmr"
+                }
+            }
+        }
+    }
+}

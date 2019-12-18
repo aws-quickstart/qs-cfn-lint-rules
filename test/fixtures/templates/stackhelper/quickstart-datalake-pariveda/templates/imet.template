@@ -1,0 +1,746 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "Creates the data processing pipeline to continuously ingest, model, enhance, and transform the raw data for training models. (qs-1onlac5tb)",
+    "Parameters": {
+        "StackSuffix": {
+            "Type": "String",
+            "Description": "The suffix of the stack"
+        },
+        "LambdaCodeS3Bucket": {
+            "Type": "String",
+            "Description": "Prefix of the S3 Bucket where lambda code exists. The bucket name will be the value of this parameter concatenated with a hyphen and resource suffix value."
+        },
+        "LambdaCodeS3KeyPrefix": {
+            "Type": "String",
+            "Description": "S3 Key where lambda code exists"
+        },
+        "DataLakeS3BucketName": {
+            "Type": "String",
+            "Description": "Prefix of the S3 Bucket where data lake lives. The bucket name will be the value of this parameter concatenated with a hyphen and resource suffix value"
+        },
+        "IngestLambdaCodeLocation": {
+            "Type": "String",
+            "Description": "S3 Path where Ingest Lambda code exists"
+        },
+        "ModelLambdaCodeLocation": {
+            "Type": "String",
+            "Description": "S3 Path where Model Lambda code exists"
+        },
+        "EnhanceLambdaCodeLocation": {
+            "Type": "String",
+            "Description": "S3 Path where Enhance Lambda code exists"
+        },
+        "TransformLambdaCodeLocation": {
+            "Type": "String",
+            "Description": "S3 Path where Transform Lambda code exists"
+        }
+    },
+    "Conditions": {
+        "CreateDataLakeS3Bucket": {
+            "Fn::Not": [
+                {
+                    "Fn::Equals": [
+                        {
+                            "Fn::Sub": "${DataLakeS3BucketName}-${StackSuffix}"
+                        },
+                        {
+                            "Ref": "LambdaCodeS3Bucket"
+                        }
+                    ]
+                }
+            ]
+        }
+    },
+    "Resources": {
+        "DataLakeS3Bucket": {
+            "Type": "AWS::S3::Bucket",
+            "DeletionPolicy" : "Retain",
+            "Condition": "CreateDataLakeS3Bucket",
+            "Properties": {
+                "BucketName": {
+                    "Fn::Sub": "${DataLakeS3BucketName}-${StackSuffix}"
+                },
+                "BucketEncryption": {
+                    "ServerSideEncryptionConfiguration": [
+                        {
+                            "ServerSideEncryptionByDefault": {
+                                "SSEAlgorithm": "AES256"
+                            }
+                        }
+                    ]
+                },
+                "AccessControl": "BucketOwnerFullControl"
+            }
+        },
+        "IngestLambdaRole": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "AssumeRolePolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [{
+                        "Effect": "Allow",
+                        "Principal": {
+                            "Service": ["lambda.amazonaws.com"]
+                        },
+                        "Action": ["sts:AssumeRole"]
+                    }]
+                },
+                "Path": "/",
+                "Policies": [{
+                    "PolicyName": {
+                        "Fn::Sub": "IngestLambdaPolicy-${StackSuffix}"
+                    },
+                    "PolicyDocument": {
+                        "Version": "2012-10-17",
+                        "Statement": [{
+                                "Effect": "Allow",
+                                "Action": [
+                                    "logs:CreateLogGroup",
+                                    "logs:CreateLogStream",
+                                    "logs:PutLogEvents"
+                                ],
+                                "Resource": "*"
+                            },
+                            {
+                                "Effect": "Allow",
+                                "Action": [
+                                    "kinesis:ListStreams"
+                                ],
+                                "Resource": "*"
+                            },
+                            {
+                                "Effect": "Allow",
+                                "Action": [
+                                    "kinesis:Put*",
+                                    "kinesis:DescribeStream"
+                                ],
+                                "Resource": {
+                                    "Fn::GetAtt": ["IngestStream", "Arn"]
+                                }
+                            },
+                            {
+                                "Effect": "Allow",
+                                "Action": [
+                                    "ec2:DescribeSpotPriceHistory"
+                                ],
+                                "Resource": "*"
+                            },
+                            {
+                                "Effect": "Allow",
+                                "Action": [
+                                    "kinesis:GetRecords",
+                                    "kinesis:GetShardIterator",
+                                    "kinesis:DescribeStream"
+                                ],
+                                "Resource": {
+                                    "Fn::GetAtt": ["BatchRequestStream", "Arn"]
+                                }
+                            }
+                        ]
+                    }
+                }],
+                "RoleName": {
+                    "Fn::Sub": "IngestLambdaRole-${StackSuffix}"
+                }
+            }
+        },
+        "ModelLambdaRole": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "AssumeRolePolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [{
+                        "Effect": "Allow",
+                        "Principal": {
+                            "Service": ["lambda.amazonaws.com"]
+                        },
+                        "Action": ["sts:AssumeRole"]
+                    }]
+                },
+                "Path": "/",
+                "Policies": [{
+                    "PolicyName": {
+                        "Fn::Sub": "ModelLambdaPolicy-${StackSuffix}"
+                    },
+                    "PolicyDocument": {
+                        "Version": "2012-10-17",
+                        "Statement": [{
+                                "Effect": "Allow",
+                                "Action": [
+                                    "logs:CreateLogGroup",
+                                    "logs:CreateLogStream",
+                                    "logs:PutLogEvents"
+                                ],
+                                "Resource": "*"
+                            },
+                            {
+                                "Effect": "Allow",
+                                "Action": [
+                                    "kinesis:ListStreams"
+                                ],
+                                "Resource": "*"
+                            },
+                            {
+                                "Effect": "Allow",
+                                "Action": [
+                                    "kinesis:GetRecords",
+                                    "kinesis:GetShardIterator",
+                                    "kinesis:DescribeStream"
+                                ],
+                                "Resource": {
+                                    "Fn::GetAtt": ["IngestStream", "Arn"]
+                                }
+                            },
+                            {
+                                "Effect": "Allow",
+                                "Action": [
+                                    "kinesis:Put*",
+                                    "kinesis:DescribeStream"
+                                ],
+                                "Resource": {
+                                    "Fn::GetAtt": ["ModelStream", "Arn"]
+                                }
+                            },
+                            {
+                                "Effect": "Allow",
+                                "Action": [
+                                    "firehose:PutRecord",
+                                    "firehose:PutRecordBatch"
+                                ],
+                                "Resource": {
+                                    "Fn::GetAtt": ["ModelFirehoseDeliveryStream", "Arn"]
+                                }
+                            }
+                        ]
+                    }
+                }],
+                "RoleName": {
+                    "Fn::Sub": "ModelLambdaRole-${StackSuffix}"
+                }
+            }
+        },
+        "EnhanceLambdaRole": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "AssumeRolePolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [{
+                        "Effect": "Allow",
+                        "Principal": {
+                            "Service": ["lambda.amazonaws.com"]
+                        },
+                        "Action": ["sts:AssumeRole"]
+                    }]
+                },
+                "Path": "/",
+                "Policies": [{
+                    "PolicyName": {
+                        "Fn::Sub": "EnhanceLambdaPolicy-${StackSuffix}"
+                    },
+                    "PolicyDocument": {
+                        "Version": "2012-10-17",
+                        "Statement": [{
+                                "Effect": "Allow",
+                                "Action": [
+                                    "logs:CreateLogGroup",
+                                    "logs:CreateLogStream",
+                                    "logs:PutLogEvents"
+                                ],
+                                "Resource": "*"
+                            },
+                            {
+                                "Effect": "Allow",
+                                "Action": [
+                                    "kinesis:ListStreams"
+                                ],
+                                "Resource": "*"
+                            },
+                            {
+                                "Effect": "Allow",
+                                "Action": [
+                                    "kinesis:GetRecords",
+                                    "kinesis:GetShardIterator",
+                                    "kinesis:DescribeStream"
+                                ],
+                                "Resource": {
+                                    "Fn::GetAtt": ["ModelStream", "Arn"]
+                                }
+                            },
+                            {
+                                "Effect": "Allow",
+                                "Action": [
+                                    "kinesis:Put*",
+                                    "kinesis:DescribeStream"
+                                ],
+                                "Resource": {
+                                    "Fn::GetAtt": ["EnhanceStream", "Arn"]
+                                }
+                            },
+                            {
+                                "Effect": "Allow",
+                                "Action": [
+                                    "firehose:PutRecord",
+                                    "firehose:PutRecordBatch"
+                                ],
+                                "Resource": {
+                                    "Fn::GetAtt": ["EnhanceFirehoseDeliveryStream", "Arn"]
+                                }
+                            }
+                        ]
+                    }
+                }],
+                "RoleName": {
+                    "Fn::Sub": "EnhanceLambdaRole-${StackSuffix}"
+                }
+            }
+        },
+        "TransformLambdaRole": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "AssumeRolePolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [{
+                        "Effect": "Allow",
+                        "Principal": {
+                            "Service": ["lambda.amazonaws.com"]
+                        },
+                        "Action": ["sts:AssumeRole"]
+                    }]
+                },
+                "Path": "/",
+                "Policies": [{
+                    "PolicyName": {
+                        "Fn::Sub": "TransformLambdaPolicy-${StackSuffix}"
+                    },
+                    "PolicyDocument": {
+                        "Version": "2012-10-17",
+                        "Statement": [{
+                                "Effect": "Allow",
+                                "Action": [
+                                    "logs:CreateLogGroup",
+                                    "logs:CreateLogStream",
+                                    "logs:PutLogEvents"
+                                ],
+                                "Resource": "*"
+                            },
+                            {
+                                "Effect": "Allow",
+                                "Action": [
+                                    "kinesis:ListStreams"
+                                ],
+                                "Resource": "*"
+                            },
+                            {
+                                "Effect": "Allow",
+                                "Action": [
+                                    "kinesis:GetRecords",
+                                    "kinesis:GetShardIterator",
+                                    "kinesis:DescribeStream"
+                                ],
+                                "Resource": {
+                                    "Fn::GetAtt": ["EnhanceStream", "Arn"]
+                                }
+                            },
+                            {
+                                "Effect": "Allow",
+                                "Action": [
+                                    "s3:Put*",
+                                    "s3:GetObject"
+                                ],
+                                "Resource": {
+                                    "Fn::Join": ["/", [ { "Fn::GetAtt": ["DataLakeS3Bucket", "Arn"] }, "transform/*"]]
+                                }
+                            },
+                            {
+                                "Effect": "Allow",
+                                "Action": [
+                                    "s3:ListBucket"
+                                ],
+                                "Resource": {"Fn::GetAtt": ["DataLakeS3Bucket", "Arn"]}
+                            },
+                            {
+                                "Effect": "Allow",
+                                "Action": [
+                                    "firehose:PutRecord",
+                                    "firehose:PutRecordBatch"
+                                ],
+                                "Resource": {
+                                    "Fn::GetAtt": ["TransformFirehoseDeliveryStream", "Arn"]
+                                }
+                            }
+                        ]
+                    }
+                }],
+                "RoleName": {
+                    "Fn::Sub": "TransformLambdaRole-${StackSuffix}"
+                }
+            }
+        },
+        "FirehoseDeliveryRole": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "RoleName": {
+                    "Fn::Sub": "FirehoseDeliveryRole-${StackSuffix}"
+                },
+                "AssumeRolePolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [{
+                        "Sid": "",
+                        "Effect": "Allow",
+                        "Principal": {
+                            "Service": "firehose.amazonaws.com"
+                        },
+                        "Action": "sts:AssumeRole",
+                        "Condition": {
+                            "StringEquals": {
+                                "sts:ExternalId": {
+                                    "Ref": "AWS::AccountId"
+                                }
+                            }
+                        }
+                    }]
+                },
+                "Policies": [{
+                    "PolicyName": {
+                        "Fn::Sub": "FirehoseDeliveryPolicy-${StackSuffix}"
+                    },
+                    "PolicyDocument": {
+                        "Version": "2012-10-17",
+                        "Statement": [{
+                            "Effect": "Allow",
+                            "Action": [
+                                "s3:AbortMultipartUpload",
+                                "s3:GetBucketLocation",
+                                "s3:GetObject",
+                                "s3:ListBucket",
+                                "s3:ListBucketMultipartUploads",
+                                "s3:PutObject"
+                            ],
+                            "Resource": [{"Fn::GetAtt": ["DataLakeS3Bucket", "Arn"]},
+                                {
+                                    "Fn::Join": ["/", [{"Fn::GetAtt": ["DataLakeS3Bucket", "Arn"]}, "*"]]
+                                }
+                            ]
+                        }]
+                    }
+                }]
+            }
+        },
+        "BatchRequestStream": {
+            "Type": "AWS::Kinesis::Stream",
+            "Properties": {
+                "Name": {
+                    "Fn::Sub": "BatchRequestStream-${StackSuffix}"
+                },
+                "RetentionPeriodHours": 24,
+                "ShardCount": 1
+            }
+        },
+        "IngestStream": {
+            "Type": "AWS::Kinesis::Stream",
+            "Properties": {
+                "Name": {
+                    "Fn::Sub": "IngestStream-${StackSuffix}"
+                },
+                "RetentionPeriodHours": 24,
+                "ShardCount": 1
+            }
+        },
+        "ModelStream": {
+            "Type": "AWS::Kinesis::Stream",
+            "Properties": {
+                "Name": {
+                    "Fn::Sub": "ModelStream-${StackSuffix}"
+                },
+                "RetentionPeriodHours": 24,
+                "ShardCount": 1
+            }
+        },
+        "EnhanceStream": {
+            "Type": "AWS::Kinesis::Stream",
+            "Properties": {
+                "Name": {
+                    "Fn::Sub": "EnhanceStream-${StackSuffix}"
+                },
+                "RetentionPeriodHours": 24,
+                "ShardCount": 3
+            }
+        },
+        "IngestLambda": {
+            "Type": "AWS::Lambda::Function",
+            "Properties": {
+                "FunctionName": {
+                    "Fn::Sub": "IngestLambda-${StackSuffix}"
+                },
+                "Handler": "index.handler",
+                "Role": {
+                    "Fn::GetAtt": ["IngestLambdaRole", "Arn"]
+                },
+                "Code": {
+                    "S3Bucket": {"Ref": "LambdaCodeS3Bucket"},
+                    "S3Key": {
+                        "Fn::Sub": "${LambdaCodeS3KeyPrefix}${IngestLambdaCodeLocation}"
+                    }
+                },
+                "Runtime": "nodejs8.10",
+                "Timeout": 90,
+                "MemorySize": "1024",
+                "Environment": {
+                    "Variables": {
+                        "OutputStream": {
+                            "Fn::Sub": "IngestStream-${StackSuffix}"
+                        }
+                    }
+                }
+            }
+        },
+        "ModelLambda": {
+            "Type": "AWS::Lambda::Function",
+            "Properties": {
+                "FunctionName": {
+                    "Fn::Sub": "ModelLambda-${StackSuffix}"
+                },
+                "Handler": "index.handler",
+                "Role": {
+                    "Fn::GetAtt": ["ModelLambdaRole", "Arn"]
+                },
+                "Code": {
+                    "S3Bucket": {"Ref": "LambdaCodeS3Bucket"},
+                    "S3Key": {
+                        "Fn::Sub": "${LambdaCodeS3KeyPrefix}${ModelLambdaCodeLocation}"
+                    }
+                },
+                "Runtime": "nodejs8.10",
+                "Timeout": 90,
+                "MemorySize": "2048",
+                "Environment": {
+                    "Variables": {
+                        "OutputStream": {
+                            "Fn::Sub": "ModelStream-${StackSuffix}"
+                        },
+                        "FirehoseStream": {
+                            "Fn::Sub": "ModelFirehoseDeliveryStream-${StackSuffix}"
+                        }
+                    }
+                }
+            }
+        },
+        "EnhanceLambda": {
+            "Type": "AWS::Lambda::Function",
+            "Properties": {
+                "FunctionName": {
+                    "Fn::Sub": "EnhanceLambda-${StackSuffix}"
+                },
+                "Handler": "index.handler",
+                "Role": {
+                    "Fn::GetAtt": ["EnhanceLambdaRole", "Arn"]
+                },
+                "Code": {
+                    "S3Bucket": {"Ref": "LambdaCodeS3Bucket"},
+                    "S3Key": {
+                        "Fn::Sub": "${LambdaCodeS3KeyPrefix}${EnhanceLambdaCodeLocation}"
+                    }
+                },
+                "Runtime": "nodejs8.10",
+                "Timeout": 30,
+                "MemorySize": "1024",
+                "Environment": {
+                    "Variables": {
+                        "OutputStream": {
+                            "Fn::Sub": "EnhanceStream-${StackSuffix}"
+                        },
+                        "FirehoseStream": {
+                            "Fn::Sub": "EnhanceFirehoseDeliveryStream-${StackSuffix}"
+                        }
+                    }
+                }
+            }
+        },
+        "TransformLambda": {
+            "Type": "AWS::Lambda::Function",
+            "Properties": {
+                "FunctionName": {
+                    "Fn::Sub": "TransformLambda-${StackSuffix}"
+                },
+                "Handler": "index.handler",
+                "Role": {
+                    "Fn::GetAtt": ["TransformLambdaRole", "Arn"]
+                },
+                "Code": {
+                    "S3Bucket": {"Ref": "LambdaCodeS3Bucket"},
+                    "S3Key": {
+                        "Fn::Sub": "${LambdaCodeS3KeyPrefix}${TransformLambdaCodeLocation}"
+                    }
+                },
+                "Runtime": "nodejs8.10",
+                "Timeout": 30,
+                "MemorySize": "1024",
+                "Environment": {
+                    "Variables": {
+                        "OutputBucketName": {
+                            "Fn::Sub": "${DataLakeS3BucketName}-${StackSuffix}"
+                        },
+                        "OutputPrefix": "transform",
+                        "FirehoseStream": {
+                            "Fn::Sub": "TransformFirehoseDeliveryStream-${StackSuffix}"
+                        }
+                    }
+                }
+            }
+        },
+        "IngestLambdaEventSource": {
+            "Type": "AWS::Lambda::EventSourceMapping",
+            "Properties": {
+                "BatchSize": 1,
+                "Enabled": true,
+                "EventSourceArn": {
+                    "Fn::GetAtt": ["BatchRequestStream", "Arn"]
+                },
+                "FunctionName": {
+                    "Fn::GetAtt": ["IngestLambda", "Arn"]
+                },
+                "StartingPosition": "LATEST"
+            },
+            "DependsOn": ["IngestLambdaRole"]
+        },
+        "ModelLambdaEventSource": {
+            "Type": "AWS::Lambda::EventSourceMapping",
+            "Properties": {
+                "BatchSize": 1,
+                "Enabled": true,
+                "EventSourceArn": {
+                    "Fn::GetAtt": ["IngestStream", "Arn"]
+                },
+                "FunctionName": {
+                    "Fn::GetAtt": ["ModelLambda", "Arn"]
+                },
+                "StartingPosition": "LATEST"
+            },
+            "DependsOn": ["ModelLambdaRole"]
+        },
+        "EnhanceLambdaEventSource": {
+            "Type": "AWS::Lambda::EventSourceMapping",
+            "Properties": {
+                "BatchSize": 1,
+                "Enabled": true,
+                "EventSourceArn": {
+                    "Fn::GetAtt": ["ModelStream", "Arn"]
+                },
+                "FunctionName": {
+                    "Fn::GetAtt": ["EnhanceLambda", "Arn"]
+                },
+                "StartingPosition": "LATEST"
+            },
+            "DependsOn": ["EnhanceLambdaRole"]
+        },
+        "TransformLambdaEventSource": {
+            "Type": "AWS::Lambda::EventSourceMapping",
+            "Properties": {
+                "BatchSize": 1,
+                "Enabled": true,
+                "EventSourceArn": {
+                    "Fn::GetAtt": ["EnhanceStream", "Arn"]
+                },
+                "FunctionName": {
+                    "Fn::GetAtt": ["TransformLambda", "Arn"]
+                },
+                "StartingPosition": "LATEST"
+            },
+            "DependsOn": ["TransformLambdaRole"]
+        },
+        "ModelFirehoseDeliveryStream": {
+            "DependsOn": ["FirehoseDeliveryRole"],
+            "Type": "AWS::KinesisFirehose::DeliveryStream",
+            "Properties": {
+                "DeliveryStreamName": {
+                    "Fn::Sub": "ModelFirehoseDeliveryStream-${StackSuffix}"
+                },
+                "ExtendedS3DestinationConfiguration": {
+                    "BucketARN":  {"Fn::GetAtt": ["DataLakeS3Bucket", "Arn"]},
+                    "BufferingHints": {
+                        "IntervalInSeconds": "60",
+                        "SizeInMBs": "50"
+                    },
+                    "CompressionFormat": "UNCOMPRESSED",
+                    "Prefix": "model/",
+                    "RoleARN": {
+                        "Fn::GetAtt": ["FirehoseDeliveryRole", "Arn"]
+                    }
+                }
+            }
+        },
+        "EnhanceFirehoseDeliveryStream": {
+            "DependsOn": ["FirehoseDeliveryRole"],
+            "Type": "AWS::KinesisFirehose::DeliveryStream",
+            "Properties": {
+                "DeliveryStreamName": {
+                    "Fn::Sub": "EnhanceFirehoseDeliveryStream-${StackSuffix}"
+                },
+                "ExtendedS3DestinationConfiguration": {
+                    "BucketARN":  {"Fn::GetAtt": ["DataLakeS3Bucket", "Arn"]},
+                    "BufferingHints": {
+                        "IntervalInSeconds": "60",
+                        "SizeInMBs": "50"
+                    },
+                    "CompressionFormat": "UNCOMPRESSED",
+                    "Prefix": "enhance/",
+                    "RoleARN": {
+                        "Fn::GetAtt": ["FirehoseDeliveryRole", "Arn"]
+                    }
+                }
+            }
+        },
+        "TransformFirehoseDeliveryStream": {
+            "DependsOn": ["FirehoseDeliveryRole"],
+            "Type": "AWS::KinesisFirehose::DeliveryStream",
+            "Properties": {
+                "DeliveryStreamName": {
+                    "Fn::Sub": "TransformFirehoseDeliveryStream-${StackSuffix}"
+                },
+                "ExtendedS3DestinationConfiguration": {
+                    "BucketARN":  {"Fn::GetAtt": ["DataLakeS3Bucket", "Arn"]},
+                    "BufferingHints": {
+                        "IntervalInSeconds": "60",
+                        "SizeInMBs": "50"
+                    },
+                    "CompressionFormat": "UNCOMPRESSED",
+                    "Prefix": "transform/",
+                    "RoleARN": {
+                        "Fn::GetAtt": ["FirehoseDeliveryRole", "Arn"]
+                    }
+                }
+            }
+        },
+        "IngestTriggerRule": {
+            "Type": "AWS::Events::Rule",
+            "Properties": {
+                "ScheduleExpression": "cron(5 * * * ? *)",
+                "Targets": [{
+                    "Id": "IngestTriggerScheduler",
+                    "Arn": {
+                        "Fn::GetAtt": ["IngestLambda", "Arn"]
+                    }
+                }]
+            }
+        },
+        "CloudwatchEventInvokeIngestLambdaPermission": {
+            "Type": "AWS::Lambda::Permission",
+            "Properties": {
+                "FunctionName": {
+                    "Fn::GetAtt": ["IngestLambda", "Arn"]
+                },
+                "Action": "lambda:InvokeFunction",
+                "Principal": "events.amazonaws.com",
+                "SourceArn": {
+                    "Fn::GetAtt": ["IngestTriggerRule", "Arn"]
+                }
+            }
+        }
+    },
+    "Outputs" : {
+        "DataLakeS3Bucket" : {
+            "Description": "Data Lake S3 Bucket Full Name",  
+            "Value" : { "Ref": "DataLakeS3Bucket" }
+        }
+    }
+}

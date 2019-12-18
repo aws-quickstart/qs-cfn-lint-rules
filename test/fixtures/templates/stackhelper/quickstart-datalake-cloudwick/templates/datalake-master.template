@@ -1,0 +1,763 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "Cloudwick Data lake quick start deployment master template.(qs-1ngojrsrg)",
+    "Parameters": {
+        "AccessCIDR": {
+            "AllowedPattern": "^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\\/([0-9]|[1-2][0-9]|3[0-2]))$",
+            "ConstraintDescription": "Must be a valid IP range in x.x.x.x/x notation",
+            "Description": "The CIDR IP range that is permitted to access datalake webserver instances. Note: a value of 0.0.0.0/0 will allow access from ANY ip address",
+            "Type": "String"
+        },
+        "AddBastion": {
+            "AllowedValues": [
+                "Yes",
+                "No"
+            ],
+            "Default": "No",
+            "Description": "Add linux bastion instance in the VPC?",
+            "Type": "String"
+        },
+        "AdministratorEmail": {
+            "AllowedPattern": "^[a-z0-9]+(\\.[_a-z0-9]+)*@[a-z0-9-]+(\\.[a-z0-9-]+)*(\\.[a-z]{2,15})$",
+            "ConstraintDescription": "Can contain only ASCII characters.",
+            "Description": "Admin email id - email will be sent to this address on stack completion with further instructions (check inbox/spam in about 15-20mins)",
+            "Type": "String"
+        },
+        "AdministratorName": {
+            "ConstraintDescription": "Can contain only ASCII characters.",
+            "Default": "AdminName",
+            "Description": "Admin name",
+            "Type": "String"
+        },
+        "AvailabilityZones": {
+            "Description": "List of Availability Zones to use for the subnets in the VPC(Minimum 2 AZs required). Note: The logical order is preserved.",
+            "Type": "List<AWS::EC2::AvailabilityZone::Name>"
+        },
+        "RDSDatabaseName": {
+            "AllowedPattern": "[a-zA-Z][a-zA-Z0-9]*",
+            "ConstraintDescription": "DB name must start with a letter & no special characters(Min=4;Max=20 AlphaNumerics)",
+            "Default": "awsdatalakeqs",
+            "Description": "DB Name must start with a letter & no special characters(MinLength=4;MaxLength=20)",
+            "MaxLength": "16",
+            "MinLength": "4",
+            "Type": "String"
+        },
+        "RDSUsername": {
+            "AllowedPattern": "[a-zA-Z][a-zA-Z0-9]*",
+            "ConstraintDescription": "DB Username must start with a letter & no special characters(Min=4;Max=20 AlphaNumerics)",
+            "Default": "admin",
+            "Description": "DB Username must start with a letter & no special characters(MinLength=4;MaxLength=20)",
+            "MaxLength": "16",
+            "MinLength": "4",
+            "Type": "String"
+        },
+        "RDSPassword": {
+            "AllowedPattern": "(?=^.{6,255}$)((?=.*\\d)(?=.*[A-Z])(?=.*[a-z])|(?=.*\\d)(?=.*[^A-Za-z0-9])(?=.*[a-z])|(?=.*[^A-Za-z0-9])(?=.*[A-Z])(?=.*[a-z])|(?=.*\\d)(?=.*[A-Z])(?=.*[^A-Za-z0-9]))^.*",
+            "ConstraintDescription": "Must be 8 characters or more containing at least one uppercase letter, one lowercase letter, and one number.",
+            "Description": "DB Password for RDS, Redshift and Portal access. Must be 8 characters or more containing at least one uppercase letter, one lowercase letter and one number. It can use any printable ASCII characters (ASCII code 33 to 126) except ' (single quote), \" (double quote) , \\, /, @, or space",
+            "MaxLength": "16",
+            "MinLength": "8",
+            "NoEcho": "true",
+            "Type": "String"
+        },
+        "ElasticsearchInstanceCount": {
+            "Default": "1",
+            "Description": "Elasticsearch instance count",
+            "Type": "Number"
+        },
+        "ElasticsearchInstanceType": {
+            "AllowedValues": [
+                "t2.medium.elasticsearch",
+                "m3.medium.elasticsearch",
+                "m3.large.elasticsearch",
+                "m3.xlarge.elasticsearch",
+                "m3.2xlarge.elasticsearch"
+            ],
+            "Default": "t2.medium.elasticsearch",
+            "Description": "Elasticsearch instance type",
+            "Type": "String"
+        },
+        "ElasticsearchVolumeSize": {
+            "Default": "20",
+            "Description": "Elasticsearch instance Volume size (in GiB)",
+            "Type": "Number"
+        },
+        "ElasticsearchVolumeType": {
+            "AllowedValues": [
+                "gp2",
+                "standard",
+                "io1"
+            ],
+            "Default": "gp2",
+            "Description": "Elasticsearch instance Volume type",
+            "Type": "String"
+        },
+        "PortalInstanceType": {
+            "AllowedValues": [
+                "m1.medium",
+                "m1.large",
+                "m1.xlarge",
+                "m2.xlarge",
+                "m2.2xlarge",
+                "m2.4xlarge",
+                "m3.medium",
+                "m3.large",
+                "m3.xlarge",
+                "m3.2xlarge",
+                "c1.medium",
+                "c1.xlarge",
+                "c3.large",
+                "c3.xlarge",
+                "c3.2xlarge",
+                "c3.4xlarge",
+                "c3.8xlarge"
+            ],
+            "ConstraintDescription": "Must be a valid EC2 instance type",
+            "Default": "m1.medium",
+            "Description": "EC2 WebServer instance type for datalake web portal",
+            "Type": "String"
+        },
+        "KeyPairName": {
+            "ConstraintDescription": "Can contain only ASCII characters.",
+            "Description": "Name of an existing EC2 KeyPair to enable SSH access to the NAT instance",
+            "Type": "AWS::EC2::KeyPair::KeyName"
+        },
+        "NATInstanceType": {
+            "AllowedValues": [
+                "t2.nano",
+                "t2.micro",
+                "t2.small",
+                "t2.medium",
+                "t2.large",
+                "m3.medium",
+                "m3.large",
+                "m4.large"
+            ],
+            "ConstraintDescription": "Must be a valid EC2 instance type",
+            "Default": "t2.micro",
+            "Description": "Amazon EC2 instance type for the NAT instances. This is used only if the region does not support NAT gateways",
+            "Type": "String"
+        },
+        "NoOfAzs": {
+            "Default": "2",
+            "Description": "Number of Availability Zones to use in the VPC. This must match your selections in the list of Availability Zones parameter.",
+            "Type": "Number"
+        },
+        "NumberOfNodes": {
+            "Default": "1",
+            "Description": "Number of nodes in the redshift cluster(=1 if single-node)",
+            "Type": "Number"
+        },
+        "PrivateSubnet1CIDR": {
+            "AllowedPattern": "^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\\/([0-9]|[1-2][0-9]|3[0-2]))$",
+            "ConstraintDescription": "Must be a valid IP range in x.x.x.x/x notation",
+            "Default": "10.0.0.0/19",
+            "Description": "CIDR block for private subnet 1 located in Availability Zone 1.",
+            "Type": "String"
+        },
+        "PrivateSubnet2CIDR": {
+            "AllowedPattern": "^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\\/([0-9]|[1-2][0-9]|3[0-2]))$",
+            "ConstraintDescription": "Must be a valid IP range in x.x.x.x/x notation",
+            "Default": "10.0.32.0/19",
+            "Description": "CIDR block for private subnet 2 located in Availability Zone 2.",
+            "Type": "String"
+        },
+        "PublicSubnet1CIDR": {
+            "AllowedPattern": "^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\\/([0-9]|[1-2][0-9]|3[0-2]))$",
+            "ConstraintDescription": "Must be a valid IP range in x.x.x.x/x notation",
+            "Default": "10.0.128.0/20",
+            "Description": "CIDR Block for the public DMZ subnet 1 located in Availability Zone 1",
+            "Type": "String"
+        },
+        "PublicSubnet2CIDR": {
+            "AllowedPattern": "^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\\/([0-9]|[1-2][0-9]|3[0-2]))$",
+            "ConstraintDescription": "Must be a valid IP range in x.x.x.x/x notation",
+            "Default": "10.0.144.0/20",
+            "Description": "CIDR Block for the public DMZ subnet 2 located in Availability Zone 2",
+            "Type": "String"
+        },
+        "QSS3BucketName": {
+            "AllowedPattern": "^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$",
+            "ConstraintDescription": "AWS Quick Start bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-).",
+            "Default": "aws-quickstart",
+            "Description": "S3 bucket name for the AWS Quick Start assets.AWS Quick Start bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-).",
+            "Type": "String"
+        },
+        "QSS3KeyPrefix": {
+            "AllowedPattern": "^[0-9a-zA-Z-/]*$",
+            "ConstraintDescription": "Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).",
+            "Default": "quickstart-datalake-cloudwick/",
+            "Description": "S3 key prefix for the Quick Start assets. Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).",
+            "Type": "String"
+        },
+        "RDSAllocatedStorage": {
+            "ConstraintDescription": "RDSAllocatedStorage must be between 5 and 1024Gb.",
+            "Default": "5",
+            "Description": "Size of the database(Gb) Range: 5~1024Gb",
+            "MaxValue": "1024",
+            "MinValue": "5",
+            "Type": "Number"
+        },
+        "RDSInstanceType": {
+            "AllowedValues": [
+                "db.t2.micro",
+                "db.t2.small",
+                "db.t2.medium",
+                "db.t2.large",
+                "db.m4.large",
+                "db.m4.xlarge",
+                "db.m4.2xlarge",
+                "db.m4.4xlarge",
+                "db.m4.10xlarge"
+            ],
+            "ConstraintDescription": "must select a valid RDS database class.",
+            "Default": "db.t2.small",
+            "Description": "Database instance class",
+            "Type": "String"
+        },
+        "RedshiftClusterType": {
+            "AllowedValues": [
+                "single-node",
+                "multi-node"
+            ],
+            "ConstraintDescription": "must select a valid Redshift cluster type.",
+            "Default": "single-node",
+            "Description": "Redshift instance type",
+            "Type": "String"
+        },
+        "RedshiftNodeType": {
+            "AllowedValues": [
+                "dc1.large",
+                "dw.hs1.xlarge",
+                "dw1.xlarge",
+                "dw1.8xlarge",
+                "dw2.large",
+                "dw2.8xlarge"
+            ],
+            "ConstraintDescription": "must select a valid Redshift node type.",
+            "Default": "dc1.large",
+            "Description": "Redshift node type",
+            "Type": "String"
+        },
+        "VPCCIDR": {
+            "AllowedPattern": "^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\\/([0-9]|[1-2][0-9]|3[0-2]))$",
+            "ConstraintDescription": "Must be a valid IP range in x.x.x.x/x notation",
+            "Default": "10.0.0.0/16",
+            "Description": "CIDR Block for the VPC",
+            "Type": "String"
+        }
+    },
+    "Metadata": {
+        "AWS::CloudFormation::Interface": {
+            "ParameterGroups": [
+                {
+                    "Label": {
+                        "default": "Network Configuration"
+                    },
+                    "Parameters": [
+                        "AvailabilityZones",
+                        "NoOfAzs",
+                        "VPCCIDR",
+                        "PrivateSubnet1CIDR",
+                        "PrivateSubnet2CIDR",
+                        "PublicSubnet1CIDR",
+                        "PublicSubnet2CIDR",
+                        "AccessCIDR",
+                        "AddBastion"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "Amazon RDS Configuration"
+                    },
+                    "Parameters": [
+                        "RDSInstanceType",
+                        "RDSAllocatedStorage",
+                        "RDSDatabaseName",
+                        "RDSUsername",
+                        "RDSPassword"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "Elasticsearch Configuration"
+                    },
+                    "Parameters": [
+                        "ElasticsearchInstanceType",
+                        "ElasticsearchInstanceCount",
+                        "ElasticsearchVolumeSize",
+                        "ElasticsearchVolumeType"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "Amazon Redshift Configuration"
+                    },
+                    "Parameters": [
+                        "RedshiftClusterType",
+                        "RedshiftNodeType",
+                        "NumberOfNodes"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "Amazon EC2 Configuration"
+                    },
+                    "Parameters": [
+                        "KeyPairName",
+                        "NATInstanceType",
+                        "PortalInstanceType"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "Data Lake Administrator Configuration"
+                    },
+                    "Parameters": [
+                        "AdministratorName",
+                        "AdministratorEmail"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "AWS Quick Start Configuration"
+                    },
+                    "Parameters": [
+                        "QSS3BucketName",
+                        "QSS3KeyPrefix"
+                    ]
+                }
+            ],
+            "ParameterLabels": {
+                "AccessCIDR": {
+                    "default": "Permitted IP range"
+                },
+                "AddBastion": {
+                    "default": "Add Bastion Host"
+                },
+                "AdministratorEmail": {
+                    "default": "Administrator Email"
+                },
+                "AdministratorName": {
+                    "default": "Administrator Name"
+                },
+                "AvailabilityZones": {
+                    "default": "Availability Zones"
+                },
+                "RDSDatabaseName": {
+                    "default": "RDS Database Name"
+                },
+                "RDSUsername": {
+                    "default": "RDS User Name"
+                },
+                "RDSPassword": {
+                    "default": "RDS Password"
+                },
+                "ElasticsearchInstanceCount": {
+                    "default": "Elasticsearch Instance count"
+                },
+                "ElasticsearchInstanceType": {
+                    "default": "Elasticsearch Instance type"
+                },
+                "ElasticsearchVolumeSize": {
+                    "default": "Elasticsearch Instance volume size"
+                },
+                "ElasticsearchVolumeType": {
+                    "default": "Elasticsearch Instance volume type"
+                },
+                "PortalInstanceType": {
+                    "default": "Data Lake Portal Instance Type"
+                },
+                "KeyPairName": {
+                    "default": "Keypair Name"
+                },
+                "NATInstanceType": {
+                    "default": "NAT Instance type"
+                },
+                "NoOfAzs": {
+                    "default": "Number of Availability Zones"
+                },
+                "NumberOfNodes": {
+                    "default": "Number of Amazon Redshift nodes"
+                },
+                "PrivateSubnet1CIDR": {
+                    "default": "Private Subnet 1 CIDR"
+                },
+                "PrivateSubnet2CIDR": {
+                    "default": "Private Subnet 2 CIDR"
+                },
+                "PublicSubnet1CIDR": {
+                    "default": "Public Subnet 1 CIDR"
+                },
+                "PublicSubnet2CIDR": {
+                    "default": "Public Subnet 2 CIDR"
+                },
+                "QSS3BucketName": {
+                    "default": "AWS Quick Start S3 Bucket Name"
+                },
+                "QSS3KeyPrefix": {
+                    "default": "AWS Quick Start S3 Key Prefix"
+                },
+                "RDSAllocatedStorage": {
+                    "default": "RDS Allocated Storage"
+                },
+                "RDSInstanceType": {
+                    "default": "RDS Instance Type"
+                },
+                "RedshiftClusterType": {
+                    "default": "Redshift cluster type"
+                },
+                "RedshiftNodeType": {
+                    "default": "Redshift node type"
+                },
+                "VPCCIDR": {
+                    "default": "VPC CIDR"
+                }
+            }
+        }
+    },
+    "Conditions": {
+        "IsMultiNodeCluster": {
+            "Fn::Equals": [
+                {
+                    "Ref": "RedshiftClusterType"
+                },
+                "multi-node"
+            ]
+        },
+        "IsLinuxBastion": {
+            "Fn::Equals": [
+                {
+                    "Ref": "AddBastion"
+                },
+                "Yes"
+            ]
+        }
+    },
+    "Mappings": {
+        "RDSEngineVersionMapping": {
+            "mysql": {
+                "latest": "5.7"
+            }
+        }
+    },
+    "Resources": {
+        "DatalakeStack": {
+            "Type": "AWS::CloudFormation::Stack",
+            "Properties": {
+                "TemplateURL": {
+                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}templates/datalake.template"
+                },
+                "Parameters": {
+                    "RDSDatabaseName": {
+                        "Ref": "RDSDatabaseName"
+                    },
+                    "RDSAllocatedStorage": {
+                        "Ref": "RDSAllocatedStorage"
+                    },
+                    "RDSInstanceType": {
+                        "Ref": "RDSInstanceType"
+                    },
+                    "RDSUsername": {
+                        "Ref": "RDSUsername"
+                    },
+                    "RDSPassword": {
+                        "Ref": "RDSPassword"
+                    },
+                    "RedshiftNodeType": {
+                        "Ref": "RedshiftNodeType"
+                    },
+                    "RedshiftClusterType": {
+                        "Ref": "RedshiftClusterType"
+                    },
+                    "NumberOfNodes": {
+                        "Ref": "NumberOfNodes"
+                    },
+                    "PortalInstanceType": {
+                        "Ref": "PortalInstanceType"
+                    },
+                    "AdministratorEmail": {
+                        "Ref": "AdministratorEmail"
+                    },
+                    "QSS3BucketName": {
+                        "Ref": "QSS3BucketName"
+                    },
+                    "QSS3KeyPrefix": {
+                        "Ref": "QSS3KeyPrefix"
+                    },
+                    "ElasticsearchVolumeSize": {
+                        "Ref": "ElasticsearchVolumeSize"
+                    },
+                    "ElasticsearchVolumeType": {
+                        "Ref": "ElasticsearchVolumeType"
+                    },
+                    "ElasticsearchInstanceType": {
+                        "Ref": "ElasticsearchInstanceType"
+                    },
+                    "ElasticsearchInstanceCount": {
+                        "Ref": "ElasticsearchInstanceCount"
+                    },
+                    "KeyPairName": {
+                        "Ref": "KeyPairName"
+                    },
+                    "PrivateSubnet1ID": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.PrivateSubnet1AID"
+                        ]
+                    },
+                    "PrivateSubnet2ID": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.PrivateSubnet2AID"
+                        ]
+                    },
+                    "PublicSubnet1ID": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.PublicSubnet1ID"
+                        ]
+                    },
+                    "PublicSubnet2ID": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.PublicSubnet2ID"
+                        ]
+                    },
+                    "VPCID": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.VPCID"
+                        ]
+                    },
+                    "VPCCIDR": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.VPCCIDR"
+                        ]
+                    }
+                }
+            }
+        },
+        "LinuxBastionHostStack": {
+            "DependsOn": "VPCStack",
+            "Condition": "IsLinuxBastion",
+            "Properties": {
+                "Parameters": {
+                    "BastionAMIOS": "Amazon-Linux-HVM",
+                    "KeyPairName": {
+                        "Ref": "KeyPairName"
+                    },
+                    "PublicSubnet1ID": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.PublicSubnet1ID"
+                        ]
+                    },
+                    "PublicSubnet2ID": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.PublicSubnet2ID"
+                        ]
+                    },
+                    "QSS3BucketName": {
+                        "Ref": "QSS3BucketName"
+                    },
+                    "QSS3KeyPrefix": {
+                        "Fn::Sub": "${QSS3KeyPrefix}submodules/quickstart-linux-bastion/"
+                    },
+                    "RemoteAccessCIDR": {
+                        "Ref": "AccessCIDR"
+                    },
+                    "VPCID": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.VPCID"
+                        ]
+                    }
+                },
+                "TemplateURL": {
+                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}submodules/quickstart-linux-bastion/templates/linux-bastion.template"
+                }
+            },
+            "Type": "AWS::CloudFormation::Stack"
+        },
+        "VPCStack": {
+            "Type": "AWS::CloudFormation::Stack",
+            "Properties": {
+                "TemplateURL": {
+                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}submodules/quickstart-aws-vpc/templates/aws-vpc.template"
+                },
+                "Parameters": {
+                    "AvailabilityZones": {
+                        "Fn::Join": [
+                            ",",
+                            {
+                                "Ref": "AvailabilityZones"
+                            }
+                        ]
+                    },
+                    "KeyPairName": {
+                        "Ref": "KeyPairName"
+                    },
+                    "NumberOfAZs": {
+                        "Ref": "NoOfAzs"
+                    },
+                    "PrivateSubnet1ACIDR": {
+                        "Ref": "PrivateSubnet1CIDR"
+                    },
+                    "PrivateSubnet2ACIDR": {
+                        "Ref": "PrivateSubnet2CIDR"
+                    },
+                    "PublicSubnet1CIDR": {
+                        "Ref": "PublicSubnet1CIDR"
+                    },
+                    "PublicSubnet2CIDR": {
+                        "Ref": "PublicSubnet2CIDR"
+                    },
+                    "VPCCIDR": {
+                        "Ref": "VPCCIDR"
+                    }
+                }
+            }
+        }
+    },
+    "Outputs": {
+        "DatalakeWebUrl": {
+            "Description": "Datalake Webapp URL",
+            "Value": {
+				"Fn::GetAtt": [
+					"DatalakeStack",
+					"Outputs.WebServerELBEndpoint"
+				]
+            }
+        },
+        "S3Bucket": {
+            "Description": "S3 Bucket",
+            "Value": {
+                "Fn::GetAtt": [
+                    "DatalakeStack",
+                    "Outputs.S3Bucket"
+                ]
+            }
+        },
+        "ElasticSearchEndpoint": {
+            "Description": "Elasticsearch Endpoint",
+            "Value": {
+                "Fn::GetAtt": [
+                    "DatalakeStack",
+                    "Outputs.ElasticsearchEndpoint"
+                ]
+            }
+        },
+        "WebServerELBEndpoint": {
+            "Description": "Datalake WebServer ELB Endpoint",
+            "Value": {
+                "Fn::GetAtt": [
+                    "DatalakeStack",
+                    "Outputs.WebServerELBEndpoint"
+                ]
+            }
+        },
+        "LambdaFunction": {
+            "Description": "Lambda Function",
+            "Value": {
+                "Fn::GetAtt": [
+                    "DatalakeStack",
+                    "Outputs.LambdaFunction"
+                ]
+            }
+        },
+        "RDSEndpoint": {
+            "Description": "RDS endpoint",
+            "Value": {
+                "Fn::GetAtt": [
+                    "DatalakeStack",
+                    "Outputs.RDSEndpoint"
+                ]
+            }
+        },
+        "RedshiftClusterEndpoint": {
+            "Description": "Redshift Cluster endpoint",
+            "Value": {
+                "Fn::GetAtt": [
+                    "DatalakeStack",
+                    "Outputs.RedshiftClusterEndpoint"
+                ]
+            }
+        },
+        "FirehoseDeliveryStream": {
+            "Description": "Firehose delivery stream",
+            "Value": {
+                "Fn::GetAtt": [
+                    "DatalakeStack",
+                    "Outputs.FirehoseDeliveryStream"
+                ]
+            }
+        },
+        "CloudTrail": {
+            "Description": "CloudTrail",
+            "Value": {
+                "Fn::GetAtt": [
+                    "DatalakeStack",
+                    "Outputs.CloudTrail"
+                ]
+            }
+        },
+        "VPCInfo": {
+            "Description": "VPC ID",
+            "Value": {
+                "Fn::GetAtt": [
+                    "VPCStack",
+                    "Outputs.VPCID"
+                ]
+            }
+        },
+        "PrivateSubnet1": {
+            "Description": "Private Subnet ID",
+            "Value": {
+                "Fn::GetAtt": [
+                    "VPCStack",
+                    "Outputs.PrivateSubnet1AID"
+                ]
+            }
+        },
+        "PrivateSubnet2": {
+            "Description": "Private Subnet ID",
+            "Value": {
+                "Fn::GetAtt": [
+                    "VPCStack",
+                    "Outputs.PrivateSubnet2AID"
+                ]
+            }
+        },
+        "PublicSubnet1": {
+            "Description": "Public Subnet ID",
+            "Value": {
+                "Fn::GetAtt": [
+                    "VPCStack",
+                    "Outputs.PublicSubnet1ID"
+                ]
+            }
+        },
+        "PublicSubnet2": {
+            "Description": "Public Subnet ID",
+            "Value": {
+                "Fn::GetAtt": [
+                    "VPCStack",
+                    "Outputs.PublicSubnet2ID"
+                ]
+            }
+        },
+        "BastionHost": {
+            "Condition": "IsLinuxBastion",
+            "Description": "Bastion host IP",
+            "Value": {
+                "Fn::GetAtt": [
+                    "LinuxBastionHostStack",
+                    "Outputs.EIP1"
+                ]
+            }
+        }
+    }
+}

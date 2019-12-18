@@ -1,0 +1,198 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  (qs-1ph8nehai) 
+  Serverless CICD Quick Start
+  Master template refers to sub-templates
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Application configuration
+        Parameters:
+          - AppName
+      - Label:
+          default: Accounts configuration
+        Parameters:
+          - DevAwsAccountId
+          - DevChildAccountRoleName
+          - ProdAwsAccountId
+          - ProdChildAccountRoleName
+      - Label:
+          default: Pipeline configuration
+        Parameters:
+          - BuildImageName
+      - Label:
+          default: AWS Quick Start configuration
+        Parameters:
+          - QSS3BucketName
+          - QSS3KeyPrefix
+    ParameterLabels:
+      AppName:
+        default: Application name
+      DevAwsAccountId:
+        default: Development account ID (child)
+      DevChildAccountRoleName:
+        default: Development account role name
+      ProdAwsAccountId:
+        default: Production account ID (child)
+      ProdChildAccountRoleName:
+        default: Production account role name
+      BuildImageName:
+        default: Build image
+      QSS3BucketName:
+        default: Quick Start S3 bucket name
+      QSS3KeyPrefix:
+        default: Quick Start S3 key prefix
+
+Parameters:
+  DevAwsAccountId:
+    Description: AWS account ID for development account
+    Type: String
+    AllowedPattern: (\d{12}|^$)
+    ConstraintDescription: Must be an AWS account ID
+  ProdAwsAccountId:
+    Description: AWS account ID for production account
+    Type: String
+    AllowedPattern: (\d{12}|^$)
+    ConstraintDescription: Must be an AWS account ID
+  AppName:
+    Description: Application name, used for the repository and child stack name
+    Type: String
+    Default: Sample
+  BuildImageName:
+    Description: Docker image for application build
+    Type: String
+    Default: aws/codebuild/nodejs:10.1.0
+  QSS3BucketName:
+    AllowedPattern: "^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$"
+    ConstraintDescription: Quick Start bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-).
+    Default: aws-quickstart
+    Description: S3 bucket name for the Quick Start assets. This string can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-)
+    Type: String
+  QSS3KeyPrefix:
+    AllowedPattern: "^[0-9a-zA-Z-/]*$"
+    ConstraintDescription: AWS Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/). It cannot start with forward slash (/) because that is automatically appended.
+    Default: quickstart-trek10-serverless-enterprise-cicd/
+    Description: S3 key prefix for the AWS Quick Start assets. AWS Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/). It cannot start with forward slash (/) because that is automatically appended. It will typically end with a forward slash.
+    Type: String
+  ProdChildAccountRoleName:
+    Description: Name of role created by ChildAccountRole template in production account
+    Type: String
+    Default: ChildAccountRole
+  DevChildAccountRoleName:
+    Description: Name of role created by ChildAccountRole template in development account
+    Type: String
+    Default: ChildAccountRole
+
+Resources:
+  AccountStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      Parameters:
+        DevAwsAccountId: !Ref DevAwsAccountId
+        ProdAwsAccountId: !Ref ProdAwsAccountId
+      TemplateURL: !Sub https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}templates/account.template.yaml
+      TimeoutInMinutes: 60
+
+  LambdaStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      Parameters:
+        DevAwsAccountId: !Ref DevAwsAccountId
+        ProdAwsAccountId: !Ref ProdAwsAccountId
+        PipelineServiceRoleArn: !GetAtt AccountStack.Outputs.PipelineServiceRoleArn
+        AppName: !Ref AppName
+        QSS3BucketName: !Ref QSS3BucketName
+        QSS3KeyPrefix: !Ref QSS3KeyPrefix
+        ArtifactBucket: !GetAtt AccountStack.Outputs.PipelineArtifactBucket
+        SamTranslationBucket: !GetAtt AccountStack.Outputs.SamTranslationBucket
+      TemplateURL: !Sub https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}templates/lambda.template.yaml
+      TimeoutInMinutes: 60
+
+  CrossAccountStackDev:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      Parameters:
+        AwsAccountId: !Ref DevAwsAccountId
+        QuickStartStackMakerLambda: !GetAtt LambdaStack.Outputs.QuickStartStackMakerLambda
+        Stage: dev
+        ChildAccountRoleName: !Ref DevChildAccountRoleName
+      TemplateURL: !Sub https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}templates/cross-account.template.yaml
+      TimeoutInMinutes: 60
+
+  CrossAccountStackProd:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      Parameters:
+        AwsAccountId: !Ref ProdAwsAccountId
+        QuickStartStackMakerLambda: !GetAtt LambdaStack.Outputs.QuickStartStackMakerLambda
+        Stage: prod
+        ChildAccountRoleName: !Ref ProdChildAccountRoleName
+      TemplateURL: !Sub https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}templates/cross-account.template.yaml
+      TimeoutInMinutes: 60
+
+  ProjectSetupStack:
+    DependsOn:
+      - CrossAccountStackDev
+      - CrossAccountStackProd
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      Parameters:
+        DevAwsAccountId: !Ref DevAwsAccountId
+        ProdAwsAccountId: !Ref ProdAwsAccountId
+        AppName: !Ref AppName
+        DynamicPipelineMakerLambdaArn: !GetAtt LambdaStack.Outputs.DynamicPipelineMakerLambda
+        CodecommitCredentialsLambdaArn: !GetAtt LambdaStack.Outputs.CodecommitCredentialsLambda
+        BuildImageName: !Ref BuildImageName
+        ArtifactBucket: !GetAtt AccountStack.Outputs.PipelineArtifactBucket
+        ArtifactBucketKeyArn: !GetAtt AccountStack.Outputs.ArtifactBucketKeyArn
+        SamTranslationBucket: !GetAtt AccountStack.Outputs.SamTranslationBucket
+        PipelineServiceRoleArn: !GetAtt AccountStack.Outputs.PipelineServiceRoleArn
+      TemplateURL: !Sub https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}templates/project.template.yaml
+      TimeoutInMinutes: 60
+
+  ProjectPipelineStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      Parameters:
+        DevAwsAccountId: !Ref DevAwsAccountId
+        ProdAwsAccountId: !Ref ProdAwsAccountId
+        AppName: !Ref AppName
+        DynamicPipelineCleanupLambdaArn: !GetAtt LambdaStack.Outputs.DynamicPipelineCleanupLambda
+        BuildImageName: !Ref BuildImageName
+        ArtifactBucketKeyArn: !GetAtt AccountStack.Outputs.ArtifactBucketKeyArn
+        ArtifactBucket: !GetAtt AccountStack.Outputs.PipelineArtifactBucket
+        SamTranslationBucket: !GetAtt AccountStack.Outputs.SamTranslationBucket
+        PipelineServiceRoleArn: !GetAtt AccountStack.Outputs.PipelineServiceRoleArn
+        SecretArnDev: !GetAtt ProjectSetupStack.Outputs.SecretArnDev
+        SecretArnProd: !GetAtt ProjectSetupStack.Outputs.SecretArnProd
+        SecretsManagerKey: !GetAtt ProjectSetupStack.Outputs.SecretsManagerKey
+      TemplateURL: !Sub https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}templates/pipeline.template.yaml
+      TimeoutInMinutes: 60
+
+  CleanUpSamBuckets:
+    Type: AWS::CloudFormation::CustomResource
+    Properties:
+      ServiceToken: !GetAtt LambdaStack.Outputs.CleanUpBucketsLambda
+      Bucket: !GetAtt AccountStack.Outputs.SamTranslationBucket
+
+  CleanUpArtifactBuckets:
+    Type: AWS::CloudFormation::CustomResource
+    Properties:
+      ServiceToken: !GetAtt LambdaStack.Outputs.CleanUpBucketsLambda
+      Bucket: !GetAtt AccountStack.Outputs.PipelineArtifactBucket
+
+Outputs:
+  RepoCloneUrlSsh:
+    Value: !GetAtt ProjectSetupStack.Outputs.RepoCloneUrlSsh
+  RepoCloneUrlHttp:
+    Value: !GetAtt ProjectSetupStack.Outputs.RepoCloneUrlHttp
+  IAMUserName:
+    Value: !GetAtt ProjectSetupStack.Outputs.IAMUserName
+  GitUserName:
+    Description: Username for access to the CodeCommit repository
+    Value: !GetAtt ProjectSetupStack.Outputs.GitUserName
+  GitPassword:
+    Description: Password for access to the CodeCommit repository
+    Value: !GetAtt ProjectSetupStack.Outputs.GitPassword

@@ -1,0 +1,217 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: McAfee-ePO Utils template creates common resources.
+Conditions:
+  cGovCloudCondition: !Or
+    - !Equals [ !Ref 'AWS::Region', us-gov-west-1 ]
+    - !Equals [ !Ref 'AWS::Region', us-gov-east-1 ]
+  cNotGovCloudCondition: !Not [ !Condition cGovCloudCondition ]
+Resources:
+  ##############################################################################
+  # Check Stack Details, validates custom parameters and gets the stack details
+  ##############################################################################
+  # Check stack details lambda role
+  CheckStackDetailsLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: /
+      Policies:
+        - PolicyName: CheckStackDetailsLambdaRole
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: '*'
+              - !If
+                - cNotGovCloudCondition
+                - Effect: Allow
+                  Action:
+                    - route53:GetHostedZoneCount
+                    - route53:ListHostedZonesByName
+                  Resource: '*'
+                - !Ref AWS::NoValue
+              - Effect: Allow
+                Action:
+                  - cloudformation:DescribeStacks
+                  - cloudformation:DescribeStackResource
+                  - iam:GetRole
+                Resource: '*'
+
+  # Check stack details lambda
+  CheckStackDetailsLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: index.handler
+      Role: !GetAtt  CheckStackDetailsLambdaRole.Arn
+      MemorySize: 128
+      Runtime: python3.6
+      Timeout: 180
+      Code: !If
+        - cNotGovCloudCondition
+        - ZipFile: !Sub |
+            #!/usr/bin/env python3
+            import json
+            import boto3
+            import cfnresponse
+
+            r53 = boto3.client('route53')
+            cfn = boto3.client('cloudformation')
+
+            def is_route53_domain_exist(domain_name):
+                try:
+                    response = r53.get_hosted_zone_count()
+                    if '0' != response['HostedZoneCount']:
+                        response = r53.list_hosted_zones_by_name(DNSName=domain_name)
+                        if 0 != len(response['HostedZones']):
+                          if domain_name == response['HostedZones'][0]['Name']:
+                              return True
+                    return False
+                except Exception as e:
+                    print(str(e))
+
+            def get_stack_status(stack_name):
+                cloudformation = boto3.resource('cloudformation')
+                stack = cloudformation.Stack(stack_name)
+                return stack.stack_status
+
+            def check_parameter_details(request_type, user_data):
+                if request_type == 'Create':
+                    domain_name = user_data['DomainName']
+                    sub_domain_name = user_data['SubDomainName']
+                    # domain name validation
+                    if '' != domain_name and False == is_route53_domain_exist(domain_name + '.'):
+                        print(domain_name + ' is not in AWS route53 hosted zone')
+                        return False
+
+                    # Sub domain validation
+                    if 'UPDATE_IN_PROGRESS' != get_stack_status(user_data['StackName']) and True == is_route53_domain_exist(sub_domain_name + '.'):
+                        print(sub_domain_name + ' is already in AWS route53 hosted zone')
+                        return False
+                return True
+
+            def get_hosted_zone_id(user_data, response):
+                try:
+                    # Get hosted Zone Id of domain name
+                    domain_name = user_data['DomainName']
+                    response['HostedZoneId'] = ''
+                    if '' != domain_name:
+                        result = r53.list_hosted_zones_by_name(DNSName=domain_name)
+                        response['HostedZoneId'] = result['HostedZones'][0]['Id'].split('/')[2]
+                    print(response)
+                    return response
+                except Exception as e:
+                    print(str(e))
+
+            def check_stack_details(user_data, response):
+                result = cfn.describe_stacks(StackName=user_data['StackName'])
+                if 'Stacks'  in result:
+                    if 'RootId' in result['Stacks'][0]:
+                        root_stack_id = result['Stacks'][0]['RootId']
+                        root_stack_name = root_stack_id.split('/')[1]
+                        response['ParentStack'] = root_stack_name
+                        response['ParentStackID'] = root_stack_id
+                    else:
+                        response['ParentStack'] = user_data['StackName']
+                        response['ParentStackID'] = result['Stacks'][0]['StackId']
+                    return response
+                return False
+
+            def handler(event, context):
+                print('Received event: %s' % json.dumps(event))
+                try:
+                    user_data = event.get('ResourceProperties')
+                    status = cfnresponse.SUCCESS
+                    response = {}
+                    request_type = event['RequestType']
+                    if request_type != 'Delete':
+                        if False == check_parameter_details(request_type, user_data):
+                            status = cfnresponse.FAILED
+                        else:
+                            response = get_hosted_zone_id(user_data, response)
+                            print(response)
+                            response = check_stack_details(user_data, response)
+                            print(response)
+                            if False == response:
+                                status = cfnresponse.FAILED
+                    cfnresponse.send(event, context, status, response, None)
+                except Exception as e:
+                    print('Exception in handling the request, %s' % (str(e)))
+                    cfnresponse.send(event, context, cfnresponse.FAILED, {}, None)
+        - ZipFile: !Sub |
+            #!/usr/bin/env python3
+            import json
+            import boto3
+            import cfnresponse
+
+            cfn = boto3.client('cloudformation')
+
+            def check_stack_details(user_data, response):
+                result = cfn.describe_stacks(StackName=user_data['StackName'])
+                if 'Stacks'  in result:
+                    if 'RootId' in result['Stacks'][0]:
+                        root_stack_id = result['Stacks'][0]['RootId']
+                        root_stack_name = root_stack_id.split('/')[1]
+                        response['ParentStack'] = root_stack_name
+                        response['ParentStackID'] = root_stack_id
+                    else:
+                        response['ParentStack'] = user_data['StackName']
+                        response['ParentStackID'] = result['Stacks'][0]['StackId']
+                    return response
+                return False
+
+            def handler(event, context):
+                print('Received event: %s' % json.dumps(event))
+                try:
+                    user_data = event.get('ResourceProperties')
+                    status = cfnresponse.SUCCESS
+                    response = {}
+                    request_type = event['RequestType']
+                    if request_type != 'Delete':
+                      response = check_stack_details(user_data, response)
+                      print(response)
+                      if False == response:
+                          status = cfnresponse.FAILED
+                    cfnresponse.send(event, context, status, response, None)
+                except Exception as e:
+                    print('Exception in handling the request, %s' % (str(e)))
+                    cfnresponse.send(event, context, cfnresponse.FAILED, {}, None)
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-CheckStackDetailsLambda
+        - Key: Product
+          Value: McAfee-ePO
+        - Key: Solution
+          Value: McAfee-ePO
+
+  # Check stack details lambda version
+  CheckStackDetailsLambdaVersion1:
+    Type: AWS::Lambda::Version
+    Properties:
+      FunctionName: !Ref CheckStackDetailsLambda
+
+  # Check stack details lambda log group
+  CheckStackDetailsLambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Retain
+    DependsOn: CheckStackDetailsLambda
+    Properties:
+      LogGroupName: !Join
+            - ''
+            - - '/aws/lambda/'
+              - !Ref CheckStackDetailsLambda
+      RetentionInDays: 7
+Outputs:
+  CheckStackDetailsLambdaArn:
+    Description: CheckStackDetailsLambda Arn
+    Value: !GetAtt CheckStackDetailsLambda.Arn

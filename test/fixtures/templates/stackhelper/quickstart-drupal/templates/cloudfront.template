@@ -1,0 +1,168 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "Drupal CloudFront Web Distribution",
+    "Parameters":{
+        "OriginDnsName":{
+            "Description": "The public application load balancer dns name.",
+            "Type": "String"
+        },
+        "OriginAccessProtocol":{
+            "Description": "Protocol to be used by CloudFront to connect to ALB",
+            "Type": "String",
+            "AllowedValues":["http-only", "https-only", "match-viewer"],
+            "Default": "http-only",
+            "ConstraintDescription": "Choose http-only or https-only or match-viewer"
+        },
+        "CloudFrontAlias":{
+            "Description": "Alias for the CloudFront distribution. E.g. cdn.mysite.com",
+            "Type": "List<String>",
+            "Default": "cdn.default",
+            "AllowedPattern": "(?!-)[a-zA-Z0-9-.]*(?<!-)",
+            "ConstraintDescription": "Must be a valid fully-qualified domain name."
+        },
+        "CustomSSLCertificateId":{
+            "Default": "",
+            "Description": "The ARN of the SSL certificate in Certificate Manager",
+            "Type": "String"
+        },
+        "CloudFrontPriceClass":{
+            "AllowedValues":[
+                "use-all-edge-locations",
+                "use-only-us-canada-europe-asia",
+                "use-only-us-canada-europe"
+            ],
+            "Default": "use-all-edge-locations",
+            "Description": "Select the price class associated with the maximum price that you want to pay for CloudFront service. If you select a price class other than All, some of your users may experience higher latency.",
+            "Type": "String",
+            "ConstraintDescription": "Select a valid CloudFront Price Class."
+        }
+    },
+    "Mappings":{
+        "CloudFrontPriceClassMap":{
+            "use-all-edge-locations":{
+                "PriceCode": "PriceClass_All"
+            },
+            "use-only-us-canada-europe-asia":{
+                "PriceCode": "PriceClass_200"
+            },
+            "use-only-us-canada-europe":{
+                "PriceCode": "PriceClass_100"
+            }
+        }
+    },
+    "Conditions":{
+        "DistributionHasAliases": {
+            "Fn::Not": [{"Fn::Equals": [{"Fn::Select":[0, {"Ref": "CloudFrontAlias"}]}, "cdn.default"]}]
+        },
+        "DistributionHasSSL": {
+            "Fn::Not": [
+                {
+                    "Fn::Equals": [
+                        {
+                            "Ref": "CustomSSLCertificateId"
+                        },
+                        ""
+                    ]
+                }
+            ]
+        }
+    },
+    "Resources":{
+        "DrupalCloudfrontDistribution":{
+            "Type":"AWS::CloudFront::Distribution",
+            "Properties": {
+                "DistributionConfig": {
+                    "Aliases": {
+                        "Fn::If":[
+                            "DistributionHasAliases",
+                            {
+                                "Ref": "CloudFrontAlias"
+                            },
+                            {
+                                "Ref": "AWS::NoValue"
+                            }
+                        ]
+                    },
+                    "ViewerCertificate":{
+                        "AcmCertificateArn":{
+                            "Fn::If":[
+                                "DistributionHasSSL",
+                                {
+                                    "Ref": "CustomSSLCertificateId"
+                                },
+                                {
+                                    "Ref": "AWS::NoValue"
+                                }
+                            ]
+                        },
+                        "CloudFrontDefaultCertificate":{
+                            "Fn::If":[
+                                "DistributionHasSSL",
+                                {
+                                    "Ref": "AWS::NoValue"
+                                },
+                                "true"
+                            ]
+                        },
+                        "SslSupportMethod":{
+                            "Fn::If": [
+                                "DistributionHasSSL",
+                                "sni-only",
+                                {
+                                    "Ref": "AWS::NoValue"
+                                }
+                            ]
+                        }
+                    },
+                    "Comment":{"Ref": "AWS::StackName"},
+                    "DefaultCacheBehavior":{
+                        "AllowedMethods": ["HEAD", "GET"],
+                        "MinTTL": "0",
+                        "MaxTTL": "31536000",
+                        "DefaultTTL": "86400",
+                        "ForwardedValues":{
+                            "QueryString": "false"
+                        },
+                        "TargetOriginId": "alb",
+                        "ViewerProtocolPolicy": "allow-all",
+                        "Compress": "false"
+                    },
+                    "Enabled": "true",
+                    "Origins":[
+                        {
+                            "Id": "alb",
+                            "DomainName": {"Ref": "OriginDnsName"},
+                            "CustomOriginConfig":{
+                                "OriginProtocolPolicy": {"Ref": "OriginAccessProtocol"}
+                            }
+                        }   
+                    ],
+                    "PriceClass": {
+                        "Fn::FindInMap":[
+                            "CloudFrontPriceClassMap",
+                            {
+                                "Ref": "CloudFrontPriceClass"
+                            },
+                            "PriceCode"
+                        ]
+                    }
+                },
+                "Tags":[
+                    {
+                        "Key": "Name",
+                        "Value": "Drupal-Cloudfront-Distribution"
+                    }
+                ]
+            }
+        }
+    },
+    "Outputs":{
+        "CdnUrl":{
+            "Description": "The URL of CloudFront Distribution",
+            "Value": {"Fn::GetAtt":[
+                "DrupalCloudfrontDistribution",
+                "DomainName"
+            ]}
+        }
+    }
+}

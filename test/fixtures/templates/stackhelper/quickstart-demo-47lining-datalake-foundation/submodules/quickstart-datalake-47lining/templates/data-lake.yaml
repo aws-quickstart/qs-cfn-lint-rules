@@ -1,0 +1,491 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Data Lake Foundation is a QuickStart that provides a Data Lake architecture,
+  Redshift cluster, Elasticsearch domain, Data Lake walk-through wizard running on
+  AWS EC2 instance, in the same VPC through Cloudformation templates that provision
+  and configure the required resources, including related QuickStarts. This template
+  provisions all of the resources that are specific to the Quick Start.  Leveraged
+  Quick Starts (VPC, LinuxBastion), if needed, can be provisioned by using the data-lake-foundation-master
+  template. **WARNING** You will be billed for the AWS resources used if you create
+  a stack from this template.(qs-1nlkhq1o3)
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Network Configuration
+        Parameters:
+          - VPCID
+          - VPCCIDR
+          - PrivateSubnet1ID
+          - PrivateSubnet2ID
+          - PublicSubnet1ID
+          - PublicSubnet2ID
+          - NAT1ElasticIP
+          - NAT2ElasticIP
+      - Label:
+          default: Elasticsearch Configuration
+        Parameters:
+          - RemoteAccessCIDR
+          - ElasticsearchNodeType
+          - ElasticsearchNodeCount
+      - Label:
+          default: Redshift Configuration
+        Parameters:
+          - EnableRedshift
+          - MakeRedshiftPubliclyAccessible
+          - RedshiftUsername
+          - RedshiftPassword
+          - RedshiftNumberOfNodes
+          - RedshiftNodeType
+          - RedshiftDatabaseName
+          - RedshiftDatabasePort
+      - Label:
+          default: Kinesis configuration
+        Parameters:
+          - KinesisDataStreamName
+          - KinesisDataStreamS3Prefix
+      - Label:
+          default: SageMaker Configuration
+        Parameters:
+          - NotebookInstanceName
+          - NotebookInstanceType
+          - NotebookTrainingInstanceType
+      - Label:
+          default: AWS Quick Start Configuration
+        Parameters:
+          - QSS3BucketName
+          - QSS3KeyPrefix
+          - KeyPairName
+    ParameterLabels:
+      KeyPairName:
+        default: Key Pair Name
+      RemoteAccessCIDR:
+        default: Remote Access CIDR
+      ElasticsearchNodeType:
+        default: Elasticsearch Instance Type
+      ElasticsearchNodeCount:
+        default: Elasticsearch Node Count
+      EnableRedshift:
+        default: Enable Redshift
+      MakeRedshiftPubliclyAccessible:
+        default: Make Redshift publicly accessible
+      RedshiftUsername:
+        default: Redshift User Name
+      RedshiftPassword:
+        default: Redshift Password
+      RedshiftNumberOfNodes:
+        default: Redshift Number of Nodes
+      RedshiftNodeType:
+        default: Redshift Node Type
+      RedshiftDatabaseName:
+        default: Redshift Database Name
+      RedshiftDatabasePort:
+        default: Redshift Database Port
+      QSS3BucketName:
+        default: Quick Start S3 Bucket Name
+      QSS3KeyPrefix:
+        default: Quick Start S3 Key Prefix
+      PrivateSubnet1ID:
+        default: Existing VPC Private Subnet 1 ID
+      PrivateSubnet2ID:
+        default: Existing VPC Private Subnet 2 ID
+      PublicSubnet1ID:
+        default: Existing VPC Public Subnet 1 ID
+      PublicSubnet2ID:
+        default: Existing VPC Public Subnet 2 ID
+      NAT1ElasticIP:
+        default: NAT 1 IP address
+      NAT2ElasticIP:
+        default: NAT 2 IP address
+      VPCID:
+        default: Existing VPC ID
+      VPCCIDR:
+        default: Existing VPC CIDR
+      KinesisDataStreamName:
+        default: Kinesis Data Stream Name
+      KinesisDataStreamS3Prefix:
+        default: Kinesis Data Stream S3 Prefix
+      NotebookInstanceName:
+        default: Notebook Instance Name
+      NotebookInstanceType:
+        default: Notebook Instance Type
+      NotebookTrainingInstanceType:
+        default: Notebook Training Instance Type
+Conditions:
+  RedshiftPubliclyAccessible: !Equals
+    - !Ref 'MakeRedshiftPubliclyAccessible'
+    - 'yes'
+  CreateRedshift: !Equals
+    - !Ref 'EnableRedshift'
+    - 'yes'
+Parameters:
+  AvailabilityZones:
+    Description: The list of Availability Zones to use for the subnets in the VPC.
+      You must specify two Availability Zones. By default, the Quick Start preserves
+      the logical order you specify.
+    Type: List<AWS::EC2::AvailabilityZone::Name>
+  ElasticsearchNodeCount:
+    Default: '1'
+    Description: The number of nodes in the Elasticsearch cluster. For guidance, see
+      the Amazon ES documentation.
+    Type: Number
+  ElasticsearchNodeType:
+    AllowedValues:
+      - t2.small.elasticsearch
+      - m4.large.elasticsearch
+      - m4.xlarge.elasticsearch
+      - c4.large.elasticsearch
+      - c4.xlarge.elasticsearch
+      - r4.large.elasticsearch
+      - r4.xlarge.elasticsearch
+    ConstraintDescription: must be a valid Elasticsearch node type.
+    Default: t2.small.elasticsearch
+    Description: EC2 instance type for the Elasticsearch cluster.
+    Type: String
+  EnableRedshift:
+    AllowedValues:
+      - 'yes'
+      - 'no'
+    Default: 'yes'
+    Description: "Specifies whether Amazon Redshift will be provisioned\
+      \  Set to no if you don\u2019t want to provision the Amazon Redshift cluster."
+    Type: String
+  MakeRedshiftPubliclyAccessible:
+    AllowedValues:
+    - 'yes'
+    - 'no'
+    Default: 'yes'
+    Description: "Specifies whether Amazon Redshift will be publicly accessible.\
+      \ Only applies if EnableRedshift is set to yes."
+    Type: String
+  KeyPairName:
+    Description: Public/private key pairs allow you to securely connect to your instance
+      after it launches
+    Type: AWS::EC2::KeyPair::KeyName
+  KinesisDataStreamName:
+    Default: streaming-submissions
+    Description: "Name of the Kinesis data stream."
+    Type: String
+  KinesisDataStreamS3Prefix:
+    AllowedPattern: ^[0-9a-zA-Z-]+(/[0-9a-zA-Z-]+)*$
+    Default: streaming-submissions
+    Description: "S3 key prefix for your streaming data stored in the S3 submissions\
+      \ bucket. This prefix can include numbers, lowercase letters, uppercase letters,\
+      \ hyphens, and forward slashes, but should not start with a forward slash, which\
+      \ is automatically added. Use this parameter to specify the location for the\
+      \ streaming data you\u2019d like to load."
+    Type: String
+  NAT1ElasticIP:
+    AllowedPattern: ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])
+    Description: Elastic IP address for the first NAT gateway instance that will be
+      allowed access to Amazon ES.
+    Type: String
+  NAT2ElasticIP:
+    AllowedPattern: ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])
+    Description: Elastic IP address for the second NAT gateway instance that will
+      be allowed access to Amazon ES.
+    Type: String
+  PrivateSubnet1ID:
+    Description: ID of the private subnet 1 in Availability Zone 1 (e.g., subnet-a0246dcd)
+    Type: AWS::EC2::Subnet::Id
+  PrivateSubnet2ID:
+    Description: ID of the private subnet 2 in Availability Zone 2 (e.g., subnet-a0246dcd)
+    Type: AWS::EC2::Subnet::Id
+  PublicSubnet1ID:
+    Description: ID of the public subnet 1 in Availability Zone 1 (e.g., subnet-a0246dcd)
+    Type: AWS::EC2::Subnet::Id
+  PublicSubnet2ID:
+    Description: ID of the public subnet 2 in Availability Zone 2 (e.g., subnet-a0246dcd)
+    Type: AWS::EC2::Subnet::Id
+  QSS3BucketName:
+    AllowedPattern: ^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$
+    ConstraintDescription: Quick Start bucket name can include numbers, lowercase
+      letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen
+      (-).
+    Default: aws-quickstart
+    Description: "S3 bucket where the Quick Start templates and scripts are installed.\
+      \ Use this parameter to specify the S3 bucket name you\u2019ve created for your\
+      \ copy of Quick Start assets, if you decide to customize or extend the Quick\
+      \ Start for your own use. The bucket name can include numbers, lowercase letters,\
+      \ uppercase letters, and hyphens, but should not start or end with a hyphen."
+    Type: String
+  QSS3KeyPrefix:
+    AllowedPattern: ^[0-9a-zA-Z-/]*$
+    ConstraintDescription: Quick Start key prefix can include numbers, lowercase letters,
+      uppercase letters, hyphens (-), and forward slash (/). It cannot start or end
+      with forward slash (/) because they are automatically appended.
+    Default: quickstart-datalake-47lining/
+    Description: S3 key prefix used to simulate a folder for your copy of Quick Start
+      assets, if you decide to customize or extend the Quick Start for your own use.
+      This prefix can include numbers, lowercase letters, uppercase letters, hyphens,
+      and forward slashes.
+    Type: String
+  RedshiftDatabaseName:
+    AllowedPattern: ([a-z]|[0-9])+
+    ConstraintDescription: must contain a-z or 0-9 only.
+    Default: quickstart
+    Description: The name of the first database to be created when the Amazon Redshift
+      cluster is provisioned.
+    Type: String
+  RedshiftDatabasePort:
+    Default: '5439'
+    Description: The port that Amazon Redshift will listen on, which will be allowed
+      through the security group.
+    Type: String
+  RedshiftNodeType:
+    AllowedValues:
+      - dw1.xlarge
+      - dw1.8xlarge
+      - dw2.large
+      - dw2.8xlarge
+      - dc1.large
+      - dc1.8xlarge
+      - ds1.xlarge
+      - ds1.8xlarge
+      - ds2.xlarge
+      - ds2.8xlarge
+    ConstraintDescription: must be a valid Redshift node type.
+    Default: dc1.large
+    Description: Instance type for the nodes in the Amazon Redshift cluster.
+    Type: String
+  RedshiftNumberOfNodes:
+    Default: '1'
+    Description: "The number of nodes in the Amazon Redshift cluster. If you specify\
+      \ a number that\u2019s larger than 1, the Quick Start will launch a multi-node\
+      \ cluster."
+    Type: Number
+  RedshiftPassword:
+    Description: 'The password that is associated with the master user account for
+      the Amazon Redshift cluster. The password must contain 8 to 64 printable ASCII
+      characters, excluding: /, ", \'', \ and @. It must contain one uppercase letter,
+      one lowercase letter, and one number.'
+    MaxLength: '64'
+    NoEcho: 'true'
+    Type: String
+  RedshiftUsername:
+    AllowedPattern: ^[a-z][a-z0-9_]*$
+    ConstraintDescription: User name parameter must be lowercase, begin with a letter,
+      contain only alphanumeric characters or underscores, and be less than 128 characters.
+    Default: datalake
+    Description: 'The user name that is associated with the master user account for
+      the Amazon Redshift cluster. The user name must contain fewer than 128 alphanumeric
+      characters or underscores, and must be lowercase and begin with a letter. '
+    MaxLength: '128'
+    MinLength: '1'
+    Type: String
+  RemoteAccessCIDR:
+    AllowedPattern: ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/([0-9]|[1-2][0-9]|3[0-2]))$
+    ConstraintDescription: CIDR block parameter must be in the form x.x.x.x/x
+    Description: The CIDR IP range that is permitted to SSH into the bastion host
+      instance and access Amazon ES. We recommend that you set this value to a trusted
+      IP range. For example, you might want to grant only your corporate network access
+      to the software. You can use http://checkip.amazonaws.com/  to check your IP
+      address. This parameter must be in the form x.x.x.x/x (e.g., 96.127.8.12/32,
+      YOUR_IP/32).
+    Type: String
+  VPCCIDR:
+    AllowedPattern: ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/(1[6-9]|2[0-8]))$
+    ConstraintDescription: CIDR block parameter must be in the form x.x.x.x/16-28
+    Description: CIDR block for the VPC.
+    Type: String
+  VPCID:
+    Description: ID of your existing VPC (e.g., vpc-0343606e).
+    Type: AWS::EC2::VPC::Id
+  NotebookInstanceName:
+    AllowedPattern: ^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$
+    ConstraintDescription: Must be unique within your account in an AWS Region.
+    Type: String
+    Default: NotebookInstanceName
+    Description: Name of the Amazon SageMaker Notebook instance.
+    MaxLength: '30'
+    MinLength: '1'
+  NotebookInstanceType:
+    Description: The EC2 instance type for the data lake Amazon SageMaker Notebook instance.
+    ConstraintDescription: Must select a valid Notebook instance type.
+    Type: String
+    AllowedValues:
+      - ml.t2.medium
+      - ml.t2.large
+      - ml.t2.xlarge
+    Default: ml.t2.large
+  NotebookTrainingInstanceType:
+    Description: The EC2 instance type for the Amazon SageMaker training instance which will be used for model training.
+    ConstraintDescription: Must select a valid Notebook instance type.
+    Type: String
+    AllowedValues:
+      - ml.m5.large
+      - ml.m5.xlarge
+      - ml.m5.2xlarge
+      - ml.m5.4xlarge
+      - ml.c5.xlarge
+      - ml.c5.2xlarge
+      - ml.c5.4xlarge
+      - ml.c5.9xlarge
+    Default: ml.m5.xlarge
+Rules:
+  ValidateEnableRedshift:
+    RuleCondition: !Equals [!Ref EnableRedshift, "yes"]
+    Assertions:
+      - Assert: !Not [!Equals [!Ref RedshiftPassword, ""]]
+        AssertDescription: 'Password must contain 8 to 64 printable ASCII characters
+      excluding: /, ", \'', \ and @. It must contain 1 uppercase letter, 1 lowercase
+      letter, and 1 number.'
+Resources:
+  RandomStringStack:
+    Properties:
+      TemplateURL: !Sub 'https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}templates/random-string.yaml'
+    Type: AWS::CloudFormation::Stack
+  BucketsStack:
+    Properties:
+      Parameters:
+        RandomStringArn: !GetAtt 'RandomStringStack.Outputs.RandomStringArn'
+      TemplateURL: !Sub 'https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}templates/buckets.yaml'
+    Type: AWS::CloudFormation::Stack
+  ElasticsearchStack:
+    Properties:
+      Parameters:
+        CopyLambdaDeploymentRoleARN: !GetAtt 'IAMRolesStack.Outputs.CopyLambdaDeploymentRoleARN'
+        ElasticsearchAccessIP: !Ref 'RemoteAccessCIDR'
+        LambdaRoleARN: !GetAtt 'IAMRolesStack.Outputs.LambdaRoleARN'
+        CuratedTopicARN: !GetAtt 'BucketsStack.Outputs.CuratedTopicARN'
+        NAT1ElasticIP: !Ref 'NAT1ElasticIP'
+        NAT2ElasticIP: !Ref 'NAT2ElasticIP'
+        NodeCount: !Ref 'ElasticsearchNodeCount'
+        NodeType: !Ref 'ElasticsearchNodeType'
+        PublishedTopicARN: !GetAtt 'BucketsStack.Outputs.PublishedTopicARN'
+        QSS3BucketName: !Ref 'QSS3BucketName'
+        QSS3KeyPrefix: !Ref 'QSS3KeyPrefix'
+        RegionalLambdaBucketName: !GetAtt 'BucketsStack.Outputs.RegionalLambdaBucketName'
+        RandomStringArn: !GetAtt 'RandomStringStack.Outputs.RandomStringArn'
+        SubmissionsTopicARN: !GetAtt 'BucketsStack.Outputs.SubmissionsTopicARN'
+      TemplateURL: !Sub 'https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}templates/elasticsearch.yaml'
+    Type: AWS::CloudFormation::Stack
+  IAMRolesStack:
+    Properties:
+      Parameters:
+        AthenaQueryResultsBucketARN: !GetAtt 'BucketsStack.Outputs.AthenaQueryResultsBucketARN'
+        EnableRedshift: !Ref 'EnableRedshift'
+        CuratedDatasetsARN: !GetAtt 'BucketsStack.Outputs.CuratedDatasetsARN'
+        PublishedDataARN: !GetAtt 'BucketsStack.Outputs.PublishedDataARN'
+        QSS3BucketName: !Ref 'QSS3BucketName'
+        RegionalLambdaBucketARN: !GetAtt 'BucketsStack.Outputs.RegionalLambdaBucketARN'
+        SubmissionsBucketARN: !GetAtt 'BucketsStack.Outputs.SubmissionsBucketARN'
+      TemplateURL: !Sub 'https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}templates/iam-roles.yaml'
+    Type: AWS::CloudFormation::Stack
+  KinesisSampleStack:
+    Properties:
+      Parameters:
+        KinesisStreamBucketName: !GetAtt 'BucketsStack.Outputs.SubmissionsBucketName'
+        KinesisStreamBucketRoleARN: !GetAtt 'IAMRolesStack.Outputs.KinesisStreamBucketRoleARN'
+        KinesisStreamKeyPrefix: !Ref 'KinesisDataStreamS3Prefix'
+        KinesisStreamName: !Ref 'KinesisDataStreamName'
+        RandomStringArn: !GetAtt 'RandomStringStack.Outputs.RandomStringArn'
+      TemplateURL: !Sub 'https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}templates/kinesis.yaml'
+    Type: AWS::CloudFormation::Stack
+  RedshiftStack:
+    Condition: CreateRedshift
+    DependsOn: []
+    Properties:
+      Parameters:
+        DatabaseName: !Ref 'RedshiftDatabaseName'
+        DatabasePort: !Ref 'RedshiftDatabasePort'
+        NodeType: !Ref 'RedshiftNodeType'
+        NumberOfNodes: !Ref 'RedshiftNumberOfNodes'
+        PubliclyAccessible: !If
+          - RedshiftPubliclyAccessible
+          - 'true'
+          - 'false'
+        QSRedshiftRoleARN: !GetAtt 'IAMRolesStack.Outputs.QSRedshiftRoleARN'
+        RedshiftInboundCIDR: !Ref 'VPCCIDR'
+        RedshiftPassword: !Ref 'RedshiftPassword'
+        RedshiftUsername: !Ref 'RedshiftUsername'
+        SubnetId1: !If
+          - RedshiftPubliclyAccessible
+          - !Ref 'PublicSubnet1ID'
+          - !Ref 'PrivateSubnet1ID'
+        SubnetId2: !If
+          - RedshiftPubliclyAccessible
+          - !Ref 'PublicSubnet2ID'
+          - !Ref 'PrivateSubnet2ID'
+        VpcId: !Ref 'VPCID'
+      TemplateURL: !Sub 'https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}templates/redshift.yaml'
+    Type: AWS::CloudFormation::Stack
+  RegisterKibanaMetadataDashboardLambda:
+    DependsOn: []
+    Properties:
+      Parameters:
+        ElasticsearchEndpoint: !GetAtt 'ElasticsearchStack.Outputs.ElasticsearchEndpoint'
+        QSS3BucketName: !Ref 'QSS3BucketName'
+        QSS3KeyPrefix: !Ref 'QSS3KeyPrefix'
+        RegionalLambdaBucketName: !GetAtt 'BucketsStack.Outputs.RegionalLambdaBucketName'
+        RegisterDashboardRoleARN: !GetAtt 'IAMRolesStack.Outputs.RegisterKibanaDashboardRoleARN'
+      TemplateURL: !Sub 'https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}templates/register-dashboard.yaml'
+    Type: AWS::CloudFormation::Stack
+  GlueStack:
+    Properties:
+      Parameters:
+        CuratedBucketName: !GetAtt 'BucketsStack.Outputs.CuratedBucketName'
+      TemplateURL: !Sub 'https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}templates/glue.yaml'
+    Type: AWS::CloudFormation::Stack
+  SageMakerStack:
+    DependsOn: ElasticsearchStack
+    Properties:
+      Parameters:
+        NotebookInstanceName: !Ref 'NotebookInstanceName'
+        NotebookInstanceType: !Ref 'NotebookInstanceType'
+        RegionalLambdaBucketName: !GetAtt 'BucketsStack.Outputs.RegionalLambdaBucketName'
+        CreateNotebookFunctionExecuteRoleArn: !GetAtt 'IAMRolesStack.Outputs.CreateNotebookFunctionExecuteRoleARN'
+        SageMakerExecutionRoleArn: !GetAtt 'IAMRolesStack.Outputs.SageMakerExecutionRoleARN'
+      TemplateURL: !Sub 'https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}templates/sagemaker.yaml'
+    Type: AWS::CloudFormation::Stack
+Outputs:
+  SubmissionsBucketName:
+    Description: Bucket name for submissions
+    Value: !GetAtt 'BucketsStack.Outputs.SubmissionsBucketName'
+  CuratedBucketName:
+    Description: Bucked name for Curated Datasets
+    Value: !GetAtt 'BucketsStack.Outputs.CuratedBucketName'
+  PublishedBucketName:
+    Description: Bucket name for Published Data
+    Value: !GetAtt 'BucketsStack.Outputs.PublishedBucketName'
+  RedshiftJDBCEndpoint:
+    Description: Redshift JDBC Endpoint
+    Condition: CreateRedshift
+    Value: !GetAtt 'RedshiftStack.Outputs.ConnectionURL'
+  ElasticsearchEndpoint:
+    Description: Elasticsearch endpoint
+    Value: !GetAtt 'ElasticsearchStack.Outputs.ElasticsearchEndpoint'
+  KinesisDataStreamName:
+    Description: KinesisDataStreamName
+    Value: !GetAtt 'KinesisSampleStack.Outputs.KinesisDataStreamName'
+  SageMakerNotebookURL:
+    Description: SageMaker Notebook Instance URL
+    Value: !GetAtt 'SageMakerStack.Outputs.SageMakerNotebookURL'
+  BucketsStackAthenaQueryResultsBucketARN:
+    Value: !GetAtt 'BucketsStack.Outputs.AthenaQueryResultsBucketARN'
+  BucketsStackCuratedDatasetsARN:  # used in Kinesis Demonstration and WebApp too
+    Value: !GetAtt 'BucketsStack.Outputs.CuratedDatasetsARN'
+  BucketsStackPublishedDataARN:
+    Value: !GetAtt 'BucketsStack.Outputs.PublishedDataARN'
+  BucketsStackRegionalLambdaBucketARN:
+    Value: !GetAtt 'BucketsStack.Outputs.RegionalLambdaBucketARN'
+  RegionalLambdaBucketName:
+    Value: !GetAtt 'BucketsStack.Outputs.RegionalLambdaBucketName'
+  BucketsStackSubmissionsBucketARN:  # used in Kinesis Demonstration and WebApp too
+    Value: !GetAtt 'BucketsStack.Outputs.SubmissionsBucketARN'
+  ElasticsearchStackElasticsearchDomainARN:
+    Value: !GetAtt 'ElasticsearchStack.Outputs.ElasticsearchDomainARN'
+  RedshiftStackRedshiftConnectionURL:  # used in WebApp too
+    Condition: CreateRedshift
+    Value: !GetAtt 'RedshiftStack.Outputs.ConnectionURL'
+  CuratedDatasetsDatabaseName:
+    Value: !GetAtt 'GlueStack.Outputs.CuratedDatasetsDatabaseName'
+  DatalakeSubmissionsDatabaseName:
+    Value: !GetAtt 'GlueStack.Outputs.DatalakeSubmissionsDatabaseName'
+  BucketsStackAthenaQueryResultsBucketName:
+    Value: !GetAtt 'BucketsStack.Outputs.AthenaQueryResultsBucketName'
+  ElasticsearchStackKibanaURL:
+    Value: !GetAtt 'ElasticsearchStack.Outputs.KibanaURL'
+  QSRedshiftRoleARN:
+    Description: ARN of QSRedshiftRole
+    Condition: CreateRedshift
+    Value: !GetAtt 'IAMRolesStack.Outputs.QSRedshiftRoleARN'

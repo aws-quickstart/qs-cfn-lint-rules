@@ -1,0 +1,102 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "**WARNING** This template creates an Amazon Lambda. You will be billed for the AWS resources used if you create a stack from this template.",
+    "Parameters": {
+        "ElasticsearchEndpoint": {
+            "Description": "Elasticsearch Endpoint (WARNING: it shouldn't be prefixed with 'https://')",
+            "Type": "String"
+        },
+        "ElasticsearchIndexCleanLambdaRoleARN": {
+            "Type": "String"
+        },
+        "IndexPrefix": {
+            "Description": "Index prefix for managed feeds data",
+            "Type": "String"
+        },
+        "MaxIndexAge": {
+            "Default": 7,
+            "Description": "Number of days after which Managed Feeds are removed from Elasticsearch. Managed Feeds are kept in Elasticsearch up to number of days specified. Data is permanently stored in S3.",
+            "Type": "Number"
+        },
+        "RegionalLambdaBucketName": {
+            "Description": "Regional S3 bucket where tha lambda code will be stored",
+            "Type": "String"
+        }
+    },
+    "Resources": {
+        "ElasticsearchIndexCleanLambda": {
+            "Properties": {
+                "Code": {
+                    "S3Bucket": {
+                        "Ref": "RegionalLambdaBucketName"
+                    },
+                    "S3Key": "lambda_deployment_package.zip"
+                },
+                "Description": "Delete old Elasticsearch indexes",
+                "Environment": {
+                    "Variables": {
+                        "ELASTICSEARCH_ENDPOINT": {
+                            "Ref": "ElasticsearchEndpoint"
+                        },
+                        "INDEX_PREFIX": {
+                            "Ref": "IndexPrefix"
+                        },
+                        "MAX_INDEX_AGE": {
+                            "Ref": "MaxIndexAge"
+                        }
+                    }
+                },
+                "Handler": "lambdas.elasticsearch_index_clean_lambda.es_index_clean_handler",
+                "Role": {
+                    "Ref": "ElasticsearchIndexCleanLambdaRoleARN"
+                },
+                "Runtime": "python3.6",
+                "Timeout": 30
+            },
+            "Type": "AWS::Lambda::Function"
+        },
+        "ElasticsearchIndexCleanLambdaInvokeFromEventsPermission": {
+            "Properties": {
+                "Action": "lambda:InvokeFunction",
+                "FunctionName": {
+                    "Fn::GetAtt": [
+                        "ElasticsearchIndexCleanLambda",
+                        "Arn"
+                    ]
+                },
+                "Principal": "events.amazonaws.com"
+            },
+            "Type": "AWS::Lambda::Permission"
+        },
+        "ElasticsearchIndexCleanLambdaScheduledRule": {
+            "Properties": {
+                "Description": "Scheduled rule for Elasticsearch Index Clean Lambda",
+                "ScheduleExpression": "cron(0 1 * * ? *)",
+                "State": "ENABLED",
+                "Targets": [
+                    {
+                        "Arn": {
+                            "Fn::GetAtt": [
+                                "ElasticsearchIndexCleanLambda",
+                                "Arn"
+                            ]
+                        },
+                        "Id": "1"
+                    }
+                ]
+            },
+            "Type": "AWS::Events::Rule"
+        }
+    },
+    "Outputs": {
+        "ElasticsearchIndexCleanLambdaARN": {
+            "Value": {
+                "Fn::GetAtt": [
+                    "ElasticsearchIndexCleanLambda",
+                    "Arn"
+                ]
+            },
+            "Description": "Elasticsearch Index Clean lambda arn"
+        }
+    }
+}

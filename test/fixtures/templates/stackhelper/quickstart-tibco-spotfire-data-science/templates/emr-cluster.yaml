@@ -1,0 +1,353 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: >-
+  This template sets up an EMR cluster for use with your TIBCO Spotfire Data Science instance.
+Parameters:
+  EMRClusterName:
+    Description: The name for your EMR cluster.
+    Type: String
+  EMRCoreInstanceType:
+    AllowedValues:
+      - m4.xlarge
+      - m4.2xlarge
+      - m4.4xlarge
+      - m4.10xlarge
+    Default: m4.xlarge
+    Description: The instance type for the EMR core nodes.
+    Type: String
+  EMRCoreNodes:
+    Description: The number of Core Nodes. Minimum is 1.
+    Default: '1'
+    MaxValue: '500'
+    MinValue: '1'
+    Type: Number
+  EMRLogBucket:
+    Description: (Optional) Name of pre-existing S3 bucket for the EMR logs.
+    Default: ''
+    Type: String
+  EMRMasterInstanceType:
+    AllowedValues:
+      - m4.large
+      - m4.xlarge
+      - m4.2xlarge
+      - m4.4xlarge
+      - m4.10xlarge
+    Default: m4.xlarge
+    Description: The instance type for the EMR master node.
+    Type: String
+  AdminConsoleAccessCIDR:
+    AllowedPattern: ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/([0-9]|[1-2][0-9]|3[0-2]))$
+    ConstraintDescription: CIDR block parameter must be in the form x.x.x.x/x
+    Description: The CIDR IP range that is permitted to access the TIBCO Spotfire Data Science Web Console
+      via the ELB. We recommend that you set this value to a trusted IP range.
+    Type: String
+  InstanceProfile:
+    Description: Name of the Instance Profile used with EMR Cluster
+    Type: String
+  TSDSSecurityGroupId:
+    Description: ID of the TSDS Security Group
+    Type: AWS::EC2::SecurityGroup::Id
+  KeyPairName:
+    Description: Name of an existing EC2 key pair. All instances will launch with
+      this key pair.
+    Type: AWS::EC2::KeyPair::KeyName
+  PrivateSubnet1ID:
+    Description: ID of private subnet 1 in Availability Zone 1 for the TSDS instances.
+      (e.g., subnet-a0246dcd).
+    Type: AWS::EC2::Subnet::Id
+  VPCID:
+    Description: ID of your existing VPC for deployment.
+    Type: AWS::EC2::VPC::Id
+Conditions:
+  EMRBucketProvided: !Not [!Equals [!Ref EMRLogBucket, '']]
+Rules:
+  KeyPairsNotEmpty:
+    Assertions:
+      - Assert: !Not
+          - Fn::EachMemberEquals:
+              - Fn::RefAll: AWS::EC2::KeyPair::KeyName
+              - ''
+        AssertDescription: All key pair parameters must not be empty
+Resources:
+  EMRCluster:
+    Type: 'AWS::EMR::Cluster'
+    Properties:
+      Instances:
+        MasterInstanceGroup:
+          Configurations:
+            - Classification: yarn-site
+              ConfigurationProperties:
+                yarn.scheduler.minimum-allocation-mb: '256'
+                yarn.nodemanager.resource.memory-mb: '17000'
+                yarn.nodemanager.resource.cpu-vcores: '16'
+                yarn.scheduler.maximum-allocation-mb: '8192'
+                yarn.nodemanager.vmem-check-enabled: 'false'
+            - Classification: core-site
+              ConfigurationProperties:
+                hadoop.proxyuser.ec2-user.hosts: '*'
+                hadoop.proxyuser.ec2-user.groups: '*'
+          EbsConfiguration:
+            EbsBlockDeviceConfigs:
+              - VolumeSpecification:
+                  SizeInGB: '200'
+                  VolumeType: standard
+          InstanceCount: 1
+          InstanceType: !Ref EMRMasterInstanceType
+          Market: ON_DEMAND
+          Name: Master
+        CoreInstanceGroup:
+          Configurations:
+            - Classification: yarn-site
+              ConfigurationProperties:
+                yarn.scheduler.minimum-allocation-mb: '256'
+                yarn.nodemanager.resource.memory-mb: '17000'
+                yarn.nodemanager.resource.cpu-vcores: '16'
+                yarn.scheduler.maximum-allocation-mb: '8192'
+                yarn.nodemanager.vmem-check-enabled: 'false'
+            - Classification: core-site
+              ConfigurationProperties:
+                hadoop.proxyuser.ec2-user.hosts: '*'
+                hadoop.proxyuser.ec2-user.groups: '*'
+          EbsConfiguration:
+            EbsBlockDeviceConfigs:
+              - VolumeSpecification:
+                  SizeInGB: 200
+                  VolumeType: standard
+          InstanceCount: !Ref EMRCoreNodes
+          InstanceType: !Ref EMRCoreInstanceType
+          Market: ON_DEMAND
+          Name: Core
+        TerminationProtected: 'false'
+        Ec2KeyName: !Ref KeyPairName
+        Ec2SubnetId: !Ref PrivateSubnet1ID
+        ServiceAccessSecurityGroup: !Ref EmrServiceAccessSecurityGroup
+        EmrManagedMasterSecurityGroup: !Ref EmrMasterPrivateSecurityGroup
+        EmrManagedSlaveSecurityGroup: !Ref EmrSlavePrivateSecurityGroup
+        AdditionalMasterSecurityGroups:
+          - !Ref EMRSecurityGroup
+        AdditionalSlaveSecurityGroups:
+          - !Ref EMRSecurityGroup
+      Name: !Ref EMRClusterName
+      JobFlowRole: !Ref InstanceProfile
+      ReleaseLabel: emr-5.10.0
+      ServiceRole: EMR_DefaultRole
+      LogUri: !If [EMRBucketProvided, !Sub 's3://${EMRLogBucket}', !Ref 'AWS::NoValue']
+      Applications:
+        - Name: Hive
+        - Name: Hadoop
+      Tags:
+        - Key: prod
+          Value: !Sub 'EMR-${EMRClusterName}'
+      VisibleToAllUsers: true
+  EMRSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: Enable Informatica Domain Access in EMR
+      VpcId: !Ref VPCID
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: '0'
+          ToPort: '65535'
+          SourceSecurityGroupId: !Ref TSDSSecurityGroupId
+        - IpProtocol: tcp
+          FromPort: '10000'
+          ToPort: '10000'
+          CidrIp: !Ref AdminConsoleAccessCIDR
+  TCPFromSlaveSecurityGroupIngress:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    Properties:
+      FromPort: '0'
+      GroupId: !GetAtt
+        - EmrMasterPrivateSecurityGroup
+        - GroupId
+      IpProtocol: tcp
+      SourceSecurityGroupId: !GetAtt
+        - EmrSlavePrivateSecurityGroup
+        - GroupId
+      ToPort: '65535'
+  TCPFromMasterSecurityGroupIngress:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    Properties:
+      FromPort: '0'
+      GroupId: !GetAtt
+        - EmrMasterPrivateSecurityGroup
+        - GroupId
+      IpProtocol: tcp
+      SourceSecurityGroupId: !GetAtt
+        - EmrMasterPrivateSecurityGroup
+        - GroupId
+      ToPort: '65535'
+  ICMPFromSlaveSecurityGroupIngress:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    Properties:
+      FromPort: '-1'
+      GroupId: !GetAtt
+        - EmrMasterPrivateSecurityGroup
+        - GroupId
+      IpProtocol: icmp
+      SourceSecurityGroupId: !GetAtt
+        - EmrSlavePrivateSecurityGroup
+        - GroupId
+      ToPort: '-1'
+  ICMPFromMasterSecurityGroupIngress:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    Properties:
+      FromPort: '-1'
+      GroupId: !GetAtt
+        - EmrMasterPrivateSecurityGroup
+        - GroupId
+      IpProtocol: icmp
+      SourceSecurityGroupId: !GetAtt
+        - EmrMasterPrivateSecurityGroup
+        - GroupId
+      ToPort: '-1'
+  UDPFromSlaveSecurityGroupIngress:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    Properties:
+      FromPort: '0'
+      GroupId: !GetAtt
+        - EmrMasterPrivateSecurityGroup
+        - GroupId
+      IpProtocol: udp
+      SourceSecurityGroupId: !GetAtt
+        - EmrSlavePrivateSecurityGroup
+        - GroupId
+      ToPort: '65535'
+  UDPFromMasterSecurityGroupIngress:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    Properties:
+      FromPort: '0'
+      GroupId: !GetAtt
+        - EmrMasterPrivateSecurityGroup
+        - GroupId
+      IpProtocol: udp
+      SourceSecurityGroupId: !GetAtt
+        - EmrMasterPrivateSecurityGroup
+        - GroupId
+      ToPort: '65535'
+  TCPFromSlaveIngress:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    Properties:
+      FromPort: '0'
+      GroupId: !GetAtt
+        - EmrSlavePrivateSecurityGroup
+        - GroupId
+      IpProtocol: tcp
+      SourceSecurityGroupId: !GetAtt
+        - EmrSlavePrivateSecurityGroup
+        - GroupId
+      ToPort: '65535'
+  TCPFromMasterIngress:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    Properties:
+      FromPort: '0'
+      GroupId: !GetAtt
+        - EmrSlavePrivateSecurityGroup
+        - GroupId
+      IpProtocol: tcp
+      SourceSecurityGroupId: !GetAtt
+        - EmrMasterPrivateSecurityGroup
+        - GroupId
+      ToPort: '65535'
+  ICMPFromSlaveIngress:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    Properties:
+      FromPort: '-1'
+      GroupId: !GetAtt
+        - EmrSlavePrivateSecurityGroup
+        - GroupId
+      IpProtocol: icmp
+      SourceSecurityGroupId: !GetAtt
+        - EmrSlavePrivateSecurityGroup
+        - GroupId
+      ToPort: '-1'
+  ICMPFromMasterIngress:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    Properties:
+      FromPort: '-1'
+      GroupId: !GetAtt
+        - EmrSlavePrivateSecurityGroup
+        - GroupId
+      IpProtocol: icmp
+      SourceSecurityGroupId: !GetAtt
+        - EmrMasterPrivateSecurityGroup
+        - GroupId
+      ToPort: '-1'
+  UDPFromSlaveIngress:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    Properties:
+      FromPort: '0'
+      GroupId: !GetAtt
+        - EmrSlavePrivateSecurityGroup
+        - GroupId
+      IpProtocol: udp
+      SourceSecurityGroupId: !GetAtt
+        - EmrSlavePrivateSecurityGroup
+        - GroupId
+      ToPort: '65535'
+  UDPFromMasterIngress:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    Properties:
+      FromPort: '0'
+      GroupId: !GetAtt
+        - EmrSlavePrivateSecurityGroup
+        - GroupId
+      IpProtocol: udp
+      SourceSecurityGroupId: !GetAtt
+        - EmrMasterPrivateSecurityGroup
+        - GroupId
+      ToPort: '65535'
+  TCPMasterEgress:
+    Type: 'AWS::EC2::SecurityGroupEgress'
+    Properties:
+      FromPort: '8443'
+      GroupId: !GetAtt
+        - EmrServiceAccessSecurityGroup
+        - GroupId
+      IpProtocol: tcp
+      DestinationSecurityGroupId: !GetAtt
+        - EmrMasterPrivateSecurityGroup
+        - GroupId
+      ToPort: '8443'
+  TCPSlaveEgress:
+    Type: 'AWS::EC2::SecurityGroupEgress'
+    Properties:
+      FromPort: '8443'
+      GroupId: !GetAtt
+        - EmrServiceAccessSecurityGroup
+        - GroupId
+      IpProtocol: tcp
+      DestinationSecurityGroupId: !GetAtt
+        - EmrSlavePrivateSecurityGroup
+        - GroupId
+      ToPort: '8443'
+  EmrMasterPrivateSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: EMR Master Instance security group
+      VpcId: !Ref VPCID
+  EmrSlavePrivateSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: EMR Slave Instance security group
+      VpcId: !Ref VPCID
+  EmrServiceAccessSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: EMR Service Access security group
+      VpcId: !Ref VPCID
+Outputs:
+  EMRPublicDNS:
+    Description: EMR Resource Manager
+    Value:
+      Fn::Sub: ${EMRCluster.MasterPublicDNS}
+  EMRHiveURL:
+    Description: EMR Hive thrift URL
+    Value:
+      Fn::Sub: thrift://${EMRCluster.MasterPublicDNS}:9093
+  EmrSlavePrivateSecurityGroup:
+    Description: EMR Slave Security Group
+    Value: !Ref EmrSlavePrivateSecurityGroup
+  EmrMasterPrivateSecurityGroup:
+    Description: EMR Master Security Group
+    Value: !Ref EmrMasterPrivateSecurityGroup
+

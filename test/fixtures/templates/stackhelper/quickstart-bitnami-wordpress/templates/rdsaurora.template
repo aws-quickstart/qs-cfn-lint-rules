@@ -1,0 +1,276 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "WordPress RDS Aurora-MySQL Template. (qs-1ot302h6n)",
+    "Parameters": {
+        "Subnets": {
+            "ConstraintDescription": "Must be list of existing subnet Ids",
+            "Description": "At least two existing Subnets in separate Availability Zones your Virtual Private Cloud (VPC)",
+            "Type": "List<AWS::EC2::Subnet::Id>"
+        },
+        "AuroraRDSSecurityGroup": {
+            "Description": "Aurora Security Group",
+            "Type": "AWS::EC2::SecurityGroup::Id"
+        },
+        "DBAutoMinorVersionUpgrade": {
+            "AllowedValues": [
+                "true",
+                "false"
+            ],
+            "Default": "true",
+            "Description": "Select true/false to setup Auto Minor Version upgrade",
+            "Type": "String"
+        },
+        "DBBackupRetentionPeriod": {
+            "ConstraintDescription": "Database backup retention period must be between 1 and 35 days",
+            "Default": "7",
+            "Description": "The number of days for which automatic DB snapshots are retained",
+            "MaxValue": "35",
+            "MinValue": "1",
+            "Type": "Number"
+        },
+        "DBPreferredBackupWindow": {
+            "AllowedPattern": "^(|([0-1][0-9]|2[0-3]):[0-5][0-9]-([0-1][0-9]|2[0-3]):[0-5][0-9])$",
+            "ConstraintDescription": "Preferred backup window must be left blank or in the form of HH:MM-HH:MM",
+            "Default": "",
+            "Description": "(Optional) Preferred backup window",
+            "Type": "String"
+        },
+        "DBInstanceClass": {
+            "AllowedValues": [
+                "db.t2.micro",
+                "db.t2.small",
+                "db.t2.medium",
+                "db.t2.large",
+                "db.t2.xlarge",
+                "db.t2.2xlarge",
+                "db.t3.micro",
+                "db.t3.small",
+                "db.t3.medium",
+                "db.t3.large",
+                "db.t3.xlarge",
+                "db.t3.2xlarge",
+                "db.m3.medium",
+                "db.m3.large",
+                "db.m3.xlarge",
+                "db.m3.2xlarge",
+                "db.m4.large",
+                "db.m4.xlarge",
+                "db.m4.2xlarge",
+                "db.m4.4xlarge",
+                "db.m4.10xlarge",
+                "db.m4.16xlarge",
+                "db.r3.large",
+                "db.r3.xlarge",
+                "db.r3.2xlarge",
+                "db.r3.4xlarge",
+                "db.r3.8xlarge",
+                "db.r4.large",
+                "db.r4.xlarge",
+                "db.r4.2xlarge",
+                "db.r4.4xlarge",
+                "db.r4.8xlarge",
+                "db.r4.16xlarge"
+            ],
+            "ConstraintDescription": "Must select a valid database instance type.",
+            "Default": "db.t2.small",
+            "Description": "The name of the compute and memory capacity class of the DB instance",
+            "Type": "String"
+        },
+        "DBName": {
+            "AllowedPattern": "[a-zA-Z][a-zA-Z0-9]*",
+            "Default": "QuickstartAuroraDB",
+            "Description": "Name of Aurora DB for WordPress Stack",
+            "MaxLength": "64",
+            "MinLength": "5",
+            "Type": "String"
+        },
+        "DBMasterUserPassword": {
+            "AllowedPattern": "(?=\\S)[^@\/\"\\r\\n\\t\\f\\s]*",
+            "ConstraintDescription": "Min 8 alphanumeric. Cannot contain white space, @, /, \"",
+            "Description": "The database admin account password (username is 'root').",
+            "MaxLength": "41",
+            "MinLength": "8",
+            "NoEcho": "True",
+            "Type": "String"
+        },
+        "DBMultiAZ": {
+            "AllowedValues": [
+                "true",
+                "false"
+            ],
+            "Default": "true",
+            "Description": "Specifies if the database instance is a multiple Availability Zone deployment",
+            "Type": "String"
+        }
+    },
+    "Conditions": {
+        "CreateReadReplica": {
+            "Fn::Equals": [
+                {
+                    "Ref": "DBMultiAZ"
+                },
+                "true"
+            ]
+        }
+    },
+    "Resources": {
+        "AuroraDBSubnetGroup": {
+            "Type": "AWS::RDS::DBSubnetGroup",
+            "Properties": {
+                "DBSubnetGroupDescription": "Subnets available for the RDS Aurora DB Instance",
+                "SubnetIds": {
+                    "Ref": "Subnets"
+                }
+            }
+        },
+        "AuroraDBCluster": {
+            "Type": "AWS::RDS::DBCluster",
+            "Properties": {
+                "BackupRetentionPeriod": {
+                    "Ref": "DBBackupRetentionPeriod"
+                },
+                "PreferredBackupWindow": {
+                    "Ref": "DBPreferredBackupWindow"
+                },
+                "DBSubnetGroupName": {
+                    "Ref": "AuroraDBSubnetGroup"
+                },
+                "Engine": "aurora",
+                "EngineVersion": "5.6",
+                "MasterUsername": "root",
+                "MasterUserPassword": {
+                    "Ref": "DBMasterUserPassword"
+                },
+                "VpcSecurityGroupIds": [
+                    {
+                        "Ref": "AuroraRDSSecurityGroup"
+                    }
+                ],
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": "WordPress-Aurora-DB-Cluster"
+                    }
+                ]
+            }
+        },
+        "AuroraDBPrimaryInstance": {
+            "Type": "AWS::RDS::DBInstance",
+            "Properties": {
+                "Engine": "aurora",
+                "EngineVersion": "5.6",
+                "DBClusterIdentifier": {
+                    "Ref": "AuroraDBCluster"
+                },
+                "DBInstanceClass": {
+                    "Ref": "DBInstanceClass"
+                },
+                "DBSubnetGroupName": {
+                    "Ref": "AuroraDBSubnetGroup"
+                },
+                "AutoMinorVersionUpgrade": {
+                    "Ref": "DBAutoMinorVersionUpgrade"
+                },
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": "WordPress-Aurora-PrimaryDB"
+                    }
+                ]
+            }
+        },
+        "AuroraDBSecondaryInstance": {
+            "Type": "AWS::RDS::DBInstance",
+            "Condition": "CreateReadReplica",
+            "Properties": {
+                "Engine": "aurora",
+                "EngineVersion": "5.6",
+                "DBClusterIdentifier": {
+                    "Ref": "AuroraDBCluster"
+                },
+                "DBInstanceClass": {
+                    "Ref": "DBInstanceClass"
+                },
+                "DBSubnetGroupName": {
+                    "Ref": "AuroraDBSubnetGroup"
+                },
+                "AutoMinorVersionUpgrade": {
+                    "Ref": "DBAutoMinorVersionUpgrade"
+                },
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": "WordPress-Aurora-SecondaryDB"
+                    }
+                ]
+            }
+        }
+    },
+    "Outputs": {
+        "AuroraEndPoints": {
+            "Description": "Aurora Cluster Endpoint to connect",
+            "Value": {
+                "Fn::Join": [
+                    "",
+                    [
+                        {
+                            "Fn::GetAtt": [
+                                "AuroraDBCluster",
+                                "Endpoint.Address"
+                            ]
+                        },
+                        ":",
+                        {
+                            "Fn::GetAtt": [
+                                "AuroraDBCluster",
+                                "Endpoint.Port"
+                            ]
+                        },
+                        "/",
+                        {
+                            "Ref": "DBName"
+                        }
+                    ]
+                ]
+            }
+        },
+        "DBName": {
+            "Description": "Aurora DBName",
+            "Value": {
+                "Ref": "DBName"
+            }
+        },
+        "AuroraEndPointAddress": {
+            "Description": "Aurora Endpoint to connect",
+            "Value": {
+                "Fn::Join": [
+                    "",
+                    [
+                        {
+                            "Fn::GetAtt": [
+                                "AuroraDBCluster",
+                                "Endpoint.Address"
+                            ]
+                        }
+                    ]
+                ]
+            }
+        },
+        "AuroraEndPointPort": {
+            "Description": "Aurora Endpoint to connect",
+            "Value": {
+                "Fn::Join": [
+                    "",
+                    [
+                        {
+                            "Fn::GetAtt": [
+                                "AuroraDBCluster",
+                                "Endpoint.Port"
+                            ]
+                        }
+                    ]
+                ]
+            }
+        }
+    }
+}

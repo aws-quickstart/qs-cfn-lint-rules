@@ -1,0 +1,124 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "Drupal ElastiCache - Memcached Cluster",
+    "Parameters": {
+        "Subnets": {
+            "ConstraintDescription": "Must be a list of existing subnet Ids",
+            "Description": "Atleast two existing Subnets in separate Availability Zones in your Virtual Private Cloud (VPC)",
+            "Type": "List<AWS::EC2::Subnet::Id>"
+        },
+        "ElastiCacheSecurityGroup": {
+            "Description": "A list of VPC security group IDs to be attached to the nodes in the cache cluster.",
+            "Type": "List<AWS::EC2::SecurityGroup::Id>"
+        },
+        "AutoMinorVersionUpgrade":{
+            "AllowedValues": [
+                "true",
+                "false"
+            ],
+            "Default": "true",
+            "Description": "Select true/false to setup Auto Minor Version upgrade",
+            "Type": "String"
+        },
+        "NodeType": {
+            "AllowedValues": [
+                "cache.t2.micro",
+                "cache.t2.small",
+                "cache.t2.medium",
+                "cache.t2.medium",
+                "cache.m3.large",
+                "cache.m3.xlarge",
+                "cache.m3.2xlarge",
+                "cache.m4.large",
+                "cache.m4.xlarge",
+                "cache.m4.2xlarge",
+                "cache.m4.4xlarge",
+                "cache.m4.10xlarge",
+                "cache.r3.large",
+                "cache.r3.xlarge",
+                "cache.r3.2xlarge",
+                "cache.r3.4xlarge",
+                "cache.r3.8xlarge",
+                "cache.r4.large",
+                "cache.r4.xlarge",
+                "cache.r4.2xlarge",
+                "cache.r4.4xlarge",
+                "cache.r4.8xlarge",
+                "cache.r4.16xlarge"
+            ],
+            "ConstraintDescription": "Must select a valid ElastiCache node type.",
+            "Default": "cache.t2.micro",
+            "Description": "The compute and memory capacity of nodes in a cache cluster.",
+            "Type": "String"
+        },
+        "NumberOfNode": {
+            "Default": "2",
+            "MinValue": "1",
+            "MaxValue": "20",
+            "Description": "The number of cache nodes that the cache cluster should have.",
+            "Type": "Number"
+        }
+    },
+    "Resources":{
+        "ElastiCacheSubnetGroup":{
+            "Type" : "AWS::ElastiCache::SubnetGroup",
+            "Properties" : {
+                "Description": "Subnets available for the ElastiCache Memcached Instance",
+                "SubnetIds":{
+                    "Ref": "Subnets"
+                }
+            }
+        },
+        "ElastiCacheCluster":{
+            "Type": "AWS::ElastiCache::CacheCluster",
+            "Properties":{
+                "Engine": "memcached",
+                "EngineVersion": "1.4.34",
+                "CacheNodeType":{
+                    "Ref": "NodeType"
+                },
+                "NumCacheNodes": {
+                    "Ref": "NumberOfNode"
+                },
+                "CacheSubnetGroupName":{
+                    "Ref": "ElastiCacheSubnetGroup"
+                },
+                "VpcSecurityGroupIds": {
+                    "Ref": "ElastiCacheSecurityGroup"
+                },
+                "Tags":[
+                    {
+                        "Key": "Name",
+                        "Value": "Drupal-ElastiCache-Cluster"
+                    }
+                ]
+            }
+        }
+        
+    },
+    "Outputs":{
+        "ElastiCacheClusterId":{
+            "Description": "ElastiCache Cluster ID",
+            "Value":{
+                "Ref": "ElastiCacheCluster"
+            }
+        },
+        "ElastiCacheClusterEndPoint":{
+            "Description": "ElastiCache Cluster Endpoint to connect",
+            "Value": {
+                "Fn::Join": [
+                    "",
+                    [
+                        {
+                            "Fn::GetAtt": ["ElastiCacheCluster", "ConfigurationEndpoint.Address"]
+                        },
+                        ":",
+                        {
+                            "Fn::GetAtt": ["ElastiCacheCluster", "ConfigurationEndpoint.Port"]
+                        }
+                    ]
+                ]
+            }
+        }
+    }
+}

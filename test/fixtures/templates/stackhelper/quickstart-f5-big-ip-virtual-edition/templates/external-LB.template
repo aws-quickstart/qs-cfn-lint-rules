@@ -1,0 +1,125 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+  This template deploys an external network load balancer to provide tier one disaggregation
+  to the BIG-IPs.  **WARNING** This template creates an external network load balancer
+  and security group. You will be billed for the AWS resources and network traffic
+  used if you create a stack from this template.
+Outputs:
+  DnsName:
+    Description: DNS Name for the ELB Group containing BIG-IP
+    Value: !Join
+      - ''
+      - - https://
+        - !GetAtt 'ExternalLoadBalancer.DNSName'
+  ExternalNLB:
+    Description: Id of ELB Group for all BIG-IPs
+    Value: !Ref 'ExternalLoadBalancer'
+  ExternalNLBSecurityGroup:
+    Description: Security Group for external LB of BIG-IP
+    Value: !Ref 'ExternalLBSecurityGroup'
+  TargetGroupArn:
+    Description: Target Group Arn Name for the ELB Group containing BIG-IP
+    Value: !Ref 'TargetGroup'
+Parameters:
+  application:
+    Description: Name of the Application - used for creating objects. ex. service1
+    Type: String
+    MaxLength: 20
+    Default: f5demoapp
+  deploymentName:
+    Description: Deployment Name - used for creating objects. ex. example
+    Type: String
+    MaxLength: 20
+    Default: f5awsqs
+  poolPort:
+    Description: Port used for Service Pool
+    Type: String
+    Default: '80'
+  subnets:
+    Description: Public or external subnet for the availability zones
+    Type: List<AWS::EC2::Subnet::Id>
+  vpc:
+    Description: VPC where you want to deploy the BIG-IP VEs
+    Type: AWS::EC2::VPC::Id
+Resources:
+  ExternalLBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref 'vpc'
+      GroupName: !Join
+        - ''
+        - - !Ref 'deploymentName'
+          - '-'
+          - !Ref 'application'
+          - -ELBSecurityGroup
+      GroupDescription: Enable access to virtual servers on 80 and 443
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: '80'
+          ToPort: '80'
+          CidrIp: '0.0.0.0/0'
+        - IpProtocol: tcp
+          FromPort: '443'
+          ToPort: '443'
+          CidrIp: '0.0.0.0/0'
+      Tags:
+        - Key: Name
+          Value: !Join
+            - ''
+            - - !Ref 'deploymentName'
+              - '-'
+              - !Ref 'application'
+              - -ELBSecurityGroup
+        - Key: Application
+          Value: !Ref 'application'
+  ExternalLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Type: network
+      Name: !Join
+        - ''
+        - - !Ref 'deploymentName'
+          - '-'
+          - !Ref 'application'
+          - -ExtNLB
+      Scheme: internet-facing
+      Subnets: !Ref 'subnets'
+      Tags:
+        - Key: Name
+          Value: !Join
+            - ''
+            - - !Ref 'deploymentName'
+              - '-'
+              - !Ref 'application'
+              - -ExternalLB
+        - Key: Application
+          Value: !Ref 'application'
+  NLBListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref 'TargetGroup'
+      LoadBalancerArn: !Ref 'ExternalLoadBalancer'
+      Port: '443'
+      Protocol: TCP
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Join
+        - ''
+        - - !Ref 'deploymentName'
+          - '-'
+          - !Ref 'application'
+          - -BIGIPs
+      Port: !Ref 'poolPort'
+      Protocol: TCP
+      HealthCheckIntervalSeconds: '10'
+      HealthCheckPath: /
+      HealthCheckProtocol: HTTPS
+      HealthyThresholdCount: '2'
+      UnhealthyThresholdCount: '2'
+      TargetGroupAttributes:
+        - Key: deregistration_delay.timeout_seconds
+          Value: '20'
+      VpcId: !Ref 'vpc'

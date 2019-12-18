@@ -1,0 +1,110 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "**WARNING** This template creates an Amazon Elasticsearch Service domain. You will be billed for the AWS resources used if you create a stack from this template.",
+    "Parameters": {
+        "ElasticsearchAccessCIDR": {
+            "Description": "IP address allowed to access Kibana and Elasticsearch",
+            "Type": "String"
+        },
+        "ElasticsearchNodeCount": {
+            "Default": "1",
+            "Description": "The number of nodes in the Elasticsearch cluster.",
+            "Type": "Number"
+        },
+        "ElasticsearchNodeType": {
+            "AllowedValues": [
+                "t2.small.elasticsearch",
+                "m4.large.elasticsearch",
+                "m4.xlarge.elasticsearch",
+                "c4.large.elasticsearch",
+                "c4.xlarge.elasticsearch",
+                "r4.large.elasticsearch",
+                "r4.xlarge.elasticsearch"
+            ],
+            "ConstraintDescription": "must be a valid Elasticsearch node type.",
+            "Default": "t2.small.elasticsearch",
+            "Description": "The node type to be provisioned for the Elasticsearch cluster",
+            "Type": "String"
+        }
+    },
+    "Resources": {
+        "ElasticsearchDomain": {
+            "Properties": {
+                "AccessPolicies": {
+                    "Statement": [
+                        {
+                            "Action": [
+                                "es:*"
+                            ],
+                            "Condition": {
+                                "IpAddress": {
+                                    "aws:SourceIp": [
+                                        {
+                                            "Ref": "ElasticsearchAccessCIDR"
+                                        }
+                                    ]
+                                }
+                            },
+                            "Effect": "Allow",
+                            "Principal": "*"
+                        },
+                        {
+                            "Action": [
+                                "es:*"
+                            ],
+                            "Effect": "Allow",
+                            "Principal": {
+                                "Service": [
+                                    "lambda.amazonaws.com"
+                                ]
+                            }
+                        }
+                    ],
+                    "Version": "2012-10-17"
+                },
+                "AdvancedOptions": {
+                    "rest.action.multi.allow_explicit_index": "true"
+                },
+                "EBSOptions": {
+                    "EBSEnabled": true,
+                    "Iops": 0,
+                    "VolumeSize": 10,
+                    "VolumeType": "gp2"
+                },
+                "ElasticsearchClusterConfig": {
+                    "DedicatedMasterEnabled": "false",
+                    "InstanceCount": {
+                        "Ref": "ElasticsearchNodeCount"
+                    },
+                    "InstanceType": {
+                        "Ref": "ElasticsearchNodeType"
+                    },
+                    "ZoneAwarenessEnabled": "false"
+                },
+                "ElasticsearchVersion": "5.1",
+                "SnapshotOptions": {
+                    "AutomatedSnapshotStartHour": "0"
+                }
+            },
+            "Type": "AWS::Elasticsearch::Domain"
+        }
+    },
+    "Outputs": {
+        "DomainARN": {
+            "Value": {
+                "Fn::GetAtt": [
+                    "ElasticsearchDomain",
+                    "DomainArn"
+                ]
+            }
+        },
+        "DomainEndpoint": {
+            "Value": {
+                "Fn::GetAtt": [
+                    "ElasticsearchDomain",
+                    "DomainEndpoint"
+                ]
+            }
+        }
+    }
+}

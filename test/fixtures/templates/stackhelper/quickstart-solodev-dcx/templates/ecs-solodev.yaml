@@ -1,0 +1,654 @@
+Description: >
+    This template deploys Solodev CMS for Docker ECS
+
+Parameters: 
+
+    EnvironmentName:
+        Description: An environment name that will be prefixed to resource names
+        Type: String
+
+    VPC:
+        Description: The VPC that the ECS cluster is deployed to
+        Type: AWS::EC2::VPC::Id
+        
+    Cluster:
+        Description: Please provide the ECS Cluster ID that this service should run on
+        Type: String
+
+    ClusterArn:
+        Description: ECS Cluster ARN
+        Type: String
+
+    LoadBalancer:
+        Description: The VPC that the ECS cluster is deployed to
+        Type: String
+
+    LoadBalancerSecurityGroup:
+        Description: Select the Load Balancer Security Group to use for the cluster hosts
+        Type: AWS::EC2::SecurityGroup::Id
+
+    Subnets:
+        Description: Choose which subnets this cluster should be deployed to
+        Type: List<AWS::EC2::Subnet::Id>
+
+    DesiredCount: 
+        Description: How many instances of this task should we run across our cluster?
+        Type: Number
+        Default: 2
+
+    MaxCount:
+        Description: Maximum number of instances of this task we can run across our cluster
+        Type: Number
+        Default: 3
+
+    Path: 
+        Description: The path to register with the Application Load Balancer
+        Type: String
+        Default: /
+
+    ServiceRole:
+        Description: The Application Load Balancer Service Role
+        Type: String
+
+    DatabaseHost:
+      Type: String
+      Description: The database host
+
+    MongoHost:
+      Type: String
+      Description: The mongo host
+      Default: "127.0.0.1:27017"
+
+    DatabaseName:
+      Type: String
+      Description: The database name
+
+    DatabaseUsername:
+      Type: String
+      Description: The database user name
+      Default: "root"
+
+    DatabasePassword:
+      Type: String
+      Description: The database user password
+        
+    DatabasePort:
+        Default: '3306'
+        Description: Database Port
+        Type: Number
+
+    AdminUsername:
+      Type: String
+      Description: The admin user name
+      Default: "solodev"
+
+    AdminPassword:
+      Type: String
+      Description: The admin user password
+
+    SolodevContainer:
+      Description: Solodev container image
+      Type: String
+
+    ApacheContainer:
+      Description: Apache container image
+      Type: String
+
+    MongoContainer:
+      Description: Mongo container image
+      Type: String
+      Default: 'techcto/mongo:latest'
+
+    RedisContainer:
+      Description: Redis container image
+      Type: String
+      Default: 'techcto/redis:latest'
+
+    DuplicityContainer:
+      Description: Duplicity container image
+      Type: String
+      Default: 'techcto/duplicity:latest'
+
+    FQDN:
+      Type: String
+      Description: (Optional) URL for app. FQDN must be pointed to CNAME of the load balancer.
+      Default: ''
+
+    CertificateArn:
+      Type: String
+      Description: (Optional) SSL cert for HTTPS listener that matches the FQDN
+      Default: ''
+
+    CronSchedule:
+      Type: String
+      Default: "cron(0 * * * ? *)"
+      Description: "Backup cron schedule"
+
+    RestoreBucketName:
+        Default: ''
+        Description: Name of bucket containing files for restore
+        Type: String
+
+    DeletionPolicy:
+        Default: 'Snapshot'
+        Type: String
+        Description: 'Asset Deletion Policy'
+
+    GPGPW:
+        Description: Encryption key for backups
+        Type: String
+
+
+Conditions:
+    UseHTTPS: !Not [!Equals [ !Ref CertificateArn, "" ]]
+    UseHTTP: !Equals [ !Ref CertificateArn, "" ]
+    UseRestoreBucket: !Equals [ !Ref RestoreBucketName, "" ]
+
+Resources:
+
+    SolodevBucket:
+        Type: AWS::S3::Bucket
+        Properties:
+            AccessControl: 'BucketOwnerFullControl'
+            Tags:
+                -
+                  Key: 'Name'
+                  Value: !Join ['-', [!Ref 'EnvironmentName', 'S3']]
+        DeletionPolicy: 'Delete'
+
+    BackupUser:
+        Type: 'AWS::IAM::User'
+        Properties:
+            Path: /
+            Policies:
+                - 
+                    PolicyName: root
+                    PolicyDocument:
+                        Statement:
+                            - 
+                                Effect: Allow
+                                Action:
+                                    - 'cloudformation:DescribeStackResource'
+                                Resource: '*'
+                - 
+                    PolicyName: backupdef
+                    PolicyDocument:
+                        Statement: 
+                            - 
+                                Action: 
+                                    - 's3:*'
+                                Effect: "Allow"
+                                Resource: 
+                                    Fn::Join: 
+                                    - ""
+                                    - 
+                                        - "arn:aws:s3:::"
+                                        - !Join ['-', [!Ref 'EnvironmentName', 'solodev']]
+                            - 
+                                Action: 
+                                    - 's3:*'
+                                Effect: "Allow"
+                                Resource: 
+                                    Fn::Join: 
+                                    - ""
+                                    - 
+                                        - "arn:aws:s3:::"
+                                        - !Join ['-', [!Ref 'EnvironmentName', 'solodev']]
+                                        - "/*"
+
+    BackupUserKeys:
+        Type: 'AWS::IAM::AccessKey'
+        Properties:
+            UserName: !Ref BackupUser
+
+    Service: 
+        Type: AWS::ECS::Service
+        Properties: 
+            Cluster: !Ref Cluster
+            TaskDefinition: !Ref TaskDefinition
+            SchedulingStrategy: DAEMON
+            HealthCheckGracePeriodSeconds: 300
+            ServiceName: solodev
+            LoadBalancers: 
+                - ContainerName: "apache2"
+                  ContainerPort: 80
+                  TargetGroupArn: !Ref TargetGroup
+
+    ServiceSecurityGroup:
+        Type: AWS::EC2::SecurityGroup
+        Properties:
+            GroupDescription: "Inbound web traffic"
+            SecurityGroupIngress:
+                - {ToPort: 80, FromPort: 80, IpProtocol: tcp, SourceSecurityGroupId: !Ref LoadBalancerSecurityGroup} # HTTP
+                - {ToPort: 443, FromPort: 443, IpProtocol: tcp, SourceSecurityGroupId: !Ref LoadBalancerSecurityGroup} # HTTPS
+            VpcId: !Ref VPC
+
+    TaskExecutionRole:
+        Type: AWS::IAM::Role
+        Properties:
+            AssumeRolePolicyDocument:
+                Version: 2012-10-17
+                Statement:
+                - {Action: "sts:AssumeRole", Effect: Allow, Principal: {Service: ecs-tasks.amazonaws.com}}
+            Path: "/"
+            ManagedPolicyArns:
+                - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+
+    TaskRole:
+        Type: AWS::IAM::Role
+        Properties:
+            AssumeRolePolicyDocument:
+                Version: 2012-10-17
+                Statement:
+                - {Action: "sts:AssumeRole", Effect: Allow, Principal: {Service: ecs-tasks.amazonaws.com}}
+            Path: "/"
+            Policies: 
+                - 
+                    PolicyName: "solodev-inline"
+                    PolicyDocument: 
+                        Version: "2012-10-17"
+                        Statement: 
+                            - 
+                                Effect: "Allow"
+                                Action: [ "aws-marketplace:RegisterUsage" ]
+                                Resource: "*"
+                            -   
+                                Effect: Allow
+                                Action:
+                                  - 's3:*'
+                                Resource: !Join ['', ['arn:aws:s3:::', !Ref 'SolodevBucket', /*]]
+
+    BackupTaskDefinition:
+        Type: AWS::ECS::TaskDefinition
+        Properties:
+            Family: !Join ['-', [!Ref 'EnvironmentName', 'solodev-backup']]
+            ExecutionRoleArn: !GetAtt TaskExecutionRole.Arn
+            TaskRoleArn: !GetAtt TaskRole.Arn
+            NetworkMode: "host"
+            ContainerDefinitions:
+                - 
+                    Name: backup
+                    MountPoints: 
+                        - 
+                            SourceVolume: "solodev-client"
+                            ContainerPath: "/var/www/solodev/clients/solodev"
+                        - 
+                            SourceVolume: "solodev-backup"
+                            ContainerPath: "/root/.duply"
+                    Image: !Ref DuplicityContainer
+                    Essential: true
+                    Memory: '500'
+                    Environment:
+                        - Name: MOUNT
+                          Value: "/var/www/solodev/clients/solodev"
+                        - Name: PROCESS
+                          Value: 'backup'
+                        - Name: BUCKET
+                          Value: !Ref SolodevBucket
+                        - Name: DB_HOST
+                          Value: !Ref DatabaseHost
+                        - Name: DB_NAME
+                          Value: !Ref DatabaseName
+                        - Name: DB_USER
+                          Value: !Ref DatabaseUsername
+                        - Name: DB_PASSWORD
+                          Value: !Ref DatabasePassword
+                        - Name: MONGO_HOST
+                          Value: '127.0.0.1:27017'
+                        - Name: MONGO_DB
+                          Value: 'solodev_views'
+                        - Name: IAM_ACCESS_KEY
+                          Value: !Ref BackupUserKeys
+                        - Name: IAM_SECRET_KEY
+                          Value: !GetAtt 
+                            - BackupUserKeys
+                            - SecretAccessKey
+                        - Name: GPGPW
+                          Value: !Ref GPGPW
+                    LogConfiguration:
+                        LogDriver: awslogs
+                        Options:
+                            awslogs-group: !Ref AWS::StackName
+                            awslogs-region: !Ref AWS::Region
+                            awslogs-stream-prefix: solodev-backup
+            Volumes: 
+                - 
+                    Host: 
+                        SourcePath: !Join ['', ['/efs/', !Ref 'EnvironmentName', '/solodev']]
+                    Name: "solodev-client"
+                - 
+                    Host: 
+                        SourcePath: !Join ['', ['/efs/', !Ref 'EnvironmentName', '/backup']]
+                    Name: "solodev-backup"
+
+    RestoreTaskDefinition:
+        Type: AWS::ECS::TaskDefinition
+        Properties:
+            Family: !Join ['-', [!Ref 'EnvironmentName', 'solodev-restore']]
+            ExecutionRoleArn: !GetAtt TaskExecutionRole.Arn
+            TaskRoleArn: !GetAtt TaskRole.Arn
+            NetworkMode: "host"
+            ContainerDefinitions:
+                - 
+                    Name: restore
+                    MountPoints: 
+                        - 
+                            SourceVolume: "solodev-client"
+                            ContainerPath: "/var/www/solodev/clients/solodev"
+                        - 
+                            SourceVolume: "solodev-backup"
+                            ContainerPath: "/root/.duply"
+                    Image: !Ref DuplicityContainer
+                    Essential: true
+                    Memory: '500'
+                    Environment:
+                        - Name: PROCESS
+                          Value: 'restore'
+                        - Name: TIME
+                          Value: '1h'
+                        - Name: BUCKET
+                          Value: !Ref SolodevBucket
+                        - Name: MOUNT
+                          Value: "/var/www/solodev/clients/solodev"
+                        - Name: IAM_ACCESS_KEY
+                          Value: !Ref BackupUserKeys
+                        - Name: IAM_SECRET_KEY
+                          Value: !GetAtt 
+                            - BackupUserKeys
+                            - SecretAccessKey
+                        - Name: GPGPW
+                          Value: !Ref GPGPW
+                    LogConfiguration:
+                        LogDriver: awslogs
+                        Options:
+                            awslogs-group: !Ref AWS::StackName
+                            awslogs-region: !Ref AWS::Region
+                            awslogs-stream-prefix: solodev-restore
+            Volumes: 
+                - 
+                    Host: 
+                        SourcePath: !Join ['', ['/efs/', !Ref 'EnvironmentName', '/solodev']]
+                    Name: "solodev-client"
+                - 
+                    Host: 
+                        SourcePath: !Join ['', ['/efs/', !Ref 'EnvironmentName', '/backup']]
+                    Name: "solodev-backup"
+
+    TaskDefinition:
+        Type: AWS::ECS::TaskDefinition
+        Properties:
+            Family: !Join ['-', [!Ref 'EnvironmentName', 'solodev-cms']]
+            ExecutionRoleArn: !GetAtt TaskExecutionRole.Arn
+            TaskRoleArn: !GetAtt TaskRole.Arn
+            NetworkMode: "host"
+            ContainerDefinitions:
+                -
+                    Name: solodev
+                    PortMappings:
+                        - 
+                            ContainerPort: 9000
+                            Protocol: "tcp"
+                    Essential: true
+                    MountPoints: 
+                        - 
+                            SourceVolume: "solodev-client"
+                            ContainerPath: "/var/www/solodev/clients/solodev"
+                    Essential: true
+                    Image: !Ref SolodevContainer
+                    Memory: '500'
+                    Environment:
+                        - Name: APP_DEBUG
+                          Value: false
+                        - Name: APP_ENV
+                          Value: 'prod'
+                        - Name: UseMarketplace
+                          Value: true
+                        - Name: DB_HOST
+                          Value: !Ref DatabaseHost
+                        - Name: DB_PORT
+                          Value: !Ref DatabasePort
+                        - Name: DB_NAME
+                          Value: !Ref DatabaseName
+                        - Name: DB_USER
+                          Value: !Ref DatabaseUsername
+                        - Name: DB_PASSWORD
+                          Value: !Ref DatabasePassword
+                        - Name: MONGO_HOST
+                          Value: '127.0.0.1:27017'
+                        - Name: REDIS_HOST
+                          Value: '127.0.0.1:6379'
+                        - Name: SOLODEV_USER
+                          Value: !Ref AdminUsername
+                        - Name: SOLODEV_PASSWORD
+                          Value: !Ref AdminPassword
+                        - Name: FQDN
+                          Value: !Ref FQDN
+                        - Name: APP_URL
+                          Value: '127.0.0.1:9000'
+                    LogConfiguration:
+                        LogDriver: awslogs
+                        Options:
+                            awslogs-group: !Ref AWS::StackName
+                            awslogs-region: !Ref AWS::Region
+                            awslogs-stream-prefix: solodev-cms
+                - 
+                    Name: apache2
+                    PortMappings:
+                        - 
+                            ContainerPort: 80
+                            Protocol: "tcp"
+                        - 
+                            ContainerPort: 443
+                            Protocol: "tcp"
+                    MountPoints: 
+                        - 
+                            SourceVolume: "solodev-client"
+                            ContainerPath: "/var/www/solodev/clients/solodev"
+                    Essential: true
+                    Image: !Ref ApacheContainer
+                    MemoryReservation: 256
+                    Environment:
+                      - Name: APP_URL
+                        Value: 'solodev'
+                    LogConfiguration:
+                        LogDriver: awslogs
+                        Options:
+                            awslogs-group: !Ref AWS::StackName
+                            awslogs-region: !Ref AWS::Region
+                            awslogs-stream-prefix: solodev-apache2
+                - 
+                    Name: mongodb
+                    PortMappings:
+                        - 
+                            HostPort: 27017
+                            ContainerPort: 27017
+                            Protocol: "tcp"
+                    MountPoints: 
+                        - 
+                            SourceVolume: "solodev-mongo"
+                            ContainerPath: "/data"
+                    Essential: true
+                    Image: !Ref MongoContainer
+                    MemoryReservation: 256
+                    Environment:
+                        - Name: MONGO_INITDB_ROOT_USERNAME
+                          Value: !Ref DatabaseUsername
+                        - Name: MONGO_INITDB_ROOT_PASSWORD
+                          Value: !Ref DatabasePassword
+                        - Name: MONGO_INITDB_DATABASE
+                          Value: 'solodev_views'
+                    LogConfiguration:
+                        LogDriver: awslogs
+                        Options:
+                            awslogs-group: !Ref AWS::StackName
+                            awslogs-region: !Ref AWS::Region
+                            awslogs-stream-prefix: solodev-mongo
+                - 
+                    Name: redis
+                    PortMappings:
+                        - 
+                            HostPort: 6379
+                            ContainerPort: 6379
+                            Protocol: "tcp"
+                    Essential: true
+                    Image: !Ref RedisContainer
+                    MemoryReservation: 256
+                    MountPoints: 
+                        - 
+                            SourceVolume: "solodev-redis"
+                            ContainerPath: "/data"
+                    LogConfiguration:
+                        LogDriver: awslogs
+                        Options:
+                            awslogs-group: !Ref AWS::StackName
+                            awslogs-region: !Ref AWS::Region
+                            awslogs-stream-prefix: solodev-redis
+            Volumes: 
+                - 
+                    Host: 
+                        SourcePath: !Join ['', ['/efs/', !Ref 'EnvironmentName', '/solodev']]
+                    Name: "solodev-client"
+                - 
+                    Host: 
+                        SourcePath: !Join ['', ['/efs/', !Ref 'EnvironmentName', '/mongo']]
+                    Name: "solodev-mongo"
+                - 
+                    Host: 
+                        SourcePath: !Join ['', ['/efs/', !Ref 'EnvironmentName', '/backup']]
+                    Name: "solodev-backup"
+                - 
+                    Host: 
+                        SourcePath: !Join ['', ['/efs/', !Ref 'EnvironmentName', '/redis']]
+                    Name: "solodev-redis"
+
+    ECSEventRole:
+        Type: 'AWS::IAM::Role'
+        Properties:
+            AssumeRolePolicyDocument:
+                Statement:
+                - Effect: Allow
+                  Principal:
+                    Service:
+                        - events.amazonaws.com
+                  Action:
+                    - 'sts:AssumeRole'
+            Path: /
+            Policies:
+                - PolicyName: ecs-service
+                  PolicyDocument:
+                    Statement:
+                        - Effect: Allow
+                          Action:
+                            - 'ecs:RunTask'
+                            - 'iam:ListInstanceProfiles'
+                            - 'iam:ListRoles'
+                            - 'iam:PassRole'
+                          Resource: '*'
+
+    ECSScheduledTask:
+        DependsOn: ECSEventRole
+        Type: 'AWS::Events::Rule'
+        Properties:
+            Description: Creating a Schedule with CloudFormation as an example
+            ScheduleExpression: !Ref CronSchedule
+            State: ENABLED
+            Targets:
+              - 
+                Arn: !Ref ClusterArn
+                Id: Target1
+                RoleArn: !GetAtt 
+                    - ECSEventRole
+                    - Arn
+                EcsParameters:
+                    TaskCount: 1
+                    TaskDefinitionArn: !Ref BackupTaskDefinition
+
+    CloudWatchLogsGroup:
+        Type: AWS::Logs::LogGroup
+        Properties: 
+            LogGroupName: !Ref AWS::StackName
+            RetentionInDays: 30  
+
+    TargetGroup:
+        Type: AWS::ElasticLoadBalancingV2::TargetGroup
+        Properties:
+            VpcId: !Ref VPC
+            Port: 80
+            Protocol: HTTP
+            Matcher: 
+                HttpCode: 200
+            HealthCheckIntervalSeconds: 45
+            HealthCheckPath: /healthcheck
+            HealthCheckProtocol: HTTP
+            HealthCheckTimeoutSeconds: 30
+            HealthyThresholdCount: 2
+            UnhealthyThresholdCount: 3
+            TargetGroupAttributes:
+                - Key: deregistration_delay.timeout_seconds
+                  Value: '120'
+                - Key: stickiness.type
+                  Value: lb_cookie
+                - Key: stickiness.enabled
+                  Value: 'true'
+                - Key: stickiness.lb_cookie.duration_seconds
+                  Value: '2000'
+            Name: !Join 
+                - '-'
+                - - !Ref 'EnvironmentName'
+                  - solodev
+
+    Listener:
+        Type: 'AWS::ElasticLoadBalancingV2::Listener'
+        Properties:
+            DefaultActions:
+                - Type: forward
+                  TargetGroupArn: !Ref TargetGroup
+            LoadBalancerArn: !Ref LoadBalancer
+            Port: 80
+            Protocol: HTTP
+
+    ListenerSSL:
+        Type: 'AWS::ElasticLoadBalancingV2::Listener'
+        Condition: UseHTTPS
+        Properties:
+            Certificates: 
+                - CertificateArn: !Ref CertificateArn
+            DefaultActions:
+                - Type: forward
+                  TargetGroupArn: !Ref TargetGroup
+            LoadBalancerArn: !Ref LoadBalancer
+            Port: 443
+            Protocol: HTTPS
+    
+    ListenerRule:
+        Type: AWS::ElasticLoadBalancingV2::ListenerRule
+        Properties:
+            ListenerArn: !Ref Listener
+            Priority: 1
+            Conditions:
+                - Field: path-pattern
+                  Values: 
+                    - !Ref Path
+            Actions:
+                - TargetGroupArn: !Ref TargetGroup
+                  Type: forward
+
+    ListenerSSLRule:
+        Type: AWS::ElasticLoadBalancingV2::ListenerRule
+        Condition: UseHTTPS
+        Properties:
+            ListenerArn: !Ref ListenerSSL
+            Priority: 2
+            Conditions:
+                - Field: path-pattern
+                  Values: 
+                    - !Ref Path
+            Actions:
+                - TargetGroupArn: !Ref TargetGroup
+                  Type: forward
+
+Outputs:
+
+    SolodevBucket:
+        Description: A reference to the S3 bucket for solodev
+        Value: !Ref SolodevBucket

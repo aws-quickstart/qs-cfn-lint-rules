@@ -1,0 +1,73 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: AWS CloudFormation templates to create SageMaker notebook.
+Parameters:
+  QSS3BucketName:
+    Type: String
+  QSS3KeyPrefix:
+    Type: String
+  CuratedBucketName:
+    Type: String
+  NotebookTrainingInstanceType:
+    Type: String
+  CreateNotebookFunctionExecuteRoleARN:
+    Description: ARN of the role - CreateNotebookFunctionExecuteRole
+    Type: String
+  SageMakerRoleArn:
+    Description: ARN of the role - SageMakeRole
+    Type: String
+  NotebookInstanceName:
+    AllowedPattern: '[A-Za-z0-9-]{1,63}'
+    ConstraintDescription: Must be unique within your account in an AWS Region.
+      Maximum of 63 alphanumeric characters. Can include hyphens (-).
+    Type: String
+    Default: NotebookInstanceName
+    Description: Name of the Amazon SageMaker Notebook instance.
+    MaxLength: '63'
+    MinLength: '1'
+  NotebookInstanceType:
+    Description: The EC2 instance type for the data lake Amazon SageMaker Notebook instance.
+    ConstraintDescription: Must select a valid Notebook instance type.
+    Type: String
+    AllowedValues:
+    - ml.t2.medium
+    - ml.t2.large
+    - ml.t2.xlarge
+    Default: ml.t2.large
+  RegionalLambdaBucketName:
+    Description: RegionalLambdaBucket bucket name
+    Type: String
+Resources:
+  UpdateSageMakerDemoResources:
+    Properties:
+      NotebookInstanceName: !Ref 'NotebookInstanceName'
+      NotebookS3Path: !Sub '${QSS3BucketName}/${QSS3KeyPrefix}assets/analysis/notebooks/'
+      CuratedBucketName: !Ref 'CuratedBucketName'
+      NotebookTrainingInstanceType: !Ref 'NotebookTrainingInstanceType'
+      NotebookInstanceType: !Ref 'NotebookInstanceType'
+      SageMakerRoleArn: !Ref 'SageMakerRoleArn'
+      ServiceToken: !GetAtt 'UpdateSageMakerDemoResourcesFunction.Arn'
+    Type: Custom::CopyLambdaDeployment
+  UpdateSageMakerDemoResourcesFunction:
+    Properties:
+      Code:
+        S3Bucket: !Ref 'RegionalLambdaBucketName'
+        S3Key: lambdas_demo.zip
+      Description: Update SageMaker lifecycle config to show the demo
+      Handler: lambdas.lambda_handler
+      Role: !Ref 'CreateNotebookFunctionExecuteRoleARN'
+      Runtime: python3.6
+      Timeout: 300
+    Type: AWS::Lambda::Function
+Outputs:
+  NotebookName:
+    Description: SageMaker Notebook Name
+    Value:
+      !GetAtt 'UpdateSageMakerDemoResources.NotebookName'
+  ModelName:
+    Description: Deployed model name
+    Value:
+      !GetAtt 'UpdateSageMakerDemoResources.ModelName'
+  ModelEndpointName:
+    Description: Deployed endpoint name
+    Value:
+      !GetAtt 'UpdateSageMakerDemoResources.ModelEndpointName'

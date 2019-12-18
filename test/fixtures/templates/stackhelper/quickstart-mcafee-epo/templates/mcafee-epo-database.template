@@ -1,0 +1,288 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: McAfee-ePO ePO Database Stack integrated with Amazon RDS (SQL Server backend) as managed service.
+Metadata:
+  LICENSE: Apache License Version 2.0
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: McAfee ePolicy Orchestrator Platform Configuration
+        Parameters:
+          - Environment
+          - Availability
+      - Label:
+          default: Peer-Parent Stack Configuration
+        Parameters:
+          - ParentStack
+          - BaseStack
+      - Label:
+          default: ePO Database - Amazon RDS (SQL Server) Configuration
+        Parameters:
+          - DBMasterUsername
+          - DBMasterUserPassword
+          - ConfirmDBMasterUserPassword
+          - DBPort
+          - DBAllocatedStorage
+          - DBBackupRetentionPeriod
+          - DBEngine
+          - DBEngineVersion
+          - DBInstanceSize
+          - DBIops
+          - DBInstanceIdentifier
+      - Label:
+          default: Administration Configuration
+        Parameters:
+          - AdminEmailAddress
+    ParameterLabels:
+      Environment:
+        default: Deployment Environment
+      Availability:
+        default: High Availability
+      DBMasterUsername:
+        default: DB Master Username
+      DBMasterUserPassword:
+        default: DB Master Password
+      ConfirmDBMasterUserPassword:
+        default: Confirm DB Master Password
+      DBPort:
+        default: DB Port
+      DBAllocatedStorage:
+        default: Allocated Storage
+      DBBackupRetentionPeriod:
+        default: DB Backup Retention Period
+      DBEngine:
+        default: DB Engine
+      DBEngineVersion:
+        default: DB Engine Version
+      DBInstanceSize:
+        default: DB Instance Size
+      DBIops:
+        default: DB IOPS
+      DBInstanceIdentifier:
+        default: DB Instance Identifier
+      AdminEmailAddress:
+        default: Operator Email
+
+Parameters:
+  Environment:
+    AllowedValues:
+      - 'Production'
+      - 'Development'
+    Default: 'Production'
+    Description: What is the targeted deployment environment?
+    Type: String
+  Availability:
+    AllowedValues:
+      - 'Yes'
+      - 'No'
+    Default: 'Yes'
+    Description: We recommend selecting 'Yes' for production environments. It is applicable for Agent Handlers, DXL Brokers, RDS.
+    Type: String
+  ParentStack:
+    Description: Parent stack name by which pipeline stack is deriving if any.
+    MinLength: 1
+    MaxLength: 256
+    Type: String
+  BaseStack:
+    Description: Base stack name by which pipeline stack is deriving if any.
+    MinLength: 1
+    MaxLength: 256
+    Type: String
+  DBMasterUsername:
+    Description: Login ID for the master user for database, it must contain from 2 to 8 characters.
+    MaxLength: 8
+    MinLength: 2
+    Type: String
+  DBMasterUserPassword:
+    AllowedPattern: '[^@\/\"]+'
+    ConstraintDescription: It can contain any printable ASCII character except "/", """, or "@". Must contain from 8 to 255 characters
+    Description: >-
+      The password for the master database user. This password can contain any printable ASCII character except "/", """, or "@".
+      Must contain from 8 to 255 characters
+    MaxLength: 255
+    MinLength: 8
+    NoEcho: true
+    Type: String
+  ConfirmDBMasterUserPassword:
+    AllowedPattern: '[^@\/\"]+'
+    ConstraintDescription: It can contain any printable ASCII character except "/", """, or "@". Must contain from 8 to 255 characters
+    Description: >-
+      Create a password for the master user for the database. This password can contain any printable ASCII character except "/", """, or "@".
+      Must contain from 8 to 255 characters
+    MaxLength: 255
+    MinLength: 8
+    NoEcho: true
+    Type: String
+  DBPort:
+    Default: '1433'
+    Description: TCP/IP port the DB instance will use for application connections.
+    MinLength: 1
+    MaxLength: 64
+    Type: String
+  DBAllocatedStorage:
+    Default: ''
+    MaxLength: 16
+    Description: Specify how much storage to allocate to use for Amazon RDS database.
+    Type: String
+  DBBackupRetentionPeriod:
+    Default: '7'
+    MinLength: 1
+    MaxLength: 3
+    Description: The number of days for which automatic DB snapshots are retained.
+    Type: String
+  DBEngine:
+    Default: 'sqlserver-ex'
+    Type: String
+    Description: Database engine for sql server.
+  DBEngineVersion:
+    Default: '14.00'
+    Type: String
+    Description: Database engine version for sql server, must correspond to engine type.
+  DBInstanceSize:
+    Default: 'db.t2.medium'
+    Type: String
+    Description: Database instance size, must correspond to engine type.
+  DBIops:
+    Default: '1000'
+    Type: String
+    Description: Database IOPS, must correspond to engine type.
+  DBInstanceIdentifier:
+    MaxLength: 512
+    Description: Database instance identifier unique for this AWS region.
+    Type: String
+  AdminEmailAddress:
+    AllowedPattern: ([a-zA-Z0-9_\-\.]+)@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.)|(([a-zA-Z0-9\-]+\.)+))([a-zA-Z]{2,8}|[0-9]{1,3})(\]?)
+    ConstraintDescription: Must be a valid email address.
+    Description: Email address that notifications of any operations will be sent. In addition this will be used for tagging of ownership of resources.
+    Type: String
+
+Rules:
+  MatchPassword:
+    Assertions:
+      - Assert: !Equals
+            - !Ref DBMasterUserPassword
+            - !Ref ConfirmDBMasterUserPassword
+        AssertDescription:  DB Master Passwords do not match.
+
+Conditions:
+  cCreateInstanceId: !Equals [ !Ref 'DBInstanceIdentifier', '' ]
+  cHARequired: !And
+    - !Equals [ !Ref Availability, 'Yes']
+    - !Equals [ !Ref Environment, 'Production']
+    #MultiAZ is not supported  in us-west-1 and us-gov-west-1/us-gov-east-1
+    - !Not [ !Equals [ !Sub '${AWS::Region}', 'us-west-1' ] ]
+    - !Not [ !Equals [ !Sub '${AWS::Region}', 'us-gov-west-1' ] ]
+    - !Not [ !Equals [ !Sub '${AWS::Region}', 'us-gov-east-1' ] ]
+
+Resources:
+  # AWS RDS subnet group
+  RDSDBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: Subnets available for the AWS RDS DB Instance
+      SubnetIds:
+        -
+          Fn::ImportValue:
+            !Sub ${BaseStack}-PrivateSubnet1ID
+        - Fn::ImportValue:
+            !Sub ${BaseStack}-PrivateSubnet2ID
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-RDSDBSubnetGroup
+        - Key: Owner
+          Value: !Ref AdminEmailAddress
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Product
+          Value: McAfee-ePO-Database
+        - Key: Solution
+          Value: McAfee-ePO
+        - Key: mcafee:cloudformation:stack-name
+          Value: !Sub ${ParentStack}
+
+  # AWS RDS database internal security group
+  RDSDBInternalSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Open up Device Management Application ports
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          FromPort: 0
+          ToPort: 65535
+          CidrIp: 0.0.0.0/0
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: !Ref DBPort
+          ToPort: !Ref DBPort
+          CidrIp:
+            Fn::ImportValue: !Sub ${BaseStack}-PrivateSubnet1CIDR
+        - IpProtocol: tcp
+          FromPort: !Ref DBPort
+          ToPort: !Ref DBPort
+          CidrIp:
+            Fn::ImportValue: !Sub ${BaseStack}-PrivateSubnet2CIDR
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-EPORDSDatabase
+        - Key: Owner
+          Value: !Ref AdminEmailAddress
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Product
+          Value: McAfee-ePO-Database
+        - Key: Solution
+          Value: McAfee-ePO
+        - Key: mcafee:cloudformation:stack-name
+          Value: !Sub ${ParentStack}
+      VpcId:
+        Fn::ImportValue:
+          !Sub ${BaseStack}-VPCID
+
+  # AWS RDS instance
+  EPORDSDatabase:
+    Type: AWS::RDS::DBInstance
+    DeletionPolicy: Delete
+    Properties:
+      AllocatedStorage: !Ref DBAllocatedStorage
+      BackupRetentionPeriod: !Ref DBBackupRetentionPeriod
+      CopyTagsToSnapshot: true
+      DBInstanceClass: !Ref DBInstanceSize
+      DBInstanceIdentifier: !If [cCreateInstanceId, '!Sub ${AWS::StackName}-rds', !Ref DBInstanceIdentifier]
+      DBSubnetGroupName: !Ref RDSDBSubnetGroup
+      Engine: !Ref DBEngine
+      EngineVersion: !Ref DBEngineVersion
+      Port: !Ref DBPort
+      Iops: !Ref DBIops
+      LicenseModel: license-included
+      MasterUsername: !Ref DBMasterUsername
+      MasterUserPassword: !Ref DBMasterUserPassword
+      MultiAZ: !If [cHARequired, true, false]
+      PubliclyAccessible: false
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-EPORDSDatabase
+        - Key: Owner
+          Value: !Ref AdminEmailAddress
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Product
+          Value: McAfee-ePO-Database
+        - Key: Solution
+          Value: McAfee-ePO
+        - Key: mcafee:cloudformation:stack-name
+          Value: !Sub ${ParentStack}
+      VPCSecurityGroups:
+        - !Ref RDSDBInternalSecurityGroup
+
+Outputs:
+  DatabaseStackName:
+    Description: Database stack name
+    Value: !Ref AWS::StackName
+  DBInstanceIdentifier:
+    Description: Database instance identifier
+    Value: !If [cCreateInstanceId, !Sub '${AWS::StackName}-rds', !Ref DBInstanceIdentifier]
+  DBEndpointURL:
+    Description: AWS RDS Endpoint URL
+    Value:  !GetAtt EPORDSDatabase.Endpoint.Address
+  RDSDB:
+    Description: AWS RDS database
+    Value: !Ref  EPORDSDatabase

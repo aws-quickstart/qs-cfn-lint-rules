@@ -1,0 +1,378 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+
+Description: >-
+  This template deploys a Citrix Virtual Apps Service Resource Location.
+  **WARNING** This template creates Amazon EC2 Windows instance and related resources. You will be billed for the
+  AWS resources used if you create a stack from this template. (qs-1p6u9q6o0)
+Metadata:
+  'AWS::CloudFormation::Interface':
+    ParameterGroups:
+      - Label:
+          default: Citrix Cloud Configuration
+        Parameters:
+          - CitrixCustomerId
+          - CitrixAPIClientID
+          - CitrixAPIClientSecret
+          - CitrixCloudConnector1HostName
+          - CitrixCloudConnector2HostName 
+          - CitrixVDAHostName   
+                        
+      - Label:
+          default: Amazon EC2 Configuration
+        Parameters:
+          - KeyPairName
+          - CitrixCloudConnectorInstanceType
+          - CitrixVDAInstanceType
+          - CitrixCloudConnectorsWindowsServerVersion
+          - CitrixVDAWindowsServerVersion          
+      - Label:
+          default: Microsoft Active Directory Configuration
+        Parameters:
+          - ADServer1PrivateIP
+          - ADServer2PrivateIP
+          - DomainDNSName
+          - DomainNetBIOSName
+          - DomainAdminPassword
+      - Label:
+          default: Network Configuration
+        Parameters:
+          - VPCID
+          - PrivateInfraSubnet1ID
+          - PrivateInfraSubnet2ID
+          - PrivateVDASubnet1ID
+          - PrivateVDASubnet2ID
+          - BastionSecurityGroupID
+                                        
+      - Label:
+          default: AWS Quick Start Configuration
+        Parameters:
+          - QSS3BucketName
+          - QSS3KeyPrefix
+           
+
+    ParameterLabels:
+      ADServer1PrivateIP:
+        default: Active Directory Server 1 IP address
+      ADServer2PrivateIP:
+        default: Active Directory Server 2 IP address
+      BastionSecurityGroupID:
+        default: Bastion security group ID
+      CitrixAPIClientID:
+        default: Citrix Cloud Secure Client ID
+      CitrixAPIClientSecret:
+        default: Citrix Cloud Secure Client Secret
+      AvailabilityZones:
+        default: Availability Zones
+      CitrixCloudConnector1HostName:
+        default: Citrix Cloud Connector 1 name
+      CitrixCloudConnector2HostName:
+        default: Citrix Cloud Connector 2 name
+      CitrixCloudConnectorsWindowsServerVersion:
+        default: Windows Server version for Citrix Cloud Connector
+      CitrixVDAHostName:
+        default: Citrix VDA name
+      CitrixCloudConnectorInstanceType:
+        default: Citrix Cloud Connector instance type
+      CitrixCustomerId:
+        default: Citrix Cloud Customer ID  
+      DomainAdminPassword:
+        default: Domain admin password
+      DomainDNSName:
+        default: Domain DNS name
+      DomainNetBIOSName:
+        default: Domain NetBIOS name
+      KeyPairName:
+        default: Key pair name
+      PrivateInfraSubnet1ID:
+        default: Private Citrix infrastructure subnet 1 ID
+      PrivateInfraSubnet2ID:
+        default: Private Citrix infrastructure subnet 2 ID
+      PrivateVDASubnet1ID:
+        default: Private Citrix VDA subnet 1 ID
+      PrivateVDASubnet2ID:
+        default: Private Citrix VDA subnet 2 ID
+      QSS3BucketName:
+        default: Quick Start S3 bucket name
+      QSS3KeyPrefix:
+        default: Quick Start S3 key prefix
+      RDGWInstanceType:
+        default: RDGW instance type
+      CitrixVDAInstanceType:
+        default: Citrix Server VDA instance type
+      CitrixVDAWindowsServerVersion:
+        default: Windows Server version for Citrix VDA
+      VPCID:
+        default: VPC ID
+
+Parameters:
+  ADServer1PrivateIP:
+    AllowedPattern: >-
+      ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])$
+    Description: >-
+      IP address of the first Active Directory server located in Availability Zone 1.
+    Type: String
+  ADServer2PrivateIP:
+    AllowedPattern: >-
+      ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])$
+    Description: >-
+      IP address of the second Active Directory server located in Availability Zone 2.
+    Type: String   
+  BastionSecurityGroupID:
+    Description: ID of the Bastion Security Group; e.g., sg-7f16e910.
+    Type: 'AWS::EC2::SecurityGroup::Id'        
+  CitrixAPIClientID:
+    Description: ID of your Citrix Cloud Secure Client used for integration with Citrix Cloud APIs.
+    Type: String
+    NoEcho: 'true'    
+  CitrixAPIClientSecret:
+    Description: Secret of your Citrix Cloud Secure Client.
+    Type: String
+    NoEcho: 'true'        
+  CitrixCloudConnector1HostName:
+    Description: Host name of the first Citrix Cloud Connector.
+    Type: String
+    Default: CTX-CC1
+  CitrixCloudConnector2HostName:
+    Description: Host name of the second Citrix Cloud Connector.
+    Type: String
+    Default: CTX-CC2  
+  CitrixVDAHostName:
+    Type: String
+    Default: CTX-VDA1
+    Description: Host name of the Citrix VDA.
+  CitrixCloudConnectorsWindowsServerVersion:
+    Description: Windows Server version for the Citrix Cloud Connectors.
+    Type: String
+    Default: WS2016FULLBASE
+    AllowedValues:
+      - WS2012R2
+      - WS2016FULLBASE
+  CitrixCloudConnectorInstanceType:
+    Description: Amazon EC2 instance type for the Citrix Cloud Connector instances.
+    Type: String
+    Default: t2.large
+    AllowedValues:
+      - t2.large
+      - t3.large
+      - m4.large 
+      - m5.large
+  CitrixCustomerId:
+    Description: Customer ID of your Citrix Cloud tenant.
+    Type: String
+  DomainAdminPassword:
+    AllowedPattern: >-
+      (?=^.{6,255}$)((?=.*\d)(?=.*[A-Z])(?=.*[a-z])|(?=.*\d)(?=.*[^A-Za-z0-9])(?=.*[a-z])|(?=.*[^A-Za-z0-9])(?=.*[A-Z])(?=.*[a-z])|(?=.*\d)(?=.*[A-Z])(?=.*[^A-Za-z0-9]))^.*
+    Description: >-
+      Password for the domain admin user. Must be at least 8 characters
+      and contain letters, numbers, and symbols.
+    MaxLength: '32'
+    MinLength: '8'
+    NoEcho: 'true'
+    Type: String
+  DomainDNSName:
+    AllowedPattern: '[a-zA-Z0-9\-]+\..+'
+    Default: example.com
+    Description: >-
+      Fully qualified domain name (FQDN) of the forest root domain; e.g., example.com.
+    MaxLength: '255'
+    MinLength: '2'
+    Type: String
+  DomainNetBIOSName:
+    AllowedPattern: '[a-zA-Z0-9\-]+'
+    Default: example
+    Description: >-
+      NetBIOS name of the domain (up to 15 characters) for users of earlier
+      versions of Windows; e.g., example.
+    MaxLength: '15'
+    MinLength: '1'
+    Type: String
+  KeyPairName:
+    Description: >-
+      Name of an existing Amazon EC2 public/private key pair to enable remote
+      access to instances.
+    Type: 'AWS::EC2::KeyPair::KeyName'
+  PrivateInfraSubnet1ID:
+    Description: ID of the private infrastructure subnet 1 in Availability Zone 1; e.g., subnet-a0246dcd.
+    Type: 'AWS::EC2::Subnet::Id'
+  PrivateInfraSubnet2ID:
+    Description: ID of the private infrastructure subnet 2 in Availability Zone 2; e.g., subnet-a0246dce.
+    Type: 'AWS::EC2::Subnet::Id'
+  PrivateVDASubnet1ID:
+    Description: ID of the private VDA subnet 1 in Availability Zone 1; e.g., subnet-a0246dcf.
+    Type: 'AWS::EC2::Subnet::Id'
+  PrivateVDASubnet2ID:
+    Description: ID of the private VDA subnet 2 in Availability Zone 2; e.g., subnet-a0246dcg.
+    Type: 'AWS::EC2::Subnet::Id'   
+  QSS3BucketName:
+    AllowedPattern: '^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$'
+    ConstraintDescription: >-
+      Quick Start bucket name can include numbers, lowercase letters, uppercase
+      letters, and hyphens (-). It cannot start or end with a hyphen (-).
+    Default: aws-quickstart
+    Description: >-
+      S3 bucket name for the Quick Start assets. This bucket name can include
+      numbers, lowercase letters, uppercase letters, and hyphens (-), but should
+      not start or end with a hyphen. You can specify your own bucket if you
+      copy all of the assets and submodules into it, if you want to override the
+      Quick Start behavior for your specific implementation.
+    Type: String
+  QSS3KeyPrefix:
+    AllowedPattern: '^[0-9a-zA-Z-/]*$'
+    ConstraintDescription: >-
+      Quick Start key prefix can include numbers, lowercase letters, uppercase
+      letters, hyphens (-), and forward slash (/).
+    Default: quickstart-citrix-virtualapps-service/
+    Description: >-
+      S3 key prefix for the Quick Start assets. Quick Start key prefix can
+      include numbers, lowercase letters, uppercase letters, hyphens (-), and
+      forward slash (/).
+    Type: String    
+  CitrixVDAInstanceType:
+    Description: Amazon EC2 instance type for the Citrix VDA instance.
+    Type: String
+    Default: m5.large
+    AllowedValues:
+      - t2.large
+      - t2.xlarge
+      - t2.2xlarge
+      - t3.large
+      - t3.xlarge
+      - t3.2xlarge
+      - m4.large
+      - m4.xlarge
+      - m4.2xlarge
+      - m4.4xlarge
+      - m5.large
+      - m5.xlarge
+      - m5.2xlarge
+      - m5.4xlarge      
+      - c4.large
+      - c4.xlarge
+      - c4.2xlarge
+      - c4.4xlarge        
+      - c5.large
+      - c5.xlarge
+      - c5.2xlarge
+      - c5.4xlarge
+      - g3.4xlarge
+      - g3.8xlarge
+      - g3.16xlarge          
+  CitrixVDAWindowsServerVersion:
+    Description: Windows Server version for the Citrix VDA.
+    Type: String
+    Default: WS2016FULLBASE
+    AllowedValues:
+      - WS2012R2
+      - WS2016FULLBASE
+  VPCID:
+    Description: ID of the VPC; e.g., vpc-0343606e.
+    Type: 'AWS::EC2::VPC::Id'
+
+Resources:
+  IAM:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub
+        https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}templates/citrix-virtualapps-service-iam.yaml
+
+  QSDeploymentID:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub
+        https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}templates/citrix-virtualapps-service-qsdeploymentid.yaml
+
+  CitrixCloudSecurityGroups:
+    Type: AWS::CloudFormation::Stack
+    DependsOn: 'QSDeploymentID'
+    Properties:
+      TemplateURL: !Sub >-
+        https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}templates/citrix-virtualapps-service-securitygroups.yaml
+      Parameters:
+        VPCID:                              !Ref VPCID                
+        BastionSecurityGroupID:             !Ref BastionSecurityGroupID
+        QSDeploymentID:                     !GetAtt QSDeploymentID.Outputs.ParameterQSDeploymentID                         
+
+  CitrixCloudConnectors:
+    Type: 'AWS::CloudFormation::Stack'
+    DependsOn: 'CitrixCloudSecurityGroups'
+    Properties:
+      TemplateURL: !Sub >-
+        https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}templates/citrix-virtualapps-service-connectors.yaml
+      Parameters:
+        ADServer1PrivateIP:                   !Ref ADServer1PrivateIP
+        ADServer2PrivateIP:                   !Ref ADServer2PrivateIP        
+        CitrixAPIClientID:                          !Ref CitrixAPIClientID
+        CitrixAPIClientSecret:                      !Ref CitrixAPIClientSecret
+        CitrixCloudConnector1HostName:        !Ref CitrixCloudConnector1HostName
+        CitrixCloudConnector2HostName:        !Ref CitrixCloudConnector2HostName           
+        CitrixCloudConnectorInstanceType:           !Ref CitrixCloudConnectorInstanceType
+        CitrixCloudConnectorsWindowsServerVersion:  !Ref CitrixCloudConnectorsWindowsServerVersion
+        CitrixCloudConnectorSecurityGroup:          !GetAtt CitrixCloudSecurityGroups.Outputs.CCSecurityGroup
+        CitrixCustomerId:                           !Ref CitrixCustomerId      
+        DomainNetBIOSName:                    !Ref DomainNetBIOSName
+        DomainDNSName:                        !Ref DomainDNSName
+        DomainAdminPassword:                  !Ref DomainAdminPassword
+        DomainAdminUser:                      'admin'
+        KeyPairName:                          !Ref KeyPairName
+        PrivateInfraSubnet1:                  !Ref PrivateInfraSubnet1ID
+        PrivateInfraSubnet2:                  !Ref PrivateInfraSubnet2ID
+        QSDeploymentID:                     !GetAtt QSDeploymentID.Outputs.ParameterQSDeploymentID
+        QSS3BucketName:                       !Ref QSS3BucketName
+        QSS3KeyPrefix:                        !Ref QSS3KeyPrefix
+
+  VDA:
+    Type: AWS::CloudFormation::Stack  
+    DependsOn: 
+      - CitrixCloudConnectors
+      - CitrixCloudSecurityGroups
+    Properties:
+      TemplateURL: !Sub >-
+        https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}templates/citrix-virtualapps-service-vda-serveros.yaml
+      Parameters:
+        ADServer1PrivateIP:                   !Ref ADServer1PrivateIP
+        ADServer2PrivateIP:                   !Ref ADServer2PrivateIP   
+        CitrixAPIClientID:                          !Ref CitrixAPIClientID
+        CitrixAPIClientSecret:                      !Ref CitrixAPIClientSecret     
+        CitrixCustomerId:                           !Ref CitrixCustomerId           
+        CitrixDeliveryController1HostName:        !GetAtt CitrixCloudConnectors.Outputs.CitrixCloudConnector1HostName
+        CitrixDeliveryController2HostName:        !GetAtt CitrixCloudConnectors.Outputs.CitrixCloudConnector2HostName     
+        CitrixHostingConnectionAWSIAMAccessKey:                !GetAtt IAM.Outputs.ParameterKeyAccessKey              
+        CitrixHostingConnectionAWSIAMSecretKey:                !GetAtt IAM.Outputs.ParameterKeySecretKey  
+        CitrixVDAHostName:                    !Ref CitrixVDAHostName 
+        CitrixVDAInstanceType:                    !Ref CitrixVDAInstanceType
+        CitrixVDASecurityGroup:                   !GetAtt CitrixCloudSecurityGroups.Outputs.VDASecurityGroup
+        CitrixVDAWindowsServerVersion:            !Ref CitrixVDAWindowsServerVersion
+        DomainNetBIOSName:                  !Ref DomainNetBIOSName
+        DomainDNSName:                      !Ref DomainDNSName
+        DomainAdminPassword:                !Ref DomainAdminPassword
+        KeyPairName:                        !Ref KeyPairName
+        PrivateVDASubnet1:                  !Ref PrivateVDASubnet1ID
+        PrivateVDASubnet2:                  !Ref PrivateVDASubnet2ID
+        QSDeploymentID:                     !GetAtt QSDeploymentID.Outputs.ParameterQSDeploymentID
+        QSS3BucketName:                     !Ref QSS3BucketName
+        QSS3KeyPrefix:                      !Ref QSS3KeyPrefix
+
+
+Outputs:
+  CitrixResourceLocation:
+    Description: Citrix Cloud Resource Location 
+    Value: !GetAtt CitrixCloudConnectors.Outputs.CitrixResourceLocation
+  CitrixHostingConnectionName:
+    Description: Citrix Hosting Connection Name
+    Value: !GetAtt VDA.Outputs.CitrixHostingConnectionName
+  CitrixCatalogName:
+    Description: Citrix Catalog Name
+    Value: !GetAtt VDA.Outputs.CitrixCatalogName
+  CitrixDeliveryGroupName:   
+    Description: Citrix Delivery Group Name
+    Value: !GetAtt VDA.Outputs.CitrixDeliveryGroupName
+  CitrixCloudConnector1HostName:
+    Description: Citrix Cloud Connector 1 Host Name
+    Value: !GetAtt CitrixCloudConnectors.Outputs.CitrixCloudConnector1HostName
+  CitrixCloudConnector2HostName:
+    Description: Citrix Cloud Connector 2 Host Name
+    Value: !GetAtt CitrixCloudConnectors.Outputs.CitrixCloudConnector2HostName
+  CitrixVDAHostName:
+    Description: Citrix VDA Host Name
+    Value: !GetAtt VDA.Outputs.CitrixVDAHostName

@@ -1,0 +1,588 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Deploys a RedHat AWX Cluster
+Parameters:
+  QSS3BucketName:
+    AllowedPattern: "^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$"
+    ConstraintDescription: Quick Start bucket name can include numbers, lowercase
+      letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen
+      (-).
+    Default: aws-quickstart
+    Description: S3 bucket name for the Quick Start assets. Quick Start bucket name
+      can include numbers, lowercase letters, uppercase letters, and hyphens (-).
+      It cannot start or end with a hyphen (-).
+    Type: String
+  QSS3KeyPrefix:
+    AllowedPattern: ^[0-9a-zA-Z-/]*$
+    ConstraintDescription: Quick Start key prefix can include numbers, lowercase letters,
+      uppercase letters, hyphens (-), and forward slash (/).
+    Default: quickstart-redhat-awx/
+    Description: S3 key prefix for the Quick Start assets. Quick Start key prefix
+      can include numbers, lowercase letters, uppercase letters, hyphens (-), and
+      forward slash (/).
+    Type: String
+  Cluster:
+    Description: Name of ECS cluster to deploy awx service to
+    Type: String
+  AWXWebRegistry:
+    Description: Name of ECR containing the awx_web image
+    Type: String
+  AWXTaskRegistry:
+    Description: Name of ECR containing the awx_task
+    Type: String
+  RabbitMQRegistry:
+    Description: Name of ECR containing the rabbitmq image
+    Type: String
+  MemcachedRegistry:
+    Description: Name of ECR containing the memcached image
+    Type: String
+  AWXVersion:
+    Description: Which version of AWX to use
+    Type: String
+    Default: 1.0.1
+    AllowedValues:
+      - 1.0.1
+      - 1.0.0
+      - 1.0.4
+  AWXGitHubRepo:
+    Description: Which github should we use as the source for the build ?
+    Type: String
+    Default: https://github.com/ansible/awx.git
+  MasterUserPassword:
+    Description: Master user database Password. Only applicable if DatabaseEndpoint
+      is blank
+    Type: String
+    NoEcho: 'true'
+  MasterUsername:
+    Description: Master database Username. Only applicable if DatabaseEndpoint is
+      blank
+    Type: String
+  AWXAdminPassword:
+    Description: Password for the AWX admin user. Required
+      is blank
+    Type: String
+    NoEcho: 'true'
+  AWXAdminUsername:
+    Description: AWX Admin user name
+    Type: String
+    Default: admin
+  DatabaseEndpoint:
+    Description: Endpoint for postgres database
+    Type: String
+  ALBARN:
+    Description: Arn for ALB
+    Type: String
+  VPC:
+    Description: VPCID
+    Type: String
+Conditions:
+  GovCloudCondition: !Equals [!Ref 'AWS::Region', us-gov-west-1]
+Resources:
+  mockresource:
+    Type: AWS::S3::Bucket
+  CodeBuildRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Path: /
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action: sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service: codebuild.amazonaws.com
+      Policies:
+        - PolicyName: ecs-service
+          PolicyDocument:
+            Statement:
+              - Effect: Allow
+                Resource:
+                  - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/*'
+                  - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/*:*'
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+              - Effect: Allow
+                Resource:
+                  - !Sub 'arn:aws:s3:::${QSS3BucketName}/scripts/dummy.zip'
+                Action:
+                  - s3:GetObject
+                  - s3:GetObjectVersion
+              - Effect: Allow
+                Resource:
+                  - !Sub 'arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/${MemcachedRegistry}'
+                  - !Sub 'arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/${RabbitMQRegistry}'
+                  - !Sub 'arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/${AWXTaskRegistry}'
+                  - !Sub 'arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/${AWXWebRegistry}'
+                Action:
+                  - ecr:DescribeImages
+                  - ecr:ListImages
+                  - ecr:PutImage
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:BatchGetImage
+                  - ecr:CompleteLayerUpload
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:GetRepositoryPolicy
+                  - ecr:InitiateLayerUpload
+                  - ecr:UploadLayerPart
+              - Effect: Allow
+                Resource: "*"
+                Action:
+                  - ecr:GetAuthorizationToken
+  AWXCodeBuildProject:
+    DependsOn: [ CodeBuildRole, CopyZips ]
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: !Sub 'awx-build-${AWS::StackName}'
+      Description: Builds the RedHat AWX container images to ECR
+      ServiceRole: !GetAtt 'CodeBuildRole.Arn'
+      Artifacts:
+        Type: no_artifacts
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: docker.io/amazonlinux:2017.09
+        PrivilegedMode: True
+        EnvironmentVariables:
+          - Name: AWX_TASK_REPO
+            Value: !Ref 'AWXTaskRegistry'
+          - Name: AWX_WEB_REPO
+            Value: !Ref 'AWXWebRegistry'
+          - Name: MEMCACHED_REPO
+            Value: !Ref 'MemcachedRegistry'
+          - Name: RABBITMQ_REPO
+            Value: !Ref 'RabbitMQRegistry'
+          - Name: AWX_VERSION
+            Value: !Ref 'AWXVersion'
+          - Name: pg_hostname
+            Value: !Ref 'DatabaseEndpoint'
+          - Name: pg_password
+            Value: !Ref MasterUserPassword
+          - Name: pg_username
+            Value: !Ref MasterUsername
+          - Name: awx_username
+            Value: !Ref AWXAdminUsername
+          - Name: awx_password
+            Value: !Ref AWXAdminPassword
+          - Name: cfn_signal_url
+            Value: 'placeholder'
+          - Name: cfn_stack_id
+            Value: 'placeholder'
+          - Name: cfn_logical_resource_id
+            Value: 'placeholder'
+          - Name: cfn_request_id
+            Value: 'placeholder'
+      Source:
+        Auth:
+          Type: OAUTH
+        Location:
+          !Join
+            - '#'
+            - - !Ref 'AWXGitHubRepo'
+              - !Ref 'AWXVersion'
+        Type: GITHUB
+        BuildSpec: |
+          version: 0.2
+          phases:
+            install:
+              commands:
+                - yum install -y git gcc docker python27-pip python27-devel libffi-devel openssl-devel git curl util-linux
+                - /usr/bin/pip install -U docker-py ansible awscli
+                - service docker start
+                - $(aws ecr get-login --no-include-email)
+                - set
+            build:
+              commands:
+                - git checkout $AWX_VERSION
+                - cd installer/
+                - echo ansible-playbook -i inventory -e awx_version=$AWX_VERSION,pg_hostname=$pg_hostname,pg_username=$pg_username,pg_password=$pg_password,pg_database=awx,pg_port=5432,default_admin_user="$awx_username",default_admin_password="$awx_password" install.yml
+                - ansible-playbook -i inventory -e awx_version=$AWX_VERSION,pg_hostname="$pg_hostname",pg_username="$pg_username",pg_password="$pg_password",pg_database="awx",pg_port="5432",default_admin_user="$awx_username",default_admin_password="$awx_password" install.yml
+                - docker container ls --all
+                - docker image ls --all
+                - export ACCOUNT_ID=$(echo ${CODEBUILD_BUILD_ARN} | awk -F':' '{print $5}')
+                - export RABBITMQ_TAG=$(docker image ls --all | grep rabbitmq | awk '{print $2}' | cut -d ':' -f 2)
+                - export RABBITMQ_IMAGE=$(docker image ls --all | grep rabbitmq | awk '{print $1}')
+                - export MEMCACHED_TAG=$(docker image ls --all | grep memcached | awk '{print $2}' | cut -d ':' -f 2)
+                - export MEMCACHED_IMAGE=$(docker image ls --all | grep memcached | awk '{print $1}')
+                - echo RabbitMQ ${RABBITMQ_IMAGE}, ${RABBITMQ_TAG}
+                - echo Memcached ${MEMCACHED_IMAGE}, ${MEMCACHED_TAG}
+                - >
+                  docker tag ansible/awx_task ${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${AWX_TASK_REPO}:${AWX_VERSION} &&
+                  docker push ${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${AWX_TASK_REPO}:${AWX_VERSION}
+                - >
+                  docker tag ansible/awx_web ${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${AWX_WEB_REPO}:${AWX_VERSION} &&
+                  docker push ${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${AWX_WEB_REPO}:${AWX_VERSION}
+                - >
+                  docker tag ${MEMCACHED_IMAGE}:${MEMCACHED_TAG} ${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${MEMCACHED_REPO}:${AWX_VERSION} &&
+                  docker push ${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${MEMCACHED_REPO}:${AWX_VERSION}
+                - >
+                  docker tag ${RABBITMQ_IMAGE}:${RABBITMQ_TAG} ${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${RABBITMQ_REPO}:${AWX_VERSION} &&
+                  docker push ${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${RABBITMQ_REPO}:${AWX_VERSION}
+            post_build:
+              commands:
+                # FIXME: Need to trap and only execute this if the Build is passing.
+                - echo "Signal back if we have gotten this far"
+                # FIXME: Wanted to add a UUID but then I have an issue with storing these somewhere.
+                - export UUID=1233244324
+                - |
+                  if [ $CODEBUILD_BUILD_SUCCEEDING -eq 1 ]
+                  then
+                    curl -X PUT -H 'Content-Type:' -d "{\"StackId\":\"$cfn_stack_id\", \"RequestId\":\"$cfn_request_id\", \"LogicalResourceId\":\"$cfn_logical_resource_id\", \"PhysicalResourceId\":\"$UUID\", \"Status\":\"SUCCESS\"}" "$cfn_signal_url"
+                  else
+                    curl -X PUT -H 'Content-Type:' -d "{\"StackId\":\"$cfn_stack_id\", \"RequestId\":\"$cfn_request_id\", \"LogicalResourceId\":\"$cfn_logical_resource_id\", \"PhysicalResourceId\":\"$UUID\", \"Status\":\"FAILED\"}" "$cfn_signal_url"
+                  fi
+      # FIXME: get this close to the actual time things take with 5 minute margin added for safety
+      TimeoutInMinutes: 60
+  CopyZipsRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Path: /
+      Policies:
+        - PolicyName: lambda-copier
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                Resource:
+                  - !Sub 'arn:aws:s3:::${QSS3BucketName}/${QSS3KeyPrefix}*'
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:DeleteObject
+                Resource:
+                  - !Sub 'arn:aws:s3:::${LambdaZipsBucket}/${QSS3KeyPrefix}*'
+  CopyZipsFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Description: Copies objects from a source S3 bucket to a destination
+      Handler: index.handler
+      Runtime: python2.7
+      Role: !GetAtt 'CopyZipsRole.Arn'
+      Timeout: 240
+      Code:
+        ZipFile: !Join
+          - "\n"
+          - - import json
+            - import logging
+            - import threading
+            - import boto3
+            - import cfnresponse
+            - ''
+            - ''
+            - 'def copy_objects(source_bucket, dest_bucket, prefix, objects):'
+            - '    s3 = boto3.client(''s3'')'
+            - '    for o in objects:'
+            - '        key = prefix + o'
+            - '        copy_source = {'
+            - '            ''Bucket'': source_bucket,'
+            - '            ''Key'': key'
+            - '        }'
+            - '        print(''copy_source: %s'' % copy_source)'
+            - '        print(''dest_bucket = %s''%dest_bucket)'
+            - '        print(''key = %s'' %key)'
+            - '        s3.copy_object(CopySource=copy_source, Bucket=dest_bucket,
+              Key=key)'
+            - ''
+            - ''
+            - 'def delete_objects(bucket, prefix, objects):'
+            - '    s3 = boto3.client(''s3'')'
+            - '    objects = {''Objects'': [{''Key'': prefix + o} for o in objects]}'
+            - '    s3.delete_objects(Bucket=bucket, Delete=objects)'
+            - ''
+            - ''
+            - 'def timeout(event, context):'
+            - '    logging.error(''Execution is about to time out, sending failure
+              response to CloudFormation'')'
+            - '    cfnresponse.send(event, context, cfnresponse.FAILED, {}, None)'
+            - ''
+            - ''
+            - 'def handler(event, context):'
+            - '    # make sure we send a failure to CloudFormation if the function
+              is going to timeout'
+            - '    timer = threading.Timer((context.get_remaining_time_in_millis()
+              / 1000.00) - 0.5, timeout, args=[event, context])'
+            - '    timer.start()'
+            - ''
+            - '    print(''Received event: %s'' % json.dumps(event))'
+            - '    status = cfnresponse.SUCCESS'
+            - '    try:'
+            - '        source_bucket = event[''ResourceProperties''][''SourceBucket'']'
+            - '        dest_bucket = event[''ResourceProperties''][''DestBucket'']'
+            - '        prefix = event[''ResourceProperties''][''Prefix'']'
+            - '        objects = event[''ResourceProperties''][''Objects'']'
+            - '        if event[''RequestType''] == ''Delete'':'
+            - '            delete_objects(dest_bucket, prefix, objects)'
+            - '        else:'
+            - '            copy_objects(source_bucket, dest_bucket, prefix, objects)'
+            - '    except Exception as e:'
+            - '        logging.error(''Exception: %s'' % e, exc_info=True)'
+            - '        status = cfnresponse.FAILED'
+            - '    finally:'
+            - '        timer.cancel()'
+            - '        cfnresponse.send(event, context, status, {}, None)'
+            - ''
+  LambdaZipsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      Tags: []
+  CopyZips:
+    Type: AWS::CloudFormation::CustomResource
+    Properties:
+      ServiceToken: !GetAtt 'CopyZipsFunction.Arn'
+      DestBucket: !Ref 'LambdaZipsBucket'
+      SourceBucket: !Ref 'QSS3BucketName'
+      Prefix: !Ref 'QSS3KeyPrefix'
+      Objects:
+        - scripts/lambda_codebuild.zip
+  BuildContainers:
+    Type: Custom::BuildContainers
+    Properties:
+      # FIXME: This is to force a build, increment number (should only be the versions of AWX that cause this.)
+      UpdateMe: !Ref AWXVersion
+      ServiceToken: !GetAtt BuildContainersLambda.Arn
+      BuildProjectName: !Ref AWXCodeBuildProject
+      # cfn_signal_url: is part of the event by default hence missing here 
+      # cfn_stack_id: is part of the event by default 
+      # cfn_request_id: also part of the event
+      # cfn_logical_resource_id: also part of the event
+      # Lambda function passes the above into the build project when invoking StartBuild
+  BuildContainersLambda:
+    DependsOn: [ BuildContainersLambdaExecutionRole, CopyZips ]
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        S3Bucket: !Ref LambdaZipsBucket
+        S3Key: 
+          Fn::Join:
+            - ""
+            - - !Ref QSS3KeyPrefix
+              - "scripts/lambda_codebuild.zip"
+      Handler: !Sub "lambda_codebuild.lambda_handler"
+      Runtime: python2.7
+      Timeout: 300
+      Role: !GetAtt BuildContainersLambdaExecutionRole.Arn
+  BuildContainersLambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Path: "/"
+      Policies:
+      - PolicyName: root
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - codebuild:StartBuild
+            Resource: !GetAtt AWXCodeBuildProject.Arn
+  ECSServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Path: /
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action: sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service: ecs.amazonaws.com
+      Policies:
+        - PolicyName: ecs-service
+          PolicyDocument:
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ec2:AuthorizeSecurityGroupIngres
+                  - ec2:Describe*
+                  - elasticloadbalancing:DeregisterInstancesFromLoadBalancer
+                  - elasticloadbalancing:DeregisterTargets
+                  - elasticloadbalancing:Describe*
+                  - elasticloadbalancing:RegisterInstancesWithLoadBalancer
+                  - elasticloadbalancing:RegisterTargets
+                Resource: '*'
+  AWXWebService:
+    Type: AWS::ECS::Service
+    DependsOn: ListenerRule
+    Properties:
+      Cluster: !Ref Cluster
+      Role: !Ref ECSServiceRole
+      DesiredCount: 1
+      TaskDefinition: !Ref AWXWebTaskDefinition
+      LoadBalancers:
+        - ContainerName: !Ref AWXWebRegistry
+          ContainerPort: 8052
+          TargetGroupArn: !Ref TargetGroup 
+  AWXWebTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      ContainerDefinitions:
+        - Name: !Ref AWXWebRegistry
+          Hostname: awxweb
+          Essential: true
+          Image: !Sub ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${AWXWebRegistry}:${AWXVersion}
+          Memory: 1024
+          PortMappings:
+            - ContainerPort: 8052
+              HostPort: 80
+          LogConfiguration:
+            LogDriver: json-file
+          Environment:
+            - Name: "http_proxy"
+              Value: ""
+            - Name: "https_proxy"
+              Value: ""
+            - Name: no_proxy
+              Value: ""
+            - Name: SECRET_KEY
+              Value: "awxsecret"
+            - Name: DATABASE_NAME
+              Value: "awx"
+            - Name: DATABASE_USER
+              Value: !Ref MasterUsername
+            - Name: DATABASE_PASSWORD
+              Value: !Ref MasterUserPassword
+            - Name: DATABASE_PORT
+              Value: "5432"
+            - Name: DATABASE_HOST
+              Value: !Ref 'DatabaseEndpoint'
+            - Name: RABBITMQ_USER
+              Value: "guest"
+            - Name: RABBITMQ_PASSWORD
+              Value: "guest"
+            - Name: RABBITMQ_HOST
+              Value: "rabbitmq"
+            - Name: RABBITMQ_PORT
+              Value: "5672"
+            - Name: RABBITMQ_VHOST
+              Value: "awx"
+            - Name: MEMCACHED_HOST
+              Value: "memcached"
+            - Name: MEMCACHED_PORT
+              Value: "11211"
+            - Name: AWX_ADMIN_USER
+              Value: !Ref AWXAdminUsername
+            - Name: AWX_ADMIN_PASSWORD
+              Value: !Ref AWXAdminPassword
+        - Name: !Ref RabbitMQRegistry
+          Hostname: rabbitmq
+          Essential: true
+          Image: !Sub ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${RabbitMQRegistry}:${AWXVersion}
+          Memory: 1024
+          PortMappings:
+            - ContainerPort: 4369
+          LogConfiguration:
+            LogDriver: json-file
+        - Name: !Ref AWXTaskRegistry
+          Hostname: awx
+          Essential: true
+          Image: !Sub ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${AWXTaskRegistry}:${AWXVersion}
+          Memory: 2048
+          PortMappings:
+            - ContainerPort: 8052
+          LogConfiguration:
+            LogDriver: json-file
+          Environment:
+            - Name: "http_proxy"
+              Value: ""
+            - Name: "https_proxy"
+              Value: ""
+            - Name: no_proxy
+              Value: ""
+            - Name: SECRET_KEY
+              Value: "awxsecret"
+            - Name: DATABASE_NAME
+              Value: "awx"
+            - Name: DATABASE_USER
+              Value: !Ref MasterUsername
+            - Name: DATABASE_PASSWORD
+              Value: !Ref MasterUserPassword
+            - Name: DATABASE_PORT
+              Value: "5432"
+            - Name: DATABASE_HOST
+              Value: !Ref 'DatabaseEndpoint'
+            - Name: RABBITMQ_USER
+              Value: "guest"
+            - Name: RABBITMQ_PASSWORD
+              Value: "guest"
+            - Name: RABBITMQ_HOST
+              Value: "rabbitmq"
+            - Name: RABBITMQ_PORT
+              Value: "5672"
+            - Name: RABBITMQ_VHOST
+              Value: "awx"
+            - Name: MEMCACHED_HOST
+              Value: "memcached"
+            - Name: MEMCACHED_PORT
+              Value: "11211"
+            - Name: AWX_ADMIN_USER
+              Value: !Ref AWXAdminUsername
+            - Name: AWX_ADMIN_PASSWORD
+              Value: !Ref AWXAdminPassword
+        - Name: !Ref MemcachedRegistry
+          Hostname: memcached
+          Essential: true
+          Image: !Sub ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${MemcachedRegistry}:${AWXVersion}
+          Memory: 2048
+          PortMappings:
+            - ContainerPort: 11211
+          LogConfiguration:
+            LogDriver: json-file
+
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      VpcId: !Ref VPC
+      Port: 80
+      Protocol: HTTP
+      Matcher: 
+        HttpCode: 200-499
+      HealthCheckIntervalSeconds: 10
+      HealthCheckPath: /
+      HealthCheckProtocol: HTTP
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+  ListenerRule:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Properties:
+      ListenerArn: !Ref Listener
+      Priority: 1
+      Conditions:
+      - Field: path-pattern
+        Values:
+        - "/"
+      Actions:
+      - Type: forward
+        TargetGroupArn: 
+          Ref: TargetGroup
+  Listener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    DependsOn: BuildContainers
+    Properties:
+      DefaultActions:
+      - Type: forward
+        TargetGroupArn: !Ref 'TargetGroup'
+      LoadBalancerArn: !Ref 'ALBARN'
+      Port: '80'
+      Protocol: HTTP
+# Container port info
+# Web 80
+# Task 8052
+# RabbitMQ 4369
+# Memcache 11211

@@ -1,0 +1,312 @@
+---
+AWSTemplateFormatVersion: 2010-09-09
+Description: >-
+  This master template creates a VPC infrastructure for a multi-AZ, multi-tier
+  deployment of a workload on AWS. It deploys a VPC and a workload
+  cluster behind an NLB. The cluster is configured to use an S3 bucket for
+  storage  and EFS to exchange data among workload nodes **WARNING** This
+  template creates EC2 instances and related resources. You will be billed
+  for the AWS resources used if you create a stack from this template. (qs-1p582k6jj)
+Metadata:
+  'AWS::CloudFormation::Interface':
+    ParameterGroups:
+      - Label:
+          default: VPC Network Configuration
+        Parameters:
+          - AvailabilityZones
+          - VPCCIDR
+          - PublicSubnet1CIDR
+          - PublicSubnet2CIDR
+      - Label:
+          default: Amazon EC2 Configuration
+        Parameters:
+          - KeyPairName
+          - WorkloadInstanceType
+      - Label:
+          default: Amazon EFS Configuration
+        Parameters:
+          - VolumeName
+          - MountPoint
+      - Label:
+          default: VE Workload Nodes Configuration
+        Parameters:
+          - VarnishSSLCertificateSecretsManagerKey
+          - WorkloadNodesSSHCIDR
+          - WorkloadNodesMinSize
+          - WorkloadNodesMaxSize
+          - WorkloadNodesDesiredCapacity
+          - OperatorEmail
+      - Label:
+          default: Varnish Software Configuration
+        Parameters:
+          - VarnishBackendAddress
+          - VarnishBackendProtocol
+          - VHAToken
+      - Label:
+          default: AWS Quick Start Configuration
+        Parameters:
+          - QSS3BucketName
+          - QSS3KeyPrefix
+    ParameterLabels:
+      AvailabilityZones:
+        default: Availability zones
+      KeyPairName:
+        default: Key pair name
+      OperatorEmail:
+        default: Operator email
+      PublicSubnet1CIDR:
+        default: Public subnet 1 CIDR
+      PublicSubnet2CIDR:
+        default: Public subnet 2 CIDR
+      QSS3BucketName:
+        default: Quick Start S3 bucket name
+      QSS3KeyPrefix:
+        default: Quick Start S3 key prefix
+      VPCCIDR:
+        default: VPC CIDR
+      VolumeName:
+        default: EFS volume name
+      MountPoint:
+        default: Linux mount point
+      VarnishSSLCertificateSecretsManagerKey:
+        default: Secrets Manager key of SSL certificate
+      VarnishBackendAddress:
+        default: Varnish backend address
+      VarnishBackendProtocol:
+        default: Varnish backend protocol
+      VHAToken:
+        default: VHA token string
+      WorkloadInstanceType:
+        default: Workload servers instance type
+      WorkloadNodesDesiredCapacity:
+        default: Workload nodes desired capacity
+      WorkloadNodesMaxSize:
+        default: Workload nodes maximum size
+      WorkloadNodesMinSize:
+        default: Workload nodes minimum size
+      WorkloadNodesSSHCIDR:
+        default: CIDR Range used to access the VE nodes.
+Parameters:
+  AvailabilityZones:
+    Description: >-
+      List of Availability Zones to use for the subnets in the VPC. Only two
+      Availability Zones are used for this deployment, and the logical order of
+      your selections is preserved.
+    Type: 'List<AWS::EC2::AvailabilityZone::Name>'
+  KeyPairName:
+    Description: >-
+      The name of an existing public/private key pair, which allows you to
+      securely connect to your instance after it launches.
+    Type: 'AWS::EC2::KeyPair::KeyName'
+  OperatorEmail:
+    AllowedPattern: >-
+      ([a-zA-Z0-9_\-\.]+)@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.)|(([a-zA-Z0-9\-]+\.)+))([a-zA-Z]{2,4}|[0-9]{1,3})(\]?)
+    ConstraintDescription: Must be a valid email address.
+    Description: Email address that notifications of any scaling operations will be sent to.
+    Type: String
+  PublicSubnet1CIDR:
+    AllowedPattern: >-
+      ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/(1[6-9]|2[0-8]))$
+    ConstraintDescription: CIDR block parameter must be in the form x.x.x.x/16-28
+    Default: 10.0.128.0/20
+    Description: CIDR block for the public (DMZ) subnet 1 located in Availability Zone 1.
+    Type: String
+  PublicSubnet2CIDR:
+    AllowedPattern: >-
+      ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/(1[6-9]|2[0-8]))$
+    ConstraintDescription: CIDR block parameter must be in the form x.x.x.x/16-28
+    Default: 10.0.144.0/20
+    Description: CIDR block for the public (DMZ) subnet 2 located in Availability Zone 2.
+    Type: String
+  QSS3BucketName:
+    AllowedPattern: '^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$'
+    ConstraintDescription: >-
+      Quick Start bucket name can include numbers, lowercase letters, uppercase
+      letters, and hyphens (-). It cannot start or end with a hyphen (-).
+    Default: aws-quickstart
+    Description: >-
+      S3 bucket name for the Quick Start assets. This string can include
+      numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot
+      start or end with a hyphen (-).
+    Type: String
+  QSS3KeyPrefix:
+    AllowedPattern: '^[0-9a-zA-Z-/]*$'
+    ConstraintDescription: >-
+      Quick Start key prefix can include numbers, lowercase letters, uppercase
+      letters, hyphens (-), and forward slash (/).
+    Default: quickstart-varnish-enterprise/
+    Description: >-
+      S3 key prefix for the Quick Start assets. Quick Start key prefix can
+      include numbers, lowercase letters, uppercase letters, hyphens (-), and
+      forward slash (/).
+    Type: String
+  VarnishBackendAddress:
+    Description: >-
+      Web server backend IP/hostname address. Customized port/TCP can be added
+      after colon (:). For example: 127.0.0.1:80
+    Default: 127.0.0.1
+    Type: String
+  VarnishBackendProtocol:
+    AllowedPattern: ^(http|https)$
+    ConstraintDescription: Protocol can be either HTTP or HTTPS.
+    Description: Internet protocol. It can be either HTTP or HTTPS.
+    Default: http
+    Type: String
+  VarnishSSLCertificateSecretsManagerKey:
+    Description: The AWS Secrets Manager key of an existing SSL certificate to install within Varnish. See Deployment Guide. Leave it as AWS:NoValue if you don't need your own SSL certificate.
+    Type: String
+    Default: AWS::NoValue
+  VHAToken:
+    AllowedPattern: ^[0-9a-zA-Z-/_=]*$
+    ConstraintDescription: >-
+      Varnish High Availability (VHA) token for VHA agents to do a caching
+      synchronization. The token can include numbers, lowercase letters,
+      uppercase letters, hyphens (-), underscores (_), equal signs (=), and
+      forward slashes (/).
+    Description: >-
+      Varnish High Availability (VHA) token can include numbers, lowercase
+      letters, uppercase letters, hyphens (-), underscores (_), equal signs (=),
+      and forward slashes (/).
+    Default: MYTOKEN
+    Type: String
+  VolumeName:
+    Description: A name to be used for the EFS volume.
+    Default: myEFSvolume
+    MinLength: '1'
+    Type: String
+  MountPoint:
+    Description: A Linux mount point for workload nodes to mount the EFS volume.
+    Default: myEFSvolume
+    MinLength: '1'
+    Type: String
+  VPCCIDR:
+    AllowedPattern: >-
+      ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/(1[6-9]|2[0-8]))$
+    ConstraintDescription: CIDR block parameter must be in the form x.x.x.x/16-28
+    Default: 10.0.0.0/16
+    Description: CIDR block for the VPC.
+    Type: String
+  WorkloadInstanceType:
+    AllowedValues:
+    - t2.small
+    - t2.medium
+    - t3.small
+    - t3.medium
+    - t3.large
+    - t3.xlarge
+    - t3.2xlarge
+    - m3.medium
+    - m3.large
+    - m3.xlarge
+    - m4.large
+    - m4.xlarge
+    - m4.2xlarge
+    - m4.4xlarge
+    - m4.10xlarge
+    - m4.16xlarge
+    - m5.large
+    - m5.xlarge
+    - m5.2xlarge
+    - m5.4xlarge
+    - m5.12large
+    - m5.24large
+    - r3.large
+    - r3.xlarge
+    - r3.2xlarge
+    - r3.4xlarge
+    - r3.8xlarge
+    - r4.large
+    - r4.xlarge
+    - r4.2xlarge
+    - r4.4xlarge
+    - r4.8xlarge
+    - r4.16xlarge
+    - r5.large
+    - r5.xlarge
+    - r5.2xlarge
+    - r5.4xlarge
+    - r5.12xlarge
+    - r5.24xlarge
+    - d2.xlarge
+    - d2.2xlarge
+    - d2.4xlarge
+    - d2.8xlarge
+    - i2.xlarge
+    - i2.2xlarge
+    - i2.4xlarge
+    - i2.8xlarge
+    - i3.large
+    - i3.xlarge
+    - i3.2xlarge
+    - i3.4xlarge
+    - i3.8xlarge
+    - i3.16xlarge
+    ConstraintDescription: Must contain a valid instance type
+    Default: m4.xlarge
+    Description: EC2 instance type for the workload instances.
+    Type: String
+  WorkloadNodesDesiredCapacity:
+    Default: '2'
+    Description: The desired capacity for the Auto Scaling group of workload nodes.
+    Type: String
+  WorkloadNodesMaxSize:
+    Default: '4'
+    Description: The maximum size of the Auto Scaling group of workload nodes.
+    Type: String
+  WorkloadNodesMinSize:
+    Default: '2'
+    Description: The minimum size of the Auto Scaling group of workload nodes.
+    Type: String
+  WorkloadNodesSSHCIDR:
+    AllowedPattern: >-
+      ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/([0-9]|1[0-9]|2[0-9]|3[0-2]))$
+    ConstraintDescription: CIDR block parameter must be in the form x.x.x.x/0-32
+    Default: '127.0.0.1/32'
+    Description: CIDR block for SSH clients
+    Type: String
+Resources:
+  VPCStack:
+    Type: 'AWS::CloudFormation::Stack'
+    Properties:
+      TemplateURL: !Sub 'https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}submodules/quickstart-aws-vpc/templates/aws-vpc.template'
+      Parameters:
+        # VPC Template requires this, for now.
+        KeyPairName: !Ref 'KeyPairName'
+        AvailabilityZones: !Join
+          - ','
+          - !Ref AvailabilityZones
+        NumberOfAZs: '2'
+        PublicSubnet1CIDR: !Ref PublicSubnet1CIDR
+        PublicSubnet2CIDR: !Ref PublicSubnet2CIDR
+        VPCCIDR: !Ref VPCCIDR
+  WLStack:
+    DependsOn: VPCStack
+    Type: 'AWS::CloudFormation::Stack'
+    Properties:
+      TemplateURL:
+        Fn::Sub: https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}templates/varnish-enterprise-workload.template
+      Parameters:
+        WorkloadNodesSSHCIDR: !Ref WorkloadNodesSSHCIDR
+        WorkloadInstanceType: !Ref WorkloadInstanceType
+        WorkloadNodesDesiredCapacity: !Ref WorkloadNodesDesiredCapacity
+        WorkloadNodesMaxSize: !Ref WorkloadNodesMaxSize
+        WorkloadNodesMinSize: !Ref WorkloadNodesMinSize
+        KeyPairName: !Ref KeyPairName
+        OperatorEmail: !Ref OperatorEmail
+        PublicSubnet1ID: !GetAtt
+          - VPCStack
+          - Outputs.PublicSubnet1ID
+        PublicSubnet2ID: !GetAtt
+          - VPCStack
+          - Outputs.PublicSubnet2ID
+        QSS3BucketName: !Ref QSS3BucketName
+        QSS3KeyPrefix: !Ref QSS3KeyPrefix
+        VarnishBackendAddress: !Ref VarnishBackendAddress
+        VarnishBackendProtocol: !Ref VarnishBackendProtocol
+        VarnishSSLCertificateSecretsManagerKey: !Ref VarnishSSLCertificateSecretsManagerKey
+        VHAToken: !Ref VHAToken
+        VolumeName: !Ref VolumeName
+        MountPoint: !Ref MountPoint
+        VPCID: !GetAtt
+          - VPCStack
+          - Outputs.VPCID

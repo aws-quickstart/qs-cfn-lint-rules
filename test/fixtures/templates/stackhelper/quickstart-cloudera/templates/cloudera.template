@@ -1,0 +1,732 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "AWS Infrastructure Deployment for Cloudera Hadoop (000A)",
+    "Metadata": {
+        "AWS::CloudFormation::Interface": {
+            "ParameterGroups": [
+                {
+                    "Label": {
+                        "default": "Network Configuration"
+                    },
+                    "Parameters": [
+                        "VPC",
+                        "PrivateSubnet",
+                        "PublicSubnet",
+                        "PublicCIDR",
+                        "PrivateCIDR",
+                        "RemoteAccessCIDR"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": " Cloudera Launcher Configuration"
+                    },
+                    "Parameters": [
+                        "KeyName",
+                        "ClusterLauncherType"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "AWS Quick Start Configuration"
+                    },
+                    "Parameters": [
+                        "QSS3BucketName",
+                        "QSS3KeyPrefix"
+                    ]
+                }
+            ],
+            "ParameterLabels": {
+                "ClusterLauncherType": {
+                    "default": "Cluster Launcher Instance Type"
+                },
+                "KeyName": {
+                    "default": "Key Name"
+                },
+                "PrivateCIDR": {
+                    "default": "Private Subnet CIDR"
+                },
+                "PrivateSubnet": {
+                    "default": "Private Subnet Id"
+                },
+                "PublicCIDR": {
+                    "default": "Public Subnet CIDR"
+                },
+                "PublicSubnet": {
+                    "default": "Public Subnet Id"
+                },
+                "QSS3BucketName": {
+                    "default": "AWS Quick Start S3 Bucket Name"
+                },
+                "QSS3KeyPrefix": {
+                    "default": "AWS Quick Start S3 Key Prefix"
+                },
+                "RemoteAccessCIDR": {
+                    "default": "Permitted IP range"
+                },
+                "VPC": {
+                    "default": "VPC Id"
+                }
+            }
+        }
+    },
+    "Parameters": {
+        "ClusterLauncherType": {
+            "AllowedValues": [
+                "t2.small",
+                "t2.medium",
+                "t2.large",
+                "m4.xlarge",
+                "m4.large"
+            ],
+            "Default": "m4.large",
+            "Description": "Amazon EC2 instance type for the ClusterLauncher Instance.",
+            "Type": "String"
+        },
+        "KeyName": {
+            "Description": "Name of an existing EC2 KeyPair. ClusterLauncher instance will launch with this KeyPair.",
+            "Type": "AWS::EC2::KeyPair::KeyName"
+        },
+        "PrivateCIDR": {
+            "AllowedPattern": "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})",
+            "ConstraintDescription": "Must be a valid CIDR range of the form x.x.x.x/x.",
+            "Description": "CIDR Block for Private Subnet where Cloudera Hadoop will be deployed.",
+            "Type": "String"
+        },
+        "PrivateSubnet": {
+            "Description": "Private Subnet Id where Cloudera Hadoop will be deployed.",
+            "Type": "AWS::EC2::Subnet::Id"
+        },
+        "PublicCIDR": {
+            "AllowedPattern": "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})",
+            "ConstraintDescription": "Must be a valid CIDR range of the form x.x.x.x/x.",
+            "Description": "CIDR Block for the Public Public Subnet located in the new VPC.",
+            "Type": "String"
+        },
+        "PublicSubnet": {
+            "Description": "Public Subnet Id of the VPC.",
+            "Type": "AWS::EC2::Subnet::Id"
+        },
+        "QSS3BucketName": {
+            "AllowedPattern": "^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$",
+            "ConstraintDescription": "AWS Quick Start bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-).",
+            "Default": "aws-quickstart",
+            "Description": "S3 bucket name for the AWS Quick Start assets. AWS Quick Start bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-).",
+            "Type": "String"
+        },
+        "QSS3KeyPrefix": {
+            "AllowedPattern": "^[0-9a-zA-Z-/]*$",
+            "ConstraintDescription": "Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).",
+			"Default": "quickstart-cloudera/",
+            "Description": "S3 key prefix for the Quick Start assets. Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).",
+            "Type": "String"
+        },
+        "RemoteAccessCIDR": {
+            "AllowedPattern": "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})",
+            "ConstraintDescription": "must be a valid CIDR range of the form x.x.x.x/x.",
+            "Description": "CIDR range from which you are likely to SSH into the ClusterLauncher instance. Note: a value of 0.0.0.0/0 will allow access from ANY ip address",
+            "MaxLength": "18",
+            "MinLength": "9",
+            "Type": "String"
+        },
+        "VPC": {
+            "Description": "VPC ID",
+            "Type": "AWS::EC2::VPC::Id"
+        }
+    },
+    "Mappings": {
+        "AWSAMIRegionMap": {
+            "AMI": {
+                "RHEL71HVM": "RHEL-7.1_HVM-20150803-x86_64-1-Hourly2-GP2"
+            },
+            "ap-northeast-1": {
+                "RHEL71HVM": "ami-4eee514e"
+            },
+            "ap-northeast-2": {
+                "RHEL71HVM": "ami-86c10fe8"
+            },
+            "ap-south-1": {
+                "RHEL71HVM": "ami-fcbfd593"
+            },
+            "ap-southeast-1": {
+                "RHEL71HVM": "ami-56e2ee04"
+            },
+            "ap-southeast-2": {
+                "RHEL71HVM": "ami-af9ede95"
+            },
+            "ca-central-1": {
+                "RHEL71HVM": "ami-b064d6d4"
+            },
+            "eu-central-1": {
+                "RHEL71HVM": "ami-38d2d625"
+            },
+            "eu-west-1": {
+                "RHEL71HVM": "ami-a42a7bd3"
+            },
+            "eu-west-2": {
+                "RHEL71HVM": "ami-e9343e8d"
+            },
+            "sa-east-1": {
+                "RHEL71HVM": "ami-b7e66faa"
+            },
+            "us-east-1": {
+                "RHEL71HVM": "ami-dbc96ab0"
+            },
+            "us-east-2": {
+                "RHEL71HVM": "ami-96164cf3"
+            },
+            "us-west-1": {
+                "RHEL71HVM": "ami-c1996685"
+            },
+            "us-west-2": {
+                "RHEL71HVM": "ami-c15a52f1"
+            }
+        }
+    },
+    "Resources": {
+        "ClusterLauncherSecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "GroupDescription": "ClusterLauncher Instance security group",
+                "VpcId": {
+                    "Ref": "VPC"
+                },
+                "SecurityGroupIngress": [
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "22",
+                        "ToPort": "22",
+                        "CidrIp": {
+                            "Ref": "RemoteAccessCIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "udp",
+                        "FromPort": "123",
+                        "ToPort": "123",
+                        "CidrIp": {
+                            "Ref": "RemoteAccessCIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "1",
+                        "ToPort": "65535",
+                        "CidrIp": {
+                            "Ref": "PrivateCIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "1",
+                        "ToPort": "65535",
+                        "CidrIp": {
+                            "Ref": "PublicCIDR"
+                        }
+                    }
+                ],
+                "SecurityGroupEgress": [
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "1",
+                        "ToPort": "65535",
+                        "CidrIp": "0.0.0.0/0"
+                    },
+                    {
+                        "IpProtocol": "udp",
+                        "FromPort": "1",
+                        "ToPort": "65535",
+                        "CidrIp": "0.0.0.0/0"
+                    }
+                ]
+            }
+        },
+        "ClusterLauncherEIP": {
+            "Type": "AWS::EC2::EIP",
+            "Properties": {
+                "Domain": "vpc"
+            }
+        },
+        "ClusterLauncherInterface": {
+            "Type": "AWS::EC2::NetworkInterface",
+            "Properties": {
+                "SubnetId": {
+                    "Ref": "PublicSubnet"
+                },
+                "Description": "Interface for ClusterLauncher Instance",
+                "GroupSet": [
+                    {
+                        "Ref": "ClusterLauncherSecurityGroup"
+                    }
+                ],
+                "SourceDestCheck": "true",
+                "Tags": [
+                    {
+                        "Key": "Network",
+                        "Value": "Public (Cloudera)"
+                    }
+                ]
+            }
+        },
+        "AssociateClusterLauncherEIP": {
+            "Type": "AWS::EC2::EIPAssociation",
+            "Properties": {
+                "AllocationId": {
+                    "Fn::GetAtt": [
+                        "ClusterLauncherEIP",
+                        "AllocationId"
+                    ]
+                },
+                "NetworkInterfaceId": {
+                    "Ref": "ClusterLauncherInterface"
+                }
+            }
+        },
+        "ClusterLauncherInstanceRootRole": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "AssumeRolePolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Principal": {
+                                "Service": [
+                                    "ec2.amazonaws.com"
+                                ]
+                            },
+                            "Action": [
+                                "sts:AssumeRole"
+                            ]
+                        }
+                    ]
+                },
+                "Path": "/",
+                "Policies": [
+                    {
+                        "PolicyName": "root",
+                        "PolicyDocument": {
+                            "Version": "2012-10-17",
+                            "Statement": [
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "ec2:Describe*",
+                                        "ec2:AttachNetworkInterface",
+                                        "ec2:AttachVolume",
+                                        "ec2:CreateTags",
+                                        "ec2:CreateVolume",
+                                        "ec2:DeleteVolume",
+                                        "ec2:RunInstances",
+                                        "ec2:StartInstances",
+                                        "ec2:CreateSecurityGroup",
+                                        "ec2:CreatePlacementGroup",
+                                        "ec2:CreateSnapshot",
+                                        "ec2:DescribeAvailabilityZones",
+                                        "ec2:DescribeImages",
+                                        "ec2:DescribeInstanceStatus",
+                                        "ec2:DescribeInstances",
+                                        "ec2:DescribeKeyPairs",
+                                        "ec2:DescribePlacementGroups",
+                                        "ec2:DescribeRegions",
+                                        "ec2:DescribeSecurityGroups",
+                                        "ec2:DescribeSubnets",
+                                        "ec2:TerminateInstances",
+                                        "ec2:DescribeVolumes",
+                                        "ec2:DescribeInstanceAttribute",
+                                        "ec2:ModifyInstanceAttribute",
+                                        "ec2:RevokeSecurityGroupEgress",
+                                        "ec2:AuthorizeSecurityGroupEgress",
+                                        "ec2:AuthorizeSecurityGroupIngress",
+                                        "ec2:CreateNetworkInterface",
+                                        "ec2:ModifyNetworkInterfaceAttribute",
+                                        "*"
+                                    ],
+                                    "Resource": "*"
+                                },
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "cloudformation:CreateStack",
+                                        "cloudformation:DeleteStack",
+                                        "cloudformation:DescribeStack",
+                                        "cloudformation:EstimateTemplateCost",
+                                        "cloudformation:ValidateTemplate",
+                                        "cloudformation:DescribeStackEvents",
+                                        "cloudformation:DescribeStackResource",
+                                        "cloudformation:DescribeStackResources",
+                                        "cloudformation:DescribeStacks"
+                                    ],
+                                    "Resource": [
+                                        "*"
+                                    ]
+                                },
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "iam:CreateRole",
+                                        "iam:PutRolePolicy",
+                                        "iam:CreateInstanceProfile",
+                                        "iam:AddRoleToInstanceProfile",
+                                        "iam:PassRole",
+                                        "iam:GetInstanceProfile",
+                                        "iam:PassRole"
+                                    ],
+                                    "Resource": [
+                                        "*"
+                                    ]
+                                },
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "s3:GetObject",
+                                        "s3:GetObjectTagging",
+                                        "s3:ListBucket",
+                                        "s3:*",
+                                        "kms:DescribeKey",
+                                        "sts:DecodeAuthorizationMessage"
+                                    ],
+                                    "Resource": [
+                                        "*"
+                                    ]
+                                },
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "rds:CreateDBInstance",
+                                        "rds:DeleteDBInstance",
+                                        "rds:DescribeDBInstances",
+                                        "rds:DescribeDBEngineVersions",
+                                        "rds:DescribeDBSecurityGroups"
+                                    ],
+                                    "Resource": [
+                                        "*"
+                                    ]
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        "ClusterLauncherProfile": {
+            "Type": "AWS::IAM::InstanceProfile",
+            "Properties": {
+                "Path": "/",
+                "Roles": [
+                    {
+                        "Ref": "ClusterLauncherInstanceRootRole"
+                    }
+                ]
+            }
+        },
+        "ClusterLauncherInstance": {
+            "Type": "AWS::EC2::Instance",
+            "Metadata": {
+                "AWS::CloudFormation::Authentication": {
+                    "S3AccessCreds": {
+                        "type": "S3",
+                        "roleName": {
+                            "Ref": "ClusterLauncherInstanceRootRole"
+                        }
+                    }
+                },
+                "AWS::CloudFormation::Init": {
+                    "config": {
+                        "files": {
+                          	"/home/ec2-user/cloudera/download.sh": {
+                                "source": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "https://",
+                                            {
+                                                "Ref": "QSS3BucketName"
+                                            },
+                                            ".s3.amazonaws.com/",
+                                            {
+                                                "Ref": "QSS3KeyPrefix"
+                                            },
+                                            "scripts/download.sh"
+                                        ]
+                                    ]
+                                },
+                                "mode": "000644",
+                                "owner": "root",
+                                "group": "root",
+                                "authentication": "S3AccessCreds"
+                            },
+                            "/home/ec2-user/cloudera/cfn-replace.sh": {
+                                "source": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "https://",
+                                            {
+                                                "Ref": "QSS3BucketName"
+                                            },
+                                            ".s3.amazonaws.com/",
+                                            {
+                                                "Ref": "QSS3KeyPrefix"
+                                            },
+                                            "scripts/cfn-replace.sh"
+                                        ]
+                                    ]
+                                },
+                                "mode": "000644",
+                                "owner": "root",
+                                "group": "root",
+                                "authentication": "S3AccessCreds"
+                            },
+                            "/home/ec2-user/cloudera/cleanup.sh": {
+                                "source": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "https://",
+                                            {
+                                                "Ref": "QSS3BucketName"
+                                            },
+                                            ".s3.amazonaws.com/",
+                                            {
+                                                "Ref": "QSS3KeyPrefix"
+                                            },
+                                            "scripts/cleanup.sh"
+                                        ]
+                                    ]
+                                },
+                                "mode": "000644",
+                                "owner": "root",
+                                "group": "root",
+                                "authentication": "S3AccessCreds"
+                            }
+                        },
+                        "commands": {
+                            "04_replace_public_subnet_id": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "/bin/sh /home/ec2-user/cloudera/cfn-replace.sh PUBLICSUBNETID-CFN-REPLACE=",
+                                            {
+                                                "Ref": "PublicSubnet"
+                                            },
+                                            " /home/ec2-user/cloudera/download.sh"
+                                        ]
+                                    ]
+                                }
+                            },
+                            "05_replace_private_subnet_id": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "/bin/sh /home/ec2-user/cloudera/cfn-replace.sh PRIVATESUBNETID-CFN-REPLACE=",
+                                            {
+                                                "Ref": "PrivateSubnet"
+                                            },
+                                            " /home/ec2-user/cloudera/download.sh"
+                                        ]
+                                    ]
+                                }
+                            },
+                            "06_replace_subnet_id": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "/bin/sh /home/ec2-user/cloudera/cfn-replace.sh SUBNETID-CFN-REPLACE=",
+                                            {
+                                                "Ref": "PrivateSubnet"
+                                            },
+                                            " /home/ec2-user/cloudera/download.sh"
+                                        ]
+                                    ]
+                                }
+                            },
+                            "07_replace_security_group": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "/bin/sh /home/ec2-user/cloudera/cfn-replace.sh SECUTIRYGROUPIDS-CFN-REPLACE=",
+                                            {
+                                                "Ref": "ClusterLauncherSecurityGroup"
+                                            },
+                                            " /home/ec2-user/cloudera/download.sh"
+                                        ]
+                                    ]
+                                }
+                            },
+                            "08_replace_keyname": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "/bin/sh /home/ec2-user/cloudera/cfn-replace.sh KEYNAME-CFN-REPLACE=",
+                                            {
+                                                "Ref": "KeyName"
+                                            },
+                                            " /home/ec2-user/cloudera/download.sh"
+                                        ]
+                                    ]
+                                }
+                            },
+                            "09_replace_hadoop_instance_count": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "/bin/sh /home/ec2-user/cloudera/cfn-replace.sh HADOOPINSTANCE-COUNT-CFN-REPLACE=5",
+                                            " /home/ec2-user/cloudera/download.sh"
+                                        ]
+                                    ]
+                                }
+                            },
+                            "10_replace_cluster_type": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "/bin/sh /home/ec2-user/cloudera/cfn-replace.sh CLUSTERTYPE-REPLACE-ME=Advanced",
+                                            " /home/ec2-user/cloudera/download.sh"
+                                        ]
+                                    ]
+                                }
+                            },
+                            "11_replace_hadoop_instance_type": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "/bin/sh /home/ec2-user/cloudera/cfn-replace.sh HADOOPINSTANCE-TYPE-CFN-REPLACE=m4.large",
+                                            " /home/ec2-user/cloudera/download.sh"
+                                        ]
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "Properties": {
+                "NetworkInterfaces": [
+                    {
+                        "NetworkInterfaceId": {
+                            "Ref": "ClusterLauncherInterface"
+                        },
+                        "DeviceIndex": "0"
+                    }
+                ],
+                "KeyName": {
+                    "Ref": "KeyName"
+                },
+                "ImageId": {
+                    "Fn::FindInMap": [
+                        "AWSAMIRegionMap",
+                        {
+                            "Ref": "AWS::Region"
+                        },
+                        "RHEL71HVM"
+                    ]
+                },
+                "IamInstanceProfile": {
+                    "Ref": "ClusterLauncherProfile"
+                },
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": "ClusterLauncher Instance (Public Subnet)"
+                    }
+                ],
+                "InstanceType": {
+                    "Ref": "ClusterLauncherType"
+                },
+                "UserData": {
+                    "Fn::Base64": {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "#!/bin/bash -e",
+                                "\n",
+                                "export PATH=$PATH:/usr/local/aws/bin/ \n",
+                                "easy_install https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-latest.tar.gz \n",
+                                "yum install wget python unzip java -y \n",
+                                "mkdir -p /home/ec2-user/cloudera/ \n",
+                                "cfn-init -v --stack ",
+                                {
+                                    "Ref": "AWS::StackName"
+                                },
+                                " --resource ClusterLauncherInstance ",
+                                " --region ",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                "\n",
+                                "cfn-signal -e $? -r \"Downloaded artifacts for Cloudera Cluster Launcher setup\" '",
+                                {
+                                    "Ref": "WebServerDownloadWaitHandle"
+                                },
+                                "'\n",
+                                "/bin/sh /home/ec2-user/cloudera/download.sh",
+                                " -b ",
+                                {
+                                    "Ref": "QSS3BucketName"
+                                },
+                                "/",
+                                {
+                                    "Ref": "QSS3KeyPrefix"
+                                },
+                                " > /home/ec2-user/install.log",
+                                "\n",
+                                "cfn-signal -e $? -r \"The AWS Cloudera Cluster Launcher is ready\" '",
+                                {
+                                    "Ref": "WebServerWaitHandle"
+                                },
+                                "'\n",
+                                "/bin/sh /home/ec2-user/cloudera/cleanup.sh \n"
+                            ]
+                        ]
+                    }
+                }
+            }
+        },
+        "WebServerDownloadWaitHandle": {
+            "Type": "AWS::CloudFormation::WaitConditionHandle"
+        },
+        "WebServerDownloadWaitCondition": {
+            "Type": "AWS::CloudFormation::WaitCondition",
+            "DependsOn": "ClusterLauncherInstance",
+            "Properties": {
+                "Handle": {
+                    "Ref": "WebServerDownloadWaitHandle"
+                },
+                "Timeout": "900"
+            }
+        },
+        "WebServerWaitHandle": {
+            "Type": "AWS::CloudFormation::WaitConditionHandle"
+        },
+        "WebServerWaitCondition": {
+            "Type": "AWS::CloudFormation::WaitCondition",
+            "DependsOn": "ClusterLauncherInstance",
+            "Properties": {
+                "Handle": {
+                    "Ref": "WebServerWaitHandle"
+                },
+                "Timeout": "9000"
+            }
+        }
+    },
+    "Outputs": {
+        "ClusterLauncherEIP": {
+            "Description": "ClusterLauncher Server located in Public Subnet",
+            "Value": {
+                "Fn::GetAtt": [
+                    "ClusterLauncherInstance",
+                    "PublicIp"
+                ]
+            }
+        }
+    }
+}

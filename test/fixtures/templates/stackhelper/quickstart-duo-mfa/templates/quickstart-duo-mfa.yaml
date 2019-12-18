@@ -1,0 +1,1186 @@
+#-------------------------------------------------------------------------------
+#
+# NOTES:
+#
+# Duo setting information sourced from https://duo.com/docs/awsworkspaces
+#
+# UDP connections cannot be managed by AWS load balancers
+# No SSH is permitted into the proxy instances; use Systems Manager instead.
+#
+#-------------------------------------------------------------------------------
+AWSTemplateFormatVersion: 2010-09-09
+Description: >
+  Configures Duo RADIUS servers for use in directory service MFA (can be used
+  for AWS SSO, WorkSpaces, and other SAML service providers)(qs-1pgpn37rj)
+
+Metadata:
+  AWS::CloudFormation::Interface:
+
+    ParameterGroups:
+      - Label:
+            default: Duo account settings
+        Parameters:
+          - DuoIntegrationKey
+          - DuoSecretKey
+          - DuoApiHostName
+
+      - Label:
+            default: RADIUS proxy configuration settings
+        Parameters:
+          - DirectoryServiceId
+          - LatestAmiId
+          - RadiusProxyServerCount
+          - RadiusPortNumber
+          - DuoFailMode
+
+      - Label:
+            default: AWS Quick Start configuration settings
+        Parameters:
+          - QSS3BucketName
+          - QSS3KeyPrefix
+
+    ParameterLabels:
+        DuoIntegrationKey:
+          default: Duo integration key
+        DuoSecretKey:
+          default: Duo secret key
+        DuoApiHostName:
+          default: Duo hostname
+        DirectoryServiceId:
+          default: Directory service ID
+        LatestAmiId:
+          default: Amazon Linux image ID
+        RadiusProxyServerCount:
+          default: RADIUS servers
+        RadiusPortNumber:
+          default: RADIUS port number
+        DuoFailMode:
+          default: Duo fail mode
+        QSS3BucketName:
+          default: Quick Start S3 bucket name
+        QSS3KeyPrefix:
+          default: Quick Start S3 key prefix
+
+#-----------------------------------------------------------
+# Parameters
+#-----------------------------------------------------------
+
+Parameters:
+
+  DuoIntegrationKey:
+    Type: String
+    Description: >
+      Integration key retrieved from Duo RADIUS application configuration
+
+  DuoSecretKey:
+    Type: String
+    NoEcho: true
+    Description: >
+      Secret key retrieved from Duo RADIUS application configuration
+
+  DuoApiHostName:
+    Type: String
+    Description: >
+      API host name retrieved from Duo RADIUS application configuration
+    AllowedPattern: ^api\-[a-zA-Z0-9]*.duosecurity.com$
+    ConstraintDescription: >
+      API hostname must match pattern api-12345678.duosecurity.com
+
+  DirectoryServiceId:
+    Type: String
+    Description: >
+      ID of existing directory service (d-xxxxxxxxxx)
+    AllowedPattern: ^d\-[a-zA-Z0-9]{10,}$
+    ConstraintDescription: >
+      Directory Service Id must match pattern d-0123456789
+
+  LatestAmiId:
+    Type : AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/amzn-ami-hvm-x86_64-gp2
+    Description: >
+      Parameter Store location used to retrieve the latest Amazon Linux ID (**
+      use this default value **)
+
+  RadiusProxyServerCount:
+    Type: Number
+    AllowedValues:
+      - 1
+      - 2
+      - 3
+      - 4
+    Default: 2
+    Description: >
+      The number of RADIUS proxy servers to create.
+
+  RadiusPortNumber:
+    Type: String
+    Description: >
+      Port on which to listen for incoming RADIUS access requests
+    Default: 1812
+
+  DuoFailMode:
+    Type: String
+    Description: >
+      Once primary authentication succeeds, Safe mode allows authentication attempts,
+      if the Duo service cannot be contacted. Secure mode rejects authentication attempts,
+      if the Duo service cannot be contacted.
+    AllowedValues:
+      - "safe"
+      - "secure"
+    Default: "safe"
+
+  QSS3BucketName:
+    Description: S3 bucket name for the Quick Start assets.
+    AllowedPattern: ^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$
+    Default: aws-quickstart
+    Type: String
+
+  QSS3KeyPrefix:
+    Description: S3 key prefix for the Quick Start assets.
+    AllowedPattern: ^[0-9a-zA-Z-/]*$
+    Default: quickstart-duo-mfa/
+    Type: String
+
+
+#-----------------------------------------------------------
+# Resources
+#-----------------------------------------------------------
+
+Resources:
+
+  #-----------------------------------------------------------
+  #
+  # The following resources will retrieve the details of the
+  # given directory ID. This information will be used when
+  # creating the EC2 proxy instances.
+  #
+  #-----------------------------------------------------------
+
+  #--------------------------------------------------
+  # IAM role used by the bootstrapping Lambda function
+  # to retrieve the ID of the directory service.
+  #--------------------------------------------------
+  GetDirectoryServiceMfaSettingsRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub GetDirectoryServiceMfaSettingsRole-${DirectoryServiceId}
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: [lambda.amazonaws.com]
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: DescribeDirectoryServices
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ds:DescribeDirectories
+                Resource: "*"
+
+  #--------------------------------------------------
+  # This custom Lambda function will retrieve the
+  # details of the directory service.
+  #--------------------------------------------------
+  GetDirectoryServiceFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub GetDirectoryService-${DirectoryServiceId}
+      Description: Look up directory service
+      Handler: index.lambda_handler
+      MemorySize: 1024
+      Role: !GetAtt GetDirectoryServiceMfaSettingsRole.Arn
+      Runtime: python3.6
+      Timeout: 60
+      Tags:
+      - Key: duo:DirectoryServiceId
+        Value: !Ref DirectoryServiceId
+      Code:
+        ZipFile: !Sub |
+          import boto3
+          import json
+          from botocore.vendored import requests
+
+          #----------------------------------------
+          # Function handler
+          #----------------------------------------
+          def lambda_handler(event, context):
+
+              print (json.dumps(event))
+
+              SUCCESS = "SUCCESS"
+              FAILED = "FAILED"
+
+              # For Delete requests, immediately send a SUCCESS response.
+              if 'RequestType' in event and 'Delete' in event['RequestType']:
+                  sendResponse(event, context, SUCCESS)
+                  return
+
+              errorReason = ''
+              response = ''
+              directories = []
+              responseData = {}
+
+              if not 'ResourceProperties' in event and not 'directory_id' in event['ResourceProperties']:
+                  errorReason = "No directory_id value provided"
+              else:
+                  directory_id = event['ResourceProperties']['directory_id']
+
+                  try:
+                    directories = boto3.client('ds').describe_directories(DirectoryIds = [directory_id])['DirectoryDescriptions']
+                  except:
+                    pass
+
+                  if not directories:
+                      errorReason =  "No directory exists for ID: {}".format(directory_id)
+                  else:
+                      directory = directories[0]
+
+                      network = ''
+
+                      if directory['Type'] == 'ADConnector': network = 'ConnectSettings'
+                      elif directory['Type'] == 'MicrosoftAD': network = 'VpcSettings'
+
+
+                      if len(directory[network]['SubnetIds']) < 2:
+                          errorReason = "There must be at least two subnets configured for AD."
+
+                      elif len(directory['DnsIpAddrs']) < 2:
+                          errorReason = "There must be at least two DNS servers configured for AD."
+
+                      else:
+                          responseData['VpcId'] = directory[network]['VpcId']
+                          responseData['SecurityGroupId'] = directory[network]['SecurityGroupId']
+                          responseData['SubnetId1'] = directory[network]['SubnetIds'][0]
+                          responseData['SubnetId2'] = directory[network]['SubnetIds'][1]
+                          response = SUCCESS
+
+              if errorReason: response = FAILED
+
+              # Send the response to CloudFormation. Always send a success response;
+              # otherwise, the CloudFormation stack execution will fail.
+              sendResponse(event, context, response, responseData, errorReason)
+
+          def sendResponse(event, context, responseStatus, responseData=None, errorReason='', physicalResourceId=None, noEcho=False):
+              responseUrl = event['ResponseURL']
+
+              responseBody = {}
+              responseBody['Status'] = responseStatus
+              responseBody['Reason'] = errorReason
+              responseBody['PhysicalResourceId'] = physicalResourceId or context.log_stream_name
+              responseBody['StackId'] = event['StackId']
+              responseBody['RequestId'] = event['RequestId']
+              responseBody['LogicalResourceId'] = event['LogicalResourceId']
+              responseBody['NoEcho'] = noEcho
+              responseBody['Data'] = responseData
+
+              json_responseBody = json.dumps(responseBody)
+
+              print("Response body:\n" + json_responseBody)
+
+              headers = {
+                  'content-type' : '',
+                  'content-length' : str(len(json_responseBody))
+              }
+
+              try:
+                  response = requests.put(responseUrl,
+                                          data=json_responseBody,
+                                          headers=headers)
+                  print("Status code: " + response.reason)
+              except Exception as e:
+                  print("sendResponse(..) failed executing requests.put(..): " + str(e))
+
+
+
+  #--------------------------------------------------
+  # CloudFormation uses this custom resource to invoke
+  # the Lambda function to look up the ID of the
+  # directory service.
+  #------------------------------------------------
+  GetDirectoryServiceDetails:
+    Type: Custom::GetDirectoryService
+    DependsOn: GetDirectoryServiceFunction
+    Properties:
+      ServiceToken: !GetAtt GetDirectoryServiceFunction.Arn
+      directory_id: !Ref DirectoryServiceId
+
+  #------------------------------------------------
+  # Stores the Duo configuration data as a Secrets
+  # Manager secret value and schedules periodic
+  # shares secret rotation.
+  #------------------------------------------------
+  DuoConfigurationSettingsSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub DuoConfigurationSettings-${DirectoryServiceId}
+      Description: Duo Configuration Settings
+      GenerateSecretString:
+        SecretStringTemplate: !Sub |
+          {
+            "DuoSecretKey":"${DuoSecretKey}",
+            "DuoIntegrationKey":"${DuoIntegrationKey}",
+            "DuoApiHostName":"${DuoApiHostName}"
+          }
+        GenerateStringKey: RadiusSharedSecret
+        PasswordLength: 25
+        # Do not include the following characters.
+        ExcludeCharacters: '"=,'
+      Tags:
+      - Key: duo:DirectoryServiceId
+        Value: !Ref DirectoryServiceId
+
+  DuoConfigurationSettingsSecretRotationSchedule:
+    Type: AWS::SecretsManager::RotationSchedule
+    DependsOn: DuoConfigurationSettingsSecretRotationLambdaInvokePermission
+    Properties:
+      SecretId: !Ref DuoConfigurationSettingsSecret
+      RotationLambdaARN: !GetAtt RotateRadiusSharedSecretFunction.Arn
+      RotationRules:
+        AutomaticallyAfterDays: 7
+
+  DuoConfigurationSettingsSecretRotationLambdaInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref RotateRadiusSharedSecretFunction
+      Action: lambda:InvokeFunction
+      Principal: secretsmanager.amazonaws.com
+
+  #-----------------------------------------------------------
+  #
+  # The following resources are used to create the proxy EC2
+  # instances using the networking properties of the directory
+  # and the secrets stored in Parameter Store.
+  #
+  #-----------------------------------------------------------
+
+
+  #-----------------------------------------------------------
+  # RADIUS proxies publish to this topic when their bootstrapping
+  # is complete.
+  #-----------------------------------------------------------
+  RadiusProxyBootstrapCompleteTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      DisplayName: RadiusStatus
+      TopicName: !Sub RadiusProxyBootstrapComplete-${DirectoryServiceId}
+      Subscription:
+        - Endpoint: !GetAtt UpdateDirectoryServiceMfaSettings.Arn
+          Protocol: lambda
+
+
+  #--------------------------------------------------
+  # IAM role to be used by the proxy instances.
+  # The role needs to interact with SSM for remote
+  # command execcution.
+  #--------------------------------------------------
+  InstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub InstanceRole-${DirectoryServiceId}
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: [ec2.amazonaws.com]
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonEC2RoleforSSM
+      Policies:
+        - PolicyName: InstancePermissions
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - sns:Publish
+                Resource: !Ref RadiusProxyBootstrapCompleteTopic
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                Resource: !Ref DuoConfigurationSettingsSecret
+              - Effect: Allow
+                Action:
+                  - ssm:GetParameter
+                Resource:
+                  - !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/DuoRadiusConfiguration/${DirectoryServiceId}/CloudWatchAgentConfiguration
+              - Effect: Allow
+                Action:
+                  - ec2:CreateTags
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - ds:DescribeDirectories
+                Resource: "*"
+
+  #--------------------------------------------------
+  # IAM profile to be used by the application instances
+  #--------------------------------------------------
+  InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles: [!Ref InstanceRole]
+
+  #-------------------------------------------------
+  # Security group for Duo RADIUS proxy instances
+  #-------------------------------------------------
+  DuoRadiusProxySecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      # GroupName: Duo_RADIUS_proxies
+      GroupDescription: Duo RADIUS proxies
+      VpcId: !GetAtt GetDirectoryServiceDetails.VpcId
+      SecurityGroupIngress:
+      - IpProtocol: udp
+        FromPort: !Ref RadiusPortNumber
+        ToPort: !Ref RadiusPortNumber
+        SourceSecurityGroupId: !GetAtt GetDirectoryServiceDetails.SecurityGroupId
+        Description: Allows UDP from Directory Service Domain Controllers
+      SecurityGroupEgress:
+      - IpProtocol: 6
+        FromPort: 80
+        ToPort: 80
+        CidrIp: 0.0.0.0/0
+      - IpProtocol: 6
+        FromPort: 443
+        ToPort: 443
+        CidrIp: 0.0.0.0/0
+      Tags:
+      - Key: Name
+        Value: Duo RADIUS Security Group
+      - Key: duo:DirectoryServiceId
+        Value: !Ref DirectoryServiceId
+
+  #-------------------------------------------------
+  # Launch configuration for RADIUS proxies
+  #-------------------------------------------------
+  RadiusProxyLaunchConfig:
+    Type: AWS::AutoScaling::LaunchConfiguration
+    Properties:
+      ImageId: !Ref LatestAmiId
+      InstanceType: t2.micro
+      IamInstanceProfile: !Ref InstanceProfile
+      SecurityGroups:
+      - !Ref DuoRadiusProxySecurityGroup
+
+  #-------------------------------------------------
+  # Auto scaling group for RADIUS proxies
+  #-------------------------------------------------
+  RadiusProxyAutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      AutoScalingGroupName: !Sub RadiusProxyAutoScalingGroup-${DirectoryServiceId}
+      VPCZoneIdentifier:
+        - !GetAtt GetDirectoryServiceDetails.SubnetId1
+        - !GetAtt GetDirectoryServiceDetails.SubnetId2
+      LaunchConfigurationName: !Ref RadiusProxyLaunchConfig
+      MinSize: 1
+      MaxSize: !Ref RadiusProxyServerCount
+      DesiredCapacity: !Ref RadiusProxyServerCount
+      # Notify the Lambda function to update the RADIUS settings.
+      NotificationConfigurations:
+        - NotificationTypes:
+          - autoscaling:EC2_INSTANCE_TERMINATE
+          TopicARN: !Ref RadiusProxyBootstrapCompleteTopic
+      Tags:
+      - Key: Name
+        Value: Duo RADIUS Proxy Server
+        PropagateAtLaunch: true
+      - Key: duo:DirectoryServiceId
+        Value: !Ref DirectoryServiceId
+        PropagateAtLaunch: true
+
+  #-------------------------------------------------
+  # Create the CloudWatch Log resource for logging
+  # by the Duo RADIUS service
+  #-------------------------------------------------
+  RadiusProxyCloudWatchLogsGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub RadiusProxyLogs-${DirectoryServiceId}/authproxy.log
+      RetentionInDays: 30
+
+  #-------------------------------------------------
+  # This parameter is used when the CloudWatch logs
+  # agent is configured. It will output the contents
+  # of the authproxy.log file.
+  #-------------------------------------------------
+  CloudWatchLogsAgentConfigurationParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub /DuoRadiusConfiguration/${DirectoryServiceId}/CloudWatchAgentConfiguration
+      Description: Configuration for CloudWatch Logs agent
+      Type: String
+      Value: !Sub |
+        {
+          "logs": {
+            "logs_collected": {
+              "files": {
+                "collect_list": [
+                  {
+                    "file_path": "/opt/duoauthproxy/log/authproxy.log",
+                    "log_group_name": "${RadiusProxyCloudWatchLogsGroup}",
+                    "log_stream_name": "{instance_id}",
+                    "timezone": "Local"
+                  }
+                ]
+              }
+            }
+          }
+        }
+
+  #-------------------------------------------------
+  # Systems Manager document to bootstrap the instances
+  #-------------------------------------------------
+  InstallAndConfigureDuoProxyServiceDocument:
+    Type: AWS::SSM::Document
+    DependsOn: DuoConfigurationSettingsSecret
+    Properties:
+      DocumentType: Command
+      Content:
+        schemaVersion: "2.2"
+        description: Installs and configures Duo proxy service
+        # parameters:
+        #   SecretManagerName:
+        #     type: String
+        #     description: Name of the Secrets Manager password
+
+        mainSteps:
+
+        # Install and configure the RADIUS proxy
+        - action: aws:runShellScript
+          precondition:
+            StringEquals:
+            - platformType
+            - Linux
+          name: InstallProxyService
+          inputs:
+            runCommand:
+            - !Sub |
+              sudo su
+
+              echo "************************************************************"
+              echo "* Running as $(whoami)"
+              echo "************************************************************"
+
+              echo
+              echo "************************************************************"
+              echo "* Installing updates"
+              echo "************************************************************"
+              yum update -y
+
+              if [ ! -f /opt/duoauthproxy/conf/authproxy.cfg ]; then
+                echo
+                echo "************************************************************"
+                echo "* Installing prerequisites"
+                echo "************************************************************"
+                yum install gcc make openssl-devel python-devel libffi-devel jq -y
+
+                # Upgrade the AWS CLI.
+                pip install awscli --upgrade
+
+                echo
+                echo "************************************************************"
+                echo "* Downloading and installing Duo proxy"
+                echo "************************************************************"
+                cd /tmp
+                wget https://dl.duosecurity.com/duoauthproxy-latest-src.tgz
+
+                tar xzf duoauthproxy-*.tgz
+                rm duoauthproxy-*.tgz
+                cd duoauthproxy-*-src
+                make
+                cd duoauthproxy-build
+
+                ./install --install-dir=/opt/duoauthproxy --service-user=nobody --create-init-script=yes --log-group=duo_authproxy_grp
+              else
+                echo
+                echo "************************************************************"
+                echo "* Not installing Duo proxy service"
+                echo "* Reason: /opt/duoauthproxy/conf/authproxy.cfg exists"
+                echo "************************************************************"
+              fi
+
+              echo
+              echo "************************************************************"
+              echo "* Configuring Duo proxy service"
+              echo "************************************************************"
+              echo Retreiving Secrets Manager secret: DuoConfigurationSettings-${DirectoryServiceId}
+              aws configure set region ${AWS::Region}
+              secret=$(aws secretsmanager get-secret-value --secret-id DuoConfigurationSettings-${DirectoryServiceId} | jq .SecretString | jq fromjson)
+              radius_shared_secret=$(echo $secret | jq -r .RadiusSharedSecret)
+              duo_secret_key=$(echo $secret | jq -r .DuoSecretKey)
+
+              # Create the authproxy.cfg file.
+              cat > /opt/duoauthproxy/conf/authproxy.cfg <<EOL
+              [duo_only_client]
+
+              [radius_server_duo_only]
+              ikey=${DuoIntegrationKey}
+              skey=$duo_secret_key
+              api_host=${DuoApiHostName}
+              failmode=${DuoFailMode}
+              port=${RadiusPortNumber}
+              EOL
+
+              # First, determine whether this is an AD Connector or a Managed AD,
+              # then get the list of domain controllers for the directory.
+              DIRECTORY_SERVICE_TYPE=$(aws ds describe-directories --directory-ids ${DirectoryServiceId} --output json --query DirectoryDescriptions[0].Type --output text)
+              if [ "$DIRECTORY_SERVICE_TYPE" = "ADConnector" ];then
+                  aws ds describe-directories --directory-ids ${DirectoryServiceId} --output json --query DirectoryDescriptions[0].ConnectSettings.ConnectIps > ip_addresses.json
+              else
+                  aws ds describe-directories --directory-ids ${DirectoryServiceId} --output json --query DirectoryDescriptions[0].DnsIpAddrs > ip_addresses.json
+              fi
+
+              echo
+              echo "************************************************************"
+              echo "* Updating authproxy.cfg with Domain Controller IPs:"
+              echo "************************************************************"
+              cat ip_addresses.json
+
+              index=1
+
+              # Add entries in the authproxy.cfg file for each domain controller.
+              jq -c -r '.[]' ip_addresses.json | while read ip_address; do
+                echo radius_ip_$index=$ip_address >> /opt/duoauthproxy/conf/authproxy.cfg
+                echo radius_secret_$index=$radius_shared_secret >> /opt/duoauthproxy/conf/authproxy.cfg
+                ((index++))
+              done
+
+              echo
+              echo "************************************************************"
+              echo "* Starting Duo proxy service"
+              echo "************************************************************"
+              /opt/duoauthproxy/bin/authproxyctl restart
+
+              echo
+              echo "************************************************************"
+              echo "* Duo proxy configuration complete"
+              echo "************************************************************"
+              instance_id=$(wget -q -O - http://169.254.169.254/latest/meta-data/instance-id)
+              aws ec2 create-tags --resources $instance_id --tags Key=RadiusConfigured,Value=True
+              aws sns publish --topic-arn ${RadiusProxyBootstrapCompleteTopic} --message "{\"InstanceId\":\"$instance_id\",\"RunTask\":\"EnableRadius\"}"
+              echo Published message to SNS topic: ${RadiusProxyBootstrapCompleteTopic}
+
+
+  #-------------------------------------------------
+  # Systems Manager document to bootstrap the instances
+  #-------------------------------------------------
+  RadiusProxyBootstrapDocument:
+    Type: AWS::SSM::Document
+    Properties:
+      DocumentType: Command
+      Content:
+        schemaVersion: "2.2"
+        description: Bootstraps RADIUS proxies
+        parameters:
+          DirectoryServiceId:
+            type: String
+            description: ID of the Directory Service directory
+
+        mainSteps:
+
+        # Update the SSM agent
+        - action: aws:runDocument
+          name: UpdateSsmAgent
+          inputs:
+            documentType: SSMDocument
+            documentPath: AWS-UpdateSSMAgent
+
+        # Install the CloudWatch Logs agent
+        - action: aws:runDocument
+          name: InstallCloudWatchLogsAgent
+          inputs:
+            documentType: SSMDocument
+            documentPath: AWS-ConfigureAWSPackage
+            documentParameters: '{"action":"Install","name":"AmazonCloudWatchAgent"}'
+
+        # Configure the CloudWatch Logs agent
+        - action: aws:runDocument
+          name: ConfigureCloudWatchLogsAgent
+          inputs:
+            documentType: SSMDocument
+            documentPath: AmazonCloudWatch-ManageAgent
+            documentParameters: !Sub |
+              {
+                "action": "configure",
+                "optionalConfigurationLocation": "${CloudWatchLogsAgentConfigurationParameter}",
+                "optionalRestart": "yes",
+                "mode": "ec2",
+                "optionalConfigurationSource": "ssm"
+              }
+
+        # Install and configure the Duo proxy service
+        - action: aws:runDocument
+          name: InstallAndConfigureDuoProxyService
+          precondition:
+            StringEquals:
+            - platformType
+            - Linux
+          inputs:
+            documentType: SSMDocument
+            documentPath: !Ref InstallAndConfigureDuoProxyServiceDocument
+      Tags:
+      - Key: duo:DirectoryServiceId
+        Value: !Ref DirectoryServiceId
+
+  #-------------------------------------------------
+  # This bucket will store the output of the Systems
+  # Manager document executions.
+  #-------------------------------------------------
+  RadiusProxyBootstrapSystemsManagerBucket:
+    Type: AWS::S3::Bucket
+    # Don't delete the bucket when the stack is deleted. The deletion attempt
+    # would otherwise fail if there are objects in the bucket.
+    DeletionPolicy: Retain
+    Properties:
+      # Enable encryption
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+        - ServerSideEncryptionByDefault:
+            SSEAlgorithm: AES256
+      Tags:
+      - Key: duo:DirectoryServiceId
+        Value: !Ref DirectoryServiceId
+
+  #-------------------------------------------------
+  # Systems Manager association to bootstrap the instances
+  #-------------------------------------------------
+  RadiusProxyBootstrapDocumentAssociation:
+    Type: AWS::SSM::Association
+    Properties:
+      Name: !Ref RadiusProxyBootstrapDocument
+      AssociationName: !Sub BootstrapRadiusProxies-${DirectoryServiceId}
+      OutputLocation:
+        S3Location:
+          OutputS3BucketName: !Ref RadiusProxyBootstrapSystemsManagerBucket
+          OutputS3KeyPrefix: logs
+      Parameters:
+        DirectoryServiceId: [!Ref DirectoryServiceId]
+      Targets:
+      - Key: tag:duo:DirectoryServiceId
+        Values: [!Ref DirectoryServiceId]
+
+  #--------------------------------------------------
+  # IAM role used by the Lambda function to update the
+  # directory service MFA settings.
+  #--------------------------------------------------
+  UpdateDirectoryServiceMfaSettingsRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub UpdateDirectoryServiceMfaSettingsRole-${DirectoryServiceId}
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: [lambda.amazonaws.com]
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: UpdateDirectoryServiceMfaSettings
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - autoscaling:CompleteLifecycleAction
+                  - ds:DescribeDirectories
+                  - ds:DisableRadius
+                  - ds:EnableRadius
+                  - ds:UpdateRadius
+                  - ec2:DescribeInstances
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                Resource: !Ref DuoConfigurationSettingsSecret
+
+  #--------------------------------------------------
+  # This Lambda function will update the directory
+  # service MFA settings.
+  #--------------------------------------------------
+  UpdateDirectoryServiceMfaSettings:
+    Type: AWS::Lambda::Function
+    DependsOn: CopyZips
+    Properties:
+      FunctionName: !Sub UpdateDirectoryServiceMfaSettings-${DirectoryServiceId}
+      Description: Update the directory service MFA settings
+      Handler: lambda_function.lambda_handler
+      MemorySize: 1024
+      Role: !GetAtt UpdateDirectoryServiceMfaSettingsRole.Arn
+      Runtime: python3.6
+      Timeout: 180
+      Environment:
+        Variables:
+            # The ARN of the Secrets Manager secret containing the RADIUS shared
+            # secret is passed to this function by the Secrets Manager rotation
+            # feature.
+            directory_service_id: !Ref DirectoryServiceId
+            radius_proxy_port_number: !Ref RadiusPortNumber
+            radius_shared_secret_arn: !Ref DuoConfigurationSettingsSecret
+            radius_proxy_server_count: !Ref RadiusProxyServerCount
+      Tags:
+      - Key: duo:DirectoryServiceId
+        Value: !Ref DirectoryServiceId
+      Code:
+        S3Bucket: !Ref LambdaZipsBucket
+        S3Key: !Sub '${QSS3KeyPrefix}functions/packages/directory-service-mfa-configurator.zip'
+
+  # Allow SNS to invoke the Lambda function
+  LambdaInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      Principal: sns.amazonaws.com
+      SourceArn: !Ref RadiusProxyBootstrapCompleteTopic
+      FunctionName: !GetAtt UpdateDirectoryServiceMfaSettings.Arn
+
+
+  #--------------------------------------------------
+  # A change to the RADIUS shared secret will trigger
+  # the SSM document to run, which updates the instances
+  # and the directory service RADIUS configuration
+  #--------------------------------------------------
+  RadiusSharedSecretRotationRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub RadiusSharedSecretRotationRole-${DirectoryServiceId}
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: [lambda.amazonaws.com]
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: RotateDuoConfigurationSettingsSecret
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ssm:SendCommand
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - secretsmanager:DescribeSecret
+                  - secretsmanager:GetSecretValue
+                  - secretsmanager:PutSecretValue
+                  - secretsmanager:UpdateSecretVersionStage
+                Resource: !Ref DuoConfigurationSettingsSecret
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetRandomPassword
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                Resource: !Sub arn:aws:s3:::${RadiusProxyBootstrapSystemsManagerBucket}/*
+              - Effect: Allow
+                Action:
+                  - iam:PassRole
+                Resource: "*"
+
+  #--------------------------------------------------
+  # This custom Lambda function will retrieve the
+  # details of the directory service.
+  #--------------------------------------------------
+  RotateRadiusSharedSecretFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub RotateRadiusSharedSecret-${DirectoryServiceId}
+      Description: |
+        Rotates RADIUS shared secret and updates running instances and directory
+      Handler: index.lambda_handler
+      MemorySize: 1024
+      Role: !GetAtt RadiusSharedSecretRotationRole.Arn
+      Runtime: python3.6
+      Timeout: 60
+      Environment:
+        Variables:
+          RunDocumentName: !Ref InstallAndConfigureDuoProxyServiceDocument
+          PasswordLength: 25
+          ExcludeCharacters: '"=,'
+          RunDocumentTagName: tag:duo:DirectoryServiceId
+          RunDocumentTagValue: !Ref DirectoryServiceId
+      Tags:
+      - Key: duo:DirectoryServiceId
+        Value: !Ref DirectoryServiceId
+      Code:
+        ZipFile: !Sub |
+          import boto3
+          import os
+          import json
+
+          secretsmanager_client = boto3.client('secretsmanager')
+          ssm_client = boto3.client('ssm')
+
+          def lambda_handler(event, context):
+              arn = event['SecretId']
+              token = event['ClientRequestToken']
+              step = event['Step']
+
+              if step == "createSecret":
+                  create_secret(secretsmanager_client, arn, token)
+
+              elif step == "finishSecret":
+                  finish_secret(secretsmanager_client, arn, token)
+                  run_command_against_instances()
+
+              else:
+                  pass # no-op
+
+
+          def create_secret(secretsmanager_client, arn, token):
+              # Get the secret
+              secret = json.loads(secretsmanager_client.get_secret_value(SecretId=arn, VersionStage="AWSCURRENT")['SecretString'])
+
+              # Generate a random password
+              secret['RadiusSharedSecret'] = generate_password()
+
+              # Put the secret
+              secretsmanager_client.put_secret_value(SecretId=arn, ClientRequestToken=token, SecretString=json.dumps(secret), VersionStages=['AWSPENDING'])
+              print("createSecret: Successfully put secret for ARN %s and version %s." % (arn, token))
+
+
+          def finish_secret(secretsmanager_client, arn, token):
+              # First describe the secret to get the current version
+              metadata = secretsmanager_client.describe_secret(SecretId=arn)
+              current_version = None
+              for version in metadata["VersionIdsToStages"]:
+                  if "AWSCURRENT" in metadata["VersionIdsToStages"][version]:
+                      if version == token:
+                          print("finishSecret: Version %s already marked as AWSCURRENT for %s" % (version, arn))
+                          return
+                      current_version = version
+                      break
+
+              # Finalize by staging the secret version current
+              secretsmanager_client.update_secret_version_stage(SecretId=arn, VersionStage="AWSCURRENT", MoveToVersionId=token, RemoveFromVersionId=current_version)
+              print("finishSecret: Successfully set AWSCURRENT stage to version %s for secret %s." % (version, arn))
+
+
+          def generate_password():
+
+              # Set defaults.
+              complexity_requirements = {
+                  "ExcludeUppercase":False,
+                  "RequireEachIncludedType":False,
+                  "IncludeSpace":False,
+                  "ExcludeCharacters":"",
+                  "PasswordLength":20,
+                  "ExcludePunctuation":False,
+                  "ExcludeLowercase":False,
+                  "ExcludeNumbers":False,
+              }
+
+              # Get the environment variables if they exist.
+              for key, value in complexity_requirements.items():
+                  if not os.environ.get(key) == None:
+                      complexity_requirements[key] = os.environ[key]
+
+              response = secretsmanager_client.get_random_password(
+                  PasswordLength=int(complexity_requirements['PasswordLength']),
+                  ExcludeCharacters=complexity_requirements['ExcludeCharacters'],
+                  ExcludeNumbers=complexity_requirements['ExcludeNumbers'],
+                  ExcludePunctuation=complexity_requirements['ExcludePunctuation'],
+                  ExcludeUppercase=complexity_requirements['ExcludeUppercase'],
+                  ExcludeLowercase=complexity_requirements['ExcludeLowercase'],
+                  IncludeSpace=complexity_requirements['IncludeSpace'],
+                  RequireEachIncludedType=complexity_requirements['RequireEachIncludedType']
+              )
+
+              return response['RandomPassword']
+
+          def run_command_against_instances():
+
+              response = ssm_client.send_command(
+                  Targets=[{
+                      'Key': os.environ['RunDocumentTagName'],
+                      'Values': [os.environ['RunDocumentTagValue']]
+                  }],
+                  DocumentName=os.environ['RunDocumentName']
+              )
+
+
+              return response['Command']['CommandId']
+
+  #--------------------------------------------------
+  # Deployment helpers
+  #-------------------------------------------------- 
+  LambdaZipsBucket:
+    Type: AWS::S3::Bucket
+
+  CopyZips:
+    Type: Custom::CopyZips
+    Properties:
+      ServiceToken: !GetAtt CopyZipsFunction.Arn
+      DestBucket: !Ref LambdaZipsBucket
+      SourceBucket: !Ref QSS3BucketName
+      Prefix: !Ref QSS3KeyPrefix
+      Objects:
+        - functions/packages/directory-service-mfa-configurator.zip
+        # - functions/packages/CleanupPV/lambda.zip
+
+  CopyZipsRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Path: /
+      Policies:
+        - PolicyName: lambda-copier
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                Resource:
+                  - !Sub 'arn:aws:s3:::${QSS3BucketName}/${QSS3KeyPrefix}*'
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:DeleteObject
+                Resource:
+                  - !Sub 'arn:aws:s3:::${LambdaZipsBucket}/${QSS3KeyPrefix}*'
+
+  CopyZipsFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Description: Copies objects from a source S3 bucket to a destination
+      Handler: index.handler
+      Runtime: python2.7
+      Role: !GetAtt CopyZipsRole.Arn
+      Timeout: 240
+      Code:
+        ZipFile: |
+          import json
+          import logging
+          import threading
+          import boto3
+          import cfnresponse
+
+
+          def copy_objects(source_bucket, dest_bucket, prefix, objects):
+              s3 = boto3.client('s3')
+              for o in objects:
+                  key = prefix + o
+                  copy_source = {
+                      'Bucket': source_bucket,
+                      'Key': key
+                  }
+                  print('copy_source: %s' % copy_source)
+                  print('dest_bucket = %s'%dest_bucket)
+                  print('key = %s' %key)
+                  s3.copy_object(CopySource=copy_source, Bucket=dest_bucket,
+                        Key=key)
+
+
+          def delete_objects(bucket, prefix, objects):
+              s3 = boto3.client('s3')
+              objects = {'Objects': [{'Key': prefix + o} for o in objects]}
+              s3.delete_objects(Bucket=bucket, Delete=objects)
+
+
+          def timeout(event, context):
+              logging.error('Execution is about to time out, sending failure response to CloudFormation')
+              cfnresponse.send(event, context, cfnresponse.FAILED, {}, None)
+
+
+          def handler(event, context):
+              # make sure we send a failure to CloudFormation if the function
+              # is going to timeout
+              timer = threading.Timer((context.get_remaining_time_in_millis()
+                        / 1000.00) - 0.5, timeout, args=[event, context])
+              timer.start()
+
+              print('Received event: %s' % json.dumps(event))
+              status = cfnresponse.SUCCESS
+              try:
+                  source_bucket = event['ResourceProperties']['SourceBucket']
+                  dest_bucket = event['ResourceProperties']['DestBucket']
+                  prefix = event['ResourceProperties']['Prefix']
+                  objects = event['ResourceProperties']['Objects']
+                  if event['RequestType'] == 'Delete':
+                      delete_objects(dest_bucket, prefix, objects)
+                  else:
+                      copy_objects(source_bucket, dest_bucket, prefix, objects)
+              except Exception as e:
+                  logging.error('Exception: %s' % e, exc_info=True)
+                  status = cfnresponse.FAILED
+              finally:
+                  timer.cancel()
+                  cfnresponse.send(event, context, status, {}, None)
+
+#--------------------------------------------------
+# Outputs
+#--------------------------------------------------
+Outputs:
+
+  RadiusProxyAutoScalingGroup:
+    Export:
+      Name: !Sub ${AWS::StackName}-RadiusProxyAutoScalingGroup
+    Value: !Ref RadiusProxyAutoScalingGroup
+
+  RadiusProxyLaunchConfig:
+    Export:
+      Name: !Sub ${AWS::StackName}-RadiusProxyLaunchConfig
+    Value: !Ref RadiusProxyLaunchConfig
+
+  DuoRadiusProxySecurityGroup:
+    Export:
+      Name: !Sub ${AWS::StackName}-DuoRadiusProxySecurityGroup
+    Value: !Ref DuoRadiusProxySecurityGroup
+
+  DirectoryServiceId:
+    Export:
+      Name: !Sub ${AWS::StackName}-DirectoryServiceId
+    Value: !Ref DirectoryServiceId
+
+  DuoRadiusProxyVpc:
+    Export:
+      Name: !Sub ${AWS::StackName}-DuoRadiusProxyVpc
+    Value: !GetAtt GetDirectoryServiceDetails.VpcId
+
+  DuoConfigurationSettingsSecret:
+    Export:
+      Name: !Sub ${AWS::StackName}-DuoConfigurationSettingsSecret
+    Value: !Ref DuoConfigurationSettingsSecret
+
+  RadiusPortNumber:
+    Export:
+      Name: !Sub ${AWS::StackName}-RadiusPortNumber
+    Value: !Ref RadiusPortNumber
+
+  DuoFailMode:
+    Export:
+      Name: !Sub ${AWS::StackName}-DuoFailMode
+    Value: !Ref DuoFailMode
+
+  RadiusProxyCloudWatchLogsGroup:
+    Export:
+      Name: !Sub ${AWS::StackName}-RadiusProxyCloudWatchLogsGroup
+    Value: !Ref RadiusProxyCloudWatchLogsGroup
+
+  RadiusProxyBootstrapSystemsManagerBucket:
+    Export:
+      Name: !Sub ${AWS::StackName}-RadiusProxyBootstrapSystemsManagerBucket
+    Value: !Ref RadiusProxyBootstrapSystemsManagerBucket

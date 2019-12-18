@@ -1,0 +1,42 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Cloudwatch dashboard template
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Cloudwatch Dashboard Configuration
+        Parameters:
+          - ProductStackName
+          - ProductFamilyName
+          - AsgToMonitor
+          - DatabaseIdentifier
+
+Parameters:
+  ProductStackName:
+    Description: "Product stack name"
+    Type: "String"
+  ProductFamilyName:
+    Description: "Name of the product family being deployed"
+    Type: "String"
+  AsgToMonitor:
+    Description: "Name of the ASG to monitor"
+    Type: "String"
+  DatabaseIdentifier:
+    Description: "Identifier of database to monitor"
+    Type: "String"
+
+Resources:
+  Dashboard:
+    Type: "AWS::CloudWatch::Dashboard"
+    Properties:
+      DashboardName: !Sub ["${StackName}-dashboard", {StackName: !Ref 'ProductStackName'}]
+      DashboardBody: !Sub |
+        { "start": "-PT3H", "periodOverride": "inherit", "widgets": [ { "type": "metric", "x": 0, "y": 0, "width": 24, "height": 6, "properties": { "view": "singleValue", "stacked": false, "metrics": [ [ "AWS/EC2", "StatusCheckFailed_System", "AutoScalingGroupName", "${AsgToMonitor}"], [ ".", "StatusCheckFailed", ".", "." ], [ ".", "StatusCheckFailed_Instance", ".", "." ], [ ".", "EBSIOBalance%", ".", "." ], [ ".", "EBSByteBalance%", ".", "." ], [ ".", "EBSReadOps", ".", "." ], [ ".", "EBSReadBytes", ".", "." ], [ ".", "EBSWriteOps", ".", "." ], [ ".", "EBSWriteBytes", ".", "." ], [ ".", "CPUUtilization", ".", "." ], [ ".", "NetworkIn", ".", "." ], [ ".", "NetworkOut", ".", "." ], [ ".", "NetworkPacketsIn", ".", "." ], [ ".", "NetworkPacketsOut", ".", "." ] ], "region": "${AWS::Region}" } }, { "type": "log", "x": 0, "y": 6, "width": 24, "height": 6, "properties": { "query": "SOURCE \"${ProductFamilyName}-${ProductStackName}\" | fields @timestamp, @message | sort @timestamp desc | limit 20", "region": "${AWS::Region}", "stacked": false, "title": "Log group: ${ProductFamilyName}-${ProductStackName}", "view": "table" } }, { "type": "metric", "x": 15, "y": 12, "width": 9, "height": 6, "properties": { "view": "timeSeries", "stacked": false, "metrics": [ [ "AWS/RDS", "DatabaseConnections", "DBInstanceIdentifier", "${DatabaseIdentifier}" ] ], "region": "${AWS::Region}" } }, { "type": "metric", "x": 0, "y": 12, "width": 15, "height": 6, "properties": { "view": "singleValue", "metrics": [ [ "AWS/RDS", "WriteThroughput", "DBInstanceIdentifier", "${DatabaseIdentifier}" ], [ ".", "WriteLatency", ".", "." ], [ ".", "ReadLatency", ".", "." ], [ ".", "ReadThroughput", ".", "." ], [ ".", "WriteIOPS", ".", "." ], [ ".", "ReadIOPS", ".", "." ] ], "region": "${AWS::Region}" } } ]}
+
+
+Outputs:
+  Dashboard:
+    Description: "Basic Monitoring dashboard"
+    Value: !Sub
+      - https://${AWS::Region}.console.aws.amazon.com/cloudwatch/home#dashboards:name=${DashboardName}-dashboard
+      - DashboardName: !Ref ProductStackName

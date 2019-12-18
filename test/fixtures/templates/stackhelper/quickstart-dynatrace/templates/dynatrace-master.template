@@ -1,0 +1,619 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "This template creates a entire infrastructure for a multi-AZ deployment of Dynatrace Managed, including VPC setup. It will deploy Dynatrace instances into the private subnets in separate Availability Zones.\r\n***NOTE*** You must obtain first obtain Dynatrace Maanged license before you launch this template. See the deployment guide at http://aws.amazon.com/quickstart for details.\r\nThis template creates Amazon EC2 instances and related resources. You will be billed for the AWS resources used if you create a stack from this template. (qs-1ordscsse)",
+    "Metadata": {
+        "AWS::CloudFormation::Interface": {
+            "ParameterGroups": [
+                {
+                    "Label": {
+                        "default": "Dynatrace Managed cluster configuration"
+                    },
+                    "Parameters": [
+                        "LicenseKey",
+                        "DownloadUrl",
+                        "NumNodes"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "Dynatrace Managed cluster environment configuration"
+                    },
+                    "Parameters": [
+                        "AdminPassword",
+                        "AdminEmail"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "Network configuration"
+                    },
+                    "Parameters": [
+                        "AvailabilityZones",
+                        "NumberOfAZs",
+                        "VPCCIDR",
+                        "PrivateSubnet1CIDR",
+                        "PrivateSubnet2CIDR",
+                        "PrivateSubnet3CIDR",
+                        "PublicSubnet1CIDR",
+                        "PublicSubnet2CIDR",
+                        "PublicSubnet3CIDR",
+                        "RemoteAccessCIDR"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "Amazon EC2 configuration"
+                    },
+                    "Parameters": [
+                        "KeyPairName",
+                        "BastionInstanceType",
+                        "DynatraceInstanceType",
+                        "DynatraceInstanceTenancy"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "Amazon EBS volume sizing configuration"
+                    },
+                    "Parameters": [
+                        "BinVolumeSize",
+                        "MiscVolumeSize",
+                        "SrvVolumeSize",
+                        "CassandraVolumeSize",
+                        "ElasticSearchVolumeSize"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "AWS Quick Start configuration"
+                    },
+                    "Parameters": [
+                        "QSS3BucketName",
+                        "QSS3KeyPrefix"
+                    ]
+                }
+            ],
+            "ParameterLabels": {
+                "AdminEmail": {
+                    "default": "Contact email for the cluster."
+                },
+                "AdminPassword" : {
+                    "default": "Admin password"
+                },
+                "AvailabilityZones": {
+                    "default": "Availability Zones"
+                },
+                "BastionInstanceType": {
+                    "default": "Bastion instance type"
+                },
+                "BinVolumeSize" : {
+                    "default": "EBS volume size - installation"
+                },
+                "CassandraVolumeSize" : {
+                    "default": "EBS volume size - long term storage"
+                },
+                "DownloadUrl": {
+                    "default": "Dynatrace Managed installer download URL"
+                },
+                "DynatraceInstanceType": {
+                    "default": "Dynatrace Managed instance type"
+                },
+                "DynatraceInstanceTenancy" : {
+                    "default": "Dynatrace Managed instance tenancy"
+                },
+                "ElasticSearchVolumeSize" : {
+                    "default": "EBS volume size - ElasticSearch"
+                },
+                "KeyPairName": {
+                    "default": "Key pair name"
+                },
+                "LicenseKey": {
+                    "default": "Dynatrace Managed license key"
+                },
+                "MiscVolumeSize" : {
+                    "default": "EBS volume size - logs and updates"
+                },
+                "NumberOfAZs": {
+                    "default": "Number of Availability Zones"
+                },
+                "NumNodes": {
+                    "default": "Number of Dynatrace Managed nodes"
+                },
+                "PrivateSubnet1CIDR": {
+                    "default": "Private subnet 1 CIDR"
+                },
+                "PrivateSubnet2CIDR": {
+                    "default": "Private subnet 2 CIDR"
+                },
+                "PrivateSubnet3CIDR": {
+                    "default": "Private subnet 3 CIDR"
+                },
+                "PublicSubnet1CIDR": {
+                    "default": "Public subnet 1 CIDR"
+                },
+                "PublicSubnet2CIDR": {
+                    "default": "Public subnet 2 CIDR"
+                },
+                "PublicSubnet3CIDR": {
+                    "default": "Public subnet 3 CIDR"
+                },
+                "QSS3BucketName": {
+                    "default": "Quick Start S3 bucket name"
+                },
+                "QSS3KeyPrefix": {
+                    "default": "Quick Start S3 key prefix"
+                },
+                "RemoteAccessCIDR": {
+                    "default": "Allowed Bastion external access CIDR"
+                },
+                "SrvVolumeSize" : {
+                    "default": "EBS volume size - transaction storage"
+                },
+                "VPCCIDR": {
+                    "default": "VPC CIDR"
+                }
+            }
+        }
+    },
+    "Parameters": {
+        "AdminEmail": {
+            "Type": "String",
+            "Description": "Problem notifications will be sent to this address if an issue is detected on the cluster."
+        },
+        "AdminPassword" : {
+            "Type": "String",
+            "NoEcho" : "true",
+            "Description": "Initial password for the 'admin' user. This password is used to access the Dynatrace cluster console UI.",
+            "MinLength" : "8"
+        },
+        "AvailabilityZones": {
+            "Description": "List of Availability Zones to use for the subnets in the VPC. It is recommended to use 3 AZs and if unavailable 2AZs for this deployment. The logical order of the chosen AZs is preserved.",
+            "Type": "List<AWS::EC2::AvailabilityZone::Name>"
+        },
+        "LicenseKey": {
+            "Description": "Please see the user guide for information on how to obtain a license key.",
+            "Type": "String"
+        },
+        "DownloadUrl": {
+            "Description": "Please see the user guide for information on how to obtain the download URL.",
+            "Type": "String"
+        },
+        "DynatraceInstanceType": {
+            "AllowedValues": [
+                "m4.xlarge",
+                "r4.xlarge",
+                "m4.2xlarge",
+                "m5.2xlarge",
+                "r4.2xlarge",
+                "m4.4xlarge",
+                "m5.4xlarge",
+                "r4.4xlarge",
+                "r4.8xlarge",
+                "m4.10xlarge",
+                "m5.12xlarge",
+                "r4.16xlarge",
+                "m5.24xlarge"
+            ],
+            "Default": "r4.xlarge",
+            "Description": "Amazon EC2 instance type for the Dynatrace Managed nodes.",
+            "Type": "String"
+        },
+        "DynatraceInstanceTenancy" : {
+            "AllowedValues": ["default", "dedicated"],
+            "Default": "default",
+            "Description": "Choose whether Dynatrace Managed nodes run on a dedicated or a multi-tenant host.",
+            "Type": "String"
+        },
+        "BinVolumeSize" : {
+            "Type" : "Number",
+            "Description" : "Dynatrace Managed volume for Binaries.",
+            "Default" : "50",
+            "MinValue" : "20",
+            "MaxValue" : "16384"
+        },
+        "MiscVolumeSize" : {
+            "Type" : "Number",
+            "Description" : "Dynatrace Managed Data Directory for Logs and Updates.",
+            "Default" : "100",
+            "MinValue" : "20",
+            "MaxValue" : "16384"
+        },
+        "SrvVolumeSize" : {
+            "Type" : "Number",
+            "Description" : "Dynatrace Managed Data Directory for Transaction Storage.",
+            "Default" : "500",
+            "MinValue" : "20",
+            "MaxValue" : "16384"
+        },
+        "CassandraVolumeSize" : {
+            "Type" : "Number",
+            "Description" : "Dynatrace Managed volume for Cassandra Long-term Metrics Repository.",
+            "Default" : "1200",
+            "MinValue" : "50",
+            "MaxValue" : "16384"
+        },
+        "ElasticSearchVolumeSize" : {
+            "Type" : "Number",
+            "Description" : "Dynatrace Managed volume for ElasticSearch Store.",
+            "Default" : "700",
+            "MinValue" : "20",
+            "MaxValue" : "16384"
+        },
+        "BastionInstanceType": {
+            "Description": "Amazon EC2 instance type for the bastion host.",
+            "Type": "String",
+            "Default": "t2.micro",
+            "AllowedValues": [
+                "t2.micro",
+                "t2.small",
+                "t2.medium",
+                "t2.large"
+            ]
+        },
+        "KeyPairName": {
+            "Description": "The name of an existing public/private key pair, which allows you to securely connect to your instance after it launches.",
+            "Type": "AWS::EC2::KeyPair::KeyName"
+        },
+        "NumberOfAZs": {
+            "AllowedValues": [
+                "2",
+                "3"
+            ],
+            "Description": "Number of Availability Zones to use in the VPC. We recommend using three Availability Zones. This must match your selections in the Availability Zones parameter.",
+            "Type": "String"
+        },
+        "NumNodes": {
+            "AllowedValues": [
+                "1",
+                "2",
+                "3",
+                "4",
+                "5",
+                "6"
+            ],
+            "Default": "3",
+            "Description": "Number of Dynatrace Managed nodes to create.",
+            "Type": "String"
+        },
+        "PrivateSubnet1CIDR": {
+            "AllowedPattern": "^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\\/(1[6-9]|2[0-8]))$",
+            "ConstraintDescription": "CIDR block parameter must be in the form x.x.x.x/16-28",
+            "Default": "10.0.0.0/19",
+            "Description": "CIDR block for private subnet 1 located in Availability Zone 1.",
+            "Type": "String"
+        },
+        "PrivateSubnet2CIDR": {
+            "AllowedPattern": "^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\\/(1[6-9]|2[0-8]))$",
+            "ConstraintDescription": "CIDR block parameter must be in the form x.x.x.x/16-28",
+            "Default": "10.0.32.0/19",
+            "Description": "CIDR block for private subnet 2 located in Availability Zone 2.",
+            "Type": "String"
+        },
+        "PrivateSubnet3CIDR": {
+            "AllowedPattern": "^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\\/(1[6-9]|2[0-8]))$",
+            "ConstraintDescription": "CIDR block parameter must be in the form x.x.x.x/16-28",
+            "Default": "10.0.64.0/19",
+            "Description": "CIDR block for private subnet 3 located in Availability Zone 3.",
+            "Type": "String"
+        },
+        "PublicSubnet1CIDR": {
+            "AllowedPattern": "^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\\/(1[6-9]|2[0-8]))$",
+            "ConstraintDescription": "CIDR block parameter must be in the form x.x.x.x/16-28",
+            "Default": "10.0.128.0/20",
+            "Description": "CIDR block for the public DMZ subnet 1 located in Availability Zone 1.",
+            "Type": "String"
+        },
+        "PublicSubnet2CIDR": {
+            "AllowedPattern": "^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\\/(1[6-9]|2[0-8]))$",
+            "ConstraintDescription": "CIDR block parameter must be in the form x.x.x.x/16-28",
+            "Default": "10.0.144.0/20",
+            "Description": "CIDR block for the public DMZ subnet 2 located in Availability Zone 2.",
+            "Type": "String"
+        },
+        "PublicSubnet3CIDR": {
+            "AllowedPattern": "^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\\/(1[6-9]|2[0-8]))$",
+            "ConstraintDescription": "CIDR block parameter must be in the form x.x.x.x/16-28",
+            "Default": "10.0.160.0/20",
+            "Description": "CIDR block for the public DMZ subnet 3 located in Availability Zone 3.",
+            "Type": "String"
+        },
+
+        "QSS3BucketName": {
+            "AllowedPattern": "^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$",
+            "ConstraintDescription": "Quick Start bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-).",
+            "Default": "aws-quickstart",
+            "Description": "S3 bucket name for the Quick Start assets. Quick Start bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-).",
+            "Type": "String"
+        },
+        "QSS3KeyPrefix": {
+            "AllowedPattern": "^[0-9a-zA-Z-/]*$",
+            "ConstraintDescription": "Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).",
+            "Default": "quickstart-dynatrace/",
+            "Description": "S3 key prefix for the Quick Start assets. Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).",
+            "Type": "String"
+        },
+        "RemoteAccessCIDR": {
+            "AllowedPattern": "^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\\/([0-9]|[1-2][0-9]|3[0-2]))$",
+            "ConstraintDescription": "CIDR block parameter must be in the form x.x.x.x/x",
+            "Description": "Allowed CIDR block for external SSH access to the bastions.",
+            "Type": "String"
+        },
+        "VPCCIDR": {
+            "AllowedPattern": "^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\\/(1[6-9]|2[0-8]))$",
+            "ConstraintDescription": "CIDR block parameter must be in the form x.x.x.x/16-28",
+            "Default": "10.0.0.0/16",
+            "Description": "CIDR block for the VPC.",
+            "Type": "String"
+        }
+    },
+    "Conditions": {
+        "3AZCondition": {
+            "Fn::Equals": [
+                {
+                    "Ref": "NumberOfAZs"
+                },
+                "3"
+            ]
+        },
+        "GovCloudCondition": {
+            "Fn::Equals": [
+                {
+                    "Ref": "AWS::Region"
+                },
+                "us-gov-west-1"
+            ]
+        }
+    },
+    "Resources": {
+        "VPCStack": {
+            "Type": "AWS::CloudFormation::Stack",
+            "Properties": {
+                "TemplateURL": {
+                    "Fn::Sub": [
+                        "https://${QSS3BucketName}.${QSS3Region}.amazonaws.com/${QSS3KeyPrefix}submodules/quickstart-aws-vpc/templates/aws-vpc.template",
+                        {
+                            "QSS3Region": {
+                                "Fn::If": [
+                                    "GovCloudCondition",
+                                    "s3-us-gov-west-1",
+                                    "s3"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                "Parameters": {
+                    "AvailabilityZones": {
+                        "Fn::Join": [
+                            ",",
+                            {
+                                "Ref": "AvailabilityZones"
+                            }
+                        ]
+                    },
+                    "KeyPairName": {
+                        "Ref": "KeyPairName"
+                    },
+                    "NumberOfAZs": {
+                        "Ref" : "NumberOfAZs"
+                    },
+                    "PrivateSubnet1ACIDR": {
+                        "Ref": "PrivateSubnet1CIDR"
+                    },
+                    "PrivateSubnet2ACIDR": {
+                        "Ref": "PrivateSubnet2CIDR"
+                    },
+                    "PrivateSubnet3ACIDR": {
+                        "Ref": "PrivateSubnet3CIDR"
+                    },
+                    "PublicSubnet1CIDR": {
+                        "Ref": "PublicSubnet1CIDR"
+                    },
+                    "PublicSubnet2CIDR": {
+                        "Ref": "PublicSubnet2CIDR"
+                    },
+                    "PublicSubnet3CIDR": {
+                        "Ref": "PublicSubnet3CIDR"
+                    },
+                    "VPCCIDR": {
+                        "Ref": "VPCCIDR"
+                    }
+                }
+            }
+        },
+        "LinuxBastionHostStack": {
+            "DependsOn": "VPCStack",
+            "Properties": {
+                "Parameters": {
+                    "BastionAMIOS": "Amazon-Linux-HVM",
+                    "BastionInstanceType": {
+                        "Ref": "BastionInstanceType"
+                    },
+                    "KeyPairName": {
+                        "Ref": "KeyPairName"
+                    },
+                    "PublicSubnet1ID": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.PublicSubnet1ID"
+                        ]
+                    },
+                    "PublicSubnet2ID": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.PublicSubnet2ID"
+                        ]
+                    },
+                    "QSS3BucketName": {
+                        "Ref": "QSS3BucketName"
+                    },
+                    "QSS3KeyPrefix": {
+                        "Fn::Sub": [
+                            "${QSS3KeyPrefix}submodules/quickstart-linux-bastion/",
+                            {
+                                "QSS3KeyPrefix": {
+                                    "Ref": "QSS3KeyPrefix"
+                                }
+                            }
+                        ]
+                    },
+                    "RemoteAccessCIDR": {
+                        "Ref": "RemoteAccessCIDR"
+                    },
+                    "VPCID": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.VPCID"
+                        ]
+                    }
+                },
+                "TemplateURL": {
+                    "Fn::Sub": [
+                        "https://${QSS3BucketName}.${S3Region}.amazonaws.com/${QSS3KeyPrefix}submodules/quickstart-linux-bastion/templates/linux-bastion.template",
+                        {
+                            "S3Region": {
+                                "Fn::If": [
+                                    "GovCloudCondition",
+                                    "s3-us-gov-west-1",
+                                    "s3"
+                                ]
+                            }
+                        }
+                    ]
+                }
+            },
+            "Type": "AWS::CloudFormation::Stack"
+        },
+
+        "DynatraceClusterStack": {
+                    "DependsOn": "LinuxBastionHostStack",
+                    "Properties": {
+                        "Parameters": {
+						    "BastionSecurityGroupID": {
+                                "Fn::GetAtt": [
+                                    "LinuxBastionHostStack",
+                                    "Outputs.BastionSecurityGroupID"
+                                ]
+                            },
+                            "LicenseKey" : {
+                                "Ref" : "LicenseKey"
+                            },
+                            "DownloadUrl" : {
+                                "Ref" : "DownloadUrl"
+                            },
+                            "AdminEmail" : {
+                                "Ref" : "AdminEmail"
+                            },
+                            "AdminPassword" : {
+                                "Ref" : "AdminPassword"
+                            },
+                            "DynatraceInstanceType": {
+                                "Ref": "DynatraceInstanceType"
+                            },
+                            "DynatraceInstanceTenancy": {
+                                "Ref": "DynatraceInstanceTenancy"
+                            },
+                            "BinVolumeSize" : {
+                                "Ref": "BinVolumeSize"
+                            },
+                            "MiscVolumeSize" : {
+                                "Ref": "MiscVolumeSize"
+                            },
+                            "SrvVolumeSize" : {
+                                "Ref": "SrvVolumeSize"
+                            },
+                            "CassandraVolumeSize" : {
+                                "Ref": "CassandraVolumeSize"
+                            },
+                            "ElasticSearchVolumeSize" : {
+                                "Ref": "ElasticSearchVolumeSize"
+                            },
+                            "KeyPairName": {
+                                "Ref": "KeyPairName"
+                            },
+                            "NumberOfAZs" : {
+                               "Ref": "NumberOfAZs"
+                            },
+                            "NumNodes" : {
+                                "Ref": "NumNodes"
+                            },
+                            "PublicSubnet1ID": {
+                                "Fn::GetAtt": [
+                                    "VPCStack",
+                                    "Outputs.PublicSubnet1ID"
+                                ]
+                            },
+                            "PublicSubnet2ID": {
+                                "Fn::GetAtt": [
+                                    "VPCStack",
+                                    "Outputs.PublicSubnet2ID"
+                                ]
+                            },
+                            "PublicSubnet3ID": {
+                                "Fn::If" : [ "3AZCondition", {
+                                    "Fn::GetAtt": [
+                                        "VPCStack",
+                                        "Outputs.PublicSubnet3ID"
+                                    ]},
+                                    {
+                                    "Fn::GetAtt": [
+                                        "VPCStack",
+                                        "Outputs.PublicSubnet2ID"
+                                    ]}]
+                            },
+                            "PrivateSubnet1ID": {
+                                "Fn::GetAtt": [
+                                    "VPCStack",
+                                    "Outputs.PrivateSubnet1AID"
+                                ]
+                            },
+                            "PrivateSubnet2ID": {
+                                "Fn::GetAtt": [
+                                    "VPCStack",
+                                    "Outputs.PrivateSubnet2AID"
+                                ]
+                            },
+                            "PrivateSubnet3ID": {
+                                "Fn::If" : [ "3AZCondition", {
+                                "Fn::GetAtt": [
+                                    "VPCStack",
+                                    "Outputs.PrivateSubnet3AID"
+                                ]},
+                                {
+                                "Fn::GetAtt": [
+                                    "VPCStack",
+                                    "Outputs.PrivateSubnet2AID"
+                                ]}]
+                           },
+                            "QSS3BucketName": {
+                                "Ref": "QSS3BucketName"
+                            },
+                            "QSS3KeyPrefix": {
+                                "Ref": "QSS3KeyPrefix"
+                            },
+                            "VPCID": {
+                                "Fn::GetAtt": [
+                                    "VPCStack",
+                                    "Outputs.VPCID"
+                                ]
+                            }
+                        },
+                        "TemplateURL": {
+                            "Fn::Sub": [
+                                "https://${QSS3BucketName}.${S3Region}.amazonaws.com/${QSS3KeyPrefix}templates/dynatrace.template",
+                                {
+                                    "S3Region": {
+                                        "Fn::If": [
+                                            "GovCloudCondition",
+                                            "s3-us-gov-west-1",
+                                            "s3"
+                                        ]
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "Type": "AWS::CloudFormation::Stack"
+         }
+    }
+}

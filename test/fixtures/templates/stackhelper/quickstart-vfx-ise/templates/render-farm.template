@@ -1,0 +1,349 @@
+---
+AWSTemplateFormatVersion: 2010-09-09
+Description: Provides configuration for a VFX Render Farm Instances.
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Region Configuration
+        Parameters:
+          - pAvailabilityZones
+          - pSupportsEfs
+
+      - Label:
+          default: Network (existing Production VPC config)
+        Parameters:
+          - pProductionVPC
+          - pProdAppPrivateSubnetA
+          - pProdAppPrivateSubnetB
+
+      - Label:
+          default: Render Farm Instance Configuration
+        Parameters:
+          - pRenderFarmAmi
+          - pRenderFarmTargetCapacity
+
+Parameters:
+  pAvailabilityZones:
+    Description: The list of Availability Zones to use for the subnets in the VPC.
+      This template uses two Availability Zones from your list and preserves the logical order you specify.
+    Type: List<AWS::EC2::AvailabilityZone::Name>
+
+  pSupportsEfs:
+    AllowedValues:
+      - true
+      - false
+    Description: Determines if this region supports EFS (passed in from Main template)
+    Type: String
+
+  pProductionVPC:
+    Type: AWS::EC2::VPC::Id
+
+  pProdAppPrivateSubnetA:
+    Description: Production Application Subnet A (private)
+    Type: AWS::EC2::Subnet::Id
+
+  pProdAppPrivateSubnetB:
+    Description: Production Application Subnet B (private)
+    Type: AWS::EC2::Subnet::Id
+
+  pRenderFarmAmi:
+    Description: Which AMI do you want to use for Render Instances?
+    Type: AWS::EC2::Image::Id
+
+  pRenderFarmTargetCapacity:
+    Description: The number of instances in the spot fleet
+    Type: String
+
+  pProjectName:
+    Description: Project name
+    Type: String
+
+  pEnvironment:
+    AllowedValues:
+      - DEV
+      - TEST
+      - PROD
+    Default: DEV
+    Description: Environment (Dev, Test or Prod)
+    Type: String
+
+Mappings:
+  RegionMap:
+    ap-northeast-1:
+      InstanceTypes: [t2.micro, t3.micro]
+    ap-northeast-2:
+      InstanceTypes: [t2.micro, t3.micro]
+    ap-south-1:
+      InstanceTypes: [t2.micro, t2.micro]
+    ap-southeast-1:
+      InstanceTypes: [t2.micro, t3.micro]
+    ap-southeast-2:
+      InstanceTypes: [t2.micro, t3.micro]
+    ca-central-1:
+      InstanceTypes: [t2.micro, t3.micro]
+    eu-central-1:
+      InstanceTypes: [t2.micro, t3.micro]
+    eu-west-1:
+      InstanceTypes: [t2.micro, t3.micro]
+    eu-west-2:
+      InstanceTypes: [t2.micro, t3.micro]
+    sa-east-1:
+      InstanceTypes: [t2.micro, t3.micro]
+    us-east-1:
+      InstanceTypes: [t2.micro, t3.micro]
+    us-east-2:
+      InstanceTypes: [t2.micro, t3.micro]
+    us-west-1:
+      InstanceTypes: [t2.micro, t3.micro]
+    us-west-2:
+      InstanceTypes: [t2.micro, t3.micro]
+
+Conditions:
+  SupportsEfs: !Equals
+    - !Ref pSupportsEfs
+    - true
+
+  NoEfsSupport: !Not
+    - Condition: SupportsEfs
+
+Resources:
+  rRenderFarmSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref pProductionVPC
+      GroupDescription: Render farm security group
+      Tags:
+        - Key: Name
+          Value: render-farm-sg
+        - Key: Environment
+          Value: !Ref pEnvironment
+
+  rRenderFarmEfsSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Condition: SupportsEfs
+    Properties:
+      VpcId: !Ref pProductionVPC
+      GroupDescription: Security group for render farm mount target
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 2049
+          ToPort: 2049
+          SourceSecurityGroupId: !Ref rRenderFarmSecurityGroup
+      Tags:
+        - Key: Name
+          Value: efs-sg
+        - Key: Environment
+          Value: !Ref pEnvironment
+
+  rRenderFarmEfs:
+    Type: AWS::EFS::FileSystem
+    Condition: SupportsEfs
+    Properties:
+      Encrypted: true
+      PerformanceMode: generalPurpose
+      FileSystemTags:
+        - Key: Name
+          Value: RenderFarmFs
+        - Key: Project
+          Value: !Ref pProjectName
+
+  rRenderFarmEfsMountTarget0:
+    Type: AWS::EFS::MountTarget
+    Condition: SupportsEfs
+    Properties:
+      FileSystemId: !Ref rRenderFarmEfs
+      SubnetId: !Ref pProdAppPrivateSubnetA
+      SecurityGroups:
+        - !Ref rRenderFarmEfsSecurityGroup
+
+  rRenderFarmEfsMountTarget1:
+    Type: AWS::EFS::MountTarget
+    Condition: SupportsEfs
+    Properties:
+      FileSystemId: !Ref rRenderFarmEfs
+      SubnetId: !Ref pProdAppPrivateSubnetB
+      SecurityGroups:
+        - !Ref rRenderFarmEfsSecurityGroup
+
+  rRenderFarmRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonEC2RoleforSSM
+
+  rRenderFarmInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: /
+      Roles:
+        - !Ref rRenderFarmRole
+
+  rSpotFleetRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - spotfleet.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonEC2SpotFleetTaggingRole
+
+  rRenderFarmLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      RetentionInDays: 90
+
+  rRenderFarmLaunchTemplateNoEfs:
+    Condition: NoEfsSupport
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateData:
+        ImageId: !Ref pRenderFarmAmi
+        IamInstanceProfile:
+          Name: !Ref rRenderFarmInstanceProfile
+        SecurityGroupIds:
+          - !Ref rRenderFarmSecurityGroup
+        UserData:
+          Fn::Base64: |
+            #!/bin/bash -xe
+            yum -y --security update
+
+  rRenderFarmLaunchTemplateEfs:
+    Condition: SupportsEfs
+    Type: AWS::EC2::LaunchTemplate
+    Metadata:
+      AWS::CloudFormation::Init:
+        config:
+          packages:
+            yum:
+              jq: []
+              awslogs: []
+          files:
+            /tmp/dns.sh:
+              content: !Sub |
+                #!/bin/bash -x
+                results=1
+                while [[ $results != 0 ]]; do
+                  nslookup ${rRenderFarmEfs}.efs.${AWS::Region}.amazonaws.com
+                  results=$?
+                  if [[ $results = 1 ]]; then
+                    sleep 30s
+                  fi
+                done
+              mode: '000755'
+            /etc/awslogs/awslogs.conf:
+              content: !Sub |
+                [general]
+                state_file = /var/lib/awslogs/agent-state
+
+                [/var/log/messages]
+                file = /var/log/messages
+                log_group_name = ${rRenderFarmLogGroup}
+                log_stream_name = %INSTANCE_ID/var/log/messages
+                datetime_format = %b %d %H:%M:%S
+                initial_position = start_of_file
+            /tmp/awslog_init.sh:
+              content: !Sub |
+                #!/bin/bash -xe
+                INSTANCE_ID=$(curl -s http://instance-data/latest/meta-data/instance-id)
+                sed -i "s|%INSTANCE_ID|$INSTANCE_ID|g" /etc/awslogs/awslogs.conf
+                sed -i -e "s/region = us-east-1/region = ${AWS::Region}/g" /etc/awslogs/awscli.conf
+                systemctl enable awslogsd.service
+                systemctl start awslogsd.service
+              mode: '755'
+          commands:
+            01_wait_for_dns_propogation:
+              command: /tmp/dns.sh
+            02_mount_efs:
+              command: !Sub |
+                #!/bin/bash -xe
+                EFS_DIRECTORY=/mnt/efs
+                mkdir $EFS_DIRECTORY
+                echo "${rRenderFarmEfs}:/ $EFS_DIRECTORY efs _netdev" >> /etc/fstab
+                mount -a -t efs defaults
+            03_awslogs:
+              command: tmp/awslog_init.sh
+    Properties:
+      LaunchTemplateData:
+        ImageId: !Ref pRenderFarmAmi
+        IamInstanceProfile:
+          Name: !Ref rRenderFarmInstanceProfile
+        SecurityGroupIds:
+          - !Ref rRenderFarmSecurityGroup
+        TagSpecifications:
+          - ResourceType: instance
+            Tags:
+              - Key: Name
+                Value: vfx-render-farm
+              - Key: Environment
+                Value: !Ref pEnvironment
+              - Key: Project
+                Value: !Ref pProjectName
+        UserData:
+          Fn::Base64: !Sub |
+            #!/bin/bash -xe
+            yum update --security -y
+            yum update aws-cfn-bootstrap -y
+            yum install amazon-efs-utils -y
+
+            /opt/aws/bin/cfn-init -v --stack ${AWS::StackName} --resource rRenderFarmLaunchTemplateEfs --region ${AWS::Region}
+
+  rRenderFarmSpotFleet:
+    Type: AWS::EC2::SpotFleet
+    Properties:
+      SpotFleetRequestConfigData:
+        AllocationStrategy: 'diversified'
+        IamFleetRole: !GetAtt rSpotFleetRole.Arn
+        TargetCapacity: !Ref pRenderFarmTargetCapacity
+        LaunchTemplateConfigs:
+          - LaunchTemplateSpecification:
+              LaunchTemplateId: !If [SupportsEfs, !Ref rRenderFarmLaunchTemplateEfs, !Ref rRenderFarmLaunchTemplateNoEfs]
+              Version: '1'
+            Overrides:
+              - InstanceType: !Select [0, !FindInMap [RegionMap, !Ref 'AWS::Region', InstanceTypes]]
+                AvailabilityZone: !Select [0, !Ref pAvailabilityZones]
+                SubnetId: !Ref pProdAppPrivateSubnetA
+              - InstanceType: !Select [1, !FindInMap [RegionMap, !Ref 'AWS::Region', InstanceTypes]]
+                AvailabilityZone: !Select [1, !Ref pAvailabilityZones]
+                SubnetId: !Ref pProdAppPrivateSubnetB
+
+Outputs:
+  rRenderFarmSecurityGroup:
+    Value: !Ref rRenderFarmSecurityGroup
+
+  rRenderFarmEfsMountTarget0:
+    Condition: SupportsEfs
+    Value: !Ref rRenderFarmEfsMountTarget0
+
+  rRenderFarmEfsMountTarget1:
+    Condition: SupportsEfs
+    Value: !Ref rRenderFarmEfsMountTarget1
+
+  rRenderFarmRole:
+    Value: !Ref rRenderFarmRole
+
+  rRenderFarmEfsSecurityGroup:
+    Condition: SupportsEfs
+    Value: !Ref rRenderFarmEfsSecurityGroup
+
+  rRenderFarmLaunchTemplate:
+    Value: !If
+      - SupportsEfs
+      - !Ref rRenderFarmLaunchTemplateEfs
+      - !Ref rRenderFarmLaunchTemplateNoEfs
+
+  rRenderFarmSpotFleet:
+    Value: !Ref rRenderFarmSpotFleet

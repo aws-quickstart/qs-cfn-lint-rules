@@ -1,0 +1,780 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+  This template creates the Amazon EC2 instances and related resources for the NGINX
+  Plus Quick Start. ***NOTE*** You must subscribe to the NGINX Plus - Amazon Linux
+  AMI HVM from the AWS Marketplace before you launch this template. See the deployment
+  guide at http://aws.amazon.com/quickstart for details. This template creates Amazon
+  EC2 instances and related resources. You will be billed for the AWS resources used
+  if you create a stack from this template. QS(5002)
+Metadata:
+  AWSAMIRegionMap:
+    Filters:
+      NGINXPLUSAMZNLINUXHVM:
+        name: nginx-plus-ami-amazon-linux-hvm-*.x86_64-*
+        owner-alias: aws-marketplace
+        product-code.type: marketplace
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Network Configuration
+        Parameters:
+          - VPCID
+          - PrivateSubnet1ID
+          - PrivateSubnet2ID
+          - PublicSubnet1ID
+          - PublicSubnet2ID
+      - Label:
+          default: Common Amazon EC2 Configuration
+        Parameters:
+          - KeyPairName
+          - BastionSecurityGroupID
+      - Label:
+          default: NGINX Plus Load Balancer Configuration
+        Parameters:
+          - NGINXPlusInstanceType
+          - NGINXPlusNodesDesiredCapacity
+          - NGINXPlusNodesMinSize
+          - NGINXPlusNodesMaxSize
+      - Label:
+          default: Web App Configuration
+        Parameters:
+          - WebAppInstanceType
+          - WebAppNodesDesiredCapacity
+          - WebAppNodesMinSize
+          - WebAppNodesMaxSize
+      - Label:
+          default: AWS Quick Start Configuration
+        Parameters:
+          - QSS3BucketName
+          - QSS3KeyPrefix
+    ParameterLabels:
+      BastionSecurityGroupID:
+        default: Bastion Security Group ID
+      KeyPairName:
+        default: Key Pair Name
+      NGINXPlusInstanceType:
+        default: NGINX Plus Instance Type
+      NGINXPlusNodesDesiredCapacity:
+        default: NGINX Plus Desired Capacity
+      NGINXPlusNodesMaxSize:
+        default: NGINX Plus Max Size
+      NGINXPlusNodesMinSize:
+        default: NGINX Plus Min Size
+      PrivateSubnet1ID:
+        default: Private Subnet 1 ID
+      PrivateSubnet2ID:
+        default: Private Subnet 2 ID
+      PublicSubnet1ID:
+        default: Public Subnet 1 ID
+      PublicSubnet2ID:
+        default: Public Subnet 2 ID
+      QSS3BucketName:
+        default: Quick Start S3 Bucket Name
+      QSS3KeyPrefix:
+        default: Quick Start S3 Key Prefix
+      VPCID:
+        default: VPC ID
+      WebAppInstanceType:
+        default: Web App Instance Type
+      WebAppNodesDesiredCapacity:
+        default: Web App Desired Capacity
+      WebAppNodesMaxSize:
+        default: Web App Max Size
+      WebAppNodesMinSize:
+        default: Web App Min Size
+Parameters:
+  BastionSecurityGroupID:
+    Description: ID of the bastion host security group to enable SSH connections (e.g.,
+      sg-7f16e910)
+    Type: AWS::EC2::SecurityGroup::Id
+  KeyPairName:
+    Description: Public/private key pairs allow you to securely connect to your instance
+      after it launches
+    Type: AWS::EC2::KeyPair::KeyName
+  NGINXPlusInstanceType:
+    Description: Amazon EC2 instance type for the NGINX Plus load balancing instances
+    Type: String
+    Default: t3.micro
+    AllowedValues:
+      - t3.micro
+      - t3.small
+      - t3.medium
+      - t3.large
+  NGINXPlusNodesDesiredCapacity:
+    Default: '2'
+    Description: The desired capacity for the NGINX Plus Auto Scaling group
+    Type: Number
+  NGINXPlusNodesMaxSize:
+    Default: '5'
+    Description: The maximum size of the NGINX Plus Auto Scaling group
+    Type: Number
+  NGINXPlusNodesMinSize:
+    Default: '2'
+    Description: The minimum size of the NGINX Plus Auto Scaling group
+    Type: Number
+  PrivateSubnet1ID:
+    Description: ID of the private subnet 1 in Availability Zone 1 (e.g., subnet-a0246dcd)
+    Type: AWS::EC2::Subnet::Id
+  PrivateSubnet2ID:
+    Description: ID of the private subnet 2 in Availability Zone 2 (e.g., subnet-a0246dcd)
+    Type: AWS::EC2::Subnet::Id
+  PublicSubnet1ID:
+    Description: ID of the public subnet 1 in Availability Zone 1 (e.g., subnet-e3246d8e)
+    Type: AWS::EC2::Subnet::Id
+  PublicSubnet2ID:
+    Description: ID of the public subnet 2 in Availability Zone 2 (e.g., subnet-e3246d8e)
+    Type: AWS::EC2::Subnet::Id
+  QSS3BucketName:
+    AllowedPattern: ^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$
+    ConstraintDescription: Quick Start bucket name can include numbers, lowercase
+      letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen
+      (-).
+    Default: aws-quickstart
+    Description: S3 bucket name for the Quick Start assets. Quick Start bucket name
+      can include numbers, lowercase letters, uppercase letters, and hyphens (-).
+      It cannot start or end with a hyphen (-).
+    Type: String
+  QSS3KeyPrefix:
+    AllowedPattern: ^[0-9a-zA-Z-/]*$
+    ConstraintDescription: Quick Start key prefix can include numbers, lowercase letters,
+      uppercase letters, hyphens (-), and forward slash (/).
+    Default: quickstart-nginx-plus/
+    Description: S3 key prefix for the Quick Start assets. Quick Start key prefix
+      can include numbers, lowercase letters, uppercase letters, hyphens (-), and
+      forward slash (/).
+    Type: String
+  VPCID:
+    Description: ID of the VPC (e.g., vpc-0343606e)
+    Type: AWS::EC2::VPC::Id
+  WebAppInstanceType:
+    Description: Amazon EC2 instance type for the web application instances
+    Type: String
+    Default: t2.micro
+    AllowedValues:
+      - t2.micro
+      - t2.small
+      - t2.medium
+      - t2.large
+  WebAppNodesDesiredCapacity:
+    Default: '2'
+    Description: The desired capacity for the web application Auto Scaling group
+    Type: Number
+  WebAppNodesMaxSize:
+    Default: '5'
+    Description: The maximum size of the web application Auto Scaling group
+    Type: Number
+  WebAppNodesMinSize:
+    Default: '1'
+    Description: The minimum size of the web application Auto Scaling group
+    Type: Number
+Rules:
+  SubnetsInVPC:
+    Assertions:
+      - Assert: !EachMemberIn
+          - !ValueOfAll
+            - AWS::EC2::Subnet::Id
+            - VpcId
+          - !RefAll 'AWS::EC2::VPC::Id'
+        AssertDescription: All subnets must in the VPC
+Mappings:
+  AWSAMIRegionMap:
+    AMI:
+      AMZNLINUXHVM: amzn-ami-hvm-2018.03.0.20190611-x86_64-gp2
+      NGINXPLUSAMZNLINUXHVM: nginx-plus-ami-amazon-linux-hvm-v1.2-20180118.x86_64-ebs-53d2479a-ccf6-4126-bd04-05e5c885727f-ami-b55f71cf.4
+    ap-northeast-1:
+      AMZNLINUXHVM: ami-0ab3e16f9c414dee7
+      NGINXPLUSAMZNLINUXHVM: ami-05a44dabe0fa56363
+    ap-northeast-2:
+      AMZNLINUXHVM: ami-0e1e385b0a934254a
+      NGINXPLUSAMZNLINUXHVM: ami-0d450501656d5b59c
+    ap-south-1:
+      AMZNLINUXHVM: ami-02913db388613c3e1
+      NGINXPLUSAMZNLINUXHVM: ami-0d2d8f20219baff05
+    ap-southeast-1:
+      AMZNLINUXHVM: ami-05c859630889c79c8
+      NGINXPLUSAMZNLINUXHVM: ami-0cf8927728b1f729b
+    ap-southeast-2:
+      AMZNLINUXHVM: ami-07cc15c3ba6f8e287
+      NGINXPLUSAMZNLINUXHVM: ami-00ae64e8a212e720c
+    ca-central-1:
+      AMZNLINUXHVM: ami-04070f04f450607dc
+      NGINXPLUSAMZNLINUXHVM: ami-0092ebcc7a7ddb821
+    eu-central-1:
+      AMZNLINUXHVM: ami-010fae13a16763bb4
+      NGINXPLUSAMZNLINUXHVM: ami-03347806b1cf1ec17
+    eu-west-1:
+      AMZNLINUXHVM: ami-028188d9b49b32a80
+      NGINXPLUSAMZNLINUXHVM: ami-00508fed6014ad786
+    eu-west-2:
+      AMZNLINUXHVM: ami-04de2b60dd25fbb2e
+      NGINXPLUSAMZNLINUXHVM: ami-00c73ec44aac5bf66
+    eu-west-3:
+      AMZNLINUXHVM: ami-0652eb0db9b20aeaf
+      NGINXPLUSAMZNLINUXHVM: ami-0de259b96a17e22b4
+    sa-east-1:
+      AMZNLINUXHVM: ami-0e2c2c29d8017dd99
+      NGINXPLUSAMZNLINUXHVM: ami-0981c262cde8527b2
+    us-east-1:
+      AMZNLINUXHVM: ami-00eb20669e0990cb4
+      NGINXPLUSAMZNLINUXHVM: ami-08bddf0e6fac2b710
+    us-east-2:
+      AMZNLINUXHVM: ami-0c64dd618a49aeee8
+      NGINXPLUSAMZNLINUXHVM: ami-0f7fd5ee46bc1bed9
+    us-west-1:
+      AMZNLINUXHVM: ami-0bce08e823ed38bdd
+      NGINXPLUSAMZNLINUXHVM: ami-0018cd470bea8c432
+    us-west-2:
+      AMZNLINUXHVM: ami-08d489468314a58df
+      NGINXPLUSAMZNLINUXHVM: ami-0e060efe4959226ef
+Conditions:
+  GovCloudCondition: !Equals
+    - !Ref 'AWS::Region'
+    - us-gov-west-1
+Resources:
+  NGINXPlusELBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Enables access to the NGINX ELB
+      VpcId: !Ref 'VPCID'
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: '80'
+          ToPort: '80'
+          CidrIp: '0.0.0.0/0'
+      Tags:
+        - Key: Name
+          Value: NGINXPlusELBSecurityGroup
+        - Key: Environment
+          Value: AWS Quick Start
+  NGINXPlusInstancesSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Enables access to NGINX Plus instances.
+      VpcId: !Ref 'VPCID'
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: '22'
+          ToPort: '22'
+          SourceSecurityGroupId: !Ref 'BastionSecurityGroupID'
+        - IpProtocol: tcp
+          FromPort: '8080'
+          ToPort: '8080'
+          SourceSecurityGroupId: !Ref 'BastionSecurityGroupID'
+        - IpProtocol: tcp
+          FromPort: '80'
+          ToPort: '80'
+          SourceSecurityGroupId: !Ref 'NGINXPlusELBSecurityGroup'
+  WebAppInstancesSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Enables access to WebApp instances.
+      VpcId: !Ref 'VPCID'
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: '22'
+          ToPort: '22'
+          SourceSecurityGroupId: !Ref 'BastionSecurityGroupID'
+        - IpProtocol: tcp
+          FromPort: '8100'
+          ToPort: '8100'
+          SourceSecurityGroupId: !Ref 'BastionSecurityGroupID'
+        - IpProtocol: tcp
+          FromPort: '8200'
+          ToPort: '8200'
+          SourceSecurityGroupId: !Ref 'BastionSecurityGroupID'
+        - IpProtocol: tcp
+          FromPort: '8100'
+          ToPort: '8100'
+          SourceSecurityGroupId: !Ref 'NGINXPlusInstancesSecurityGroup'
+        - IpProtocol: tcp
+          FromPort: '8200'
+          ToPort: '8200'
+          SourceSecurityGroupId: !Ref 'NGINXPlusInstancesSecurityGroup'
+      Tags:
+        - Key: Name
+          Value: WebAppInstancesSecurityGroup
+        - Key: Environment
+          Value: AWS Quick Start
+  NGINXWebApp1LaunchConfiguration:
+    Type: AWS::AutoScaling::LaunchConfiguration
+    Metadata:
+      AWS::CloudFormation::Authentication:
+        S3AccessCreds:
+          type: S3
+          roleName: !Ref 'NGINXPlusIAMRole'
+          buckets:
+            - !Ref 'QSS3BucketName'
+      AWS::CloudFormation::Init:
+        configSets:
+          bootstrap_install:
+            - prepare_system
+            - configure_nginx
+        prepare_system:
+          packages:
+            yum:
+              nginx: []
+        configure_nginx:
+          files:
+            /usr/share/nginx/html/index.html:
+              source: !Sub
+                - https://${QSS3BucketName}.${QSS3Region}.amazonaws.com/${QSS3KeyPrefix}scripts/index.html
+                - QSS3Region: !If
+                    - GovCloudCondition
+                    - s3-us-gov-west-1
+                    - s3
+              authentication: S3AccessCreds
+            /etc/nginx/conf.d/webapp1.conf:
+              source: !Sub
+                - https://${QSS3BucketName}.${QSS3Region}.amazonaws.com/${QSS3KeyPrefix}scripts/webapp1.conf
+                - QSS3Region: !If
+                    - GovCloudCondition
+                    - s3-us-gov-west-1
+                    - s3
+              authentication: S3AccessCreds
+          services:
+            sysvinit:
+              nginx:
+                enabled: 'true'
+                ensureRunning: 'true'
+                files:
+                  - /etc/nginx/conf.d/webapp1.conf
+    Properties:
+      ImageId: !FindInMap
+        - AWSAMIRegionMap
+        - !Ref 'AWS::Region'
+        - AMZNLINUXHVM
+      InstanceType: !Ref 'WebAppInstanceType'
+      KeyName: !Ref 'KeyPairName'
+      IamInstanceProfile: !Ref 'NGINXPlusInstanceProfile'
+      SecurityGroups:
+        - !Ref 'WebAppInstancesSecurityGroup'
+      UserData: !Base64
+        Fn::Join:
+          - ''
+          - - "#!/bin/bash\n"
+            - yum update -y
+            - "\n"
+            - !Sub '/opt/aws/bin/cfn-init -v --stack ${AWS::StackName} --resource
+              NGINXWebApp1LaunchConfiguration --configsets bootstrap_install --region
+              ${AWS::Region}'
+            - "\n"
+            - !Sub '/opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource
+              NGINXWebApp1Group --region ${AWS::Region}'
+            - "\n"
+  NGINXWebApp1Group:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      Cooldown: '300'
+      MaxSize: !Ref 'WebAppNodesMaxSize'
+      MinSize: !Ref 'WebAppNodesMinSize'
+      DesiredCapacity: !Ref 'WebAppNodesDesiredCapacity'
+      HealthCheckGracePeriod: '300'
+      HealthCheckType: EC2
+      VPCZoneIdentifier:
+        - !Ref 'PrivateSubnet1ID'
+        - !Ref 'PrivateSubnet2ID'
+      LaunchConfigurationName: !Ref 'NGINXWebApp1LaunchConfiguration'
+      Tags:
+        - Key: Name
+          Value: WebApp1 Auto Scaling group
+          PropagateAtLaunch: true
+        - Key: Environment
+          Value: AWS Quick Start
+          PropagateAtLaunch: true
+    CreationPolicy:
+      ResourceSignal:
+        Count: '2'
+        Timeout: PT30M
+  NGINXWebApp2LaunchConfiguration:
+    Type: AWS::AutoScaling::LaunchConfiguration
+    Metadata:
+      AWS::CloudFormation::Authentication:
+        S3AccessCreds:
+          type: S3
+          roleName: !Ref 'NGINXPlusIAMRole'
+          buckets:
+            - !Ref 'QSS3BucketName'
+      AWS::CloudFormation::Init:
+        configSets:
+          bootstrap_install:
+            - prepare_system
+            - configure_nginx
+        prepare_system:
+          packages:
+            yum:
+              nginx: []
+        configure_nginx:
+          files:
+            /usr/share/nginx/html/index.html:
+              source: !Sub
+                - https://${QSS3BucketName}.${QSS3Region}.amazonaws.com/${QSS3KeyPrefix}scripts/index.html
+                - QSS3Region: !If
+                    - GovCloudCondition
+                    - s3-us-gov-west-1
+                    - s3
+              authentication: S3AccessCreds
+            /etc/nginx/conf.d/webapp2.conf:
+              source: !Sub
+                - https://${QSS3BucketName}.${QSS3Region}.amazonaws.com/${QSS3KeyPrefix}scripts/webapp2.conf
+                - QSS3Region: !If
+                    - GovCloudCondition
+                    - s3-us-gov-west-1
+                    - s3
+              authentication: S3AccessCreds
+          services:
+            sysvinit:
+              nginx:
+                enabled: 'true'
+                ensureRunning: 'true'
+                files:
+                  - /etc/nginx/conf.d/webapp2.conf
+    Properties:
+      ImageId: !FindInMap
+        - AWSAMIRegionMap
+        - !Ref 'AWS::Region'
+        - AMZNLINUXHVM
+      InstanceType: !Ref 'WebAppInstanceType'
+      KeyName: !Ref 'KeyPairName'
+      IamInstanceProfile: !Ref 'NGINXPlusInstanceProfile'
+      SecurityGroups:
+        - !Ref 'WebAppInstancesSecurityGroup'
+      UserData: !Base64
+        Fn::Join:
+          - ''
+          - - "#!/bin/bash\n"
+            - yum update -y
+            - "\n"
+            - !Sub '/opt/aws/bin/cfn-init -v --stack ${AWS::StackName} --resource
+              NGINXWebApp2LaunchConfiguration --configsets bootstrap_install --region
+              ${AWS::Region}'
+            - "\n"
+            - !Sub '/opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource
+              NGINXWebApp2Group --region ${AWS::Region}'
+            - "\n"
+  NGINXWebApp2Group:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      Cooldown: '300'
+      MaxSize: !Ref 'WebAppNodesMaxSize'
+      MinSize: !Ref 'WebAppNodesMinSize'
+      DesiredCapacity: !Ref 'WebAppNodesDesiredCapacity'
+      HealthCheckGracePeriod: '300'
+      HealthCheckType: EC2
+      VPCZoneIdentifier:
+        - !Ref 'PrivateSubnet1ID'
+        - !Ref 'PrivateSubnet2ID'
+      LaunchConfigurationName: !Ref 'NGINXWebApp2LaunchConfiguration'
+      Tags:
+        - Key: Name
+          Value: WebApp2 Auto Scaling group
+          PropagateAtLaunch: true
+        - Key: Environment
+          Value: AWS Quick Start
+          PropagateAtLaunch: true
+    CreationPolicy:
+      ResourceSignal:
+        Count: '2'
+        Timeout: PT30M
+  NGINXPlusELB:
+    Type: AWS::ElasticLoadBalancing::LoadBalancer
+    Properties:
+      CrossZone: 'true'
+      HealthCheck:
+        Target: HTTP:80/
+        HealthyThreshold: '5'
+        UnhealthyThreshold: '3'
+        Interval: '15'
+        Timeout: '5'
+      LoadBalancerName: NGINXPlusELB
+      Listeners:
+        - LoadBalancerPort: '80'
+          InstancePort: '80'
+          Protocol: HTTP
+      Subnets:
+        - !Ref 'PublicSubnet1ID'
+        - !Ref 'PublicSubnet2ID'
+      Scheme: internet-facing
+      SecurityGroups:
+        - !Ref 'NGINXPlusELBSecurityGroup'
+      Tags:
+        - Key: Name
+          Value: NGINXPlusELB
+        - Key: Environment
+          Value: AWS Quick Start
+  NGINXPlusLaunchConfiguration:
+    Type: AWS::AutoScaling::LaunchConfiguration
+    Metadata:
+      AWS::CloudFormation::Authentication:
+        S3AccessCreds:
+          type: S3
+          roleName: !Ref 'NGINXPlusIAMRole'
+          buckets:
+            - !Ref 'QSS3BucketName'
+      AWS::CloudFormation::Init:
+        configSets:
+          bootstrap_install:
+            - install_nginx_asg_sync
+            - configure_nginx_asg_sync
+            - configure_nginx
+            - start_nginx_asg_sync
+        install_nginx_asg_sync:
+          commands:
+            '01-download':
+              command: wget https://github.com/nginxinc/nginx-asg-sync/releases/download/v0.2-1/nginx-asg-sync-0.2-1.amzn1.x86_64.rpm
+            '02-install':
+              command: rpm -i nginx-asg-sync-0.2-1.amzn1.x86_64.rpm
+            '03-remove':
+              command: rm nginx-asg-sync-0.2-1.amzn1.x86_64.rpm
+        configure_nginx_asg_sync:
+          files:
+            /etc/nginx/aws.yaml:
+              content: !Join
+                - ''
+                - - 'region: '
+                  - !Ref 'AWS::Region'
+                  - "\n"
+                  - "api_endpoint: http://127.0.0.1:8080/api\n"
+                  - "sync_interval_in_seconds: 5\n"
+                  - "upstreams:\n"
+                  - "  - name: webapp1\n"
+                  - '    autoscaling_group: '
+                  - !Ref 'NGINXWebApp1Group'
+                  - "\n"
+                  - "    port: 8100\n"
+                  - "    kind: http\n"
+                  - "  - name: webapp2\n"
+                  - '    autoscaling_group: '
+                  - !Ref 'NGINXWebApp2Group'
+                  - "\n"
+                  - "    port: 8200\n"
+                  - "    kind: http\n"
+              mode: '000644'
+              owner: root
+              group: root
+        configure_nginx:
+          files:
+            /etc/nginx/conf.d/lb.conf:
+              source: !Sub
+                - https://${QSS3BucketName}.${QSS3Region}.amazonaws.com/${QSS3KeyPrefix}scripts/lb.conf
+                - QSS3Region: !If
+                    - GovCloudCondition
+                    - s3-us-gov-west-1
+                    - s3
+              authentication: S3AccessCreds
+            /etc/nginx/conf.d/status.conf:
+              source: !Sub
+                - https://${QSS3BucketName}.${QSS3Region}.amazonaws.com/${QSS3KeyPrefix}scripts/status.conf
+                - QSS3Region: !If
+                    - GovCloudCondition
+                    - s3-us-gov-west-1
+                    - s3
+              authentication: S3AccessCreds
+            /etc/nginx/conf.d/default.conf:
+              source: !Sub
+                - https://${QSS3BucketName}.${QSS3Region}.amazonaws.com/${QSS3KeyPrefix}scripts/default.conf
+                - QSS3Region: !If
+                    - GovCloudCondition
+                    - s3-us-gov-west-1
+                    - s3
+              authentication: S3AccessCreds
+            /usr/share/nginx/html/index.html:
+              source: !Sub
+                - https://${QSS3BucketName}.${QSS3Region}.amazonaws.com/${QSS3KeyPrefix}scripts/lb-index.html
+                - QSS3Region: !If
+                    - GovCloudCondition
+                    - s3-us-gov-west-1
+                    - s3
+              authentication: S3AccessCreds
+          services:
+            sysvinit:
+              nginx:
+                enabled: 'true'
+                ensureRunning: 'true'
+                files:
+                  - /etc/nginx/conf.d/lb.conf
+                  - /etc/nginx/conf.d/status.conf
+                  - /etc/nginx/conf.d/default.conf
+        start_nginx_asg_sync:
+          commands:
+            start:
+              command: start nginx-asg-sync
+    Properties:
+      ImageId: !FindInMap
+        - AWSAMIRegionMap
+        - !Ref 'AWS::Region'
+        - NGINXPLUSAMZNLINUXHVM
+      InstanceType: !Ref 'NGINXPlusInstanceType'
+      KeyName: !Ref 'KeyPairName'
+      IamInstanceProfile: !Ref 'NGINXPlusInstanceProfile'
+      SecurityGroups:
+        - !Ref 'NGINXPlusInstancesSecurityGroup'
+      UserData: !Base64
+        Fn::Join:
+          - ''
+          - - "#!/bin/bash\n"
+            - yum update -y
+            - "\n"
+            - !Sub '/opt/aws/bin/cfn-init -v --stack ${AWS::StackName} --resource
+              NGINXPlusLaunchConfiguration --configsets bootstrap_install --region
+              ${AWS::Region}'
+            - "\n"
+            - !Sub '/opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource
+              NGINXPlusGroup --region ${AWS::Region}'
+            - "\n"
+  NGINXPlusGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      Cooldown: '300'
+      MaxSize: !Ref 'NGINXPlusNodesMaxSize'
+      MinSize: !Ref 'NGINXPlusNodesMinSize'
+      DesiredCapacity: !Ref 'NGINXPlusNodesDesiredCapacity'
+      HealthCheckGracePeriod: '300'
+      HealthCheckType: ELB
+      VPCZoneIdentifier:
+        - !Ref 'PrivateSubnet1ID'
+        - !Ref 'PrivateSubnet2ID'
+      LaunchConfigurationName: !Ref 'NGINXPlusLaunchConfiguration'
+      LoadBalancerNames:
+        - !Ref 'NGINXPlusELB'
+      Tags:
+        - Key: Name
+          Value: NGINX Plus Load Balancer
+          PropagateAtLaunch: true
+        - Key: Environment
+          Value: AWS Quick Start
+          PropagateAtLaunch: true
+    CreationPolicy:
+      ResourceSignal:
+        Count: '2'
+        Timeout: PT30M
+  NGINXPlusIAMRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Policies:
+        - PolicyName: nginx-qs-policy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: ec2:DescribeInstances
+                Resource: '*'
+              - Effect: Allow
+                Action: autoscaling:DescribeAutoScalingGroups
+                Resource: '*'
+        - PolicyName: nginx-quick-start-s3-policy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Action:
+                  - s3:GetObject
+                Resource: !Sub
+                  - arn:${Partition}:s3:::${QSS3BucketName}/${QSS3KeyPrefix}*
+                  - Partition: !If
+                      - GovCloudCondition
+                      - aws-us-gov
+                      - aws
+                Effect: Allow
+  NGINXPlusInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: /
+      Roles:
+        - !Ref 'NGINXPlusIAMRole'
+  NGINXPlusASGUp:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AdjustmentType: ChangeInCapacity
+      AutoScalingGroupName: !Ref 'NGINXPlusGroup'
+      Cooldown: '120'
+      ScalingAdjustment: '1'
+  NGINXPlusCPUUpAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      EvaluationPeriods: '2'
+      Statistic: Average
+      Threshold: '50'
+      AlarmDescription: Alarm
+      Period: '60'
+      AlarmActions:
+        - !Ref 'NGINXPlusASGUp'
+      Namespace: AWS/EC2
+      Dimensions:
+        - Name: AutoScalingGroupName
+          Value: !Ref 'NGINXPlusGroup'
+      ComparisonOperator: GreaterThanThreshold
+      MetricName: CPUUtilization
+  NGINXPlusASGDown:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AdjustmentType: ChangeInCapacity
+      AutoScalingGroupName: !Ref 'NGINXPlusGroup'
+      Cooldown: '120'
+      ScalingAdjustment: '-1'
+  NGINXPlusCPUDownAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      EvaluationPeriods: '2'
+      Statistic: Average
+      Threshold: '25'
+      AlarmDescription: Alarm
+      Period: '60'
+      AlarmActions:
+        - !Ref 'NGINXPlusASGDown'
+      Namespace: AWS/EC2
+      Dimensions:
+        - Name: AutoScalingGroupName
+          Value: !Ref 'NGINXPlusGroup'
+      ComparisonOperator: LessThanThreshold
+      MetricName: CPUUtilization
+Outputs:
+  NGINXPlusLink:
+    Value: !Join
+      - ''
+      - - http://
+        - !GetAtt 'NGINXPlusELB.DNSName'
+    Description: Connect to NGINX Plus through ELB
+  NGINXPlusELBSecurityGroup:
+    Description: NGINX Plus ELB Security Group
+    Value: !Ref 'NGINXPlusELBSecurityGroup'
+  NGINXPlusInstancesSecurityGroup:
+    Description: NGINX Plus Instances Security Group
+    Value: !Ref 'NGINXPlusInstancesSecurityGroup'
+  WebAppInstancesSecurityGroup:
+    Description: WebApp Instances Security Group
+    Value: !Ref 'WebAppInstancesSecurityGroup'
+  NGINXWebApp1LaunchConfiguration:
+    Description: NGINX WebApp1 Launch Configuration
+    Value: !Ref 'NGINXWebApp1LaunchConfiguration'
+  NGINXWebApp1Group:
+    Description: NGINX WebApp1 Auto Scaling Group
+    Value: !Ref 'NGINXWebApp1Group'
+  NGINXWebApp2LaunchConfiguration:
+    Description: NGINX WebApp2 Launch Configuration
+    Value: !Ref 'NGINXWebApp2LaunchConfiguration'
+  NGINXWebApp2Group:
+    Description: NGINX WebApp2 Auto Scaling Group
+    Value: !Ref 'NGINXWebApp2Group'
+  NGINXPlusELB:
+    Description: ELB for NGINX Plus Instances
+    Value: !Ref 'NGINXPlusELB'
+  NGINXPlusLaunchConfiguration:
+    Description: NGINX Plus Launch Configuration
+    Value: !Ref 'NGINXPlusLaunchConfiguration'
+  NGINXPlusGroup:
+    Description: NGINX Plus Auto Scaling Group
+    Value: !Ref 'NGINXPlusGroup'
+  NGINXPlusIAMRole:
+    Description: IAM Role for nginx-asg-sync
+    Value: !Ref 'NGINXPlusGroup'
+  NGINXPlusInstanceProfile:
+    Description: NGINX Plus Instance Profile
+    Value: !Ref 'NGINXPlusInstanceProfile'

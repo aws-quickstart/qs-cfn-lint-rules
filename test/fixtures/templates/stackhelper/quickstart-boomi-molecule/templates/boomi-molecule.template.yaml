@@ -1,0 +1,753 @@
+---
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Boomi Atom Installation Script. This creates a VPC, Public Subnets and Private Subnets, and stages a Dell Boomi Molecule. (qs-1q1tds36n)
+Parameters:
+  KeyPairName:
+    Description: Key name for access to EC2 instances.
+    Type: AWS::EC2::KeyPair::KeyName
+    ConstraintDescription: Must be the name of an existing key name
+  NodeInstanceType:
+    Description: The Boomi host instance type.
+    Type: String
+    Default: m5.xlarge
+    AllowedValues:
+      - m4.xlarge
+      - m5.xlarge
+      - r4.xlarge
+      - r5.xlarge
+  MoleculeEBSVolume:
+    Description: The size of the Amazon EBS volume attached to the Molecule instances. Size range is 1 GiB - 16 TiB (size listed in GiB).
+    Type: Number
+    Default: 100
+  MoleculeLocalTemp:
+    Description: The local temporary path for the Molecule installation.
+    Type: String
+    Default: /mnt/tmp
+  VPCID:
+    Type: AWS::EC2::VPC::Id
+    Description: The ID of your existing VPC.
+  PublicSubnet1ID:
+    Type: AWS::EC2::Subnet::Id
+    Description: The ID of the public subnet in Availability Zone 1 in your existing VPC.
+  PublicSubnet2ID:
+    Type: AWS::EC2::Subnet::Id
+    Description: The ID of the public subnet in Availability Zone 2 in your existing VPC.
+  PrivateSubnet1ID:
+    Type: AWS::EC2::Subnet::Id
+    Description: The ID of the private subnet in Availability Zone 1 in your existing VPC.
+  PrivateSubnet2ID:
+    Type: AWS::EC2::Subnet::Id
+    Description: The ID of the private subnet in Availability Zone 2 in your existing VPC.
+  BoomiUsername:
+    Description: The email account associated with the Dell Boomi account.
+    Type: String
+  BoomiPassword:
+    Description: The password associated with the Dell Boomi account.
+    Type: String
+    NoEcho: true
+  BoomiAccountID:
+    Description: The Dell Boomi account ID that you want to associate with the new Molecule cluster.
+    Type: String
+  BastionSecurityGroupID:
+    Description: The ID of the bastion security group in your existing VPC (e.g., sg-1a2b3c4d).
+    Type: AWS::EC2::SecurityGroup::Id
+  MoleculeSharedDir:
+    Description: A shared directory for Molecules.
+    Type: String
+    Default: /mnt/molecule
+  MoleculeLocalPath:
+    Description: The local path for the Molecule installation.
+    Type: String
+    Default: /opt/molecule/local/
+  MoleculeClusterName:
+    Description: The name for the Boomi Molecule cluster.
+    Type: String
+    Default: molecule1
+  EFSEncryption:
+    Description: EFS volumes can be encrypted. Choose either "yes" or "no".
+    Type: String
+    Default: true
+    AllowedValues:
+      - true
+      - false
+  EFSPerformanceMode:
+    Description: The performance mode for ther EFS volume.
+    Type: String
+    Default: generalPurpose
+    AllowedValues:
+      - generalPurpose
+      - maxIO
+  EFSProvisionedThroughput:
+    Description: The provisioned throughput value for the EFS volume.
+    Type: Number
+    Default: 10
+    MaxValue: 1024
+    ConstraintDescription: "Value must be between 1-1024"
+  EFSThroughputMode:
+    Description: The throughput mode for the EFS volume.
+    Type: String
+    Default: provisioned
+    AllowedValues:
+      - provisioned
+      - bursting
+  LBListenerPort:
+      Type: String
+      Description: The port of the LB Listener.
+      Default: '9093'
+  SSLCertificateArn:
+      Description: The SSL Certificate ID used with the load balancer.
+      Type: String
+      Default: ''
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      -
+        Label:
+          default: "Network configuration"
+        Parameters:
+          - VPCID
+          - PublicSubnet1ID
+          - PublicSubnet2ID
+          - PrivateSubnet1ID
+          - PrivateSubnet2ID
+          - BastionSecurityGroupID
+      -
+        Label:
+          default: "Amazon EC2 configuration"
+        Parameters:
+          - KeyPairName
+          - MoleculeEBSVolume
+      -
+        Label:
+          default: "Boomi Molecule node sizing"
+        Parameters:
+          - NodeInstanceType
+      -
+        Label:
+          default: "Boomi Molecule configuration"
+        Parameters:
+          - MoleculeClusterName
+          - MoleculeLocalPath
+          - MoleculeLocalTemp
+          - BoomiAccountID
+          - BoomiUsername
+          - BoomiPassword
+          - LBListenerPort
+          - MoleculeSharedDir
+
+      -
+        Label:
+          default: "Amazon EFS configuration"
+        Parameters:
+          - EFSEncryption
+          - EFSPerformanceMode
+          - EFSThroughputMode
+          - EFSProvisionedThroughput
+      -
+        Label:
+          default: "SSL configuration"
+        Parameters:
+          - SSLCertificateArn
+    ParameterLabels:
+      KeyPairName:
+        default: SSH key name
+      PrivateSubnet1ID:
+        default: Private subnet 1 ID
+      PrivateSubnet2ID:
+        default: Private subnet 2 ID
+      PublicSubnet1ID:
+        default: Public subnet 1 ID
+      PublicSubnet2ID:
+        default: Public subnet 2 ID
+      VPCID:
+        default: VPC ID
+      NodeInstanceType:
+        default: Molecule node instance type
+      MoleculeEBSVolume:
+        default: Volume size for Boomi instances
+      BoomiAccountID:
+        default: Boomi account ID
+      BoomiUsername:
+        default: Boomi user name
+      BoomiPassword:
+        default: Boomi password
+      LBListenerPort:
+        default: Load Balancer listener port
+      MoleculeLocalTemp:
+        default: Molecule local temp directory
+      EFSEncryption:
+        default: EFS encryption
+      EFSPerformanceMode:
+        default: EFS performance mode
+      EFSProvisionedThroughput:
+        default: EFS provisioned throughput
+      EFSThroughputMode:
+        default: EFS throughput mode
+      MoleculeSharedDir:
+        default: Molecule shared directory
+      MoleculeLocalPath:
+        default: Molecule local path
+      MoleculeClusterName:
+        default: Molecule cluster name
+      SSLCertificateArn:
+        default: SSL certificate ARN
+      BastionSecurityGroupID:
+        default: Bastion security group ID
+Mappings:
+  AWSAMIRegionMap:
+    ap-northeast-1:
+      AMZNLINUXHVM: ami-0ab3e16f9c414dee7
+    ap-northeast-2:
+      AMZNLINUXHVM: ami-0e1e385b0a934254a
+    ap-south-1:
+      AMZNLINUXHVM: ami-02913db388613c3e1
+    ap-southeast-1:
+      AMZNLINUXHVM: ami-05c859630889c79c8
+    ap-southeast-2:
+      AMZNLINUXHVM: ami-07cc15c3ba6f8e287
+    ca-central-1:
+      AMZNLINUXHVM: ami-04070f04f450607dc
+    eu-central-1:
+      AMZNLINUXHVM: ami-010fae13a16763bb4
+    eu-west-1:
+      AMZNLINUXHVM: ami-028188d9b49b32a80
+    eu-west-2:
+      AMZNLINUXHVM: ami-04de2b60dd25fbb2e
+    eu-west-3:
+      AMZNLINUXHVM: ami-0652eb0db9b20aeaf
+    sa-east-1:
+      AMZNLINUXHVM: ami-0e2c2c29d8017dd99
+    us-east-1:
+      AMZNLINUXHVM: ami-00eb20669e0990cb4
+    us-east-2:
+      AMZNLINUXHVM: ami-0c64dd618a49aeee8
+    us-west-1:
+      AMZNLINUXHVM: ami-0bce08e823ed38bdd
+    us-west-2:
+      AMZNLINUXHVM: ami-08d489468314a58df
+    eu-north-1:
+      AMZNLINUXHVM: ami-6a1f9414
+    # ap-east-1:
+    #   AMZNLINUXHVM: slkjfslkdf
+    ap-northeast-3:
+      AMZNLINUXHVM: ami-0a76cf4bfbbc993fb
+Resources:
+  LoadBalancerSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: boomi-elb
+      VpcId: !Ref VPCID
+      Tags:
+        - Key: Name
+          Value: LoadBalancerSG
+      SecurityGroupIngress:
+        - FromPort: 9093
+          IpProtocol: tcp
+          CidrIp: 0.0.0.0/0
+          ToPort: 9093
+  BoomiSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: "Boomi Molecule high-level SG"
+      VpcId: !Ref VPCID
+      Tags:
+        - Key: Name
+          Value: BoomiSG
+      SecurityGroupIngress:
+        - FromPort: 22
+          IpProtocol: tcp
+          SourceSecurityGroupId: !Ref BastionSecurityGroupID
+          ToPort: 22
+        - FromPort: 22
+          IpProtocol: tcp
+          SourceSecurityGroupId: !Ref LoadBalancerSecurityGroup
+          ToPort: 22
+        - FromPort: 9093
+          IpProtocol: tcp
+          SourceSecurityGroupId: !Ref LoadBalancerSecurityGroup
+          ToPort: 9093
+  BoomiUnicastSG:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: Boomi-Unicast
+      VpcId: !Ref VPCID
+      Tags:
+        - Key: Name
+          Value: Boomi-Unicast-SG
+      SecurityGroupIngress:
+        - FromPort: 0
+          IpProtocol: 'tcp'
+          SourceSecurityGroupId: !Ref BoomiSecurityGroup
+          ToPort: 65535
+  MoleculeSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: moleculeSG
+      VpcId: !Ref VPCID
+      Tags:
+        - Key: Name
+          Value: MoleculeSG
+      SecurityGroupIngress:
+        - IpProtocol: 'tcp'
+          FromPort: 0
+          ToPort: 65535
+          SourceSecurityGroupId: !Ref BoomiSecurityGroup
+  MountTargetSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: MountTargetSecurityGroup
+      VpcId: !Ref VPCID
+      Tags:
+        - Key: Name
+          Value: MountTargetSecurityGroup
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 2049
+          ToPort: 2049
+          SourceSecurityGroupId: !Ref BoomiSecurityGroup
+  MountTarget1:
+    Type: AWS::EFS::MountTarget
+    Properties:
+      FileSystemId: !Ref EFSFilesystem
+      SubnetId: !Ref PrivateSubnet1ID
+      SecurityGroups:
+        - !Ref MountTargetSecurityGroup
+  MountTarget2:
+    Type: AWS::EFS::MountTarget
+    Properties:
+      FileSystemId: !Ref EFSFilesystem
+      SubnetId: !Ref PrivateSubnet2ID
+      SecurityGroups:
+        - !Ref "MountTargetSecurityGroup"
+  KMSKey:
+    Type: AWS::KMS::Key
+    Properties:
+      KeyPolicy:
+        Version: 2012-10-17
+        Id: key-default-1
+        Statement:
+          - Sid: Allow administration of the key
+            Effect: Allow
+            Principal:
+              AWS: !Sub "arn:aws:iam::${AWS::AccountId}:root"
+            Action:
+              - 'kms:*'
+            Resource: '*'
+  MoleculeNode1:
+    CreationPolicy:
+      ResourceSignal:
+        Count: 1
+        Timeout: "PT15M"
+    DependsOn:
+      - EFSFilesystem
+      - MountTarget1
+      - MountTarget2
+    Type: "AWS::EC2::Instance"
+    Metadata:
+      AWS::CloudFormation::Init:
+        configSets:
+          head_molecule:
+            - nfs_and_java_path
+            - hostname_workaround
+            - download_and_install_atom
+            - java_symlink
+            - start_atom
+          molecule_workers:
+            - hostname_workaround
+            - nfs_and_java_path
+            - java_symlink
+            - start_atom
+          last_molecule:
+            - hostname_workaround
+            - nfs_and_java_path
+            - java_symlink
+            - start_atom
+            - set_container_id
+        nfs_and_java_path:
+          files:
+            /tmp/efs_mount_config.sh:
+              content: !Sub |
+                #!/bin/bash
+                CURRENT_AZ=$(curl -s http://169.254.169.254/latest/meta-data/placement/availability-zone)
+                echo "${!CURRENT_AZ}.${EFSFilesystem}.efs.${AWS::Region}.amazonaws.com:/ ${MoleculeSharedDir} nfs4 defaults,vers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2 0 0" >> /etc/fstab
+                mount -a
+              mode: '000755'
+              owner: 'root'
+              group: 'root'
+          packages:
+            yum:
+              amazon-efs-utils: []
+          commands:
+            010_create_dirs:
+              command: !Sub |
+                mkdir -p ${MoleculeLocalPath}
+                mkdir -p ${MoleculeSharedDir}
+                mkdir -p ${MoleculeLocalTemp}
+                chown ec2-user:ec2-user ${MoleculeLocalPath} ${MoleculeLocalPath}
+            015_set_java_path_in_ec2user:
+              command: |
+                echo JAVA_HOME=/usr/lib/jvm/java-1.8.0-openjdk.x86_64 /home/ec2-user/.bash_profile
+                echo "export PATH=$JAVA_HOME/bin:$PATH" >> /home/ec2-user/.bash_profile
+            020_mount_nfs:
+              command:
+                - /tmp/efs_mount_config.sh
+        java_symlink:
+          commands:
+            010_create_symlink:
+              command: !Sub "ln -sf ${MoleculeSharedDir}/${MoleculeClusterName}/jre/bin/java /usr/bin/java"
+        start_atom:
+          commands:
+            010_start_atom:
+              command: !Sub |
+                ${MoleculeSharedDir}/Molecule_${MoleculeClusterName}/bin/atom stop
+                sudo -u ec2-user bash -c '${MoleculeSharedDir}/Molecule_${MoleculeClusterName}/bin/atom start'
+        hostname_workaround:
+          commands:
+            010_set_etc_hosts:
+              command: |
+                local_ip=$(ip addr show dev eth0 | egrep -oi 'inet.*brd' | cut -d '/' -f 1 | awk '{print $2}')
+                local_hostname=$(curl http://169.254.169.254/latest/meta-data/local-hostname)
+                echo "${local_ip} ${local_hostname}" >> /etc/hosts
+        set_container_id:
+          commands:
+            010_tell_boomi:
+              command: !Sub |
+                container_id=$(grep 'com.boomi.container.id' ${MoleculeSharedDir}/Molecule_${MoleculeClusterName}/conf/container.id  | cut -c 24-59)
+                chown -R ec2-user:ec2-user ${MoleculeLocalPath}
+                /opt/aws/bin/cfn-signal -s true -d "{\"container_id\": \"${!container_id}\"}" '${Node4WaitHandle}'
+        download_and_install_atom:
+          files:
+            /tmp/molecule_install.sh:
+              source: https://platform.boomi.com/atom/molecule_install64.sh
+              mode: '000755'
+              owner: 'root'
+              group: 'root'
+            /tmp/molecule_set_cluster_properties.sh:
+              content: !Sub |
+                #!/bin/bash
+                LOCAL_IVP4=$(curl http://169.254.169.254/latest/meta-data/local-ipv4)
+                echo com.boomi.container.cloudlet.initialHosts=${!LOCAL_IVP4}[7800] >> ${MoleculeSharedDir}/Molecule_${MoleculeClusterName}/conf/container.properties
+                echo com.boomi.container.cloudlet.clusterConfig=UNICAST >> ${MoleculeSharedDir}/Molecule_${MoleculeClusterName}/conf/container.properties
+              mode: '000755'
+              owner: 'root'
+              group: 'root'
+          commands:
+            010_install_atom:
+              command: !Sub |
+                mkdir -p ${MoleculeSharedDir}/Molecule_${MoleculeClusterName}
+                chown ec2-user:ec2-user ${MoleculeSharedDir}/Molecule_${MoleculeClusterName}
+                sudo -u ec2-user bash -c "/tmp/molecule_install.sh -q -console -Vusername=${BoomiUsername} -Vpassword=${BoomiPassword} -VatomName=${MoleculeClusterName} -VaccountId=${BoomiAccountID} -VlocalPath=${MoleculeLocalPath} -VlocalTempPath=${MoleculeLocalTemp} -dir ${MoleculeSharedDir}"
+            020_set_cluster_properties:
+              command:
+                - /tmp/molecule_set_cluster_properties.sh
+            030_cleanup_scripts:
+              command: |
+                rm /tmp/molecule_set_cluster_properties.sh
+                rm /tmp/molecule_install.sh
+    Properties:
+      ImageId: !FindInMap
+        - AWSAMIRegionMap
+        - !Ref "AWS::Region"
+        - AMZNLINUXHVM
+      InstanceType: !Ref NodeInstanceType
+      NetworkInterfaces:
+        - GroupSet:
+            - !Ref BoomiSecurityGroup
+            - !Ref BoomiUnicastSG
+            - !Ref MoleculeSecurityGroup
+          AssociatePublicIpAddress: false
+          DeviceIndex: '0'
+          DeleteOnTermination: true
+          SubnetId: !Ref PrivateSubnet1ID
+      BlockDeviceMappings:
+        - DeviceName: "/dev/xvda"
+          Ebs:
+            VolumeType: "gp2"
+            DeleteOnTermination: true
+            VolumeSize: !Ref MoleculeEBSVolume
+      KeyName: !Ref KeyPairName
+      Tags:
+        - Value: MoleculeNode1
+          Key: Name
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          yum install -y python-setuptools
+          yum install -y wget
+          mkdir -p /opt/aws/bin
+          wget https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-latest.tar.gz
+          easy_install --script-dir /opt/aws/bin aws-cfn-bootstrap-latest.tar.gz
+          /opt/aws/bin/cfn-init -v --stack ${AWS::StackName} --resource MoleculeNode1 --region ${AWS::Region} -c head_molecule
+          /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource MoleculeNode1 --region ${AWS::Region}
+  MoleculeNode2:
+    DependsOn:
+      - MoleculeNode1
+    Type: "AWS::EC2::Instance"
+    Properties:
+      ImageId: !FindInMap
+        - AWSAMIRegionMap
+        - !Ref AWS::Region
+        - AMZNLINUXHVM
+      InstanceType: !Ref NodeInstanceType
+      NetworkInterfaces:
+        - GroupSet:
+            - !Ref BoomiSecurityGroup
+            - !Ref BoomiUnicastSG
+            - !Ref MoleculeSecurityGroup
+          AssociatePublicIpAddress: false
+          DeviceIndex: '0'
+          DeleteOnTermination: true
+          SubnetId: !Ref PrivateSubnet2ID
+      BlockDeviceMappings:
+        - DeviceName: "/dev/xvda"
+          Ebs:
+            VolumeType: "gp2"
+            DeleteOnTermination: true
+            VolumeSize: !Ref MoleculeEBSVolume
+      KeyName: !Ref KeyPairName
+      UserData:
+        Fn::Base64: !Sub |
+           #!/bin/bash
+           yum install -y python-setuptools
+           yum install -y wget
+           mkdir -p /opt/aws/bin
+           wget https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-latest.tar.gz
+           easy_install --script-dir /opt/aws/bin aws-cfn-bootstrap-latest.tar.gz
+           /opt/aws/bin/cfn-init -v --stack ${AWS::StackName} --resource MoleculeNode1 --region ${AWS::Region} -c molecule_workers
+           /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource MoleculeNode2 --region ${AWS::Region}
+      Tags:
+        - Value: MoleculeNode2
+          Key: Name
+  MoleculeNode3:
+    DependsOn: MoleculeNode1
+    Type: "AWS::EC2::Instance"
+    Properties:
+      ImageId: !FindInMap
+        - AWSAMIRegionMap
+        - !Ref AWS::Region
+        - AMZNLINUXHVM
+      InstanceType: !Ref NodeInstanceType
+      NetworkInterfaces:
+        - GroupSet:
+            - !Ref BoomiSecurityGroup
+            - !Ref BoomiUnicastSG
+            - !Ref MoleculeSecurityGroup
+          AssociatePublicIpAddress: false
+          DeviceIndex: '0'
+          DeleteOnTermination: true
+          SubnetId: !Ref PrivateSubnet1ID
+      BlockDeviceMappings:
+        - DeviceName: "/dev/xvda"
+          Ebs:
+            VolumeType: "gp2"
+            DeleteOnTermination: true
+            VolumeSize: !Ref MoleculeEBSVolume
+      KeyName: !Ref KeyPairName
+      Tags:
+        - Value: MoleculeNode3
+          Key: Name
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          yum install -y python-setuptools
+          yum install -y wget
+          mkdir -p /opt/aws/bin
+          wget https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-latest.tar.gz
+          easy_install --script-dir /opt/aws/bin aws-cfn-bootstrap-latest.tar.gz
+          /opt/aws/bin/cfn-init -v --stack ${AWS::StackName} --resource MoleculeNode1 --region ${AWS::Region} -c molecule_workers
+          /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource MoleculeNode3 --region ${AWS::Region}
+  MoleculeNode4:
+    DependsOn: MoleculeNode1
+    Type: "AWS::EC2::Instance"
+    Properties:
+      ImageId: !FindInMap
+        - AWSAMIRegionMap
+        - !Ref AWS::Region
+        - AMZNLINUXHVM
+      InstanceType: !Ref NodeInstanceType
+      NetworkInterfaces:
+        - GroupSet:
+            - !Ref BoomiSecurityGroup
+            - !Ref BoomiUnicastSG
+            - !Ref MoleculeSecurityGroup
+          AssociatePublicIpAddress: false
+          DeviceIndex: '0'
+          DeleteOnTermination: true
+          SubnetId: !Ref PrivateSubnet2ID
+      BlockDeviceMappings:
+        - DeviceName: "/dev/xvda"
+          Ebs:
+            VolumeType: "gp2"
+            DeleteOnTermination: true
+            VolumeSize: !Ref MoleculeEBSVolume
+      KeyName: !Ref KeyPairName
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          yum install -y python-setuptools
+          yum install -y wget
+          mkdir -p /opt/aws/bin
+          wget https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-latest.tar.gz
+          easy_install --script-dir /opt/aws/bin aws-cfn-bootstrap-latest.tar.gz
+          /opt/aws/bin/cfn-init -v --stack ${AWS::StackName} --resource MoleculeNode1 --region ${AWS::Region} -c last_molecule
+          /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource MoleculeNode4 --region ${AWS::Region}
+      Tags:
+        - Value: MoleculeNode4
+          Key: Name
+  ElasticLoadBalancer:
+    Type: AWS::ElasticLoadBalancing::LoadBalancer
+    Properties:
+      Subnets:
+        - !Ref PublicSubnet1ID
+        - !Ref PublicSubnet2ID
+      CrossZone: true
+      Listeners:
+        - LoadBalancerPort: !Ref LBListenerPort
+          InstancePort: '9093'
+          Protocol: https
+          SSLCertificateId: !Ref SSLCertificateArn
+      HealthCheck:
+        Target: TCP:22
+        HealthyThreshold: '3'
+        UnhealthyThreshold: '5'
+        Interval: '30'
+        Timeout: '5'
+      SecurityGroups:
+        - !Ref LoadBalancerSecurityGroup
+      Instances:
+        - !Ref MoleculeNode1
+        - !Ref MoleculeNode2
+        - !Ref MoleculeNode3
+        - !Ref MoleculeNode4
+  EFSFilesystem:
+    Type: AWS::EFS::FileSystem
+    Properties:
+      Encrypted: !Ref EFSEncryption
+      PerformanceMode: !Ref EFSPerformanceMode
+      ProvisionedThroughputInMibps: !Ref EFSProvisionedThroughput
+      ThroughputMode: !Ref EFSThroughputMode
+      KmsKeyId: !GetAtt
+        - KMSKey
+        - Arn
+  Node4WaitHandle:
+    Type: AWS::CloudFormation::WaitConditionHandle
+  Node4WaitCondition:
+    Type: AWS::CloudFormation::WaitCondition
+    Properties:
+      Handle: !Ref 'Node4WaitHandle'
+      Timeout: "1800"
+      Count: 1
+  BoomiAPI:
+    DependsOn:
+      - MoleculeNode4
+    Type: Custom::BoomiAPI
+    Properties:
+      ServiceToken: !GetAtt 'BoomiAPIFunction.Arn'
+      BoomiUsername: !Ref "BoomiUsername"
+      BoomiPassword: !Ref "BoomiPassword"
+      BoomiAccountID: !Ref "BoomiAccountID"
+      WaitHandleData: !GetAtt 'Node4WaitCondition.Data'
+      ELB_FQDN: !GetAtt 'ElasticLoadBalancer.DNSName'
+      HttpPort: '9093'
+  BoomiAPIFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Description: Sends ELB FQDN to Boomi.
+      Handler: index.handler
+      Runtime: python3.7
+      Role: !GetAtt 'BoomiAPIRole.Arn'
+      Timeout: 240
+      Code:
+        ZipFile: |
+          import json
+          import logging
+          import threading
+          import boto3
+          import cfnresponse
+          import urllib3
+          import copy
+
+
+          def timeout(event, context):
+            logging.error('Execution is about to time out, sending failure response to CloudFormation')
+            cfnresponse.send(event, context, cfnresponse.FAILED, {}, None)
+
+          def pull_container_id(whdata):
+            whraw = json.loads(whdata)
+            for k,v in whraw.items():
+              if 'container_id' in v:
+                cidraw = json.loads(v)
+                container_id = cidraw['container_id']
+                return container_id
+
+
+          def register_elb_with_atom(username, password, account, elb_url, http_port, atom_id):
+              API_URL = f"https://api.boomi.com/api/rest/v1/{account}/SharedServerInformation/{atom_id}/update"
+              payload = {
+                  "@type":"SharedServerInformation",
+                  "atomId": atom_id,
+                  "url": elb_url,
+                  "overrideUrl": "true",
+                  "httpPort": http_port
+              }
+              payload = json.dumps(payload)
+              headers = {'Content-Type':'application/json', 'Accept':'application/json'}
+              headers.update(urllib3.util.make_headers(basic_auth = f"{username}:{password}"))
+              http = urllib3.PoolManager()
+              resp = http.request('POST', API_URL, headers=headers, body=payload)
+              if resp.status != 200:
+                  raise
+
+          def delete_atom_from_boomi_platform(username, password, account, atom_id):
+              API_URL = f"https://api.boomi.com/api/rest/v1/{account}/Atom/{atom_id}"
+              headers = {'Content-Type':'application/json', 'Accept':'application/json'}
+              headers.update(urllib3.util.make_headers(basic_auth = f"{username}:{password}"))
+              http = urllib3.PoolManager()
+              resp = http.request('DELETE', API_URL, headers=headers)
+
+
+          def handler(event, context):
+            # make sure we send a failure to CloudFormation if the function
+            # is going to timeout
+            timer = threading.Timer((context.get_remaining_time_in_millis()
+                      / 1000.00) - 0.5, timeout, args=[event, context])
+            timer.start()
+
+            sanitized_event = copy.deepcopy(event)
+            sanitized_event['ResourceProperties']['BoomiPassword'] = "<Redacted>"
+            print('Received event: %s' % json.dumps(sanitized_event))
+            status = cfnresponse.SUCCESS
+            try:
+                username = event['ResourceProperties']['BoomiUsername']
+                password = event['ResourceProperties']['BoomiPassword']
+                account_id = event['ResourceProperties']['BoomiAccountID']
+                elb_fqdn = event['ResourceProperties']['ELB_FQDN']
+                container_id = pull_container_id(event['ResourceProperties']['WaitHandleData'])
+                http_port = event['ResourceProperties']['HttpPort']
+                if event['RequestType'] == 'Create':
+                    register_elb_with_atom(username, password, account_id, f"{elb_fqdn}:{http_port}", http_port, container_id)
+                elif event['RequestType'] == 'Delete':
+                    delete_atom_from_boomi_platform(username, password, account_id, container_id)
+            except Exception as e:
+                logging.error('Exception: %s' % e, exc_info=True)
+                status = cfnresponse.FAILED
+            finally:
+                timer.cancel()
+                cfnresponse.send(event, context, status, {}, None)
+
+  BoomiAPIRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+Outputs:
+  VPC:
+    Description: The VPC
+    Value: !Ref VPCID

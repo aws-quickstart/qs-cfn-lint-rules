@@ -1,0 +1,415 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "AWS Config rules are enabled for monitoring storage encryption (Amazon Elastic Block Store, Amazon S3, and Amazon Relational Database Service), AWS Identity and Access Management (IAM) password policy, root account multi-factor authentication (MFA), Amazon S3 public read and write, and insecure security group rules",
+    "Metadata": {
+        "AWS::CloudFormation::Interface": {
+            "ParameterGroups": [
+                {
+                    "Label": {
+                        "default": "AWS Config Configuration Recorder Configuration"
+                    },
+                    "Parameters": [
+                        "EnableAWSConfigRecorder",
+                        "IncludeGlobalResourceTypes"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "AWS Config Rules Configuration"
+                    },
+                    "Parameters": [
+                        "ConfigRules"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "Configuration Aggregator Configuration"
+                    },
+                    "Parameters": [
+                        "SourceAccounts",
+                        "SourceRegions"
+                    ]
+                }
+            ],
+            "ParameterLabels": {
+                "EnableAWSConfigRecorder": {
+                    "default": "Turn AWS Config recording on"
+                },
+                "IncludeGlobalResourceTypes": {
+                    "default": "Include all supported types of global resources"
+                },
+                "SourceAccounts": {
+                    "default": "Source accounts"
+                },
+                "SourceRegions": {
+                    "default": "Source regions"
+                },
+                "ConfigRules": {
+                    "default": "Enable Config Rules"
+                }
+            }
+        }
+    },
+    "Parameters": {
+        "IncludeGlobalResourceTypes": {
+            "Type": "String",
+            "Description": "Choose 'True' to enable AWS Config to include all supported types of global resources (for example, IAM resources) with the resources that it records.",
+            "AllowedValues": [
+                "True",
+                "False"
+            ],
+            "Default": "False"
+        },
+        "SourceAccounts": {
+            "Type": "CommaDelimitedList",
+            "Description": "List of source accounts to aggregate. Uses current AWS Account as default.",
+            "Default": ""
+        },
+        "SourceRegions": {
+            "Type": "CommaDelimitedList",
+            "Description": "List of regions to aggregate. Uses current AWS Region as default.",
+            "Default": ""
+        },
+        "ConfigRules": {
+            "Description": "Enabled for monitoring storage encryption (Amazon Elastic Block Store, Amazon S3, and Amazon Relational Database Service), AWS Identity and Access Management (IAM) password policy, root account multi-factor authentication (MFA), Amazon S3 public read and write, and insecure security group rules.(Cost will apply).",
+            "Type": "String",
+            "AllowedValues": [
+                "True",
+                "False"
+            ],
+            "Default": "True"
+        },
+        "EnableAWSConfigRecorder": {
+            "Description": "Choose 'False' if the AWS Config configuration recording is already turned on in this account; the remaining parameters in this section will be ignored.",
+            "Type": "String",
+            "AllowedValues": [
+                "True",
+                "False"
+            ],
+            "Default": "True"
+        }
+    },
+    "Conditions": {
+        "IncludeGlobalResourceTypes": {
+            "Fn::Equals": [
+                {
+                    "Ref": "IncludeGlobalResourceTypes"
+                },
+                {
+                    "Ref": "AWS::Region"
+                }
+            ]
+        },
+        "EnableConfig": {
+            "Fn::Equals": [
+                {
+                    "Ref": "ConfigRules"
+                },
+                "True"
+            ]
+        },
+        "DoEnableAWSConfigRecorder": {
+            "Fn::Equals": [
+                {
+                    "Ref": "EnableAWSConfigRecorder"
+                },
+                "True"
+            ]
+        },
+        "DoNotEnableAWSConfigRecorder": {
+            "Fn::Equals": [
+                {
+                    "Ref": "EnableAWSConfigRecorder"
+                },
+                "False"
+            ]
+        }
+    },
+    "Resources": {
+        "ConfigBucket": {
+            "Condition": "DoEnableAWSConfigRecorder",
+            "DeletionPolicy": "Retain",
+            "Type": "AWS::S3::Bucket"
+        },
+        "ConfigBucketPolicy": {
+            "Condition": "DoEnableAWSConfigRecorder",
+            "Type": "AWS::S3::BucketPolicy",
+            "Properties": {
+                "Bucket": {
+                    "Ref": "ConfigBucket"
+                },
+                "PolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Sid": "AWSConfigBucketPermissionsCheck",
+                            "Effect": "Allow",
+                            "Principal": {
+                                "Service": [
+                                    "config.amazonaws.com"
+                                ]
+                            },
+                            "Action": "s3:GetBucketAcl",
+                            "Resource": [
+                                {
+                                    "Fn::Sub": "arn:aws:s3:::${ConfigBucket}"
+                                }
+                            ]
+                        },
+                        {
+                            "Sid": "AWSConfigBucketDelivery",
+                            "Effect": "Allow",
+                            "Principal": {
+                                "Service": [
+                                    "config.amazonaws.com"
+                                ]
+                            },
+                            "Action": "s3:PutObject",
+                            "Resource": [
+                                {
+                                    "Fn::Sub": "arn:aws:s3:::${ConfigBucket}/AWSLogs/${AWS::AccountId}/*"
+                                }
+                            ]
+                        }
+                    ]
+                }
+            }
+        },
+        "ConfigRecorderRole": {
+            "Condition": "DoEnableAWSConfigRecorder",
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "AssumeRolePolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Principal": {
+                                "Service": [
+                                    "config.amazonaws.com"
+                                ]
+                            },
+                            "Action": [
+                                "sts:AssumeRole"
+                            ]
+                        }
+                    ]
+                },
+                "Path": "/",
+                "ManagedPolicyArns": [
+                    "arn:aws:iam::aws:policy/service-role/AWSConfigRole"
+                ]
+            }
+        },
+        "ConfigRecorder": {
+            "Condition": "DoEnableAWSConfigRecorder",
+            "Type": "AWS::Config::ConfigurationRecorder",
+            "DependsOn": [
+                "ConfigRecorderRole",
+                "ConfigBucketPolicy"
+            ],
+            "Properties": {
+                "Name": "default",
+                "RoleARN": {
+                    "Fn::GetAtt": [
+                        "ConfigRecorderRole",
+                        "Arn"
+                    ]
+                },
+                "RecordingGroup": {
+                    "AllSupported": true,
+                    "IncludeGlobalResourceTypes": {
+                        "Ref" : "IncludeGlobalResourceTypes"
+                    }
+                }
+            }
+        },
+        "DeliveryChannel": {
+            "Condition": "DoEnableAWSConfigRecorder",
+            "Type": "AWS::Config::DeliveryChannel",
+            "DependsOn": [
+                "ConfigRecorderRole",
+                "ConfigBucketPolicy"
+            ],
+            "Properties": {
+                "Name": "default",
+                "S3BucketName": {
+                    "Ref": "ConfigBucket"
+                }
+            }
+        },
+        "DoEnableAWSConfigRecorderWaitHandle": {
+            "Condition": "DoEnableAWSConfigRecorder",
+            "DependsOn": [ "DeliveryChannel","ConfigRecorder"],
+            "Type": "AWS::CloudFormation::WaitConditionHandle"
+        },
+        "DoNotEnableAWSConfigRecorderWaitHandle": {
+            "Condition": "DoNotEnableAWSConfigRecorder",
+            "Type": "AWS::CloudFormation::WaitConditionHandle"
+        },
+        "EnableAWSConfigRecorderWaitCondition": {
+            "Type": "AWS::CloudFormation::WaitCondition",
+            "Properties": {
+                "Handle": {
+                    "Fn::If": [
+                        "DoEnableAWSConfigRecorder",
+                        { "Ref":"DoEnableAWSConfigRecorderWaitHandle"},
+                        { "Ref":"DoNotEnableAWSConfigRecorderWaitHandle"}
+                    ]
+                },
+                "Timeout": "3600",
+                "Count": "0"
+            }
+        },
+        "EncryptedVolumesRule": {
+            "Type": "AWS::Config::ConfigRule",
+            "Condition": "EnableConfig",
+            "DependsOn": [
+                "EnableAWSConfigRecorderWaitCondition"
+            ],
+            "Properties": {
+                "ConfigRuleName": {
+                    "Fn::Join": [
+                        "-",
+                        [
+                            "encrypted-volumes",
+                            "cherwell"
+                        ]
+                    ]
+                },
+                "Description": "Checks whether EBS volumes that are in an attached state are encrypted. Optionally, you can specify the ID of a KMS key to use to encrypt the volume.",
+                "Scope": {
+                    "ComplianceResourceTypes": [
+                        "AWS::EC2::Volume"
+                    ]
+                },
+                "Source": {
+                    "Owner": "AWS",
+                    "SourceIdentifier": "ENCRYPTED_VOLUMES"
+                }
+            }
+        },
+        "s3BucketServerSideEncryptionEnabledEncryptedVolumesRule": {
+            "Type": "AWS::Config::ConfigRule",
+            "Condition": "EnableConfig",
+            "DependsOn": [
+                "EnableAWSConfigRecorderWaitCondition"
+            ],
+            "Properties": {
+                "ConfigRuleName": {
+                    "Fn::Join": [
+                        "-",
+                        [
+                            "s3-encryption",
+                            "cherwell"
+                        ]
+                    ]
+                },
+                "Description": "Checks whether the S3 bucket policy denies the put-object requests that are not encrypted using AES-256 or AWS KMS.",
+                "Scope": {
+                    "ComplianceResourceTypes": [
+                        "AWS::S3::Bucket"
+                    ]
+                },
+                "Source": {
+                    "Owner": "AWS",
+                    "SourceIdentifier": "S3_BUCKET_SERVER_SIDE_ENCRYPTION_ENABLED"
+                }
+            }
+        },
+        "RdsStorageEncryptedRule": {
+            "Type": "AWS::Config::ConfigRule",
+            "Condition": "EnableConfig",
+            "DependsOn": [
+                "EnableAWSConfigRecorderWaitCondition"
+            ],
+            "Properties": {
+                "ConfigRuleName": {
+                    "Fn::Join": [
+                        "-",
+                        [
+                            "rds-storage-encrypted",
+                            "cherwell"
+                        ]
+                    ]
+                },
+                "Description": "Checks whether storage encryption is enabled for your RDS DB instances.",
+                "Scope": {
+                    "ComplianceResourceTypes": [
+                        "AWS::RDS::DBInstance"
+                    ]
+                },
+                "Source": {
+                    "Owner": "AWS",
+                    "SourceIdentifier": "RDS_STORAGE_ENCRYPTED"
+                }
+            }
+        },
+        "IamPasswordPolicyRule": {
+            "Type": "AWS::Config::ConfigRule",
+            "Condition": "EnableConfig",
+            "DependsOn": [
+                "EnableAWSConfigRecorderWaitCondition"
+            ],
+            "Properties": {
+                "ConfigRuleName": {
+                    "Fn::Join": [
+                        "-",
+                        [
+                            "iam-password-policy",
+                            "cherwell"
+                        ]
+                    ]
+                },
+                "Description": "Checks whether the account password policy for IAM users meets the specified requirements.",
+                "Source": {
+                    "Owner": "AWS",
+                    "SourceIdentifier": "IAM_PASSWORD_POLICY"
+                }
+            }
+        },
+        "RootAccountMfaEnabled": {
+            "Type": "AWS::Config::ConfigRule",
+            "Condition": "EnableConfig",
+            "DependsOn": [
+                "EnableAWSConfigRecorderWaitCondition"
+            ],
+            "Properties": {
+                "ConfigRuleName": {
+                    "Fn::Join": [
+                        "-",
+                        [
+                            "root-account-mfa-enabled",
+                            "cherwell"
+                        ]
+                    ]
+                },
+                "Description": "Checks whether the root user of your AWS account requires multi-factor authentication for console sign-in.",
+                "Source": {
+                    "Owner": "AWS",
+                    "SourceIdentifier": "ROOT_ACCOUNT_MFA_ENABLED"
+                }
+            }
+        },
+        "S3BucketPublicReadRule": {
+            "Type": "AWS::Config::ConfigRule",
+            "Condition": "EnableConfig",
+            "DependsOn": [
+                "EnableAWSConfigRecorderWaitCondition"
+            ],
+            "Properties": {
+                "ConfigRuleName": "stackset-s3-bucket-public-read-prohibited",
+                "Description": "s3-bucket-public-read-prohibited from stackset",
+                "Scope": {
+                    "ComplianceResourceTypes": [
+                        "AWS::S3::Bucket"
+                    ]
+                },
+                "Source": {
+                    "Owner": "AWS",
+                    "SourceIdentifier": "S3_BUCKET_PUBLIC_READ_PROHIBITED"
+                }
+            }
+        }
+    }
+}

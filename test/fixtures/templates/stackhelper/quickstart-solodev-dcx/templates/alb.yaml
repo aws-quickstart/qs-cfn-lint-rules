@@ -1,0 +1,118 @@
+Description: >
+    This template deploys a Application Load Balancer
+
+Parameters:
+
+    EnvironmentName:
+        Description: An environment name that will be prefixed to resource names
+        Type: String
+
+    VPC:
+        Type: AWS::EC2::VPC::Id
+        Description: Choose which VPC the Application Load Balancer should be deployed to
+
+    Subnets:
+        Description: Choose which subnets the Application Load Balancer should be deployed to
+        Type: List<AWS::EC2::Subnet::Id>
+
+    CertificateArn:
+      Type: String
+      Description: (Optional) SSL cert for HTTPS listener that matches the FQDN
+      Default: ''
+
+Conditions:
+    UseSSL: !Not [!Equals [ !Ref CertificateArn, "" ]]
+
+Resources:
+
+    # This security group defines who/where is allowed to access the Application Load Balancer.
+    # By default, we've opened this up to the public internet (0.0.0.0/0) but can you restrict
+    # it further if you want.
+    LoadBalancerSecurityGroup:
+        Type: AWS::EC2::SecurityGroup
+        Properties: 
+            VpcId: !Ref VPC
+            GroupDescription: Access to the load balancer
+            SecurityGroupIngress:
+                # Allow access from anywhere
+                - CidrIp: 0.0.0.0/0
+                  IpProtocol: -1
+            Tags: 
+                - Key: Name
+                  Value: !Sub ${EnvironmentName}-LoadBalancers
+
+    LoadBalancer:
+        Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+        Properties:
+            Name: !Ref EnvironmentName
+            LoadBalancerAttributes:
+                - Key: idle_timeout.timeout_seconds
+                  Value: '120'
+            Subnets: !Ref Subnets
+            SecurityGroups: 
+                - !Ref LoadBalancerSecurityGroup
+            Tags: 
+                - Key: Name
+                  Value: !Ref EnvironmentName
+
+    # This IAM Role grants the service access to register/unregister with the 
+    # Application Load Balancer (ALB). It is based on the default documented here:
+    # http://docs.aws.amazon.com/AmazonECS/latest/developerguide/service_IAM_role.html
+    ServiceRole: 
+        Type: AWS::IAM::Role
+        Properties: 
+            Path: /
+            AssumeRolePolicyDocument: |
+                {
+                    "Statement": [{
+                        "Effect": "Allow",
+                        "Principal": { "Service": [ "ecs.amazonaws.com" ]},
+                        "Action": [ "sts:AssumeRole" ]
+                    }]
+                }
+            Policies: 
+                - PolicyName: !Sub ecs-service-${AWS::StackName}
+                  PolicyDocument: 
+                    {
+                        "Version": "2012-10-17",
+                        "Statement": [{
+                                "Effect": "Allow",
+                                "Action": [
+                                    "ec2:AuthorizeSecurityGroupIngress",
+                                    "ec2:Describe*",
+                                    "elasticloadbalancing:DeregisterInstancesFromLoadBalancer",
+                                    "elasticloadbalancing:Describe*",
+                                    "elasticloadbalancing:RegisterInstancesWithLoadBalancer",
+                                    "elasticloadbalancing:DeregisterTargets",
+                                    "elasticloadbalancing:DescribeTargetGroups",
+                                    "elasticloadbalancing:DescribeTargetHealth",
+                                    "elasticloadbalancing:RegisterTargets"
+                                ],
+                                "Resource": "*"
+                        }]
+                    }
+           
+Outputs:
+
+    LoadBalancer:
+        Description: A reference to the Application Load Balancer
+        Value: !Ref LoadBalancer
+
+    LoadBalancerUrl: 
+        Description: CNAME of Load Balancer.  Point your DNS to this CNAME.
+        Value: !Join 
+                - ''
+                - - !If
+                    - UseSSL
+                    - "https://"
+                    - "http://"
+                  - !GetAtt LoadBalancer.DNSName
+                  - "/"
+
+    LoadBalancerSecurityGroup:
+        Description: A reference to LoadBalancerSecurityGroup
+        Value: !Ref LoadBalancerSecurityGroup 
+
+    ServiceRole:
+        Description: A reference to Service Role
+        Value: !Ref ServiceRole  

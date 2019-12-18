@@ -1,0 +1,806 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Deploys EKS nodes into an existing VPC (qs-1p7nknoid)
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Network Configuration
+        Parameters:
+          - VPCID
+          - PrivateSubnet1ID
+          - PrivateSubnet2ID
+          - PrivateSubnet3ID
+      - Label:
+          default: Amazon EC2 Configuration
+        Parameters:
+          - KeyPairName
+          - NodeAMIOS
+      - Label:
+          default: EKS Configuration
+        Parameters:
+          - NodeInstanceType
+          - NumberOfNodes
+          - MaxNumberOfNodes
+          - NodeGroupName
+          - NodeVolumeSize
+      - Label:
+          default: AWS Quick Start Configuration
+        Parameters:
+          - QSS3BucketName
+          - QSS3KeyPrefix
+    ParameterLabels:
+      KeyPairName:
+        default: SSH Key Name
+      NodeAMIOS:
+        default: Node AMI Operating System
+      PrivateSubnet1ID:
+        default: Private Subnet 1 ID
+      PrivateSubnet2ID:
+        default: Private Subnet 2 ID
+      PrivateSubnet3ID:
+        default: Private Subnet 3 ID
+      VPCID:
+        default: VPC ID
+      NodeInstanceType:
+        default: Nodes Instance Type
+      NumberOfNodes:
+        default: Number of Nodes
+      MaxNumberOfNodes:
+        default: Maximum number of Nodes
+      NodeGroupName:
+        default: Node Group Name
+      NodeVolumeSize:
+        default: Node Volume Size
+      QSS3BucketName:
+        default: Quick Start S3 Bucket Name
+      QSS3KeyPrefix:
+        default: Quick Start S3 Key Prefix
+  AWSAMIRegionMap:
+    Filters:
+      AMZNEKS113:
+        name: 'amazon-eks-node-1.13-v20??????'
+        owner-id: '602401143452'
+      AMZNEKS113GPU:
+        name: 'amazon-eks-gpu-node-1.13-v20??????'
+        owner-id: '602401143452'
+      AMZNEKS111:
+        name: 'amazon-eks-node-1.11-v20??????'
+        owner-id: '602401143452'
+      AMZNEKS111GPU:
+        name: 'amazon-eks-gpu-node-1.11-v20??????'
+        owner-id: '602401143452'
+      AMZNEKS112:
+        name: 'amazon-eks-node-1.12-v20??????'
+        owner-id: '602401143452'
+      AMZNEKS112GPU:
+        name: 'amazon-eks-gpu-node-1.12-v20??????'
+        owner-id: '602401143452'
+      SLES15EKS113:
+        name: 'suse-sles-15-v20??????-hvm-ssd-x86_64'
+        owner-id: '013907871322'
+      SLES15EKS113GPU:
+        name: 'suse-sles-15-v20??????-hvm-ssd-x86_64'
+        owner-id: '013907871322'
+      SLES15EKS111:
+        name: 'suse-sles-15-v20??????-hvm-ssd-x86_64'
+        owner-id: '013907871322'
+      SLES15EKS111GPU:
+        name: 'suse-sles-15-v20??????-hvm-ssd-x86_64'
+        owner-id: '013907871322'
+      SLES15EKS112:
+        name: 'suse-sles-15-v20??????-hvm-ssd-x86_64'
+        owner-id: '013907871322'
+      SLES15EKS112GPU:
+        name: 'suse-sles-15-v20??????-hvm-ssd-x86_64'
+        owner-id: '013907871322'
+Parameters:
+  KeyPairName:
+    Description: Name of an existing EC2 key pair. All instances will launch with
+      this key pair.
+    Type: AWS::EC2::KeyPair::KeyName
+  NodeAMIOS:
+    AllowedValues:
+      - Amazon-Linux-HVM
+      - SUSE-SLES-15-HVM
+    Default: Amazon-Linux-HVM
+    Description: The Linux distribution for the AMI to be used for the node
+      instances.
+    Type: String
+  PrivateSubnet1ID:
+    Description: ID of private subnet 1 in Availability Zone 1 for the Workload (e.g.,
+      subnet-a0246dcd)
+    Type: AWS::EC2::Subnet::Id
+  PrivateSubnet2ID:
+    Description: ID of private subnet 2 in Availability Zone 2 for the Workload (e.g.,
+      subnet-b1f432cd)
+    Type: AWS::EC2::Subnet::Id
+  PrivateSubnet3ID:
+    Description: ID of private subnet 3 in Availability Zone 3 for the Workload (e.g.,
+      subnet-b1f4a2cd)
+    Type: AWS::EC2::Subnet::Id
+  VPCID:
+    Description: ID of your existing VPC for deployment
+    Type: AWS::EC2::VPC::Id
+  CleanupSecurityGroupDependenciesLambdaArn:
+    Description: ARN for CleanupSecurityGroupDependencies lambda function
+    Type: String
+    Default: ""
+  NodeInstanceType:
+    Default: t3.medium
+    AllowedValues:
+      - t2.small
+      - t2.medium
+      - t2.large
+      - t2.xlarge
+      - t2.2xlarge
+      - t3.nano
+      - t3.micro
+      - t3.small
+      - t3.medium
+      - t3.large
+      - t3.xlarge
+      - t3.2xlarge
+      - m3.medium
+      - m3.large
+      - m3.xlarge
+      - m3.2xlarge
+      - m4.large
+      - m4.xlarge
+      - m4.2xlarge
+      - m4.4xlarge
+      - m4.10xlarge
+      - m5.large
+      - m5.xlarge
+      - m5.2xlarge
+      - m5.4xlarge
+      - m5.12xlarge
+      - m5.24xlarge
+      - c4.large
+      - c4.xlarge
+      - c4.2xlarge
+      - c4.4xlarge
+      - c4.8xlarge
+      - c5.large
+      - c5.xlarge
+      - c5.2xlarge
+      - c5.4xlarge
+      - c5.9xlarge
+      - c5.18xlarge
+      - i3.large
+      - i3.xlarge
+      - i3.2xlarge
+      - i3.4xlarge
+      - i3.8xlarge
+      - i3.16xlarge
+      - r3.xlarge
+      - r3.2xlarge
+      - r3.4xlarge
+      - r3.8xlarge
+      - r4.large
+      - r4.xlarge
+      - r4.2xlarge
+      - r4.4xlarge
+      - r4.8xlarge
+      - r4.16xlarge
+      - x1.16xlarge
+      - x1.32xlarge
+      - p2.xlarge
+      - p2.8xlarge
+      - p2.16xlarge
+      - p3.2xlarge
+      - p3.8xlarge
+      - p3.16xlarge
+      - r5.large
+      - r5.xlarge
+      - r5.2xlarge
+      - r5.4xlarge
+      - r5.12xlarge
+      - r5.24xlarge
+      - r5d.large
+      - r5d.xlarge
+      - r5d.2xlarge
+      - r5d.4xlarge
+      - r5d.12xlarge
+      - r5d.24xlarge
+      - z1d.large
+      - z1d.xlarge
+      - z1d.2xlarge
+      - z1d.3xlarge
+      - z1d.6xlarge
+      - z1d.12xlarge
+    ConstraintDescription: Must be a valid EC2 instance type
+    Description: Type of EC2 instance for the Node instances
+    Type: String
+  NumberOfNodes:
+    Default: 3
+    Description: Number of EKS node instances
+    Type: Number
+  MaxNumberOfNodes:
+    Default: ""
+    Description: "[OPTIONAL] The maximum number of Amazon EKS node instances, if left blank will be set to the same value as NumberOfNodes"
+    Type: String
+  NodeGroupName:
+    Default: Default
+    Description: Name for EKS node group
+    Type: String
+  NodeVolumeSize:
+    Default: 20
+    Description: Size for node volumes
+    Type: String
+  EKSControlPlane:
+    Description: Name of the EKS cluster to join
+    Type: String
+  BootstrapArguments:
+    Description: Arguments to pass to the bootstrap script. See files/bootstrap.sh in https://github.com/awslabs/amazon-eks-ami
+    Type: String
+    Default: ""
+  ControlPlaneSecurityGroup:
+    Type: AWS::EC2::SecurityGroup::Id
+  NodeInstanceProfile:
+    Type: String
+  NodeInstanceRoleName:
+    Type: String
+  KubernetesVersion:
+    Type: String
+    AllowedValues: [ "1.13", "1.12", "1.11" ]
+    Default: "1.13"
+  TargetGroupARNs:
+    Type: CommaDelimitedList
+    Default: ""
+  QSS3BucketName:
+    AllowedPattern: ^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$
+    ConstraintDescription: Quick Start bucket name can include numbers, lowercase
+      letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen
+      (-).
+    Default: aws-quickstart
+    Description: S3 bucket name for the Quick Start assets. This string can include
+      numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start
+      or end with a hyphen (-).
+    Type: String
+  QSS3KeyPrefix:
+    AllowedPattern: ^[0-9a-zA-Z-/.]*$
+    ConstraintDescription: Quick Start key prefix can include numbers, lowercase letters,
+      uppercase letters, hyphens (-), dots(.) and forward slash (/).
+    Default: quickstart-amazon-eks/
+    Description: S3 key prefix for the Quick Start assets. Quick Start key prefix
+      can include numbers, lowercase letters, uppercase letters, hyphens (-), dots(.) and
+      forward slash (/).
+    Type: String
+  CustomAmiId:
+    Type: String
+    Default: ""
+Conditions:
+  MaxNodes: !Not [ !Equals [ !Ref MaxNumberOfNodes, "" ] ]
+  AmznOS: !Equals
+    - !Ref NodeAMIOS
+    - Amazon-Linux-HVM
+  SuseOS: !Equals
+    - !Ref NodeAMIOS
+    - SUSE-SLES-15-HVM
+  DisableTargetGroups: !Equals
+    - !Join [",", !Ref 'TargetGroupARNs' ]
+    - ""
+  IsSingleInstance: !Equals
+    - !Ref NumberOfNodes
+    - 1
+  UseCustomAmi: !Not [ !Equals [ !Ref CustomAmiId, "" ] ]
+  CleanupSGs:
+    !Not [ !Equals [ !Ref CleanupSecurityGroupDependenciesLambdaArn, "" ] ]
+Mappings:
+  K8sVersionMap:
+    "1.12":
+      BinaryPath: 1.12.7/2019-03-27/bin/linux/amd64
+      STD: EKS112
+      GPU: EKS112GPU
+    "1.11":
+      BinaryPath: 1.11.9/2019-03-27/bin/linux/amd64
+      STD: EKS111
+      GPU: EKS111GPU
+    "1.13":
+      BinaryPath: 1.13.7/2019-06-11/bin/linux/amd64
+      STD: EKS113
+      GPU: EKS113GPU
+  InstanceTypes:
+    t2.small: { Type: STD }
+    t2.medium: { Type: STD }
+    t2.large: { Type: STD }
+    t2.xlarge: { Type: STD }
+    t2.2xlarge: { Type: STD }
+    t3.nano: { Type: STD }
+    t3.micro: { Type: STD }
+    t3.small: { Type: STD }
+    t3.medium: { Type: STD }
+    t3.large: { Type: STD }
+    t3.xlarge: { Type: STD }
+    t3.2xlarge: { Type: STD }
+    m3.medium: { Type: STD }
+    m3.large: { Type: STD }
+    m3.xlarge: { Type: STD }
+    m3.2xlarge: { Type: STD }
+    m4.large: { Type: STD }
+    m4.xlarge: { Type: STD }
+    m4.2xlarge: { Type: STD }
+    m4.4xlarge: { Type: STD }
+    m4.10xlarge: { Type: STD }
+    m5.large: { Type: STD }
+    m5.xlarge: { Type: STD }
+    m5.2xlarge: { Type: STD }
+    m5.4xlarge: { Type: STD }
+    m5.12xlarge: { Type: STD }
+    m5.24xlarge: { Type: STD }
+    c4.large: { Type: STD }
+    c4.xlarge: { Type: STD }
+    c4.2xlarge: { Type: STD }
+    c4.4xlarge: { Type: STD }
+    c4.8xlarge: { Type: STD }
+    c5.large: { Type: STD }
+    c5.xlarge: { Type: STD }
+    c5.2xlarge: { Type: STD }
+    c5.4xlarge: { Type: STD }
+    c5.9xlarge: { Type: STD }
+    c5.18xlarge: { Type: STD }
+    i3.large: { Type: STD }
+    i3.xlarge: { Type: STD }
+    i3.2xlarge: { Type: STD }
+    i3.4xlarge: { Type: STD }
+    i3.8xlarge: { Type: STD }
+    i3.16xlarge: { Type: STD }
+    r3.xlarge: { Type: STD }
+    r3.2xlarge: { Type: STD }
+    r3.4xlarge: { Type: STD }
+    r3.8xlarge: { Type: STD }
+    r4.large: { Type: STD }
+    r4.xlarge: { Type: STD }
+    r4.2xlarge: { Type: STD }
+    r4.4xlarge: { Type: STD }
+    r4.8xlarge: { Type: STD }
+    r4.16xlarge: { Type: STD }
+    x1.16xlarge: { Type: STD }
+    x1.32xlarge: { Type: STD }
+    p2.xlarge: { Type: GPU }
+    p2.8xlarge: { Type: GPU }
+    p2.16xlarge: { Type: GPU }
+    p3.2xlarge: { Type: GPU }
+    p3.8xlarge: { Type: GPU }
+    p3.16xlarge: { Type: GPU }
+    r5.large: { Type: STD }
+    r5.xlarge: { Type: STD }
+    r5.2xlarge: { Type: STD }
+    r5.4xlarge: { Type: STD }
+    r5.12xlarge: { Type: STD }
+    r5.24xlarge: { Type: STD }
+    r5d.large: { Type: STD }
+    r5d.xlarge: { Type: STD }
+    r5d.2xlarge: { Type: STD }
+    r5d.4xlarge: { Type: STD }
+    r5d.12xlarge: { Type: STD }
+    r5d.24xlarge: { Type: STD }
+    z1d.large: { Type: STD }
+    z1d.xlarge: { Type: STD }
+    z1d.2xlarge: { Type: STD }
+    z1d.3xlarge: { Type: STD }
+    z1d.6xlarge: { Type: STD }
+    z1d.12xlarge: { Type: STD }
+  OStoK8sVersionMap:
+    Amazon-Linux-HVM:
+      EKS112: AMZNEKS112
+      EKS112GPU: AMZNEKS112GPU
+      EKS111: AMZNEKS111
+      EKS111GPU: AMZNEKS111GPU
+      EKS113: AMZNEKS113
+      EKS113GPU: AMZNEKS113GPU
+    SUSE-SLES-15-HVM:
+      EKS112: SLES15EKS112
+      EKS112GPU: SLES15EKS112GPU
+      EKS111: SLES15EKS111
+      EKS111GPU: SLES15EKS111GPU
+      EKS113: SLES15EKS113
+      EKS113GPU: SLES15EKS113GPU
+  AWSAMIRegionMap:
+    ap-northeast-1:
+      AMZNEKS113: ami-071f5104f2ca09a44
+      AMZNEKS113GPU: ami-0edb5d6ddf8c88256
+      AMZNEKS111: ami-0298c1ab8a5599cf9
+      AMZNEKS111GPU: ami-0ae8285ee46cbffaf
+      AMZNEKS112: ami-0cb3fc9f948330b7d
+      AMZNEKS112GPU: ami-03100ffb7f331ea1b
+      SLES15EKS113: ami-056ac8ad44e6a7e1f
+      SLES15EKS113GPU: ami-056ac8ad44e6a7e1f
+      SLES15EKS111: ami-056ac8ad44e6a7e1f
+      SLES15EKS111GPU: ami-056ac8ad44e6a7e1f
+      SLES15EKS112: ami-056ac8ad44e6a7e1f
+      SLES15EKS112GPU: ami-056ac8ad44e6a7e1f
+    ap-northeast-2:
+      AMZNEKS113: ami-0f10234f5c3dc77df
+      AMZNEKS113GPU: ami-06cf3ed503a454f85
+      AMZNEKS111: ami-0baf575e00e61712d
+      AMZNEKS111GPU: ami-007e69acc9408d7c9
+      AMZNEKS112: ami-00ecfcbe4b6f1a419
+      AMZNEKS112GPU: ami-0c22723ea72b10fa6
+      SLES15EKS113: ami-0f81fff879bafe6b8
+      SLES15EKS113GPU: ami-0f81fff879bafe6b8
+      SLES15EKS111: ami-0f81fff879bafe6b8
+      SLES15EKS111GPU: ami-0f81fff879bafe6b8
+      SLES15EKS112: ami-0f81fff879bafe6b8
+      SLES15EKS112GPU: ami-0f81fff879bafe6b8
+    ap-south-1:
+      AMZNEKS113: ami-05684aef3cfe3c5e0
+      AMZNEKS113GPU: ami-074f5670f2ceb01d7
+      AMZNEKS111: ami-0db960e929a6c75da
+      AMZNEKS111GPU: ami-05a1689372ab62327
+      AMZNEKS112: ami-057237b1f5d7ce777
+      AMZNEKS112GPU: ami-083bbe1d32cab3103
+    ap-southeast-1:
+      AMZNEKS113: ami-0a91acb1e838203d1
+      AMZNEKS113GPU: ami-0f6f25628adb61d58
+      AMZNEKS111: ami-030dc075fc6872ad7
+      AMZNEKS111GPU: ami-07411846a050344cc
+      AMZNEKS112: ami-0270bde231d067d5a
+      AMZNEKS112GPU: ami-0194403233bdbda14
+      SLES15EKS113: ami-070356c21596ddc67
+      SLES15EKS113GPU: ami-070356c21596ddc67
+      SLES15EKS111: ami-070356c21596ddc67
+      SLES15EKS111GPU: ami-070356c21596ddc67
+      SLES15EKS112: ami-070356c21596ddc67
+      SLES15EKS112GPU: ami-070356c21596ddc67
+    ap-southeast-2:
+      AMZNEKS113: ami-0f4f8678ca910061a
+      AMZNEKS113GPU: ami-0b38218f9a2b8e4fa
+      AMZNEKS111: ami-02fa3014ad1a00b7d
+      AMZNEKS111GPU: ami-0ff09a799085c53c7
+      AMZNEKS112: ami-0c01585828920601f
+      AMZNEKS112GPU: ami-049e03a1e5ecafa12
+      SLES15EKS113: ami-0c4245381c67efb39
+      SLES15EKS113GPU: ami-0c4245381c67efb39
+      SLES15EKS111: ami-0c4245381c67efb39
+      SLES15EKS111GPU: ami-0c4245381c67efb39
+      SLES15EKS112: ami-0c4245381c67efb39
+      SLES15EKS112GPU: ami-0c4245381c67efb39
+    eu-central-1:
+      AMZNEKS113: ami-0c5d8b180f6256839
+      AMZNEKS113GPU: ami-070102453652f044d
+      AMZNEKS111: ami-0434110cf5309f4e1
+      AMZNEKS111GPU: ami-09cc8469f34969e35
+      AMZNEKS112: ami-023b82bb04ff20c6d
+      AMZNEKS112GPU: ami-0232d380e84727443
+      SLES15EKS113: ami-05dfd265ea534a3e9
+      SLES15EKS113GPU: ami-05dfd265ea534a3e9
+      SLES15EKS111: ami-05dfd265ea534a3e9
+      SLES15EKS111GPU: ami-05dfd265ea534a3e9
+      SLES15EKS112: ami-05dfd265ea534a3e9
+      SLES15EKS112GPU: ami-05dfd265ea534a3e9
+    eu-north-1:
+      AMZNEKS113: ami-0d1338fe77f3a408d
+      AMZNEKS113GPU: ami-09a028b10a51e6f84
+      AMZNEKS111: ami-0fc608c08cb99d7fd
+      AMZNEKS111GPU: ami-0c403eb9e2bb8222c
+      AMZNEKS112: ami-0529e31552a5cdcdd
+      AMZNEKS112GPU: ami-0b2c65ce5deb64468
+      SLES15EKS113: ami-0741fa1a008af40ad
+      SLES15EKS113GPU: ami-0741fa1a008af40ad
+      SLES15EKS111: ami-0741fa1a008af40ad
+      SLES15EKS111GPU: ami-0741fa1a008af40ad
+      SLES15EKS112: ami-0741fa1a008af40ad
+      SLES15EKS112GPU: ami-0741fa1a008af40ad
+    eu-west-1:
+      AMZNEKS113: ami-0233f8e38818301df
+      AMZNEKS113GPU: ami-0b9c2f0a32d4f0bcd
+      AMZNEKS111: ami-0f0e88de9379b9c95
+      AMZNEKS111GPU: ami-0ed272ddeaa027747
+      AMZNEKS112: ami-0b728b5eb3e4ac9ba
+      AMZNEKS112GPU: ami-0de0118f2fa486674
+      SLES15EKS113: ami-0a58a1b152ba55f1d
+      SLES15EKS113GPU: ami-0a58a1b152ba55f1d
+      SLES15EKS111: ami-0a58a1b152ba55f1d
+      SLES15EKS111GPU: ami-0a58a1b152ba55f1d
+      SLES15EKS112: ami-0a58a1b152ba55f1d
+      SLES15EKS112GPU: ami-0a58a1b152ba55f1d
+    eu-west-2:
+      AMZNEKS113: ami-0f31b174ee5ae1a58
+      AMZNEKS113GPU: ami-008b9740715be296c
+      AMZNEKS111: ami-03f8f3f1528d93e04
+      AMZNEKS111GPU: ami-0803c81e715955873
+      AMZNEKS112: ami-078a95b88aab6ee73
+      AMZNEKS112GPU: ami-0f261087e5363730e
+      SLES15EKS113: ami-01497522185aaa4ee
+      SLES15EKS113GPU: ami-01497522185aaa4ee
+      SLES15EKS111: ami-01497522185aaa4ee
+      SLES15EKS111GPU: ami-01497522185aaa4ee
+      SLES15EKS112: ami-01497522185aaa4ee
+      SLES15EKS112GPU: ami-01497522185aaa4ee
+    eu-west-3:
+      AMZNEKS113: ami-019465d1d986d4aa6
+      AMZNEKS113GPU: ami-054730604fa928214
+      AMZNEKS111: ami-01988ee99f98966f7
+      AMZNEKS111GPU: ami-06377fda1a093bcf5
+      AMZNEKS112: ami-03d35545ca66647e2
+      AMZNEKS112GPU: ami-030d47b414bac379e
+      SLES15EKS113: ami-0f238bd4c6fdbefb0
+      SLES15EKS113GPU: ami-0f238bd4c6fdbefb0
+      SLES15EKS111: ami-0f238bd4c6fdbefb0
+      SLES15EKS111GPU: ami-0f238bd4c6fdbefb0
+      SLES15EKS112: ami-0f238bd4c6fdbefb0
+      SLES15EKS112GPU: ami-0f238bd4c6fdbefb0
+    us-east-1:
+      AMZNEKS113: ami-0990970b056c619eb
+      AMZNEKS113GPU: ami-08fbee290c336c1dd
+      AMZNEKS111: ami-01435d4abb8836f9c
+      AMZNEKS111GPU: ami-097a7eb359a429d05
+      AMZNEKS112: ami-0ee9e136178176e29
+      AMZNEKS112GPU: ami-00e4da0ed7025bcad
+      SLES15EKS113: ami-0b1764f3d7d2e2316
+      SLES15EKS113GPU: ami-0b1764f3d7d2e2316
+      SLES15EKS111: ami-0b1764f3d7d2e2316
+      SLES15EKS111GPU: ami-0b1764f3d7d2e2316
+      SLES15EKS112: ami-0b1764f3d7d2e2316
+      SLES15EKS112GPU: ami-0b1764f3d7d2e2316
+    us-east-2:
+      AMZNEKS113: ami-049933b64359a1657
+      AMZNEKS113GPU: ami-0e8a0d60963f1d3b1
+      AMZNEKS111: ami-0c2d37a56f30b2cd0
+      AMZNEKS111GPU: ami-089f7b1b932a9a7de
+      AMZNEKS112: ami-0ded2597c4984f942
+      AMZNEKS112GPU: ami-0778527db299d0b94
+      SLES15EKS113: ami-05ea824317ffc0c20
+      SLES15EKS113GPU: ami-05ea824317ffc0c20
+      SLES15EKS111: ami-05ea824317ffc0c20
+      SLES15EKS111GPU: ami-05ea824317ffc0c20
+      SLES15EKS112: ami-05ea824317ffc0c20
+      SLES15EKS112GPU: ami-05ea824317ffc0c20
+    us-west-2:
+      AMZNEKS113: ami-0619d38218e46ef86
+      AMZNEKS113GPU: ami-0ca705960b22064c5
+      AMZNEKS111: ami-0c1cd0372838861f6
+      AMZNEKS111GPU: ami-072301fdcf36b32c9
+      AMZNEKS112: ami-0a9b7c77bf7da9837
+      AMZNEKS112GPU: ami-02710837090d86ecc
+      SLES15EKS113: ami-0f1e3b3fb0fec0361
+      SLES15EKS113GPU: ami-0f1e3b3fb0fec0361
+      SLES15EKS111: ami-0f1e3b3fb0fec0361
+      SLES15EKS111GPU: ami-0f1e3b3fb0fec0361
+      SLES15EKS112: ami-0f1e3b3fb0fec0361
+      SLES15EKS112GPU: ami-0f1e3b3fb0fec0361
+Resources:
+  CleanupSecurityGroupDependencies:
+    Condition: CleanupSGs
+    Type: Custom::Cleanup
+    Properties:
+      ServiceToken: !Ref CleanupSecurityGroupDependenciesLambdaArn
+      SecurityGroups: [!Ref NodeSecurityGroup]
+  NodeSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for all nodes in the node group
+      VpcId: !Ref VPCID
+      Tags:
+        - Key: !Sub "kubernetes.io/cluster/${EKSControlPlane}"
+          Value: 'owned'
+  NodeSecurityGroupIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      Description: Allow nodes to communicate with each other
+      GroupId: !Ref NodeSecurityGroup
+      SourceSecurityGroupId: !Ref NodeSecurityGroup
+      IpProtocol: '-1'
+      FromPort: 0
+      ToPort: 65535
+  NodeSecurityGroupFromControlPlaneIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      Description: Allow worker Kubelets and pods to receive communication from the cluster control plane
+      GroupId: !Ref NodeSecurityGroup
+      SourceSecurityGroupId: !Ref ControlPlaneSecurityGroup
+      IpProtocol: tcp
+      FromPort: 1025
+      ToPort: 65535
+  ControlPlaneEgressToNodeSecurityGroup:
+    Type: AWS::EC2::SecurityGroupEgress
+    Properties:
+      Description: Allow the cluster control plane to communicate with worker Kubelet and pods
+      GroupId: !Ref ControlPlaneSecurityGroup
+      DestinationSecurityGroupId: !Ref NodeSecurityGroup
+      IpProtocol: tcp
+      FromPort: 1025
+      ToPort: 65535
+  NodeSecurityGroupFromControlPlaneOn443Ingress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      Description: Allow pods running extension API servers on port 443 to receive communication from cluster control plane
+      GroupId: !Ref NodeSecurityGroup
+      SourceSecurityGroupId: !Ref ControlPlaneSecurityGroup
+      IpProtocol: tcp
+      FromPort: 443
+      ToPort: 443
+  ControlPlaneEgressToNodeSecurityGroupOn443:
+    Type: AWS::EC2::SecurityGroupEgress
+    Properties:
+      Description: Allow the cluster control plane to communicate with pods running extension API servers on port 443
+      GroupId: !Ref ControlPlaneSecurityGroup
+      DestinationSecurityGroupId: !Ref NodeSecurityGroup
+      IpProtocol: tcp
+      FromPort: 443
+      ToPort: 443
+  ClusterControlPlaneSecurityGroupIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      Description: Allow pods to communicate with the cluster API Server
+      GroupId: !Ref ControlPlaneSecurityGroup
+      SourceSecurityGroupId: !Ref NodeSecurityGroup
+      IpProtocol: tcp
+      ToPort: 443
+      FromPort: 443
+  NodeGroup:
+    Metadata:
+      DependsOn: !If [ CleanupSGs, !Ref CleanupSecurityGroupDependencies, !Ref "AWS::NoValue" ]
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      DesiredCapacity: !Ref NumberOfNodes
+      LaunchConfigurationName: !Ref NodeLaunchConfig
+      MinSize: !Ref NumberOfNodes
+      MaxSize: !If [ MaxNodes, !Ref MaxNumberOfNodes, !Ref NumberOfNodes ]
+      VPCZoneIdentifier: [ !Ref PrivateSubnet1ID, !Ref PrivateSubnet2ID, !Ref PrivateSubnet3ID ]
+      TargetGroupARNs: !If [ DisableTargetGroups, !Ref "AWS::NoValue", !Ref TargetGroupARNs ]
+      Tags:
+        - Key: Name
+          Value: !Sub "${EKSControlPlane}-${NodeGroupName}-Node"
+          PropagateAtLaunch: true
+        - Key: !Sub 'kubernetes.io/cluster/${EKSControlPlane}'
+          Value: 'owned'
+          PropagateAtLaunch: true
+        - Key: k8s.io/cluster-autoscaler/enabled
+          Value: 'true'
+          PropagateAtLaunch: true
+        - Key: !Sub 'k8s.io/cluster-autoscaler/${EKSControlPlane}'
+          Value: ''
+          PropagateAtLaunch: true
+    CreationPolicy:
+      ResourceSignal:
+        Count: !Ref NumberOfNodes
+        Timeout: PT15M
+    UpdatePolicy:
+      AutoScalingRollingUpdate:
+        MinInstancesInService: !If [IsSingleInstance, 0, 1]
+        MaxBatchSize: 1
+        WaitOnResourceSignals : true
+        PauseTime: PT15M
+  NodeLaunchConfig:
+    Type: AWS::AutoScaling::LaunchConfiguration
+    Metadata:
+      AWS::CloudFormation::Authentication:
+        S3Auth:
+          buckets:
+            - !Ref QSS3BucketName
+          roleName: !Ref NodeInstanceRoleName
+          type: S3
+      AWS::CloudFormation::Init:
+        config:
+          files:
+            /tmp/worker/bootstrap.sh:
+              source: !Sub https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}scripts/amazon-eks/bootstrap.sh
+              group: root
+              owner: root
+              mode: '000644'
+              authentication: S3Auth
+            /tmp/worker/docker-daemon.json:
+              source: !Sub https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}scripts/amazon-eks/docker-daemon.json
+              group: root
+              owner: root
+              mode: '000644'
+              authentication: S3Auth
+            /tmp/worker/eni-max-pods.txt:
+              source: !Sub https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}scripts/amazon-eks/eni-max-pods.txt
+              group: root
+              owner: root
+              mode: '000644'
+              authentication: S3Auth
+            /tmp/worker/install-worker.sh:
+              source: !Sub https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}scripts/install-worker.sh
+              group: root
+              owner: root
+              mode: '000755'
+              authentication: S3Auth
+            /tmp/worker/kubelet-config.json:
+              source: !Sub https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}scripts/amazon-eks/kubelet-config.json
+              group: root
+              owner: root
+              mode: '000644'
+              authentication: S3Auth
+            /tmp/worker/kubelet-kubeconfig:
+              source: !Sub https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}scripts/amazon-eks/kubelet-kubeconfig
+              group: root
+              owner: root
+              mode: '000644'
+              authentication: S3Auth
+            /tmp/worker/kubelet.service:
+              source: !Sub https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}scripts/amazon-eks/kubelet.service
+              group: root
+              owner: root
+              mode: '000644'
+              authentication: S3Auth
+            /tmp/worker/logrotate-kube-proxy:
+              source: !Sub https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}scripts/amazon-eks/logrotate-kube-proxy
+              group: root
+              owner: root
+              mode: '000644'
+              authentication: S3Auth
+          commands:
+            a-install:
+              command: /tmp/worker/install-worker.sh
+              env:
+                BINARY_BUCKET_NAME: amazon-eks
+                BINARY_BUCKET_PATH: !FindInMap
+                  - K8sVersionMap
+                  - !Ref KubernetesVersion
+                  - BinaryPath
+                BINARY_BUCKET_REGION: us-west-2
+            b-bootstrap:
+              command: !Sub /etc/eks/bootstrap.sh ${EKSControlPlane} ${BootstrapArguments}
+    Properties:
+      AssociatePublicIpAddress: false
+      IamInstanceProfile: !Ref NodeInstanceProfile
+      ImageId: !If
+        - UseCustomAmi
+        - !Ref CustomAmiId
+        - !FindInMap
+          - AWSAMIRegionMap
+          - !Ref "AWS::Region"
+          - !FindInMap
+            - OStoK8sVersionMap
+            - !Ref NodeAMIOS
+            - !FindInMap
+              - K8sVersionMap
+              - !Ref KubernetesVersion
+              - !FindInMap
+                - InstanceTypes
+                - !Ref NodeInstanceType
+                - Type
+      InstanceType: !Ref NodeInstanceType
+      KeyName: !Ref KeyPairName
+      SecurityGroups:
+        - !Ref NodeSecurityGroup
+      BlockDeviceMappings:
+        - DeviceName: !If [ SuseOS, /dev/sda1, /dev/xvda ]
+          Ebs:
+            VolumeSize: !Ref NodeVolumeSize
+            VolumeType: gp2
+            DeleteOnTermination: true
+      UserData: !If
+        - AmznOS
+        - Fn::Base64:
+            !Sub |
+            #!/bin/bash
+            set -o xtrace
+            /etc/eks/bootstrap.sh ${EKSControlPlane} ${BootstrapArguments}
+            /opt/aws/bin/cfn-signal --exit-code $? \
+                  --stack  ${AWS::StackName} \
+                  --resource NodeGroup  \
+                  --region ${AWS::Region}
+        - Fn::Base64:
+            !Sub |
+            #!/bin/bash -e
+
+            if [ -e /etc/os-release ] && grep SLES /etc/os-release; then
+                zypper in -y python2-setuptools
+                update-alternatives --set easy_install /usr/bin/easy_install-2.7
+            fi
+
+            easy_install https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-latest.zip
+            /usr/bin/cfn-init \
+                --stack ${AWS::StackName} \
+                --resource NodeLaunchConfig \
+                --region ${AWS::Region}
+            /usr/bin/cfn-signal --exit-code $? \
+                --stack ${AWS::StackName} \
+                --resource NodeGroup \
+                --region ${AWS::Region}
+            if [ -e /etc/os-release ] && grep SLES /etc/os-release; then
+                # Need to enable some kernel boot options and reboot
+                sed -i 's|GRUB_CMDLINE_LINUX=""|GRUB_CMDLINE_LINUX="cgroup_enable=memory swapaccount=1" |' /etc/default/grub
+                grub2-mkconfig -o /boot/grub2/grub.cfg
+                reboot
+            fi
+Outputs:
+  EKSNodeSecurityGroup:
+    Value: !Ref NodeSecurityGroup
+  NodeAutoScalingGroup:
+    Value: !Ref NodeGroup

@@ -1,0 +1,99 @@
+---
+AWSTemplateFormatVersion: 2010-09-09
+Description: Provides peering connection between Management and Production VPC.
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: VPC Configuration
+        Parameters:
+          - pProductionVPC
+          - pManagementVPC
+
+Parameters:
+  pProductionVPC:
+    Description: Production VPC to peer with
+    Type: AWS::EC2::VPC::Id
+
+  pProductionVpcCIDR:
+    Description: CIDR of Production VPC
+    Type: String
+
+  pRouteTableProdPrivateA:
+    Description: Route Table ID for Prod VPC Private A
+    Type: String
+
+  pRouteTableProdPrivateB:
+    Description: Route Table ID for Prod VPC Private B
+    Type: String
+
+  pManagementVPC:
+    Description: Management VPC to peer with
+    Type: AWS::EC2::VPC::Id
+
+  pManagementVpcCIDR:
+    Description: CIDR of Management VPC
+    Type: String
+
+  pRouteTableMgmtPrivateA:
+    Description: Route Table ID for Prod VPC Private A
+    Type: String
+
+  pRouteTableMgmtPrivateB:
+    Description: Route Table ID for Prod VPC Private B
+    Type: String
+
+  pEnvironment:
+    AllowedValues:
+      - DEV
+      - TEST
+      - PROD
+    Default: DEV
+    Description: Environment (Dev, Test or Prod)
+    Type: String
+
+Resources:
+  # -- Create Peering Connection from Management to Production VPC -- #
+  rPeeringConnectionProduction:
+    Type: AWS::EC2::VPCPeeringConnection
+    Properties:
+      PeerVpcId: !Ref pProductionVPC
+      VpcId: !Ref pManagementVPC
+      Tags:
+        - Key: Name
+          Value: vpc-peer-1-prod-mgmt
+        - Key: Environment
+          Value: !Ref pEnvironment
+
+  # -- Create routes from Management to Prod and from Prod to Management VPC
+  rRoute1MgmtToProdPrivateA:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref pRouteTableMgmtPrivateA
+      VpcPeeringConnectionId: !Ref rPeeringConnectionProduction
+      DestinationCidrBlock: !Ref pProductionVpcCIDR
+
+  rRoute2MgmtToProdPrivateB:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref pRouteTableMgmtPrivateB
+      VpcPeeringConnectionId: !Ref rPeeringConnectionProduction
+      DestinationCidrBlock: !Ref pProductionVpcCIDR
+
+  rRoute3ProdToMgmtPrivateA:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref pRouteTableProdPrivateA
+      VpcPeeringConnectionId: !Ref rPeeringConnectionProduction
+      DestinationCidrBlock: !Ref pManagementVpcCIDR
+
+  rRoute4ProdToMgmtPrivateB:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref pRouteTableProdPrivateB
+      VpcPeeringConnectionId: !Ref rPeeringConnectionProduction
+      DestinationCidrBlock: !Ref pManagementVpcCIDR
+
+Outputs:
+  rPeeringConnectionProduction:
+    Value: !Ref rPeeringConnectionProduction

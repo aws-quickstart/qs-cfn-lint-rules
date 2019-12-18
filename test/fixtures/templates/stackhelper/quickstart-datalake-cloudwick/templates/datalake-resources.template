@@ -1,0 +1,2671 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "This template creates the resources for the Cloudwick datalake solution.(qs-1ngojrsrl)",
+    "Parameters": {
+        "AdminEmailID": {
+            "AllowedPattern": "^[a-z0-9]+(\\.[_a-z0-9]+)*@[a-z0-9-]+(\\.[a-z0-9-]+)*(\\.[a-z]{2,15})$",
+            "ConstraintDescription": "Can contain only ASCII characters.",
+            "Description": "Admin email id - email will be sent to this address on stack completion with further instructions( check inbox/spam in about 15-20mins)",
+            "Type": "String"
+        },
+        "AllocatedStorage": {
+            "ConstraintDescription": "RDSAllocatedStorage must be between 5 and 1024Gb.",
+            "Default": "5",
+            "Description": "Size of the database(Gb) Range: 5~1024Gb",
+            "MaxValue": "1024",
+            "MinValue": "5",
+            "Type": "Number"
+        },
+        "ClusterType": {
+            "AllowedValues": [
+                "single-node",
+                "multi-node"
+            ],
+            "ConstraintDescription": "must select a valid Redshift cluster type.",
+            "Default": "single-node",
+            "Description": "Redshift instance type",
+            "Type": "String"
+        },
+        "DBInstanceClass": {
+            "AllowedValues": [
+                "db.t2.micro",
+                "db.t2.small",
+                "db.t2.medium",
+                "db.t2.large",
+                "db.m4.large",
+                "db.m4.xlarge",
+                "db.m4.2xlarge",
+                "db.m4.4xlarge",
+                "db.m4.10xlarge"
+            ],
+            "ConstraintDescription": "must select a valid RDS database class.",
+            "Default": "db.t2.small",
+            "Description": "Database instance class",
+            "Type": "String"
+        },
+        "DBName": {
+            "AllowedPattern": "[a-zA-Z][a-zA-Z0-9]*",
+            "ConstraintDescription": "DB name must start with a letter & no special characters(Min=4;Max=20 AlphaNumerics)",
+            "Default": "awsdatalakeqs",
+            "Description": "DB Name must start with a letter & no special characters(MinLength=4;MaxLength=20)",
+            "MaxLength": "16",
+            "MinLength": "4",
+            "Type": "String"
+        },
+        "ELBSecurityGroups": {
+            "Description": "Security Groups for data lake web server ELB",
+            "Type": "String"
+        },
+        "ElasticsearchInstanceCount": {
+            "Default": "1",
+            "Description": "Elasticsearch instance count",
+            "Type": "Number"
+        },
+        "ElasticsearchInstanceType": {
+            "AllowedValues": [
+                "t2.medium.elasticsearch",
+                "m3.medium.elasticsearch",
+                "m3.large.elasticsearch",
+                "m3.xlarge.elasticsearch",
+                "m3.2xlarge.elasticsearch"
+            ],
+            "Default": "t2.medium.elasticsearch",
+            "Description": "Elasticsearch instance type",
+            "Type": "String"
+        },
+        "ElasticsearchVolumeSize": {
+            "Default": "20",
+            "Description": "Elasticsearch instance Volume size",
+            "Type": "Number"
+        },
+        "ElasticsearchVolumeType": {
+            "AllowedValues": [
+                "gp2",
+                "standard",
+                "io1"
+            ],
+            "Default": "gp2",
+            "Description": "Elasticsearch instance Volume type",
+            "Type": "String"
+        },
+        "InstanceType": {
+            "AllowedValues": [
+                "m1.medium",
+                "m1.large",
+                "m1.xlarge",
+                "m2.xlarge",
+                "m2.2xlarge",
+                "m2.4xlarge",
+                "m3.medium",
+                "m3.large",
+                "m3.xlarge",
+                "m3.2xlarge",
+                "c1.medium",
+                "c1.xlarge",
+                "c3.large",
+                "c3.xlarge",
+                "c3.2xlarge",
+                "c3.4xlarge",
+                "c3.8xlarge"
+            ],
+            "ConstraintDescription": "Must be a valid EC2 instance type",
+            "Default": "m1.medium",
+            "Description": "EC2 WebServer instance type for datalake web portal",
+            "Type": "String"
+        },
+        "KeyPairName": {
+            "ConstraintDescription": "Can contain only ASCII characters.",
+            "Description": "Name of an existing EC2 KeyPair to enable SSH access to the Webserver instance",
+            "Type": "AWS::EC2::KeyPair::KeyName"
+        },
+        "MasterStackID": {
+            "Description": "Master StackID for use within the resources",
+            "Type": "String"
+        },
+        "MasterUserPassword": {
+            "AllowedPattern": "(?=^.{6,255}$)((?=.*\\d)(?=.*[A-Z])(?=.*[a-z])|(?=.*\\d)(?=.*[^A-Za-z0-9])(?=.*[a-z])|(?=.*[^A-Za-z0-9])(?=.*[A-Z])(?=.*[a-z])|(?=.*\\d)(?=.*[A-Z])(?=.*[^A-Za-z0-9]))^.*",
+            "ConstraintDescription": "Must be at least 8 characters containing letters, numbers and symbols.",
+            "Description": "DB Password. Must be at least 8 characters containing letters, numbers and symbols",
+            "MaxLength": "16",
+            "MinLength": "8",
+            "NoEcho": "true",
+            "Type": "String"
+        },
+        "MasterUsername": {
+            "AllowedPattern": "[a-zA-Z][a-zA-Z0-9]*",
+            "ConstraintDescription": "DB Username must start with a letter & no special characters(Min=4;Max=20 AlphaNumerics)",
+            "Default": "admin",
+            "Description": "DB Username must start with a letter & no special characters(MinLength=4;MaxLength=20)",
+            "MaxLength": "16",
+            "MinLength": "4",
+            "Type": "String"
+        },
+        "NoOfAzs": {
+            "Default": "2",
+            "Description": "Number of Availability Zones to use in the VPC. This must match your selections in the list of Availability Zones parameter.",
+            "Type": "Number"
+        },
+        "NodeType": {
+            "AllowedValues": [
+                "dc1.large",
+                "dw.hs1.xlarge",
+                "dw1.xlarge",
+                "dw1.8xlarge",
+                "dw2.large",
+                "dw2.8xlarge"
+            ],
+            "ConstraintDescription": "must select a valid Redshift node type.",
+            "Default": "dc1.large",
+            "Description": "Redshift node type",
+            "Type": "String"
+        },
+        "NumberOfNodes": {
+            "Default": "1",
+            "Description": "Number of nodes in the redshift cluster(=1 if single-node)",
+            "Type": "Number"
+        },
+        "PrivateSubnet1": {
+            "Description": "Private Subnet for RDS and Redshift cluster group",
+            "Type": "String"
+        },
+        "PrivateSubnet2": {
+            "Description": "Private Subnet for RDS and Redshift cluster group",
+            "Type": "String"
+        },
+        "PublicSubnet1": {
+            "Description": "Public Subnet for web server group",
+            "Type": "String"
+        },
+        "PublicSubnet2": {
+            "Description": "Public Subnet for web server group",
+            "Type": "String"
+        },
+        "QSS3BucketName": {
+            "AllowedPattern": "^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$",
+            "ConstraintDescription": "AWS Quick Start bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-).",
+            "Default": "aws-quickstart",
+            "Description": "S3 bucket name for the AWS Quick Start assets.AWS Quick Start bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-).",
+            "Type": "String"
+        },
+        "QSS3KeyPrefix": {
+            "AllowedPattern": "^[0-9a-zA-Z-/]*$",
+            "ConstraintDescription": "Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).",
+            "Default": "quickstart-datalake-cloudwick/",
+            "Description": "S3 key prefix for the Quick Start assets. Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).",
+            "Type": "String"
+        },
+        "RDSVpcSecurityGroups": {
+            "Description": "Security Groups for RDS database",
+            "Type": "String"
+        },
+        "RedshiftVpcSecurityGroupIds": {
+            "Description": "Security Groups for Redshift cluster",
+            "Type": "String"
+        },
+        "TagSuffix": {
+            "Description": "StackID suffix to append to the resources",
+            "Type": "String"
+        },
+        "WebserverSecurityGroups": {
+            "Description": "Security Groups for data lake web server",
+            "Type": "String"
+        }
+    },
+    "Conditions": {
+        "IsMultiNodeCluster": {
+            "Fn::Equals": [
+                {
+                    "Ref": "ClusterType"
+                },
+                "multi-node"
+            ]
+        }
+    },
+    "Mappings": {
+        "AWSAMItoRegionMap": {
+            "AMI": {
+                "AMZNLINUXPVM": "amzn-ami-pv-2016.09.1.20170119-x86_64-ebs"
+            },
+            "us-east-1": {
+                "AMZNLINUXPVM": "ami-7a3dd76c"
+            },
+            "us-west-2": {
+                "AMZNLINUXPVM": "ami-8a72cdea"
+            },
+            "eu-west-1": {
+                "AMZNLINUXPVM": "ami-c4bba0a2"
+            }
+        },
+        "RDSEngineVersionMapping": {
+            "mysql": {
+                "latest": "5.7"
+            }
+        }
+    },
+    "Resources": {
+        "RDSdbSubnetGroup": {
+            "Type": "AWS::RDS::DBSubnetGroup",
+            "Properties": {
+                "DBSubnetGroupDescription": "Subnets available for the RDS DB Instance",
+                "SubnetIds": [
+                    {
+                        "Ref": "PrivateSubnet1"
+                    },
+                    {
+                        "Ref": "PrivateSubnet2"
+                    }
+                ]
+            }
+        },
+        "RDSdb": {
+            "Type": "AWS::RDS::DBInstance",
+            "Properties": {
+                "DBName": {
+                    "Ref": "DBName"
+                },
+                "Port": "3306",
+                "AllocatedStorage": {
+                    "Ref": "AllocatedStorage"
+                },
+                "DBInstanceClass": {
+                    "Ref": "DBInstanceClass"
+                },
+                "Engine": "mysql",
+                "EngineVersion": {
+                    "Fn::FindInMap": [
+                        "RDSEngineVersionMapping",
+                        "mysql",
+                        "latest"
+                    ]
+                },
+                "MasterUsername": {
+                    "Ref": "MasterUsername"
+                },
+                "MasterUserPassword": {
+                    "Ref": "MasterUserPassword"
+                },
+                "StorageType": "gp2",
+                "DBSubnetGroupName": {
+                    "Ref": "RDSdbSubnetGroup"
+                },
+                "VPCSecurityGroups": [
+                    {
+                        "Ref": "RDSVpcSecurityGroups"
+                    }
+                ],
+                "PubliclyAccessible": "true",
+                "MultiAZ": "true",
+                "DBInstanceIdentifier": {
+                    "Fn::Join": [
+                        "",
+                        [
+                            "datalake-rds-",
+                            {
+                                "Ref": "AWS::AccountId"
+                            },
+                            "-",
+                            {
+                                "Ref": "TagSuffix"
+                            }
+                        ]
+                    ]
+                },
+                "Tags": [
+                    {
+                        "Key": "solution",
+                        "Value": {
+                            "Fn::Join": [
+                                "",
+                                [
+                                    "datalake-",
+                                    {
+                                        "Ref": "AWS::AccountId"
+                                    },
+                                    "-",
+                                    {
+                                        "Ref": "TagSuffix"
+                                    }
+                                ]
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "Name",
+                        "Value": {
+                            "Fn::Join": [
+                                "",
+                                [
+                                    "datalake-rds-",
+                                    {
+                                        "Ref": "AWS::AccountId"
+                                    },
+                                    "-",
+                                    {
+                                        "Ref": "TagSuffix"
+                                    }
+                                ]
+                            ]
+                        }
+                    }
+                ]
+            },
+            "DeletionPolicy": "Delete"
+        },
+        "RedshiftClusterParameterGroup": {
+            "Type": "AWS::Redshift::ClusterParameterGroup",
+            "Properties": {
+                "Description": "Cluster parameter group",
+                "ParameterGroupFamily": "redshift-1.0",
+                "Parameters": [
+                    {
+                        "ParameterName": "enable_user_activity_logging",
+                        "ParameterValue": "true"
+                    }
+                ]
+            }
+        },
+        "RedshiftCluster": {
+            "Type": "AWS::Redshift::Cluster",
+            "Properties": {
+                "DBName": {
+                    "Ref": "DBName"
+                },
+                "MasterUsername": {
+                    "Ref": "MasterUsername"
+                },
+                "MasterUserPassword": {
+                    "Ref": "MasterUserPassword"
+                },
+                "NodeType": {
+                    "Ref": "NodeType"
+                },
+                "ClusterType": {
+                    "Ref": "ClusterType"
+                },
+                "NumberOfNodes": {
+                    "Fn::If": [
+                        "IsMultiNodeCluster",
+                        {
+                            "Ref": "NumberOfNodes"
+                        },
+                        {
+                            "Ref": "AWS::NoValue"
+                        }
+                    ]
+                },
+                "ClusterParameterGroupName": {
+                    "Ref": "RedshiftClusterParameterGroup"
+                },
+                "VpcSecurityGroupIds": [
+                    {
+                        "Ref": "RedshiftVpcSecurityGroupIds"
+                    }
+                ],
+                "ClusterSubnetGroupName": {
+                    "Ref": "RedshiftClusterSubnetGroup"
+                }
+            }
+        },
+        "RedshiftClusterSubnetGroup": {
+            "Type": "AWS::Redshift::ClusterSubnetGroup",
+            "Properties": {
+                "Description": "Cluster subnet group",
+                "SubnetIds": [
+                    {
+                        "Ref": "PrivateSubnet1"
+                    },
+                    {
+                        "Ref": "PrivateSubnet2"
+                    }
+                ]
+            }
+        },
+        "ElasticsearchDomain": {
+            "Type": "AWS::Elasticsearch::Domain",
+            "Properties": {
+                "DomainName": {
+                    "Fn::Join": [
+                        "",
+                        [
+                            "dles-",
+                            {
+                                "Ref": "TagSuffix"
+                            }
+                        ]
+                    ]
+                },
+                "ElasticsearchVersion": "5.1",
+                "ElasticsearchClusterConfig": {
+                    "DedicatedMasterEnabled": "false",
+                    "InstanceCount": {
+                        "Ref": "ElasticsearchInstanceCount"
+                    },
+                    "ZoneAwarenessEnabled": false,
+                    "InstanceType": {
+                        "Ref": "ElasticsearchInstanceType"
+                    }
+                },
+                "EBSOptions": {
+                    "EBSEnabled": true,
+                    "Iops": 0,
+                    "VolumeSize": {
+                        "Ref": "ElasticsearchVolumeSize"
+                    },
+                    "VolumeType": {
+                        "Ref": "ElasticsearchVolumeType"
+                    }
+                },
+                "SnapshotOptions": {
+                    "AutomatedSnapshotStartHour": "0"
+                },
+                "AccessPolicies": {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Principal": {
+                                "AWS": [
+                                    "*"
+                                ]
+                            },
+                            "Action": [
+                                "es:AddTags",
+                                "es:ListTags",
+                                "es:ESHttpGet",
+                                "es:ESHttpPut",
+                                "es:ESHttpHead",
+                                "es:RemoveTags",
+                                "es:ESHttpPost",
+                                "es:ListDomainNames",
+                                "es:CreateElasticsearchDomain",
+                                "es:DescribeElasticsearchDomain",
+                                "es:DescribeElasticsearchDomains",
+                                "es:UpdateElasticsearchDomainConfig",
+                                "es:DescribeElasticsearchDomainConfig"
+                            ],
+                            "Resource": {
+                                "Fn::Join": [
+                                    "",
+                                    [
+                                        "arn:aws:es:",
+                                        {
+                                            "Ref": "AWS::Region"
+                                        },
+                                        ":",
+                                        {
+                                            "Ref": "AWS::AccountId"
+                                        },
+                                        ":domain/dles-",
+                                        {
+                                            "Ref": "TagSuffix"
+                                        },
+                                        "/*"
+                                    ]
+                                ]
+                            }
+                        }
+                    ]
+                },
+                "AdvancedOptions": {
+                    "rest.action.multi.allow_explicit_index": "true"
+                },
+                "Tags": [
+                    {
+                        "Key": "solution",
+                        "Value": {
+                            "Fn::Join": [
+                                "",
+                                [
+                                    "datalake-",
+                                    {
+                                        "Ref": "AWS::AccountId"
+                                    },
+                                    "-",
+                                    {
+                                        "Ref": "TagSuffix"
+                                    }
+                                ]
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "Name",
+                        "Value": {
+                            "Fn::Join": [
+                                "",
+                                [
+                                    "datalake-",
+                                    {
+                                        "Ref": "AWS::AccountId"
+                                    },
+                                    "-",
+                                    {
+                                        "Ref": "TagSuffix"
+                                    }
+                                ]
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        "LambdaExecutionRole": {
+            "Type": "AWS::IAM::Role",
+            "DependsOn": "RedshiftSecondaryRole",
+            "Properties": {
+                "AssumeRolePolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Principal": {
+                                "Service": [
+                                    "lambda.amazonaws.com"
+                                ]
+                            },
+                            "Action": [
+                                "sts:AssumeRole"
+                            ]
+                        }
+                    ]
+                },
+                "Path": "/",
+                "Policies": [
+                    {
+                        "PolicyName": {
+                            "Fn::Join": [
+                                "",
+                                [
+                                    "datalake-catlamb-policy-",
+                                    {
+                                        "Ref": "AWS::AccountId"
+                                    },
+                                    "-",
+                                    {
+                                        "Ref": "TagSuffix"
+                                    }
+                                ]
+                            ]
+                        },
+                        "PolicyDocument": {
+                            "Version": "2012-10-17",
+                            "Statement": [
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "s3:GetObject",
+                                        "s3:ListBucket",
+                                        "s3:DeleteBucket",
+                                        "s3:GetBucketAcl",
+                                        "s3:DeleteObject",
+                                        "s3:GetObjectAcl",
+                                        "s3:GetBucketCORS",
+                                        "s3:GetBucketLogging",
+                                        "s3:GetBucketTagging",
+                                        "s3:GetObjectTagging",
+                                        "s3:GetObjectTorrent",
+                                        "s3:GetObjectVersion",
+                                        "s3:GetBucketLocation",
+                                        "s3:ListBucketVersions",
+                                        "s3:GetObjectVersionAcl",
+                                        "s3:DeleteObjectVersion",
+                                        "s3:GetBucketVersioning",
+                                        "s3:GetBucketNotification",
+                                        "s3:GetBucketRequestPayment",
+                                        "s3:GetObjectVersionTagging",
+                                        "s3:ListMultipartUploadParts",
+                                        "s3:GetAccelerateConfiguration",
+                                        "s3:ListBucketMultipartUploads"
+                                    ],
+                                    "Resource": "*"
+                                },
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "logs:PutLogEvents",
+                                        "logs:CreateLogGroup",
+                                        "logs:CreateLogStream",
+                                        "logs:DescribeLogStreams"
+                                    ],
+                                    "Resource": [
+                                        "arn:aws:logs:*:*:*"
+                                    ]
+                                },
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "es:AddTags",
+                                        "es:ListTags",
+                                        "es:ESHttpGet",
+                                        "es:ESHttpPut",
+                                        "es:RemoveTags",
+                                        "es:ESHttpHead",
+                                        "es:ESHttpPost",
+                                        "es:ListDomainNames",
+                                        "es:CreateElasticsearchDomain",
+                                        "es:DescribeElasticsearchDomain",
+                                        "es:DescribeElasticsearchDomains",
+                                        "es:UpdateElasticsearchDomainConfig",
+                                        "es:DescribeElasticsearchDomainConfig"
+                                    ],
+                                    "Resource": [
+                                        {
+                                            "Fn::Join": [
+                                                "",
+                                                [
+                                                    "arn:aws:es:::domain/dles-",
+                                                    {
+                                                        "Ref": "TagSuffix"
+                                                    },
+                                                    ":*"
+                                                ]
+                                            ]
+                                        }
+                                    ]
+                                },
+                                {
+                                    "Effect": "Allow",
+                                    "Action": "iam:PassRole",
+                                    "Resource": [
+                                        {
+                                            "Fn::Join": [
+                                                "",
+                                                [
+                                                    "arn:aws:iam:::role/",
+                                                    {
+                                                        "Ref": "RedshiftSecondaryRole"
+                                                    }
+                                                ]
+                                            ]
+                                        },
+                                        {
+                                            "Fn::Join": [
+                                                "",
+                                                [
+                                                    "arn:aws:redshift:::",
+                                                    {
+                                                        "Ref": "RedshiftCluster"
+                                                    },
+                                                    "/",
+                                                    {
+                                                        "Ref": "MasterUsername"
+                                                    }
+                                                ]
+                                            ]
+                                        }
+                                    ]
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        "RedshiftSecondaryRole": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "AssumeRolePolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Principal": {
+                                "Service": [
+                                    "redshift.amazonaws.com"
+                                ]
+                            },
+                            "Action": [
+                                "sts:AssumeRole"
+                            ]
+                        }
+                    ]
+                },
+                "Path": "/",
+                "Policies": [
+                    {
+                        "PolicyName": {
+                            "Fn::Join": [
+                                "",
+                                [
+                                    "datalake-RedshiftSecondaryRole-policy-",
+                                    {
+                                        "Ref": "AWS::AccountId"
+                                    },
+                                    "-",
+                                    {
+                                        "Ref": "TagSuffix"
+                                    }
+                                ]
+                            ]
+                        },
+                        "PolicyDocument": {
+                            "Version": "2012-10-17",
+                            "Statement": [
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "s3:PutObject",
+                                        "s3:GetObject",
+                                        "s3:ListBucket",
+                                        "s3:DeleteObject",
+                                        "s3:GetBucketLocation",
+                                        "s3:DeleteObjectVersion",
+                                        "s3:AbortMultipartUpload",
+                                        "s3:ListMultipartUploadParts",
+                                        "s3:ListBucketMultipartUploads"
+                                    ],
+                                    "Resource": {
+                                        "Fn::Join": [
+                                            "",
+                                            [
+                                                "arn:aws:s3:::datalake-",
+                                                {
+                                                    "Ref": "AWS::Region"
+                                                },
+                                                "-",
+                                                {
+                                                    "Ref": "AWS::AccountId"
+                                                },
+                                                "-",
+                                                {
+                                                    "Ref": "TagSuffix"
+                                                },
+                                                "/*"
+                                            ]
+                                        ]
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        "LambdafunctionES": {
+            "DependsOn": "WebserverWaitCondtion",
+            "Type": "AWS::Lambda::Function",
+            "Properties": {
+                "FunctionName": {
+                    "Fn::Join": [
+                        "",
+                        [
+                            "datalake-catlamb-",
+                            {
+                                "Ref": "AWS::AccountId"
+                            },
+                            "-",
+                            {
+                                "Ref": "TagSuffix"
+                            }
+                        ]
+                    ]
+                },
+                "Handler": "lambda_function.lambda_handler",
+                "Role": {
+                    "Fn::GetAtt": [
+                        "LambdaExecutionRole",
+                        "Arn"
+                    ]
+                },
+                "Code": {
+                    "S3Bucket": {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "datalake-",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                "-",
+                                {
+                                    "Ref": "AWS::AccountId"
+                                },
+                                "-",
+                                {
+                                    "Ref": "TagSuffix"
+                                }
+                            ]
+                        ]
+                    },
+                    "S3Key": "lambdas/writetoESX.zip"
+                },
+                "Runtime": "python2.7",
+                "Timeout": "180"
+            }
+        },
+        "DatalakeFirehoseStream": {
+            "Type": "AWS::KinesisFirehose::DeliveryStream",
+            "DependsOn": "FirehoseRole",
+            "Properties": {
+                "DeliveryStreamName": {
+                    "Fn::Join": [
+                        "",
+                        [
+                            "datalake-firehose-",
+                            {
+                                "Ref": "AWS::AccountId"
+                            },
+                            "-",
+                            {
+                                "Ref": "TagSuffix"
+                            }
+                        ]
+                    ]
+                },
+                "ElasticsearchDestinationConfiguration": {
+                    "BufferingHints": {
+                        "IntervalInSeconds": 60,
+                        "SizeInMBs": 1
+                    },
+                    "CloudWatchLoggingOptions": {
+                        "Enabled": true,
+                        "LogGroupName": {
+                            "Fn::Join": [
+                                "",
+                                [
+                                    "/aws/kinesisfirehose/datalake-firehose-",
+                                    {
+                                        "Ref": "AWS::AccountId"
+                                    },
+                                    "-",
+                                    {
+                                        "Ref": "TagSuffix"
+                                    }
+                                ]
+                            ]
+                        },
+                        "LogStreamName": "ElasticsearchDelivery"
+                    },
+                    "DomainARN": {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "arn:aws:es:",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                ":",
+                                {
+                                    "Ref": "AWS::AccountId"
+                                },
+                                ":domain/",
+                                {
+                                    "Ref": "ElasticsearchDomain"
+                                }
+                            ]
+                        ]
+                    },
+                    "IndexName": "datalakedeliverystream",
+                    "IndexRotationPeriod": "NoRotation",
+                    "TypeName": "fromFirehose",
+                    "RetryOptions": {
+                        "DurationInSeconds": "60"
+                    },
+                    "RoleARN": {
+                        "Fn::GetAtt": [
+                            "FirehoseRole",
+                            "Arn"
+                        ]
+                    },
+                    "S3BackupMode": "AllDocuments",
+                    "S3Configuration": {
+                        "BucketARN": {
+                            "Fn::Join": [
+                                "",
+                                [
+                                    "arn:aws:s3:::",
+                                    {
+                                        "Ref": "DataLakeS3Bucket"
+                                    }
+                                ]
+                            ]
+                        },
+                        "BufferingHints": {
+                            "IntervalInSeconds": "60",
+                            "SizeInMBs": "5"
+                        },
+                        "CompressionFormat": "UNCOMPRESSED",
+                        "Prefix": "FirehoseDatalake/",
+                        "RoleARN": {
+                            "Fn::GetAtt": [
+                                "FirehoseRole",
+                                "Arn"
+                            ]
+                        },
+                        "CloudWatchLoggingOptions": {
+                            "Enabled": true,
+                            "LogGroupName": {
+                                "Fn::Join": [
+                                    "",
+                                    [
+                                        "/aws/kinesisfirehose/datalake-firehose-",
+                                        {
+                                            "Ref": "AWS::AccountId"
+                                        },
+                                        "-",
+                                        {
+                                            "Ref": "TagSuffix"
+                                        }
+                                    ]
+                                ]
+                            },
+                            "LogStreamName": "S3Delivery"
+                        }
+                    }
+                }
+            }
+        },
+        "DatalakeFirehoseLogGroup": {
+            "Type": "AWS::Logs::LogGroup",
+            "DependsOn": "DatalakeFirehoseStream",
+            "Properties": {
+                "LogGroupName": {
+                    "Fn::Join": [
+                        "",
+                        [
+                            "/aws/kinesisfirehose/datalake-firehose-",
+                            {
+                                "Ref": "AWS::AccountId"
+                            },
+                            "-",
+                            {
+                                "Ref": "TagSuffix"
+                            }
+                        ]
+                    ]
+                }
+            }
+        },
+        "DatalakeFirehoseESLogStream": {
+            "Type": "AWS::Logs::LogStream",
+            "DependsOn": "DatalakeFirehoseLogGroup",
+            "Properties": {
+                "LogGroupName": {
+                    "Fn::Join": [
+                        "",
+                        [
+                            "/aws/kinesisfirehose/datalake-firehose-",
+                            {
+                                "Ref": "AWS::AccountId"
+                            },
+                            "-",
+                            {
+                                "Ref": "TagSuffix"
+                            }
+                        ]
+                    ]
+                },
+                "LogStreamName": "ElasticsearchDelivery"
+            }
+        },
+        "DatalakeFirehoseS3LogStream": {
+            "Type": "AWS::Logs::LogStream",
+            "DependsOn": "DatalakeFirehoseLogGroup",
+            "Properties": {
+                "LogGroupName": {
+                    "Fn::Join": [
+                        "",
+                        [
+                            "/aws/kinesisfirehose/datalake-firehose-",
+                            {
+                                "Ref": "AWS::AccountId"
+                            },
+                            "-",
+                            {
+                                "Ref": "TagSuffix"
+                            }
+                        ]
+                    ]
+                },
+                "LogStreamName": "S3Delivery"
+            }
+        },
+        "FirehoseRole": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "AssumeRolePolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Principal": {
+                                "Service": [
+                                    "firehose.amazonaws.com"
+                                ]
+                            },
+                            "Action": [
+                                "sts:AssumeRole"
+                            ]
+                        }
+                    ]
+                },
+                "Path": "/",
+                "Policies": [
+                    {
+                        "PolicyName": {
+                            "Fn::Join": [
+                                "",
+                                [
+                                    "datalake-firehose-policy-",
+                                    {
+                                        "Ref": "AWS::AccountId"
+                                    },
+                                    "-",
+                                    {
+                                        "Ref": "TagSuffix"
+                                    }
+                                ]
+                            ]
+                        },
+                        "PolicyDocument": {
+                            "Version": "2012-10-17",
+                            "Statement": [
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "s3:GetObject",
+                                        "s3:PutObject",
+                                        "s3:ListBucket",
+                                        "s3:GetBucketLocation",
+                                        "s3:AbortMultipartUpload",
+                                        "s3:ListBucketMultipartUploads"
+                                    ],
+                                    "Resource": [
+                                        {
+                                            "Fn::Join": [
+                                                "",
+                                                [
+                                                    "arn:aws:s3:::",
+                                                    {
+                                                        "Ref": "DataLakeS3Bucket"
+                                                    },
+                                                    "/*"
+                                                ]
+                                            ]
+                                        },
+                                        {
+                                            "Fn::Join": [
+                                                "",
+                                                [
+                                                    "arn:aws:s3:::",
+                                                    {
+                                                        "Ref": "DataLakeS3Bucket"
+                                                    }
+                                                ]
+                                            ]
+                                        }
+                                    ]
+                                },
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "lambda:InvokeFunction",
+                                        "lambda:GetFunctionConfiguration"
+                                    ],
+                                    "Resource": {
+                                        "Fn::Join": [
+                                            "",
+                                            [
+                                                "arn:aws:lambda:",
+                                                {
+                                                    "Ref": "AWS::Region"
+                                                },
+                                                ":",
+                                                {
+                                                    "Ref": "AWS::AccountId"
+                                                },
+                                                ":function:%FIREHOSE_DEFAULT_FUNCTION%:%FIREHOSE_DEFAULT_VERSION%"
+                                            ]
+                                        ]
+                                    }
+                                },
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "es:ESHttpPut",
+                                        "es:ESHttpPost",
+                                        "es:DescribeElasticsearchDomain",
+                                        "es:DescribeElasticsearchDomains",
+                                        "es:DescribeElasticsearchDomainConfig"
+                                    ],
+                                    "Resource": [
+                                        {
+                                            "Fn::Join": [
+                                                "",
+                                                [
+                                                    "arn:aws:es:",
+                                                    {
+                                                        "Ref": "AWS::Region"
+                                                    },
+                                                    ":",
+                                                    {
+                                                        "Ref": "AWS::AccountId"
+                                                    },
+                                                    ":domain/",
+                                                    {
+                                                        "Ref": "ElasticsearchDomain"
+                                                    }
+                                                ]
+                                            ]
+                                        },
+                                        {
+                                            "Fn::Join": [
+                                                "",
+                                                [
+                                                    "arn:aws:es:",
+                                                    {
+                                                        "Ref": "AWS::Region"
+                                                    },
+                                                    ":",
+                                                    {
+                                                        "Ref": "AWS::AccountId"
+                                                    },
+                                                    ":domain/",
+                                                    {
+                                                        "Ref": "ElasticsearchDomain"
+                                                    },
+                                                    "/*"
+                                                ]
+                                            ]
+                                        }
+                                    ]
+                                },
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "es:ESHttpGet"
+                                    ],
+                                    "Resource": [
+                                        {
+                                            "Fn::Join": [
+                                                "",
+                                                [
+                                                    "arn:aws:es:",
+                                                    {
+                                                        "Ref": "AWS::Region"
+                                                    },
+                                                    ":",
+                                                    {
+                                                        "Ref": "AWS::AccountId"
+                                                    },
+                                                    ":domain/",
+                                                    {
+                                                        "Ref": "ElasticsearchDomain"
+                                                    },
+                                                    "/_all/_settings"
+                                                ]
+                                            ]
+                                        },
+                                        {
+                                            "Fn::Join": [
+                                                "",
+                                                [
+                                                    "arn:aws:es:",
+                                                    {
+                                                        "Ref": "AWS::Region"
+                                                    },
+                                                    ":",
+                                                    {
+                                                        "Ref": "AWS::AccountId"
+                                                    },
+                                                    ":domain/",
+                                                    {
+                                                        "Ref": "ElasticsearchDomain"
+                                                    },
+                                                    "/_cluster/stats"
+                                                ]
+                                            ]
+                                        },
+                                        {
+                                            "Fn::Join": [
+                                                "",
+                                                [
+                                                    "arn:aws:es:",
+                                                    {
+                                                        "Ref": "AWS::Region"
+                                                    },
+                                                    ":",
+                                                    {
+                                                        "Ref": "AWS::AccountId"
+                                                    },
+                                                    ":domain/",
+                                                    {
+                                                        "Ref": "ElasticsearchDomain"
+                                                    },
+                                                    "/_nodes"
+                                                ]
+                                            ]
+                                        },
+                                        {
+                                            "Fn::Join": [
+                                                "",
+                                                [
+                                                    "arn:aws:es:",
+                                                    {
+                                                        "Ref": "AWS::Region"
+                                                    },
+                                                    ":",
+                                                    {
+                                                        "Ref": "AWS::AccountId"
+                                                    },
+                                                    ":domain/",
+                                                    {
+                                                        "Ref": "ElasticsearchDomain"
+                                                    },
+                                                    "/_nodes/stats"
+                                                ]
+                                            ]
+                                        },
+                                        {
+                                            "Fn::Join": [
+                                                "",
+                                                [
+                                                    "arn:aws:es:",
+                                                    {
+                                                        "Ref": "AWS::Region"
+                                                    },
+                                                    ":",
+                                                    {
+                                                        "Ref": "AWS::AccountId"
+                                                    },
+                                                    ":domain/",
+                                                    {
+                                                        "Ref": "ElasticsearchDomain"
+                                                    },
+                                                    "/_nodes/*/stats"
+                                                ]
+                                            ]
+                                        },
+                                        {
+                                            "Fn::Join": [
+                                                "",
+                                                [
+                                                    "arn:aws:es:",
+                                                    {
+                                                        "Ref": "AWS::Region"
+                                                    },
+                                                    ":",
+                                                    {
+                                                        "Ref": "AWS::AccountId"
+                                                    },
+                                                    ":domain/",
+                                                    {
+                                                        "Ref": "ElasticsearchDomain"
+                                                    },
+                                                    "/_stats"
+                                                ]
+                                            ]
+                                        },
+                                        {
+                                            "Fn::Join": [
+                                                "",
+                                                [
+                                                    "arn:aws:es:",
+                                                    {
+                                                        "Ref": "AWS::Region"
+                                                    },
+                                                    ":",
+                                                    {
+                                                        "Ref": "AWS::AccountId"
+                                                    },
+                                                    ":domain/",
+                                                    {
+                                                        "Ref": "ElasticsearchDomain"
+                                                    },
+                                                    "/datalakedeliverystream*/_mapping/fromFirehose"
+                                                ]
+                                            ]
+                                        },
+                                        {
+                                            "Fn::Join": [
+                                                "",
+                                                [
+                                                    "arn:aws:es:",
+                                                    {
+                                                        "Ref": "AWS::Region"
+                                                    },
+                                                    ":",
+                                                    {
+                                                        "Ref": "AWS::AccountId"
+                                                    },
+                                                    ":domain/",
+                                                    {
+                                                        "Ref": "ElasticsearchDomain"
+                                                    },
+                                                    "/datalakedeliverystream*/_stats"
+                                                ]
+                                            ]
+                                        }
+                                    ]
+                                },
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "logs:PutLogEvents",
+                                        "logs:CreateLogGroup",
+                                        "logs:CreateLogStream",
+                                        "logs:DescribeLogStreams"
+                                    ],
+                                    "Resource": [
+                                        "arn:aws:logs:*:*:*",
+                                        {
+                                            "Fn::Join": [
+                                                "",
+                                                [
+                                                    "arn:aws:logs:",
+                                                    {
+                                                        "Ref": "AWS::Region"
+                                                    },
+                                                    ":",
+                                                    {
+                                                        "Ref": "AWS::AccountId"
+                                                    },
+                                                    ":log-group:/aws/kinesisfirehose/datalake-firehose-",
+                                                    {
+                                                        "Ref": "AWS::AccountId"
+                                                    },
+                                                    "-",
+                                                    {
+                                                        "Ref": "TagSuffix"
+                                                    },
+                                                    ":log-stream:*"
+                                                ]
+                                            ]
+                                        }
+                                    ]
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        "DataLakeS3Bucket": {
+            "Type": "AWS::S3::Bucket",
+            "DeletionPolicy": "Delete",
+            "Properties": {
+                "AccessControl": "PublicReadWrite",
+                "BucketName": {
+                    "Fn::Join": [
+                        "",
+                        [
+                            "datalake-",
+                            {
+                                "Ref": "AWS::Region"
+                            },
+                            "-",
+                            {
+                                "Ref": "AWS::AccountId"
+                            },
+                            "-",
+                            {
+                                "Ref": "TagSuffix"
+                            }
+                        ]
+                    ]
+                },
+                "VersioningConfiguration": {
+                    "Status": "Enabled"
+                },
+                "LifecycleConfiguration": {
+                    "Rules": [
+                        {
+                            "ExpirationInDays": 45,
+                            "Status": "Enabled",
+                            "Id": "DatalakeLCP",
+                            "Transitions": [
+                                {
+                                    "TransitionInDays": 30,
+                                    "StorageClass": "GLACIER"
+                                }
+                            ]
+                        }
+                    ]
+                }
+            }
+        },
+        "S3InterimBucketPolicy": {
+            "Type": "AWS::S3::BucketPolicy",
+            "DependsOn": "DataLakeS3Bucket",
+            "Properties": {
+                "Bucket": {
+                    "Ref": "DataLakeS3Bucket"
+                },
+                "PolicyDocument": {
+                    "Statement": [
+                        {
+                            "Sid": "AWSCloudTrailAclCheckintermediate",
+                            "Effect": "Allow",
+                            "Principal": {
+                                "Service": "cloudtrail.amazonaws.com"
+                            },
+                            "Action": "s3:GetBucketAcl",
+                            "Resource": {
+                                "Fn::Join": [
+                                    "",
+                                    [
+                                        "arn:aws:s3:::datalake-",
+                                        {
+                                            "Ref": "AWS::Region"
+                                        },
+                                        "-",
+                                        {
+                                            "Ref": "AWS::AccountId"
+                                        },
+                                        "-",
+                                        {
+                                            "Ref": "TagSuffix"
+                                        }
+                                    ]
+                                ]
+                            }
+                        },
+                        {
+                            "Sid": "AWSCloudTrailWriteintermediate",
+                            "Effect": "Allow",
+                            "Principal": {
+                                "Service": "cloudtrail.amazonaws.com"
+                            },
+                            "Action": "s3:PutObject",
+                            "Resource": {
+                                "Fn::Join": [
+                                    "",
+                                    [
+                                        "arn:aws:s3:::datalake-",
+                                        {
+                                            "Ref": "AWS::Region"
+                                        },
+                                        "-",
+                                        {
+                                            "Ref": "AWS::AccountId"
+                                        },
+                                        "-",
+                                        {
+                                            "Ref": "TagSuffix"
+                                        },
+                                        "/CloudTrailLogs/AWSLogs/",
+                                        {
+                                            "Ref": "AWS::AccountId"
+                                        },
+                                        "/*"
+                                    ]
+                                ]
+                            },
+                            "Condition": {
+                                "StringEquals": {
+                                    "s3:x-amz-acl": "bucket-owner-full-control"
+                                }
+                            }
+                        }
+                    ]
+                }
+            }
+        },
+        "DatalakeCloudtrail": {
+            "Type": "AWS::CloudTrail::Trail",
+            "DependsOn": "S3InterimBucketPolicy",
+            "Properties": {
+                "S3BucketName": {
+                    "Fn::Join": [
+                        "",
+                        [
+                            "datalake-",
+                            {
+                                "Ref": "AWS::Region"
+                            },
+                            "-",
+                            {
+                                "Ref": "AWS::AccountId"
+                            },
+                            "-",
+                            {
+                                "Ref": "TagSuffix"
+                            }
+                        ]
+                    ]
+                },
+                "S3KeyPrefix": "CloudTrailLogs",
+                "IsLogging": true
+            }
+        },
+        "S3BucketPolicy": {
+            "Type": "AWS::S3::BucketPolicy",
+            "DependsOn": [
+                "DatalakeCloudtrail",
+                "FirehoseRole"
+            ],
+            "Properties": {
+                "Bucket": {
+                    "Ref": "DataLakeS3Bucket"
+                },
+                "PolicyDocument": {
+                    "Statement": [
+                        {
+                            "Sid": "DenyIncorrectEncryptionHeader",
+                            "Effect": "Deny",
+                            "NotPrincipal": {
+                                "AWS": {
+                                    "Fn::GetAtt": [
+                                        "FirehoseRole",
+                                        "Arn"
+                                    ]
+                                },
+                                "Service": "firehose.amazonaws.com"
+                            },
+                            "Action": "s3:PutObject",
+                            "Resource": {
+                                "Fn::Join": [
+                                    "",
+                                    [
+                                        "arn:aws:s3:::datalake-",
+                                        {
+                                            "Ref": "AWS::Region"
+                                        },
+                                        "-",
+                                        {
+                                            "Ref": "AWS::AccountId"
+                                        },
+                                        "-",
+                                        {
+                                            "Ref": "TagSuffix"
+                                        },
+                                        "/*"
+                                    ]
+                                ]
+                            },
+                            "Condition": {
+                                "StringNotEquals": {
+                                    "s3:x-amz-server-side-encryption": "AES256"
+                                }
+                            }
+                        },
+                        {
+                            "Sid": "DenyUnEncryptedObjectUploads",
+                            "Effect": "Deny",
+                            "NotPrincipal": {
+                                "AWS": {
+                                    "Fn::GetAtt": [
+                                        "FirehoseRole",
+                                        "Arn"
+                                    ]
+                                },
+                                "Service": "firehose.amazonaws.com"
+                            },
+                            "Action": "s3:PutObject",
+                            "Resource": {
+                                "Fn::Join": [
+                                    "",
+                                    [
+                                        "arn:aws:s3:::datalake-",
+                                        {
+                                            "Ref": "AWS::Region"
+                                        },
+                                        "-",
+                                        {
+                                            "Ref": "AWS::AccountId"
+                                        },
+                                        "-",
+                                        {
+                                            "Ref": "TagSuffix"
+                                        },
+                                        "/*"
+                                    ]
+                                ]
+                            },
+                            "Condition": {
+                                "Null": {
+                                    "s3:x-amz-server-side-encryption": "true"
+                                }
+                            }
+                        }
+                    ]
+                }
+            }
+        },
+        "EC2WebserverIamProfile": {
+            "Type": "AWS::IAM::InstanceProfile",
+            "Properties": {
+                "Path": "/",
+                "Roles": [
+                    {
+                        "Ref": "EC2WebserverRole"
+                    }
+                ]
+            }
+        },
+        "EC2WebserverRole": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "AssumeRolePolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Principal": {
+                                "Service": [
+                                    "ec2.amazonaws.com"
+                                ]
+                            },
+                            "Action": [
+                                "sts:AssumeRole"
+                            ]
+                        }
+                    ]
+                },
+                "Path": "/",
+                "Policies": [
+                    {
+                        "PolicyName": {
+                            "Fn::Join": [
+                                "",
+                                [
+                                    "dl-webserver-policy-s3-and-cf-",
+                                    {
+                                        "Ref": "TagSuffix"
+                                    }
+                                ]
+                            ]
+                        },
+                        "PolicyDocument": {
+                            "Version": "2012-10-17",
+                            "Statement": [
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "s3:Get*",
+                                        "s3:Put*",
+                                        "s3:List*",
+                                        "s3:CreateBucket",
+                                        "s3:DeleteBucket",
+                                        "s3:DeleteObject"
+                                    ],
+                                    "Resource": [
+                                        "*"
+                                    ]
+                                },
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "cloudformation:SignalResource",
+                                        "cloudformation:ListStackResources",
+                                        "cloudformation:DescribeStackEvents",
+                                        "cloudformation:DescribeStackResource",
+                                        "cloudformation:DescribeStackResources"
+                                    ],
+                                    "Resource": [
+                                        "arn:aws:cloudformation:*:*:*"
+                                    ]
+                                }
+                            ]
+                        }
+                    },
+                    {
+                        "PolicyName": {
+                            "Fn::Join": [
+                                "",
+                                [
+                                    "dl-webserver-policy-asg-and-cloudtrail-",
+                                    {
+                                        "Ref": "TagSuffix"
+                                    }
+                                ]
+                            ]
+                        },
+                        "PolicyDocument": {
+                            "Version": "2012-10-17",
+                            "Statement": [
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "*"
+                                    ],
+                                    "Resource": [
+                                        "arn:aws:autoscaling:*:*:*"
+                                    ]
+                                },
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "cloudtrail:AddTags",
+                                        "cloudtrail:ListTags",
+                                        "cloudtrail:RemoveTags",
+                                        "cloudtrail:DeleteTrail",
+                                        "cloudtrail:UpdateTrail",
+                                        "cloudtrail:StopLogging",
+                                        "cloudtrail:CreateTrail",
+                                        "cloudtrail:LookupEvents",
+                                        "cloudtrail:StartLogging",
+                                        "cloudtrail:GetTrailStatus",
+                                        "cloudtrail:DescribeTrails",
+                                        "cloudtrail:ListPublicKeys",
+                                        "cloudtrail:GetEventSelectors",
+                                        "cloudtrail:PutEventSelectors"
+                                    ],
+                                    "Resource": "*"
+                                }
+                            ]
+                        }
+                    },
+                    {
+                        "PolicyName": {
+                            "Fn::Join": [
+                                "",
+                                [
+                                    "dl-webserver-policy-cloudwatch-",
+                                    {
+                                        "Ref": "TagSuffix"
+                                    }
+                                ]
+                            ]
+                        },
+                        "PolicyDocument": {
+                            "Version": "2012-10-17",
+                            "Statement": [
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "logs:GetLogEvents",
+                                        "logs:PutLogEvents",
+                                        "logs:CreateLogGroup",
+                                        "logs:DeleteLogGroup",
+                                        "logs:PutDestination",
+                                        "logs:DeleteLogStream",
+                                        "logs:CreateLogStream",
+                                        "logs:FilterLogEvents",
+                                        "logs:DeleteDestination",
+                                        "logs:DescribeLogGroups",
+                                        "logs:DescribeLogStreams",
+                                        "logs:DescribeExportTasks",
+                                        "logs:DescribeDestinations",
+                                        "logs:PutDestinationPolicy"
+                                    ],
+                                    "Resource": [
+                                        "arn:aws:logs:*:*:*"
+                                    ]
+                                },
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "cloudwatch:ListMetrics",
+                                        "cloudwatch:DeleteAlarms",
+                                        "cloudwatch:GetMetricData",
+                                        "cloudwatch:PutMetricData",
+                                        "cloudwatch:SetAlarmState",
+                                        "cloudwatch:DescribeAlarms",
+                                        "cloudwatch:PutMetricAlarm",
+                                        "cloudwatch:EnableAlarmActions",
+                                        "cloudwatch:DisableAlarmActions",
+                                        "cloudwatch:GetMetricStatistics",
+                                        "cloudwatch:DescribeAlarmHistory",
+                                        "cloudwatch:DescribeAlarmsForMetric"
+                                    ],
+                                    "Resource": [
+                                        "arn:aws:cloudwatch:*:*:*"
+                                    ]
+                                }
+                            ]
+                        }
+                    },
+                    {
+                        "PolicyName": {
+                            "Fn::Join": [
+                                "",
+                                [
+                                    "dl-webserver-policy-ec2-and-firehose-",
+                                    {
+                                        "Ref": "TagSuffix"
+                                    }
+                                ]
+                            ]
+                        },
+                        "PolicyDocument": {
+                            "Version": "2012-10-17",
+                            "Statement": [
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "ec2:Describe*",
+                                        "ec2:Describe*",
+                                        "ec2:DeleteTags",
+                                        "ec2:CreateTags",
+                                        "ec2:StopInstances",
+                                        "ec2:StartInstances",
+                                        "ec2:RebootInstances",
+                                        "ec2:TerminateInstances",
+                                        "ec2:AuthorizeSecurityGroupIngress"
+                                    ],
+                                    "Resource": [
+                                        "arn:aws:ec2:*:*:*"
+                                    ]
+                                },
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "firehose:PutRecord",
+                                        "firehose:PutRecordBatch",
+                                        "firehose:UpdateDestination",
+                                        "firehose:ListDeliveryStreams",
+                                        "firehose:CreateDeliveryStream",
+                                        "firehose:DeleteDeliveryStream",
+                                        "firehose:DescribeDeliveryStream"
+                                    ],
+                                    "Resource": [
+                                        "arn:aws:firehose:*:*:*"
+                                    ]
+                                }
+                            ]
+                        }
+                    },
+                    {
+                        "PolicyName": {
+                            "Fn::Join": [
+                                "",
+                                [
+                                    "dl-webserver-policy-elasticsearch-",
+                                    {
+                                        "Ref": "TagSuffix"
+                                    }
+                                ]
+                            ]
+                        },
+                        "PolicyDocument": {
+                            "Version": "2012-10-17",
+                            "Statement": [
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "es:AddTags",
+                                        "es:ListTags",
+                                        "es:RemoveTags",
+                                        "es:ListDomainNames",
+                                        "es:CreateElasticsearchDomain",
+                                        "es:DeleteElasticsearchDomain",
+                                        "es:DescribeElasticsearchDomain",
+                                        "es:DescribeElasticsearchDomains",
+                                        "es:UpdateElasticsearchDomainConfig",
+                                        "es:DescribeElasticsearchDomainConfig"
+                                    ],
+                                    "Resource": {
+                                        "Fn::Join": [
+                                            "",
+                                            [
+                                                "arn:aws:es:",
+                                                {
+                                                    "Ref": "AWS::Region"
+                                                },
+                                                ":",
+                                                {
+                                                    "Ref": "AWS::AccountId"
+                                                },
+                                                ":domain/dles-",
+                                                {
+                                                    "Ref": "TagSuffix"
+                                                }
+                                            ]
+                                        ]
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    {
+                        "PolicyName": {
+                            "Fn::Join": [
+                                "",
+                                [
+                                    "dl-webserver-policy-rds-and-lambda-",
+                                    {
+                                        "Ref": "TagSuffix"
+                                    }
+                                ]
+                            ]
+                        },
+                        "PolicyDocument": {
+                            "Version": "2012-10-17",
+                            "Statement": [
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "*"
+                                    ],
+                                    "Resource": [
+                                        "arn:aws:rds:*:*:*"
+                                    ]
+                                },
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "lambda:GetAlias",
+                                        "lambda:GetPolicy",
+                                        "lambda:InvokeAsync",
+                                        "lambda:CreateAlias",
+                                        "lambda:DeleteAlias",
+                                        "lambda:GetFunction",
+                                        "lambda:ListAliases",
+                                        "lambda:UpdateAlias",
+                                        "lambda:AddPermission",
+                                        "lambda:ListFunctions",
+                                        "lambda:PublishVersion",
+                                        "lambda:InvokeFunction",
+                                        "lambda:RemovePermission",
+                                        "lambda:GetAccountSettings",
+                                        "lambda:UpdateFunctionCode",
+                                        "lambda:GetEventSourceMapping",
+                                        "lambda:CreateEventSourceMapping",
+                                        "lambda:DeleteEventSourceMapping",
+                                        "lambda:GetFunctionConfiguration",
+                                        "lambda:ListEventSourceMappings",
+                                        "lambda:UpdateEventSourceMapping",
+                                        "lambda:UpdateFunctionConfiguration"
+                                    ],
+                                    "Resource": [
+                                        "arn:aws:lambda:*:*:*"
+                                    ]
+                                }
+                            ]
+                        }
+                    },
+                    {
+                        "PolicyName": {
+                            "Fn::Join": [
+                                "",
+                                [
+                                    "dl-webserver-policy-iam-and-redshift-",
+                                    {
+                                        "Ref": "TagSuffix"
+                                    }
+                                ]
+                            ]
+                        },
+                        "PolicyDocument": {
+                            "Version": "2012-10-17",
+                            "Statement": [
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "redshift:ModifyCluster",
+                                        "redshift:RebootCluster",
+                                        "redshift:DescribeClusters",
+                                        "redshift:CancelQuerySession",
+                                        "redshift:ViewQueriesInConsole",
+                                        "redshift:ModifyClusterIamRoles",
+                                        "redshift:DescribeClusterSecurityGroups"
+                                    ],
+                                    "Resource": [
+                                        "arn:aws:redshift:*:*:*"
+                                    ]
+                                },
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "iam:GetRole",
+                                        "iam:PassRole",
+                                        "iam:ListRoles",
+                                        "iam:GetPolicy",
+                                        "iam:CreateRole",
+                                        "iam:PutRolePolicy",
+                                        "iam:GetRolePolicy",
+                                        "iam:AttachRolePolicy",
+                                        "iam:ListRolePolicies",
+                                        "iam:GetPolicyVersion",
+                                        "iam:GetInstanceProfile",
+                                        "iam:ListInstanceProfiles",
+                                        "iam:CreateInstanceProfile",
+                                        "iam:AddRoleToInstanceProfile",
+                                        "iam:ListAttachedRolePolicies"
+                                    ],
+                                    "Resource": [
+                                        "*"
+                                    ]
+                                }
+                            ]
+                        }
+                    },
+                    {
+                        "PolicyName": {
+                            "Fn::Join": [
+                                "",
+                                [
+                                    "dl-webserver-policy-datapipeline-",
+                                    {
+                                        "Ref": "TagSuffix"
+                                    }
+                                ]
+                            ]
+                        },
+                        "PolicyDocument": {
+                            "Version": "2012-10-17",
+                            "Statement": [
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "datapipeline:AddTags",
+                                        "datapipeline:SetStatus",
+                                        "datapipeline:RemoveTags",
+                                        "datapipeline:PollForTask",
+                                        "datapipeline:QueryObjects",
+                                        "datapipeline:SetTaskStatus",
+                                        "datapipeline:ListPipelines",
+                                        "datapipeline:DeletePipeline",
+                                        "datapipeline:CreatePipeline",
+                                        "datapipeline:DescribeObjects",
+                                        "datapipeline:PutAccountLimits",
+                                        "datapipeline:ActivatePipeline",
+                                        "datapipeline:GetAccountLimits",
+                                        "datapipeline:DescribePipelines",
+                                        "datapipeline:DeactivatePipeline",
+                                        "datapipeline:ReportTaskProgress",
+                                        "datapipeline:EvaluateExpression",
+                                        "datapipeline:GetPipelineDefinition",
+                                        "datapipeline:PutPipelineDefinition",
+                                        "datapipeline:ReportTaskRunnerHeartbeat",
+                                        "datapipeline:ValidatePipelineDefinition"
+                                    ],
+                                    "Resource": [
+                                        "*"
+                                    ]
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        "WebServerLoadBalancer": {
+            "Type": "AWS::ElasticLoadBalancing::LoadBalancer",
+            "Properties": {
+                "Subnets": [
+                    {
+                        "Ref": "PublicSubnet1"
+                    },
+                    {
+                        "Ref": "PublicSubnet2"
+                    }
+                ],
+                "LoadBalancerName": {
+                    "Fn::Join": [
+                        "",
+                        [
+                            "dl-elb-",
+                            {
+                                "Ref": "TagSuffix"
+                            }
+                        ]
+                    ]
+                },
+                "Listeners": [
+                    {
+                        "LoadBalancerPort": "80",
+                        "InstancePort": "80",
+                        "Protocol": "HTTP"
+                    },
+                    {
+                        "LoadBalancerPort": "8080",
+                        "InstancePort": "8080",
+                        "Protocol": "TCP"
+                    }
+                ],
+                "SecurityGroups": [
+                    {
+                        "Ref": "ELBSecurityGroups"
+                    }
+                ],
+                "HealthCheck": {
+                    "Target": "HTTP:80/home/",
+                    "HealthyThreshold": "3",
+                    "UnhealthyThreshold": "5",
+                    "Interval": "30",
+                    "Timeout": "5"
+                }
+            }
+        },
+        "WebServerGroup": {
+            "Type": "AWS::AutoScaling::AutoScalingGroup",
+            "Properties": {
+                "VPCZoneIdentifier": [
+                    {
+                        "Ref": "PrivateSubnet1"
+                    },
+                    {
+                        "Ref": "PrivateSubnet2"
+                    }
+                ],
+                "LaunchConfigurationName": {
+                    "Ref": "LaunchConfig"
+                },
+                "MaxSize": "1",
+                "MinSize": "1",
+                "LoadBalancerNames": [
+                    {
+                        "Ref": "WebServerLoadBalancer"
+                    }
+                ],
+                "Tags": [
+                    {
+                        "Key": "solution",
+                        "Value": {
+                            "Fn::Join": [
+                                "",
+                                [
+                                    "datalake-",
+                                    {
+                                        "Ref": "AWS::AccountId"
+                                    },
+                                    "-",
+                                    {
+                                        "Ref": "TagSuffix"
+                                    }
+                                ]
+                            ]
+                        },
+                        "PropagateAtLaunch": "true"
+                    },
+                    {
+                        "Key": "Name",
+                        "Value": {
+                            "Fn::Join": [
+                                "",
+                                [
+                                    "datalake-webserver-",
+                                    {
+                                        "Ref": "AWS::AccountId"
+                                    },
+                                    "-",
+                                    {
+                                        "Ref": "TagSuffix"
+                                    }
+                                ]
+                            ]
+                        },
+                        "PropagateAtLaunch": "true"
+                    }
+                ]
+            }
+        },
+        "LaunchConfig": {
+            "Type": "AWS::AutoScaling::LaunchConfiguration",
+            "Metadata": {
+                "Comment1": "Configure the bootstrap helpers to install the Apache Web Server and PHP",
+                "AWS::CloudFormation::Authentication": {
+                    "S3AccessCreds": {
+                        "type": "S3",
+                        "roleName": {
+                            "Ref": "EC2WebserverRole"
+                        }
+                    }
+                },
+                "AWS::CloudFormation::Init": {
+                    "configSets": {
+                        "Install": [
+                            "Fileset",
+                            "Install"
+                        ]
+                    },
+                    "Fileset": {
+                        "files": {
+                            "/etc/yum.repos.d/dlpackages.repo": {
+                                "source": {
+                                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}scripts/repo/dlpackages.repo"
+                                },
+                                "mode": "000644",
+                                "owner": "root",
+                                "group": "root",
+                                "authentication": "S3AccessCreds"
+                            },
+                            "/home/ec2-user/configure.sh": {
+                                "source": {
+                                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}scripts/configure.sh"
+                                },
+                                "mode": "000644",
+                                "owner": "root",
+                                "group": "root",
+                                "authentication": "S3AccessCreds"
+                            },
+                            "/home/ec2-user/writetoES.zip": {
+                                "source": {
+                                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}scripts/lambdas/writetoES.zip"
+                                },
+                                "mode": "000644",
+                                "owner": "root",
+                                "group": "root",
+                                "authentication": "S3AccessCreds"
+                            },
+                            "/home/ec2-user/datalake.zip": {
+                                "source": {
+                                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}scripts/web/datalake.zip"
+                                },
+                                "mode": "000644",
+                                "owner": "root",
+                                "group": "root",
+                                "authentication": "S3AccessCreds"
+                            },
+                            "/home/ec2-user/zeppelin-0.7.2-bin-all.tgz": {
+                                "source": "http://archive.apache.org/dist/zeppelin/zeppelin-0.7.2/zeppelin-0.7.2-bin-all.tgz",
+                                "mode": "000644",
+                                "owner": "root",
+                                "group": "root"
+                            },
+                            "/home/ec2-user/TaskRunner-1.0.jar": {
+                                "source": "https://s3.amazonaws.com/datapipeline-us-east-1/us-east-1/software/latest/TaskRunner/TaskRunner-1.0.jar",
+                                "mode": "000644",
+                                "owner": "root",
+                                "group": "root",
+                                "authentication": "S3AccessCreds"
+                            },
+                            "/tmp/dl-parameters.file": {
+                                "content": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "AWSAccountID|",
+                                            {
+                                                "Ref": "AWS::AccountId"
+                                            },
+                                            "\n",
+                                            "AWSRegion|",
+                                            {
+                                                "Ref": "AWS::Region"
+                                            },
+                                            "\n",
+                                            "DatabaseUserName|",
+                                            {
+                                                "Ref": "MasterUsername"
+                                            },
+                                            "\n",
+                                            "DatabaseUserPassword|",
+                                            {
+                                                "Ref": "MasterUserPassword"
+                                            },
+                                            "\n",
+                                            "AdminEmailID|",
+                                            {
+                                                "Ref": "AdminEmailID"
+                                            },
+                                            "\n",
+                                            "RDSdbEndPointAddr|",
+                                            {
+                                                "Fn::GetAtt": [
+                                                    "RDSdb",
+                                                    "Endpoint.Address"
+                                                ]
+                                            },
+                                            "\n",
+                                            "RedshiftClusterEndPointAddr|",
+                                            {
+                                                "Fn::GetAtt": [
+                                                    "RedshiftCluster",
+                                                    "Endpoint.Address"
+                                                ]
+                                            },
+                                            "\n",
+                                            "RedshiftSecondaryRoleARN|",
+                                            {
+                                                "Fn::GetAtt": [
+                                                    "RedshiftSecondaryRole",
+                                                    "Arn"
+                                                ]
+                                            },
+                                            "\n",
+                                            "RDSIdentifier|",
+                                            {
+                                                "Ref": "RDSdb"
+                                            },
+                                            "\n",
+                                            "RDSDatabaseName|",
+                                            {
+                                                "Ref": "DBName"
+                                            },
+                                            "\n",
+                                            "RedshiftClusterIdentifier|",
+                                            {
+                                                "Ref": "RedshiftCluster"
+                                            },
+                                            "\n",
+                                            "RedshiftDatabase|",
+                                            {
+                                                "Ref": "DBName"
+                                            },
+                                            "\n",
+                                            "ElasticSearchEndPoint|",
+                                            {
+                                                "Fn::GetAtt": [
+                                                    "ElasticsearchDomain",
+                                                    "DomainEndpoint"
+                                                ]
+                                            },
+                                            "\n",
+                                            "DatalakeS3Bucket|",
+                                            {
+                                                "Ref": "DataLakeS3Bucket"
+                                            },
+                                            "\n",
+                                            "StackID|",
+                                            {
+                                                "Ref": "MasterStackID"
+                                            },
+                                            "\n",
+                                            "StackPartSuffix|",
+                                            {
+                                                "Ref": "TagSuffix"
+                                            },
+                                            "\n",
+                                            "StackName|",
+                                            {
+                                                "Ref": "AWS::StackName"
+                                            },
+                                            "\n",
+                                            "WaitCondition|",
+                                            {
+                                                "Fn::Base64": {
+                                                    "Ref": "WebserverWaitHandle"
+                                                }
+                                            },
+                                            "\n",
+                                            "FirehoseStreamName|",
+                                            {
+                                                "Ref": "DatalakeFirehoseStream"
+                                            },
+                                            "\n",
+                                            "DatalakeCloudTrail|",
+                                            {
+                                                "Ref": "DatalakeCloudtrail"
+                                            },
+                                            "\n",
+                                            "QuickStartS3URL|",
+                                            {
+                                                "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/"
+                                            },
+                                            "\n",
+                                            "QSS3BucketName|",
+                                            {
+                                                "Ref": "QSS3BucketName"
+                                            },
+                                            "\n",
+                                            "QSS3KeyPrefix|",
+                                            {
+                                                "Ref": "QSS3KeyPrefix"
+                                            },
+                                            "\n",
+                                            "WebServerELBEndpoint|",
+                                            {
+                                                "Fn::GetAtt": [
+                                                    "WebServerLoadBalancer",
+                                                    "DNSName"
+                                                ]
+                                            },
+                                            "\n"
+                                        ]
+                                    ]
+                                },
+                                "mode": "000440",
+                                "owner": "root",
+                                "group": "root"
+                            }
+                        }
+                    },
+                    "Install": {
+                        "packages": {
+                            "yum": {
+                                "mysql-config": [],
+                                "mysql55-server": [],
+                                "php56w-mbstring": [],
+                                "php56w-mysql": [],
+                                "php56w-gd": [],
+                                "php56w-cli": [],
+                                "php56w": [],
+                                "php56w-xml": [],
+                                "httpd": [],
+                                "php56w-pgsql": []
+                            }
+                        },
+                        "services": {
+                            "sysvinit": {
+                                "httpd": {
+                                    "enabled": "true",
+                                    "ensureRunning": "true"
+                                },
+                                "mysqld": {
+                                    "enabled": "true",
+                                    "ensureRunning": "true"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "Properties": {
+                "ImageId": {
+                    "Fn::FindInMap": [
+                        "AWSAMItoRegionMap",
+                        {
+                            "Ref": "AWS::Region"
+                        },
+                        "AMZNLINUXPVM"
+                    ]
+                },
+                "IamInstanceProfile": {
+                    "Ref": "EC2WebserverIamProfile"
+                },
+                "InstanceType": {
+                    "Ref": "InstanceType"
+                },
+                "SecurityGroups": [
+                    {
+                        "Ref": "WebserverSecurityGroups"
+                    }
+                ],
+                "KeyName": {
+                    "Ref": "KeyPairName"
+                },
+                "UserData": {
+                    "Fn::Base64": {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "#!/bin/bash -xev \n",
+                                "yum install -y aws-cfn-bootstrap\n",
+                                "yum clean all\n",
+                                "/opt/aws/bin/cfn-init ",
+                                " --stack ",
+                                {
+                                    "Ref": "AWS::StackName"
+                                },
+                                " --resource LaunchConfig ",
+                                " --configsets Install ",
+                                " --region ",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                "\n",
+                                "cat /home/ec2-user/configure.sh | tr -d '\r' > configure_l.sh;chmod 777 configure_l.sh;./configure_l.sh "
+                            ]
+                        ]
+                    }
+                },
+                "BlockDeviceMappings": [
+                    {
+                        "DeviceName": "/dev/sda1",
+                        "Ebs": {
+                            "VolumeType": "gp2",
+                            "DeleteOnTermination": "true",
+                            "VolumeSize": "30"
+                        }
+                    }
+                ]
+            }
+        },
+        "WebserverWaitHandle": {
+            "Type": "AWS::CloudFormation::WaitConditionHandle",
+            "Properties": {}
+        },
+        "WebserverWaitCondtion": {
+            "Type": "AWS::CloudFormation::WaitCondition",
+            "DependsOn": "WebServerGroup",
+            "Properties": {
+                "Handle": {
+                    "Ref": "WebserverWaitHandle"
+                },
+                "Timeout": "800"
+            }
+        },
+        "ResourceDeletionLambda": {
+            "Type": "AWS::Lambda::Function",
+            "Properties": {
+                "Code": {
+                    "ZipFile": {
+                        "Fn::Join": [
+                            "\n",
+                            [
+                                "import boto3",
+                                "import cfnresponse",
+                                "import json",
+                                "def handler(event,context):",
+                                " if event['RequestType'] == 'Delete':",
+                                "   REGION     = event['ResourceProperties']['regionparam']",
+                                "   ACCOUNT    = event['ResourceProperties']['accountparam']",
+                                "   TAGSUFFIX  = event['ResourceProperties']['tagsuffixparam']",
+                                "   s3 = boto3.resource('s3')",
+                                "   BUCKET = 'datalake-'+REGION+'-'+ACCOUNT+'-'+TAGSUFFIX",
+                                "   bucket = s3.Bucket(BUCKET)",
+                                "   bucket.object_versions.delete()",
+                                "   bucket.delete()",
+                                "   responseData = {}",
+                                "   responseData['Data'] = 'asset_bucket_deleted'",
+                                "   cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData)",
+                                " if event['RequestType'] == 'Create':",
+                                "   responseData = {}",
+                                "   responseData['Data'] = 'stack_creation'",
+                                "   cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData)"
+                            ]
+                        ]
+                    }
+                },
+                "Handler": "index.handler",
+                "Runtime": "python2.7",
+                "Timeout": "30",
+                "Role": {
+                    "Fn::GetAtt": [
+                        "LambdaExecutionRole",
+                        "Arn"
+                    ]
+                }
+            }
+        },
+        "DeleteBucketResource": {
+            "Type": "Custom::LambdaInvoke",
+            "DependsOn": "DataLakeS3Bucket",
+            "Properties": {
+                "ServiceToken": {
+                    "Fn::GetAtt": [
+                        "ResourceDeletionLambda",
+                        "Arn"
+                    ]
+                },
+                "regionparam": {
+                    "Ref": "AWS::Region"
+                },
+                "accountparam": {
+                    "Ref": "AWS::AccountId"
+                },
+                "tagsuffixparam": {
+                    "Ref": "TagSuffix"
+                }
+            }
+        }
+    },
+    "Outputs": {
+        "CloudTrail": {
+            "Description": "CloudTrail",
+            "Value": {
+                "Ref": "DatalakeCloudtrail"
+            }
+        },
+        "ElasticsearchEndpoint": {
+            "Description": "Elasticsearch Endpoint",
+            "Value": {
+                "Fn::GetAtt": [
+                    "ElasticsearchDomain",
+                    "DomainEndpoint"
+                ]
+            }
+        },
+        "FirehoseDeliveryStream": {
+            "Description": "Firehose delivery stream",
+            "Value": {
+                "Ref": "DatalakeFirehoseStream"
+            }
+        },
+        "LambdaFunction": {
+            "Description": "Lambda Function",
+            "Value": {
+                "Ref": "LambdafunctionES"
+            }
+        },
+        "RDSEndpoint": {
+            "Description": "RDS endpoint",
+            "Value": {
+                "Fn::GetAtt": [
+                    "RDSdb",
+                    "Endpoint.Address"
+                ]
+            }
+        },
+        "RedshiftClusterEndpoint": {
+            "Description": "Redshift Cluster endpoint",
+            "Value": {
+                "Fn::GetAtt": [
+                    "RedshiftCluster",
+                    "Endpoint.Address"
+                ]
+            }
+        },
+        "S3Bucket": {
+            "Description": "S3 Bucket",
+            "Value": {
+                "Ref": "DataLakeS3Bucket"
+            }
+        },
+        "Tags": {
+            "Description": "Use this Tag for creating Resource Group",
+            "Value": {
+                "Fn::Join": [
+                    "",
+                    [
+                        "Key=\"solution\" ; Value=\"",
+                        "datalake-",
+                        {
+                            "Ref": "AWS::AccountId"
+                        },
+                        "-",
+                        {
+                            "Ref": "TagSuffix"
+                        },
+                        "\""
+                    ]
+                ]
+            }
+        },
+        "WebServerELBEndpoint": {
+            "Description": "Datalake WebServer ELB Endpoint",
+            "Value": {
+                "Fn::Join": [
+					"",
+					[
+						"Please Visit the http://",
+						{
+							"Fn::GetAtt": [
+								"WebServerLoadBalancer",
+								"DNSName"
+							]
+						},
+						"/ to access the Data Lake Webportal. Login credentials for the portal are: ",
+						{
+							"Ref": "MasterUsername"
+						},
+						" / < password you chosen during stack launch >"
+					]
+				]
+            }
+        }
+    }
+}

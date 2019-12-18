@@ -1,0 +1,74 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'AWS CloudFormation templates to create SageMaker notebook.'
+
+Parameters:
+  NotebookInstanceName:
+    AllowedPattern: '[A-Za-z0-9-]{1,63}'
+    ConstraintDescription: Must be unique within your account in an AWS Region.
+      Maximum of 63 alphanumeric characters. Can include hyphens (-).
+    Type: String
+    Default: NotebookInstanceName
+    Description: Name of the Amazon SageMaker Notebook instance.
+    MaxLength: '63'
+    MinLength: '1'
+  NotebookInstanceType:
+    Description: The EC2 instance type for the data lake Amazon SageMaker Notebook instance.
+    ConstraintDescription: Must select a valid Notebook instance type.
+    Type: String
+    AllowedValues:
+      - ml.t2.medium
+      - ml.t2.large
+      - ml.t2.xlarge
+    Default: ml.t2.large
+  RegionalLambdaBucketName:
+    Description: RegionalLambdaBucket bucket name
+    Type: String
+  CreateNotebookFunctionExecuteRoleArn:
+    Description: ARN of the role - CreateNotebookFunctionExecuteRole
+    Type: String
+  SageMakerExecutionRoleArn:
+    Description: ARN of the role - SageMakerExecutionRole
+    Type: String
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Required parameters
+        Parameters:
+          - NotebookInstanceName
+          - NotebookInstanceType
+      - Label:
+          default: Optional parameters
+Resources:
+  NotebookCloudWatchLogGroup:
+    Type: AWS::Logs::LogGroup
+  CreateNotebookFunction:
+    Properties:
+      Description: Create a SageMaker Notebook instance and return it's ARN.
+      Handler: lambdas.lambda_handler
+      Runtime: python3.6
+      Timeout: 300
+      Role: !Ref 'CreateNotebookFunctionExecuteRoleArn'
+      Code:
+          S3Bucket: !Ref 'RegionalLambdaBucketName'
+          S3Key: lambdas.zip
+    Type: AWS::Lambda::Function
+
+  CreateNotebookInstance:
+    Type: Custom::CreateNotebookInstance
+    Properties:
+      ServiceToken: !GetAtt 'CreateNotebookFunction.Arn'
+      NotebookInstanceName: !Ref 'NotebookInstanceName'
+      NotebookInstanceType: !Ref 'NotebookInstanceType'
+      SageMakerRoleArn: !Ref 'SageMakerExecutionRoleArn'
+      Version: 1
+
+Outputs:
+  SageMakerNotebookURL:
+    Description: SageMaker Notebook URL
+    Value:
+      !GetAtt 'CreateNotebookInstance.SageMakerNotebookURL'
+  NotebookInstanceName:
+    Description: SageMaker Instance Name
+    Value:
+      !Ref 'NotebookInstanceName'

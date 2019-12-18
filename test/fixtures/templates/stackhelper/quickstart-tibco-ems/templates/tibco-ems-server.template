@@ -1,0 +1,1428 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: >-
+  This template deploys 2 TIBCO EMS Server EC2 instances in two private subnets. The
+  instances are configured to use EFS for storage. **WARNING** This template
+  creates EC2 instances and related resources. You will be billed for the AWS
+  resources used if you create a stack from this template.
+Metadata:
+  'AWS::CloudFormation::Interface':
+    ParameterGroups:
+      - Label: Network Configuration
+        Parameters:
+          - VPCID
+          - VPCCIDR
+          - Subnet1ID
+          - Subnet2ID
+      - Label: TIBCO EMS Server Configuration
+        Parameters:
+          - EMSS3BucketName
+          - EMSInstallerName
+          - EMSAMIType
+          - EMSServerInstanceType
+          - KeyPairName
+          - BastionSecurityGroupID
+          - EMSServerClientAccessSecurityGroupID
+          - EMSServerPort
+      - Label: AWS Quick Start Configuration
+        Parameters:
+          - QSS3BucketName
+          - QSS3KeyPrefix
+    ParameterLabels:
+      BastionSecurityGroupID:
+        default: Bastion Security Group ID
+      EMSS3BucketName:
+        default: EMS S3 Bucket Name
+      EMSServerClientAccessSecurityGroupID:
+        default: EMS Clients Security Group ID
+      EMSAMIType:
+        default: EMS Server AMI Type
+      EMSInstallerName:
+        default: EMS Installer Package Name
+      EMSServerInstanceType:
+        default: EMS Server Instance Type
+      EMSServerPort:
+        default: EMS Server Port Number
+      KeyPairName:
+        default: SSH Key Name
+      QSS3BucketName:
+        default: Quick Start S3 Bucket Name
+      QSS3KeyPrefix:
+        default: Quick Start S3 Key Prefix
+      Subnet1ID:
+        default: Subnet 1 ID
+      Subnet2ID:
+        default: Subnet 2 ID
+      VPCID:
+        default: VPC ID
+      VPCCIDR:
+        default: VPC CIDR
+Parameters:
+  BastionSecurityGroupID:
+    Description: >
+      ID of the bastion host security group to enable SSH connections (e.g.,
+      sg-7f16e910)
+    Type: 'AWS::EC2::SecurityGroup::Id'
+  EMSServerClientAccessSecurityGroupID:
+    Type: 'AWS::EC2::SecurityGroup::Id'
+    Description: >-
+      ID of the security group for clients accessing the EMS Servers (e.g.,
+      sg-7f16e910)
+  EMSServerInstanceType:
+    AllowedValues:
+      - t2.micro
+      - t2.small
+      - t2.medium
+      - t2.large
+      - t2.xlarge
+      - m5.large
+      - m5.xlarge
+      - m5.2xlarge
+      - m5.4xlarge
+      - m4.large
+      - m4.xlarge
+      - m4.2xlarge
+      - m4.4xlarge
+      - m3.medium
+      - m3.large
+      - m3.xlarge
+      - m3.2xlarge
+      - c5.large
+      - c5.xlarge
+      - c5.2xlarge
+      - c5.4xlarge
+      - c4.large
+      - c4.xlarge
+      - c4.2xlarge
+      - c4.4xlarge
+      - c3.large
+      - c3.xlarge
+      - c3.2xlarge
+      - c3.4xlarge
+      - c3.8xlarge
+    ConstraintDescription: Must contain valid instance type
+    Default: t2.medium
+    Description: Type of EC2 instance for the EMS Client instances
+    Type: String
+  EMSInstallerName:
+    Type: String
+    Description: >-
+      Name of the TIBCO EMS Installation archive downloaded from TIBCO eDelivery
+      site
+    Default: TIB_ems_8.4.0_linux_x86_64.zip
+  EMSServerAMIType:
+    AllowedValues:
+      - Amazon-Linux2-HVM
+      - RHEL-7.5_HVM_GA
+    Default: Amazon-Linux2-HVM
+    Description: Server Operating System to use - Amazon Linux or Red Hat
+    Type: String
+  EMSS3BucketName:
+    AllowedPattern: '^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$'
+    Description: >-
+      Name of the S3 bucket for retrieving EMS installer zip.
+    Type: String
+  EMSServerInstanceType:
+    AllowedValues:
+      - t2.micro
+      - t2.small
+      - t2.medium
+      - t2.large
+      - t2.xlarge
+      - m5.large
+      - m5.xlarge
+      - m5.2xlarge
+      - m5.4xlarge
+      - m4.large
+      - m4.xlarge
+      - m4.2xlarge
+      - m4.4xlarge
+      - m3.medium
+      - m3.large
+      - m3.xlarge
+      - m3.2xlarge
+      - c5.large
+      - c5.xlarge
+      - c5.2xlarge
+      - c5.4xlarge
+      - c4.large
+      - c4.xlarge
+      - c4.2xlarge
+      - c4.4xlarge
+      - c3.large
+      - c3.xlarge
+      - c3.2xlarge
+      - c3.4xlarge
+      - c3.8xlarge
+    ConstraintDescription: Must contain valid instance type
+    Default: t2.large
+    Description: Type of EC2 instance for the EMS Server instances
+    Type: String
+  EMSInstallerName:
+    Type: String
+    Description: >-
+      Name of the TIBCO EMS Installation archive downloaded from TIBCO eDelivery
+      site
+    Default: TIB_ems_8.4.0_linux_x86_64.zip
+  EMSAMIType:
+    AllowedValues:
+      - Amazon-Linux2-HVM
+      - RHEL-7.5_HVM_GA
+    Default: Amazon-Linux2-HVM
+    Description: Linux Operating system to use - Amazon Linux or Red Hat
+    Type: String
+  EMSServerPort:
+    AllowedPattern: '^[0-9]*$'
+    Description: Will be used for both EMS server instances
+    Type: String
+    MinLength: '4'
+    MaxLength: '5'
+    Default: 7222
+  EMSS3BucketName:
+    AllowedPattern: '^[a-z0-9][a-z0-9-.]*$'
+    Description: >-
+      Name of the S3 bucket for retrieving EMS installer zip.
+    Type: String
+  KeyPairName:
+    Description: >
+      Name of an existing EC2 key pair. All instances will launch with this key
+      pair.
+    Type: 'AWS::EC2::KeyPair::KeyName'
+  QSS3BucketName:
+    AllowedPattern: '^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$'
+    ConstraintDescription: >-
+      Quick Start bucket name can include numbers, lowercase letters, uppercase
+      letters, and hyphens (-). It cannot start or end with a hyphen (-).
+    Default: aws-quickstart
+    Description: >-
+      S3 bucket name for the Quick Start assets. This string can include
+      numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot
+      start or end with a hyphen (-).
+    Type: String
+  QSS3KeyPrefix:
+    AllowedPattern: '^[0-9a-zA-Z-/]*$'
+    ConstraintDescription: >-
+      Quick Start key prefix can include numbers, lowercase letters, uppercase
+      letters, hyphens (-), and forward slash (/).
+    Default: quickstart-tibco-ems/
+    Description: >-
+      S3 key prefix for the Quick Start assets. Quick Start key prefix can
+      include numbers, lowercase letters, uppercase letters, hyphens (-), and
+      forward slash (/).
+    Type: String
+  Subnet1ID:
+    Description: 'ID of Subnet 1 in Availability Zone 1 (e.g., subnet-a0246dcd)'
+    Type: 'AWS::EC2::Subnet::Id'
+  Subnet2ID:
+    Description: 'ID of Subnet 2 in Availability Zone 2 (e.g., subnet-b1f432cd)'
+    Type: 'AWS::EC2::Subnet::Id'
+  VPCID:
+    Description: ID of your existing VPC for deployment
+    Type: 'AWS::EC2::VPC::Id'
+  VPCCIDR:
+    AllowedPattern: >-
+      ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/(1[6-9]|2[0-8]))$
+    ConstraintDescription: CIDR block parameter must be in the form x.x.x.x/16-28
+    Default: 10.0.0.0/16
+    Description: CIDR block for the VPC
+    Type: String
+Mappings:
+  AWSAMIRegionMap:
+    AMI:
+      AMZLNX: amzn2-ami-hvm-2.0.20180622.1-x86_64-gp2
+      RHELHVM: RHEL-7.5_HVM_GA-20180322-x86_64-1-Hourly2-GP2
+    ap-northeast-1:
+      AMZLNX: ami-e99f4896
+      RHELHVM: ami-6b0d5f0d
+    ap-northeast-2:
+      AMZLNX: ami-afd86dc1
+      RHELHVM: ami-3eee4150
+    ap-south-1:
+      AMZLNX: ami-d783a9b8
+      RHELHVM: ami-5b673c34
+    ap-southeast-1:
+      AMZLNX: ami-05868579
+      RHELHVM: ami-76144b0a
+    ap-southeast-2:
+      AMZLNX: ami-39f8215b
+      RHELHVM: ami-67589505
+    ca-central-1:
+      AMZLNX: ami-0ee86a6a
+      RHELHVM: ami-49f0762d
+    eu-central-1:
+      AMZLNX: ami-7c4f7097
+      RHELHVM: ami-c86c3f23
+    eu-west-1:
+      AMZLNX: ami-466768ac
+      RHELHVM: ami-7c491f05
+    eu-west-2:
+      AMZLNX: ami-b8b45ddf
+      RHELHVM: ami-7c1bfd1b
+    eu-west-3:
+      AMZLNX: ami-2cf54551
+      RHELHVM: ami-5026902d
+    sa-east-1:
+      AMZLNX: ami-6dca9001
+      RHELHVM: ami-b0b7e3dc
+    us-east-1:
+      AMZLNX: ami-b70554c8
+      RHELHVM: ami-6871a115
+    us-east-2:
+      AMZLNX: ami-8c122be9
+      RHELHVM: ami-03291866
+    us-west-1:
+      AMZLNX: ami-e0ba5c83
+      RHELHVM: ami-18726478
+    us-west-2:
+      AMZLNX: ami-a9d09ed1
+      RHELHVM: ami-28e07e50
+Rules:
+  KeyPairsNotEmpty:
+    Assertions:
+      - Assert: !Not
+          - 'Fn::EachMemberEquals':
+              - 'Fn::RefAll': 'AWS::EC2::KeyPair::KeyName'
+              - ''
+        AssertDescription: All key pair parameters must not be empty
+  EFSSupportedRegionRule:
+    Assertions:
+      - Assert:
+          Fn::Contains:
+          - - us-east-1
+            - us-east-2
+            - us-west-1
+            - us-west-2
+            - eu-west-1
+            - ap-southeast-2
+            - ap-northeast-1
+            - ap-northeast-2
+            - eu-central-1
+          - !Ref AWS::Region
+        AssertDescription: This Quick Start utilizes Amazon EFS which is only available
+          in the us-east-1 (N. Virginia), us-east-2 (Ohio), us-west-1 (N. California), us-west-2 (Oregon), eu-west-1 (Ireland),
+          eu-central-1 (Frankfurt), ap-northeast-1 (Tokyo), ap-northeast-2 (Seoul), and ap-southeast-2 (Sydney) regions. Please launch the stack in
+          one of these  regions
+Conditions:
+  UseAmazonLinux: !Equals
+    - !Ref EMSAMIType
+    - Amazon-Linux2-HVM
+Resources:
+  EFSNFSSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: TIBCO EMS NFS Access SG
+      VpcId: !Ref VPCID
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: '2049'
+          ToPort: '2049'
+          CidrIp: !Ref VPCCIDR
+  EMSServerSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: Control access to the EMS Server instances
+      VpcId: !Ref VPCID
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: !Ref EMSServerPort
+          ToPort: !Ref EMSServerPort
+          SourceSecurityGroupId: !Ref EMSServerClientAccessSecurityGroupID
+        - IpProtocol: tcp
+          FromPort: '2049'
+          ToPort: '2049'
+          SourceSecurityGroupId: !Ref EFSNFSSecurityGroup
+        - IpProtocol: tcp
+          FromPort: '22'
+          ToPort: '22'
+          SourceSecurityGroupId: !Ref BastionSecurityGroupID
+  EMSServerSecurityGroupIngressRule:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    Properties:
+      IpProtocol: tcp
+      FromPort: !Ref EMSServerPort
+      ToPort: !Ref EMSServerPort
+      SourceSecurityGroupId: !Ref EMSServerSecurityGroup
+      GroupId: !GetAtt
+        - EMSServerSecurityGroup
+        - GroupId
+  TibcoEmsMainLogGroup:
+    Type: 'AWS::Logs::LogGroup'
+  IamInstanceRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /
+      Policies:
+        - PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Action:
+                  - 's3:GetObject'
+                Resource: !Sub 'arn:aws:s3:::${QSS3BucketName}/${QSS3KeyPrefix}*'
+                Effect: Allow
+          PolicyName: aws-quick-start-s3-policy
+        - PolicyName: Instance-Logging-Role
+          PolicyDocument:
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'logs:CreateLogGroup'
+                  - 'logs:CreateLogStream'
+                  - 'logs:PutLogEvents'
+                  - 'logs:DescribeLogStreams'
+                Resource: !GetAtt TibcoEmsMainLogGroup.Arn
+        - PolicyName: Instance-S3-Access-Role
+          PolicyDocument:
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 's3:ListBucket'
+                  - 's3:GetBucketLocation'
+                Resource: !Sub 'arn:aws:s3:::${EMSS3BucketName}'
+              - Effect: Allow
+                Action:
+                  - 's3:GetObject'
+                  - 's3:PutObject'
+                  - 's3:DeleteObject'
+                Resource: !Sub 'arn:aws:s3:::${EMSS3BucketName}/*'
+  IamInstanceRoleProfile:
+    Type: 'AWS::IAM::InstanceProfile'
+    Properties:
+      Path: /
+      Roles:
+        - !Ref IamInstanceRole
+  EFSFileSystem:
+    Type: 'AWS::EFS::FileSystem'
+    Properties:
+      PerformanceMode: generalPurpose
+      FileSystemTags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-efs-volume'
+  MountTarget1:
+    Type: 'AWS::EFS::MountTarget'
+    Properties:
+      FileSystemId: !Ref EFSFileSystem
+      SubnetId: !Ref Subnet1ID
+      SecurityGroups:
+        - !Ref EFSNFSSecurityGroup
+  MountTarget2:
+    Type: 'AWS::EFS::MountTarget'
+    Properties:
+      FileSystemId: !Ref EFSFileSystem
+      SubnetId: !Ref Subnet2ID
+      SecurityGroups:
+        - !Ref EFSNFSSecurityGroup
+  EMSServer1NIC:
+    Type: 'AWS::EC2::NetworkInterface'
+    DependsOn: EMSServerSecurityGroup
+    Properties:
+      Description: EMS Server1 Static NIC
+      GroupSet:
+        - !Ref EMSServerSecurityGroup
+      SourceDestCheck: true
+      SubnetId: !Ref Subnet1ID
+      Tags:
+        - Key: Name
+          Value: EMS Server 1 Static NIC
+  EMSServer2NIC:
+    Type: 'AWS::EC2::NetworkInterface'
+    Properties:
+      Description: EMS Server2 Static NIC
+      GroupSet:
+        - !Ref EMSServerSecurityGroup
+      SourceDestCheck: true
+      SubnetId: !Ref Subnet2ID
+      Tags:
+        - Key: Name
+          Value: EMS Server 2 Static NIC
+  EMSServerInstance1:
+    Type: 'AWS::EC2::Instance'
+    DependsOn:
+      - EMSServer1NIC
+      - MountTarget1
+    Metadata:
+      'AWS::CloudFormation::Authentication':
+        S3AccessCreds:
+          type: S3
+          roleName: !Ref IamInstanceRole
+          buckets:
+            - !Ref EMSS3BucketName
+      'AWS::CloudFormation::Init':
+        config:
+          packages:
+            yum:
+              java-1.8.0-openjdk-devel: []
+              epel-release: []
+              nfs-utils: []
+          sources:
+            /tmp/ems/installer: !Sub 'https://${EMSS3BucketName}.s3.amazonaws.com/${EMSInstallerName}'
+          files:
+            /tmp/ems/scripts/ems-run-installer.sh:
+              content: !Sub |
+                #!/bin/bash -e
+
+                # Uninstall java-1.7.0
+                yum remove -y java-1.7.0-openjdk
+
+                # Install TIBCO EMS
+                /tmp/ems/installer/TIBCOUniversalInstaller-lnx-x86-64.bin -V \
+                  responseFile=TIBCOUniversalInstaller-ems.silent \
+                  -is:javahome $JAVA_HOME -is:log /var/log/TIBCOEMSInstaller.log -silent
+
+                # Setup TIBCO EMS Environment vars
+                export TIBCO_HOME=/opt/tibco
+                export TIBEMSD_SERVERID=1
+                export TIBCOEMS_VERSION=$(ls $TIBCO_HOME/ems)
+                export TIBEMSD_LOGFILE=$TIBCO_HOME/ems/$TIBCOEMS_VERSION/bin/logs/tibemsd$TIBEMSD_SERVERID.log
+
+                # And persist for all users'
+                cat >> /etc/profile <<EOF
+                export TIBCO_HOME=$TIBCO_HOME
+                export TIBEMSD_SERVERID=$TIBEMSD_SERVERID
+                export TIBCOEMS_VERSION=$TIBCOEMS_VERSION
+                export TIBEMSD_LOGFILE=$TIBEMSD_LOGFILE
+                EOF
+
+                echo " EMS version is $TIBCOEMS_VERSION"
+                ########
+              mode: '000755'
+              owner: root
+              group: root
+            /tmp/ems/scripts/ems-mount-efs.sh:
+              content: !Sub |
+                #!/bin/bash
+                source /etc/profile
+
+                # Mount the EFS filesystems and create directory structure
+                mkdir /mnt/efs
+
+                # See if we are RHEL or Amazon Linux2. If Amazon Linux2, use EFS instead of NFS, and add TLS and _netdev to mount.
+                isl2=`uname -a| grep amzn2`
+                if [ "$isl2" != "" ] ; then
+                 # Install efs utilities
+                 yum -y install amazon-efs-utils
+
+                 # EFS Mount options with TLS and _netdev
+                 EFS_MOUNT_OPTIONS=tls,_netdev,soft,timeo=100,retrans=2,actimeo=1,defaults
+
+                 # Mount EFS and add mount to fstab to restore on reboot with efs mount with tls and _netdev
+                 sudo mount --types efs --options $EFS_MOUNT_OPTIONS ${EFSFileSystem}:/ /mnt/efs
+                 sudo echo "${EFSFileSystem}:/ /mnt/efs efs $EFS_MOUNT_OPTIONS 0 0" >> /etc/fstab
+
+                else
+                 # EFS Mount options with NFS4
+                 EFS_MOUNT_OPTIONS=nfsvers=4.1,rsize=1048576,wsize=1048576,soft,timeo=100,retrans=2,actimeo=1
+
+                 # Mount EFS and add mount to fstab to restore on reboot with nfs4
+                 sudo mount --types nfs4 --options $EFS_MOUNT_OPTIONS ${EFSFileSystem}.efs.${AWS::Region}.amazonaws.com:/ /mnt/efs
+                 sudo echo "${EFSFileSystem}.efs.${AWS::Region}.amazonaws.com:/ /mnt/efs nfs4 $EFS_MOUNT_OPTIONS 0 0" >> /etc/fstab
+
+                fi
+
+                # Create shared directory structure (ok if already present)
+                mkdir --parents /mnt/efs/tibco/cfgmgmt/ems/data/datastore
+                chown -R ec2-user:ec2-user /mnt/efs
+
+                # Create logs directory
+                mkdir --parents $TIBCO_HOME/ems/$(ls $TIBCO_HOME/ems)/bin/logs
+                ########
+              mode: '000755'
+              owner: root
+              group: root
+            /tmp/ems/scripts/ems-prep-config.sh:
+              content: !Sub |
+                #!/bin/bash -e
+                source /etc/profile
+
+                # Copy installed EMS config files to EFS to share with other EMS server
+                cp /home/user/tibco/tibco/cfgmgmt/ems/data/*.conf /mnt/efs/tibco/cfgmgmt/ems/data
+
+                cd /mnt/efs/tibco/cfgmgmt/ems/data
+
+                # Configure EMS stores.conf
+                echo "Configuring TIBCO EMS Stores"
+                if [ ! -f stores.orig ]; then
+                  cp stores.conf stores.orig;
+                fi
+
+                FILE_MINIMUM=2GB
+                if ! grep -q 'file_minimum=.*' stores.conf
+                then
+                  echo "  file_minimum=$FILE_MINIMUM" >> stores.conf;
+                else
+                  sed -i "s/file_minimum=.*/file_minimum=$FILE_MINIMUM/" stores.conf
+                fi
+
+                # Backup original and create TIBCO EMS factories.conf file pointing to EMS Server 1&2 endpoints
+                echo "Configuring TIBCO EMS factories"
+
+                if [ -f factories.conf ]; then
+                  if [ ! -f factories.orig ]; then
+                    cp factories.conf factories.orig;
+                  fi
+
+                  # Delete existing [FTConnectionFactory] section
+                  sed -i -e '/\[FTConnectionFactory\]/,/\[/{//!d}' -e '/\[FTConnectionFactory\]/d' factories.conf;
+                fi
+
+                # Add in new [FTConnectionFactory] section
+                cat >> factories.conf <<EOF
+
+                # Added for AWS Quick Start HA Configuration
+                [FTConnectionFactory]
+                type=generic
+                url=tcp://${EMSServer1NIC.PrimaryPrivateIpAddress}:${EMSServerPort},tcp://${EMSServer2NIC.PrimaryPrivateIpAddress}:${EMSServerPort}
+                reconnect_attempt_count = 100
+                reconnect_attempt_delay = 5000
+                reconnect_attempt_timeout = 5000
+                EOF
+
+                # Prep tibemsd1.log file. $TIBCO_HOME is owned by root:root created by cfn-init, but EMS service will run as ec2-user
+                # and therefore not have permissions to write to the log file without the following
+                touch $TIBEMSD_LOGFILE
+                chown ec2-user:ec2-user $TIBEMSD_LOGFILE
+
+                # Configure TIBCO EMS main configuration file
+                echo " Configuring the TIBCO EMS main configuration file"
+                cd /home/user/tibco/tibco/cfgmgmt/ems/data
+
+                # Save backup copy ogf originally installed conf file
+                cp tibemsd.conf tibemsd.conf.orig
+
+                sed -i \
+                  ` # replace 'logfile = .../logfile' with 'logfile = /opt/tibco/ems/8.x/bin/logs/tibemsdx.log' ` \
+                  -e "s|\(logfile\s*=\s*\)\"/home/user/tibco/tibco/cfgmgmt/ems/data/datastore/logfile\"|\1$TIBEMSD_LOGFILE|" \
+                  ` # replace '/home/user/tibco' with '/mnt/efs' ` \
+                  -e "s|/home/user/tibco|/mnt/efs|g" \
+                  -e "s|512MB|2048MB|g" \
+                  -e "s|7222|${EMSServerPort}|g" tibemsd.conf
+
+                # Add to tibemsd.conf file
+                cat >> tibemsd.conf <<EOF
+
+                # Added for AWS Configuration
+                server_heartbeat_client = 10
+                server_timeout_client_connection = 480
+                client_heartbeat_server = 10
+                client_timeout_server_connection = 480
+                always_exit_on_disk_error = enable
+                destination_backlog_swapout = 100000
+                network_thread_count=2
+                log_trace=DEFAULT
+                logfile_max_size=100KB
+                ft_reconnect_timeout=120
+                ft_active = tcp://${EMSServer2NIC.PrimaryPrivateIpAddress}:${EMSServerPort}
+                EOF
+
+                # Setup AWSLogs to upload TIBCO EMS Server logfile to Cloudwatch Logs
+                cat >> /etc/awslogs/awslogs.conf <<EOF
+
+                # Capture TIBCO EMS Server log
+                [tibemsd$TIBEMSD_SERVERID.log]
+                file = $TIBEMSD_LOGFILE
+                log_group_name = ${TibcoEmsMainLogGroup}
+                log_stream_name = {instance_id}/tibemsd$TIBEMSD_SERVERID
+                EOF
+
+                # Copy to server home
+                cp tibemsd.conf $TIBCO_HOME/ems/$TIBCOEMS_VERSION/bin/tibemsd.conf
+
+                # change the owner of EMS to ec2-user
+                chown -R ec2-user:ec2-user $TIBCO_HOME
+
+                echo " Configuration of EMS is complete"
+                ########
+              mode: '000755'
+              owner: root
+              group: root
+            /tmp/ems/scripts/ems-config-launch-service.sh:
+              content: !Sub |
+                #!/bin/sh
+                source /etc/profile
+
+                # Update the service conf file with the path to EMS binary and version
+                sed -i -e "s#<EMS_BINARY_PATH>#$TIBCO_HOME#g" \
+                       -e "s#<TIBCOEMS_VERSION>#$TIBCOEMS_VERSION#g" \
+                       /etc/init.d/tibemsd
+
+                # Install and start the service
+                chkconfig --add tibemsd
+                service tibemsd start
+                ########
+              mode: '000755'
+              owner: root
+              group: root
+            /etc/init.d/tibemsd:
+              content: |
+                #!/bin/bash
+                #******************************************************************
+                #* File:        tibemsd
+                #* Description: TIBCO Enterprise Messaging Service
+                #* Usage:       /etc/init.d/tibemsd {start|stop|status|restart}
+                #*              service tibemsd64 {start|stop|status|restart}
+                #* Author:      Richard Flather, TIBCO Messaging Group
+                #* Date:        Aug, 2018
+                #*
+                #* (C) Copyright TIBCO Software Inc. 2015-18. All rights reserved
+                #******************************************************************
+
+                ### BEGIN INIT INFO
+                # Provides:          tibemsd
+                # Required-Start:    $local_fs $network $syslog $rpcbind
+                # Required-Stop:     $local_fs $network $syslog $rpcbind
+                # Default-Start:     3 4 5
+                # Default-Stop:      0 1 2 6
+                # Short-Description: TIBCO Enterprise Messaging Service
+                # Description:       TIBCO Enterprise Message Service (EMS) is fully \
+                #                    compliant Java Message Service (JMS) implementation \
+                #                    from TIBCO with some enterprise-class enhancements
+                ### END INIT INFO
+
+                DAEMON=tibemsd
+                DAEMON_PATH="<EMS_BINARY_PATH>/ems/<TIBCOEMS_VERSION>/bin"
+                DAEMON_CONF="$DAEMON_PATH/tibemsd.conf"
+                DAEMON_OPTS="-config $DAEMON_CONF -forceStart"
+                DAEMON_USER=ec2-user
+
+                # Start the service if not already running
+                start()
+                {
+                  # Check if already running
+                  PID=$(pgrep -u $DAEMON_USER -x $DAEMON)
+                  if [ $? -eq "0" ]; then
+                          printf "$DAEMON (pid $PID) already running.\n"
+                  else
+                    # Not running. Spawn the service
+                    PID=$(su $DAEMON_USER -c "$DAEMON_PATH/$DAEMON $DAEMON_OPTS >> /dev/null 2>&1 & printf \$!")
+
+                    # Make sure it started
+                    PID=$(pgrep -u $DAEMON_USER -x $DAEMON)
+                    if [ $? -eq "0" ]; then
+                      printf "Ok $DAEMON (pid $PID) started.\n"
+                    else
+                      printf "Fail\n"
+                    fi
+                  fi
+                }
+
+                # Check if service is running
+                status()
+                {
+                  PID=$(pgrep -u $DAEMON_USER -x $DAEMON)
+                  if [ $? -eq "0" ]; then
+                    printf "$DAEMON (pid $PID) is running.\n"
+                  else
+                    printf "$DAEMON is not running.\n"
+                  fi
+                }
+
+                # Stop the service if its running
+                stop()
+                {
+                  # See if the service is running
+                  PID=$(pgrep -u ec2-user -x $DAEMON)
+                  if [ $? -eq "0" ]; then
+                    kill -2 $PID
+                    printf "Ok $DAEMON (pid $PID) stopped.\n"
+                  else
+                    printf "$DAEMON was not already running.\n"
+                  fi
+                }
+
+                usage()
+                {
+                  printf "Usage: service $DAEMON {start|stop|status|restart}\n"
+                  RETVAL=1
+                }
+
+                case "$1" in
+                  start)
+                    start;
+                    RETVAL=$?
+                    ;;
+                  stop)
+                    stop;
+                    RETVAL=$?
+                    ;;
+                  status)
+                    status;
+                    RETVAL=$?
+                    ;;
+                  restart)
+                    stop;
+                    sleep 3
+                    start;
+                    RETVAL=$?
+                    ;;
+                  *)
+                    usage;
+                    RETVAL=$?
+                    ;;
+                esac
+
+                exit $RETVAL
+                ########
+              mode: '000755'
+              owner: root
+              group: root
+            /etc/awslogs/awslogs.conf:
+              content: !Sub |
+                [general]
+                state_file= /var/log/agent-state
+                # Capture syslogs
+                [/var/log/messages]
+                file = /var/log/messages
+                log_group_name = ${TibcoEmsMainLogGroup}
+                log_stream_name = {instance_id}/messages
+              mode: '000400'
+              owner: root
+              group: root
+            /etc/awslogs/awscli.conf:
+              content: !Sub |
+                [plugins]
+                cwlogs = cwlogs
+                [default]
+                region = ${AWS::Region}
+              mode: '000400'
+              owner: root
+              group: root
+            /etc/cfn/cfn-hup.conf:
+              content: !Sub |
+                [main]
+                stack=${AWS::StackId}
+                region=${AWS::Region}
+              mode: '000400'
+              owner: root
+              group: root
+            /etc/cfn/hooks.d/cfn-auto-reloader.conf:
+              content: !Sub |
+                [cfn-auto-reloader-hook]
+                triggers=post.update
+                path=Resources.EMSServerInstance1.Metadata.AWS::CloudFormation::Init
+                action=/opt/aws/bin/cfn-init -v --stack ${AWS::StackName} --resource EMSServerInstance1 --region ${AWS::Region} -runas=root
+          services:
+            sysvinit:
+              cfn-hup:
+                enabled: 'true'
+                ensureRunning: 'true'
+                files:
+                  - /etc/cfn/cfn-hup.conf
+                  - /etc/cfn/hooks.d/cfn-auto-reloader.conf
+          commands:
+            01-ems-run-installer:
+              command: /tmp/ems/scripts/ems-run-installer.sh
+            02-ems-mount-efs:
+              command: /tmp/ems/scripts/ems-mount-efs.sh
+            03-ems-prep-config:
+              command: /tmp/ems/scripts/ems-prep-config.sh
+            04-ems-config-launch-service:
+              command: /tmp/ems/scripts/ems-config-launch-service.sh
+    Properties:
+      KeyName: !Ref KeyPairName
+      DisableApiTermination: 'false'
+      ImageId: !If
+        - UseAmazonLinux
+        - !FindInMap
+          - AWSAMIRegionMap
+          - !Ref 'AWS::Region'
+          - AMZLNX
+        - !FindInMap
+          - AWSAMIRegionMap
+          - !Ref 'AWS::Region'
+          - RHELHVM
+      InstanceType: !Ref EMSServerInstanceType
+      Monitoring: 'false'
+      Tags:
+        - Key: Application
+          Value: AWS Quick Start (TIBCO EMS)
+        - Key: Name
+          Value: !Sub 'TIBCO EMS Server 1 (${AWS::StackName})'
+      NetworkInterfaces:
+        - NetworkInterfaceId: !Ref EMSServer1NIC
+          DeviceIndex: '0'
+      IamInstanceProfile: !Ref IamInstanceRoleProfile
+      UserData: !Base64
+        'Fn::Sub': |
+          #!/bin/bash
+
+          # Update existing installed packages
+          yum update -y
+
+          # Helper function
+          function error_exit
+          {
+            /opt/aws/bin/cfn-signal -e 1 --stack ${AWS::StackName} --resource EMSServerInstance1 -r "EMSServerInstance1: $1\n" --region ${AWS::Region}
+            exit 1
+          }
+
+          # If Red-Hat, Install aws-cfn-bootstrap code
+          if [ "${EMSAMIType}" != "Amazon-Linux2-HVM" ]; then
+            ### This is redhat 7. It supports cloud-init but Cfn packages need to be installed unlike AWS Linux. And they are installed in a different location
+            # Enable EPEL
+            sudo yum install -y https://dl.fedoraproject.org/pub/epel/epel-release-latest-7.noarch.rpm
+
+            # Now install Python Setuptools(easy_install) and Pip
+            yum -y install python-pip
+
+            # Now install cfn scripts
+            /bin/easy_install --script-dir /opt/aws/bin https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-latest.tar.gz
+
+            # Now fix the cfn-hup script and copy to init.d location as AWS does not do it for you
+            cp -f `pip show aws-cfn-bootstrap 2>/dev/null|grep -E "^Location"|awk -F: '{print $2}'`/init/redhat/cfn-hup /etc/init.d/
+            chmod 755 /etc/init.d/cfn-hup
+            chkconfig --add cfn-hup
+          else
+             # Enable EPEL
+            sudo yum install -y https://dl.fedoraproject.org/pub/epel/epel-release-latest-7.noarch.rpm
+            
+            # Install on Amazon Linux
+            yum install -y aws-cfn-bootstrap            
+          fi
+
+          # Initialize the instance
+          /opt/aws/bin/cfn-init -v --stack ${AWS::StackName} --resource EMSServerInstance1 --region ${AWS::Region}  || error_exit 'Failed to run cfn-init.'
+
+          # Start up the cfn-hup daemon to listen for changes
+          /opt/aws/bin/cfn-hup || error_exit 'Failed to start cfn-hup'
+
+          # Download/install AWS Cloudwatch Agent
+          curl https://s3.amazonaws.com/aws-cloudwatch/downloads/latest/awslogs-agent-setup.py -O || error_exit 'Failed to download awslogs-setup'
+          chmod +x ./awslogs-agent-setup.py
+          sed -i '1s/^/Amazon Linux AMI \n/' /etc/issue
+          ./awslogs-agent-setup.py -n -r ${AWS::Region} -c /etc/awslogs/awslogs.conf || error_exit 'Failed to run awslogs-setup'
+          chkconfig --add awslogs
+          service awslogs start
+          chkconfig awslogs on
+
+          # All is well so signal success
+          /opt/aws/bin/cfn-signal -e 0 --stack ${AWS::StackName} --resource EMSServerInstance1 -r 'EMSServerInstance1: cfn-init Success' --region ${AWS::Region}
+          ########
+    CreationPolicy:
+      ResourceSignal:
+        Count: 1
+        Timeout: PT10M
+  EMSServerInstance1RecoveryAlarm:
+    Type: 'AWS::CloudWatch::Alarm'
+    Properties:
+      AlarmDescription: Recovering instance when underlying hardware fails.
+      Namespace: AWS/EC2
+      MetricName: StatusCheckFailed_System
+      Statistic: Minimum
+      Period: 60
+      EvaluationPeriods: 5
+      ComparisonOperator: GreaterThanThreshold
+      Threshold: 0
+      AlarmActions:
+        - !Sub 'arn:aws:automate:${AWS::Region}:ec2:recover'
+      Dimensions:
+        - Name: InstanceId
+          Value: !Ref EMSServerInstance1
+  EMSServerInstance2:
+    Type: 'AWS::EC2::Instance'
+    DependsOn:
+      - EMSServerInstance1
+      - EMSServer2NIC
+      - MountTarget2
+    Metadata:
+      'AWS::CloudFormation::Authentication':
+        S3AccessCreds:
+          type: S3
+          roleName: !Ref IamInstanceRole
+          buckets:
+            - !Ref EMSS3BucketName
+      'AWS::CloudFormation::Init':
+        config:
+          packages:
+            yum:
+              java-1.8.0-openjdk-devel: []
+              epel-release: []
+              nfs-utils: []
+          sources:
+            /tmp/ems/installer: !Sub 'https://${EMSS3BucketName}.s3.amazonaws.com/${EMSInstallerName}'
+          files:
+            /tmp/ems/scripts/ems-run-installer.sh:
+              content: !Sub |
+                #!/bin/bash -e
+
+                # Uninstall java-1.7.0
+                yum remove -y java-1.7.0-openjdk
+
+                # Install TIBCO EMS
+                /tmp/ems/installer/TIBCOUniversalInstaller-lnx-x86-64.bin -V \
+                  responseFile=TIBCOUniversalInstaller-ems.silent \
+                  -is:javahome $JAVA_HOME -is:log /var/log/TIBCOEMSInstaller.log -silent
+
+                # Setup TIBCO EMS Environment vars
+                export TIBCO_HOME=/opt/tibco
+                export TIBEMSD_SERVERID=2
+                export TIBCOEMS_VERSION=$(ls $TIBCO_HOME/ems)
+                export TIBEMSD_LOGFILE=$TIBCO_HOME/ems/$TIBCOEMS_VERSION/bin/logs/tibemsd$TIBEMSD_SERVERID.log
+
+                # And persist for all users'
+                cat >> /etc/profile <<EOF
+                export TIBCO_HOME=$TIBCO_HOME
+                export TIBEMSD_SERVERID=$TIBEMSD_SERVERID
+                export TIBCOEMS_VERSION=$TIBCOEMS_VERSION
+                export TIBEMSD_LOGFILE=$TIBEMSD_LOGFILE
+                EOF
+
+                echo " EMS version is $TIBCOEMS_VERSION"
+                ########
+              mode: '000755'
+              owner: root
+              group: root
+            /tmp/ems/scripts/ems-mount-efs.sh:
+              content: !Sub |
+                #!/bin/bash
+                source /etc/profile
+
+                # Mount the EFS filesystems and create directory structure
+                mkdir /mnt/efs
+
+                 # See if we are RHEL or Amazon Linux2. If Amazon Linux2, use EFS instead of NFS, and add TLS and _netdev to mount.
+                isl2=`uname -a| grep amzn2`
+                if [ "$isl2" != "" ] ; then
+                 # Install efs utilities
+                 yum -y install amazon-efs-utils
+
+                 # EFS Mount options with TLS and _netdev
+                 EFS_MOUNT_OPTIONS=tls,_netdev,soft,timeo=100,retrans=2,actimeo=1,defaults
+
+                 # Mount EFS and add mount to fstab to restore on reboot with efs mount with tls and _netdev
+                 sudo mount --types efs --options $EFS_MOUNT_OPTIONS ${EFSFileSystem}:/ /mnt/efs
+                 sudo echo "${EFSFileSystem}:/ /mnt/efs efs $EFS_MOUNT_OPTIONS 0 0" >> /etc/fstab
+
+                else
+                 # EFS Mount options with NFS4
+                 EFS_MOUNT_OPTIONS=nfsvers=4.1,rsize=1048576,wsize=1048576,soft,timeo=100,retrans=2,actimeo=1
+
+                 # Mount EFS and add mount to fstab to restore on reboot with nfs4
+                 sudo mount --types nfs4 --options $EFS_MOUNT_OPTIONS ${EFSFileSystem}.efs.${AWS::Region}.amazonaws.com:/ /mnt/efs
+                 sudo echo "${EFSFileSystem}.efs.${AWS::Region}.amazonaws.com:/ /mnt/efs nfs4 $EFS_MOUNT_OPTIONS 0 0" >> /etc/fstab
+
+                fi
+
+                # Create shared directory structure (ok if already present)
+                mkdir --parents /mnt/efs/tibco/cfgmgmt/ems/data/datastore
+                chown -R ec2-user:ec2-user /mnt/efs
+
+                # Create logs directory
+                mkdir --parents $TIBCO_HOME/ems/$(ls $TIBCO_HOME/ems)/bin/logs
+                ########
+              mode: '000755'
+              owner: root
+              group: root
+            /tmp/ems/scripts/ems-prep-config.sh:
+              content: !Sub |
+                #!/bin/bash -e
+                source /etc/profile
+
+                # Copy installed EMS config files to EFS to share with other EMS server
+                cp /home/user/tibco/tibco/cfgmgmt/ems/data/*.conf /mnt/efs/tibco/cfgmgmt/ems/data
+
+                cd /mnt/efs/tibco/cfgmgmt/ems/data
+
+                # Configure EMS stores.conf
+                echo "Configuring TIBCO EMS Stores"
+                if [ ! -f stores.orig ]; then
+                  cp stores.conf stores.orig;
+                fi
+
+                FILE_MINIMUM=2GB
+                if ! grep -q 'file_minimum=.*' stores.conf
+                then
+                  echo "  file_minimum=$FILE_MINIMUM" >> stores.conf;
+                else
+                  sed -i "s/file_minimum=.*/file_minimum=$FILE_MINIMUM/" stores.conf
+                fi
+
+                # Backup original and create TIBCO EMS factories.conf file pointing to EMS Server 1&2 endpoints
+                echo "Configuring TIBCO EMS factories"
+
+                if [ -f factories.conf ]; then
+                  if [ ! -f factories.orig ]; then
+                    cp factories.conf factories.orig;
+                  fi
+
+                  # Delete existing [FTConnectionFactory] section
+                  sed -i -e '/\[FTConnectionFactory\]/,/\[/{//!d}' -e '/\[FTConnectionFactory\]/d' factories.conf;
+                fi
+
+                # Add in new [FTConnectionFactory] section
+                cat >> factories.conf <<EOF
+
+                # Added for AWS Quick Start HA Configuration
+                [FTConnectionFactory]
+                type=generic
+                url=tcp://${EMSServer1NIC.PrimaryPrivateIpAddress}:${EMSServerPort},tcp://${EMSServer2NIC.PrimaryPrivateIpAddress}:${EMSServerPort}
+                reconnect_attempt_count = 100
+                reconnect_attempt_delay = 5000
+                reconnect_attempt_timeout = 5000
+                EOF
+
+                # Prep tibemsd1.log file. $TIBCO_HOME is owned by root:root created by cfn-init, but EMS service will run as ec2-user
+                # and therefore not have permssions to write to the log file without the following
+                touch $TIBEMSD_LOGFILE
+                chown ec2-user:ec2-user $TIBEMSD_LOGFILE
+
+                # Configure TIBCO EMS main configuration file
+                echo " Configuring the TIBCO EMS main configuration file"
+                cd /home/user/tibco/tibco/cfgmgmt/ems/data
+
+                # Save backup copy ogf originally installed conf file
+                cp tibemsd.conf tibemsd.conf.orig
+
+                sed -i \
+                  ` # replace 'logfile = .../logfile' with 'logfile = /opt/tibco/ems/8.x/bin/logs/tibemsdx.log' ` \
+                  -e "s|\(logfile\s*=\s*\)\"/home/user/tibco/tibco/cfgmgmt/ems/data/datastore/logfile\"|\1$TIBEMSD_LOGFILE|" \
+                  ` # replace '/home/user/tibco' with '/mnt/efs' ` \
+                  -e "s|/home/user/tibco|/mnt/efs|g" \
+                  -e "s|512MB|2048MB|g" \
+                  -e "s|7222|${EMSServerPort}|g" tibemsd.conf
+
+                # Add to tibemsd.conf file
+                cat >> tibemsd.conf <<EOF
+
+                # Added for AWS Configuration
+                server_heartbeat_client = 10
+                server_timeout_client_connection = 480
+                client_heartbeat_server = 10
+                client_timeout_server_connection = 480
+                always_exit_on_disk_error = enable
+                destination_backlog_swapout = 100000
+                network_thread_count = 2
+                log_trace=DEFAULT
+                logfile_max_size=100KB
+                ft_reconnect_timeout=120
+                ft_active = tcp://${EMSServer1NIC.PrimaryPrivateIpAddress}:${EMSServerPort}
+                EOF
+
+                # Setup AWSLogs to upload TIBCO EMS Server logfile to Cloudwatch Logs
+                cat >> /etc/awslogs/awslogs.conf <<EOF
+
+                # Capture TIBCO EMS Server log
+                [tibemsd$TIBEMSD_SERVERID.log]
+                file = $TIBEMSD_LOGFILE
+                log_group_name = ${TibcoEmsMainLogGroup}
+                log_stream_name = {instance_id}/tibemsd$TIBEMSD_SERVERID
+                EOF
+
+                # Copy to server home
+                cp tibemsd.conf $TIBCO_HOME/ems/$TIBCOEMS_VERSION/bin/tibemsd.conf
+                
+                # change the owner of EMS to ec2-user
+                chown -R ec2-user:ec2-user $TIBCO_HOME
+
+                echo " Configuration of EMS is complete"
+                ########
+              mode: '000755'
+              owner: root
+              group: root
+            /tmp/ems/scripts/ems-config-launch-service.sh:
+              content: !Sub |
+                #!/bin/sh
+                source /etc/profile
+
+                # Update the service conf file with the path to EMS binary and version
+                sed -i -e "s#<EMS_BINARY_PATH>#$TIBCO_HOME#g" \
+                       -e "s#<TIBCOEMS_VERSION>#$TIBCOEMS_VERSION#g" \
+                       /etc/init.d/tibemsd
+
+                # Install and start the service
+                chkconfig --add tibemsd
+                service tibemsd start
+                ########
+              mode: '000755'
+              owner: root
+              group: root
+            /etc/init.d/tibemsd:
+              content: |
+                #!/bin/bash
+                #******************************************************************
+                #* File:        tibemsd
+                #* Description: TIBCO Enterprise Messaging Service
+                #* Usage:       /etc/init.d/tibemsd64 {start|stop|status|restart}
+                #*              service tibemsd64 {start|stop|status|restart}
+                #* Author:      Richard Flather, TIBCO Messaging Group
+                #* Date:        Aug, 2018
+                #*
+                #* (C) Copyright TIBCO Software Inc. 2015-18. All rights reserved
+                #******************************************************************
+
+                ### BEGIN INIT INFO
+                # Provides:          tibemsd
+                # Required-Start:    $local_fs $network $syslog $rpcbind
+                # Required-Stop:     $local_fs $network $syslog $rpcbind
+                # Default-Start:     3 4 5
+                # Default-Stop:      0 1 2 6
+                # Short-Description: TIBCO Enterprise Messaging Service
+                # Description:       TIBCO Enterprise Message Service (EMS) is fully \
+                #                    compliant Java Message Service (JMS) implementation \
+                #                    from TIBCO with some enterprise-class enhancements
+                ### END INIT INFO
+
+                DAEMON=tibemsd
+                DAEMON_PATH="<EMS_BINARY_PATH>/ems/<TIBCOEMS_VERSION>/bin"
+                DAEMON_CONF="$DAEMON_PATH/tibemsd.conf"
+                DAEMON_OPTS="-config $DAEMON_CONF -forceStart"
+                DAEMON_USER=ec2-user
+
+                # Start the service if not already running
+                start()
+                {
+                  # Check if already running
+                  PID=$(pgrep -u $DAEMON_USER -x $DAEMON)
+                  if [ $? -eq "0" ]; then
+                          printf "$DAEMON (pid $PID) already running.\n"
+                  else
+                    # Not running. Spawn the service
+                    PID=$(su $DAEMON_USER -c "$DAEMON_PATH/$DAEMON $DAEMON_OPTS >> /dev/null 2>&1 & printf \$!")
+
+                    # Make sure it started
+                    PID=$(pgrep -u $DAEMON_USER -x $DAEMON)
+                    if [ $? -eq "0" ]; then
+                      printf "Ok $DAEMON (pid $PID) started.\n"
+                    else
+                      printf "Fail\n"
+                    fi
+                  fi
+                }
+
+                # Check if service is running
+                status()
+                {
+                  PID=$(pgrep -u $DAEMON_USER -x $DAEMON)
+                  if [ $? -eq "0" ]; then
+                    printf "$DAEMON (pid $PID) is running.\n"
+                  else
+                    printf "$DAEMON is not running.\n"
+                  fi
+                }
+
+                # Stop the service if its running
+                stop()
+                {
+                  # See if the service is running
+                  PID=$(pgrep -u ec2-user -x $DAEMON)
+                  if [ $? -eq "0" ]; then
+                    kill -2 $PID
+                    printf "Ok $DAEMON (pid $PID) stopped.\n"
+                  else
+                    printf "$DAEMON was not already running.\n"
+                  fi
+                }
+
+                usage()
+                {
+                  printf "Usage: service $DAEMON {start|stop|status|restart}\n"
+                  RETVAL=1
+                }
+
+                case "$1" in
+                  start)
+                    start;
+                    RETVAL=$?
+                    ;;
+                  stop)
+                    stop;
+                    RETVAL=$?
+                    ;;
+                  status)
+                    status;
+                    RETVAL=$?
+                    ;;
+                  restart)
+                    stop;
+                    sleep 3
+                    start;
+                    RETVAL=$?
+                    ;;
+                  *)
+                    usage;
+                    RETVAL=$?
+                    ;;
+                esac
+
+                exit $RETVAL
+                ########
+              mode: '000755'
+              owner: root
+              group: root
+            /etc/awslogs/awslogs.conf:
+              content: !Sub |
+                [general]
+                state_file= /var/log/agent-state
+                # Capture syslogs
+                [/var/log/messages]
+                file = /var/log/messages
+                log_group_name = ${TibcoEmsMainLogGroup}
+                log_stream_name = {instance_id}/messages
+              mode: '000400'
+              owner: root
+              group: root
+            /etc/awslogs/awscli.conf:
+              content: !Sub |
+                [plugins]
+                cwlogs = cwlogs
+                [default]
+                region = ${AWS::Region}
+              mode: '000400'
+              owner: root
+              group: root
+            /etc/cfn/cfn-hup.conf:
+              content: !Sub |
+                [main]
+                stack=${AWS::StackId}
+                region=${AWS::Region}
+              mode: '000400'
+              owner: root
+              group: root
+            /etc/cfn/hooks.d/cfn-auto-reloader.conf:
+              content: !Sub |
+                [cfn-auto-reloader-hook]
+                triggers=post.update
+                path=Resources.EMSServerInstance2.Metadata.AWS::CloudFormation::Init
+                action=/opt/aws/bin/cfn-init -v --stack ${AWS::StackName} --resource EMSServerInstance2 --region ${AWS::Region} -runas=root
+          services:
+            sysvinit:
+              cfn-hup:
+                enabled: 'true'
+                ensureRunning: 'true'
+                files:
+                  - /etc/cfn/cfn-hup.conf
+                  - /etc/cfn/hooks.d/cfn-auto-reloader.conf
+          commands:
+            01-ems-run-installer:
+              command: /tmp/ems/scripts/ems-run-installer.sh
+            02-ems-mount-efs:
+              command: /tmp/ems/scripts/ems-mount-efs.sh
+            03-ems-prep-config:
+              command: /tmp/ems/scripts/ems-prep-config.sh
+            04-ems-config-launch-service:
+              command: /tmp/ems/scripts/ems-config-launch-service.sh
+    Properties:
+      KeyName: !Ref KeyPairName
+      DisableApiTermination: 'false'
+      ImageId: !If
+        - UseAmazonLinux
+        - !FindInMap
+          - AWSAMIRegionMap
+          - !Ref 'AWS::Region'
+          - AMZLNX
+        - !FindInMap
+          - AWSAMIRegionMap
+          - !Ref 'AWS::Region'
+          - RHELHVM
+      InstanceType: !Ref EMSServerInstanceType
+      Monitoring: 'false'
+      Tags:
+        - Key: Application
+          Value: AWS Quick Start (TIBCO EMS)
+        - Key: Name
+          Value: !Sub 'TIBCO EMS Server 2 (${AWS::StackName})'
+      NetworkInterfaces:
+        - NetworkInterfaceId: !Ref EMSServer2NIC
+          DeviceIndex: '0'
+      IamInstanceProfile: !Ref IamInstanceRoleProfile
+      UserData: !Base64
+        'Fn::Sub': |
+          #!/bin/bash
+
+          # Update existing installed packages
+          yum update -y
+
+          # Helper function
+          function error_exit
+          {
+            /opt/aws/bin/cfn-signal -e 1 --stack ${AWS::StackName} --resource EMSServerInstance2 -r "EMSServerInstance2: $1\n" --region ${AWS::Region}
+            exit 1
+          }
+
+          # If Red-Hat, Install aws-cfn-bootstrap code
+          if [ "${EMSAMIType}" != "Amazon-Linux2-HVM" ]; then
+            ### This is redhat 7. It supports cloud-init but Cfn packages need to be installed unlike AWS Linux. And they are installed in a different location
+            # First enable EPEL
+            sudo yum install -y https://dl.fedoraproject.org/pub/epel/epel-release-latest-7.noarch.rpm
+
+            # Now install Python Setuptools(easy_install) and Pip
+            yum -y install python-pip
+
+            # Now install cfn scripts
+            /bin/easy_install --script-dir /opt/aws/bin https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-latest.tar.gz
+
+            # Now fix the cfn-hup script and copy to init.d location as AWS does not do it for you
+            cp -f `pip show aws-cfn-bootstrap 2>/dev/null|grep -E "^Location"|awk -F: '{print $2}'`/init/redhat/cfn-hup /etc/init.d/
+            chmod 755 /etc/init.d/cfn-hup
+            chkconfig --add cfn-hup
+          else
+            # Enable EPEL
+            sudo yum install -y https://dl.fedoraproject.org/pub/epel/epel-release-latest-7.noarch.rpm
+            
+            # Install on Amazon Linux
+            yum install -y aws-cfn-bootstrap    
+          fi
+
+          # Initialize the instance
+          /opt/aws/bin/cfn-init -v --stack ${AWS::StackName} --resource EMSServerInstance2 --region ${AWS::Region}  || error_exit 'Failed to run cfn-init.'
+
+          # Start up the cfn-hup daemon to listen for changes
+          /opt/aws/bin/cfn-hup || error_exit 'Failed to start cfn-hup'
+
+          # Download/install AWS Cloudwatch Agent
+          curl https://s3.amazonaws.com/aws-cloudwatch/downloads/latest/awslogs-agent-setup.py -O || error_exit 'Failed to download awslogs-setup'
+          chmod +x ./awslogs-agent-setup.py
+          sed -i '1s/^/Amazon Linux AMI \n/' /etc/issue
+          ./awslogs-agent-setup.py -n -r ${AWS::Region} -c /etc/awslogs/awslogs.conf || error_exit 'Failed to run awslogs-setup'
+          chkconfig --add awslogs
+          service awslogs start
+          chkconfig awslogs on
+
+          # All is well so signal success
+          /opt/aws/bin/cfn-signal -e 0 --stack ${AWS::StackName} --resource EMSServerInstance2 -r 'EMSServerInstance2: cfn-init Success' --region ${AWS::Region}
+          ########
+    CreationPolicy:
+      ResourceSignal:
+        Count: 1
+        Timeout: PT10M
+  EMSServerInstance2RecoveryAlarm:
+    Type: 'AWS::CloudWatch::Alarm'
+    Properties:
+      AlarmDescription: Recovering instance when underlying hardware fails.
+      Namespace: AWS/EC2
+      MetricName: StatusCheckFailed_System
+      Statistic: Minimum
+      Period: 60
+      EvaluationPeriods: 5
+      ComparisonOperator: GreaterThanThreshold
+      Threshold: 0
+      AlarmActions:
+        - !Sub 'arn:aws:automate:${AWS::Region}:ec2:recover'
+      Dimensions:
+        - Name: InstanceId
+          Value: !Ref EMSServerInstance2
+Outputs:
+  EMSEFSID:
+    Description: EMS EFS ID (For Backup Purposes)
+    Value: !Ref EFSFileSystem
+  EMSServer1CP:
+    Description: EMS Server 1 Connection Point
+    Value: !Sub '${EMSServer1NIC.PrimaryPrivateIpAddress}:${EMSServerPort}'
+    Export:
+      Name: !Sub '${AWS::StackName}-EMSServer1CP'
+  EMSServer1SSH:
+    Description: SSH command for accessing EMS Server 1 (assumes via the Bastion host with SSH agent forwarding enabled)
+    Value: !Sub 'ssh -A ec2-user@${EMSServer1NIC.PrimaryPrivateIpAddress}'
+  EMSServer2CP:
+    Description: EMS Server 2 Connection Point
+    Value: !Sub '${EMSServer2NIC.PrimaryPrivateIpAddress}:${EMSServerPort}'
+    Export:
+      Name: !Sub '${AWS::StackName}-EMSServer2CP'
+  EMSServer2SSH:
+    Description: SSH command for accessing EMS Server 2 (assumes via the Bastion host with SSH agent forwarding enabled)
+    Value: !Sub 'ssh -A ec2-user@${EMSServer2NIC.PrimaryPrivateIpAddress}'

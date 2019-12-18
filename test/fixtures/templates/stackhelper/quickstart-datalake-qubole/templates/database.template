@@ -1,0 +1,150 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "Creates a MySQL RDS instance within a VPC.  **WARNING** This template creates an Amazon RDS instance of the size and instance type that you specify. You will be billed for the AWS resources used if you create a stack from this template.(qs-1nncltg5d)",
+    "Parameters": {
+        "PublicSubnet1ID": {
+            "Description": "ID of the public subnet 1 that you want to provision the RDS instance into (e.g., subnet-a0246dcd).",
+            "Type": "AWS::EC2::Subnet::Id"
+        },
+        "PublicSubnet2ID": {
+            "Description": "ID of the public subnet 2 that you want to provision the RDS instance into (e.g., subnet-a0246dcd).",
+            "Type": "AWS::EC2::Subnet::Id"
+        },
+        "RDSDatabaseName": {
+            "Description": "The name of the database created when the RDS instance is provisioned.",
+            "Default": "qubole",
+            "Type": "String"
+        },
+        "RDSInstanceType": {
+            "AllowedValues": [
+                "db.t2.micro",
+                "db.t2.small",
+                "db.t2.medium",
+                "db.t2.large"
+            ],
+            "Description": "The type of the RDS instance that is being created.",
+            "Default": "db.t2.small",
+            "Type": "String"
+        },
+        "RDSPassword": {
+            "Description": "The password that is associated with the master user account for the RDS that is being created. Password must contain 8 to 64 printable ASCII characters excluding: /, \", \\', \\ and @. It must contain 1 uppercase letter, 1 lowercase letter, and 1 number.",
+            "NoEcho": "true",
+            "Type": "String"
+        },
+        "RDSPort": {
+            "Description": "The port that the RDS instance will listen on.",
+            "Default": "3306",
+            "Type": "Number"
+        },
+        "RDSUsername": {
+            "Description": "The user name that is associated with the master user account for the RDS that is being created. User name parameter must be lowercase, begin with a letter, contain only alphanumeric characters or underscores, and be less than 128 characters.",
+            "Default": "rdsuser",
+            "Type": "String"
+        },
+        "VPCCIDR": {
+            "Description": "CIDR block for your existing VPC.",
+            "Type": "String"
+        },
+        "VpcId": {
+            "Description": "ID of your existing VPC (e.g., vpc-0343606e).",
+            "Type": "AWS::EC2::VPC::Id"
+        }
+    },
+    "Resources": {
+        "RDSInstance": {
+            "Properties": {
+                "AllocatedStorage": "10",
+                "MultiAZ": "false",
+                "DBInstanceClass": {
+                    "Ref": "RDSInstanceType"
+                },
+                "DBName": {
+                    "Ref": "RDSDatabaseName"
+                },
+                "DBSubnetGroupName": {
+                    "Ref": "RDSSubnetGroup"
+                },
+                "Engine": "MySQL",
+                "EngineVersion": "5.5",
+                "MasterUserPassword": {
+                    "Ref": "RDSPassword"
+                },
+                "MasterUsername": {
+                    "Ref": "RDSUsername"
+                },
+                "Port": {
+                    "Ref": "RDSPort"
+                },
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": "QuboleQuickstartRDS"
+                    }
+                ],
+                "VPCSecurityGroups": [
+                    {
+                        "Ref": "RDSSecurityGroup"
+                    }
+                ]
+            },
+            "Type": "AWS::RDS::DBInstance"
+        },
+        "RDSSecurityGroup": {
+            "Properties": {
+                "GroupDescription": "Enable MySQL port",
+                "SecurityGroupIngress": [
+                    {
+                        "CidrIp": {
+                            "Ref": "VPCCIDR"
+                        },
+                        "FromPort": {
+                            "Ref": "RDSPort"
+                        },
+                        "IpProtocol": "tcp",
+                        "ToPort": {
+                            "Ref": "RDSPort"
+                        }
+                    }
+                ],
+                "VpcId": {
+                    "Ref": "VpcId"
+                }
+            },
+            "Type": "AWS::EC2::SecurityGroup"
+        },
+        "RDSSubnetGroup": {
+            "Properties": {
+                "DBSubnetGroupDescription": "RDS subnet group",
+                "SubnetIds": [
+                    {
+                        "Ref": "PublicSubnet1ID"
+                    },
+                    {
+                        "Ref": "PublicSubnet2ID"
+                    }
+                ]
+            },
+            "Type": "AWS::RDS::DBSubnetGroup"
+        }
+    },
+    "Outputs": {
+        "RDSHostname": {
+            "Description": "RDS hostname",
+            "Value": {
+                "Fn::GetAtt": [
+                    "RDSInstance",
+                    "Endpoint.Address"
+                ]
+            }
+        },
+        "RDSPort": {
+            "Description": "RDS port",
+            "Value": {
+                "Fn::GetAtt": [
+                    "RDSInstance",
+                    "Endpoint.Port"
+                ]
+            }
+        }
+    }
+}

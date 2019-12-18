@@ -1,0 +1,1401 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "Creates the apigateway infrastructure to communicates with Cherwell.",
+    "Parameters": {
+        "GetEstimateFunction": {
+            "Description": "The arn for the get estimate Lambda function.",
+            "Type": "String"
+        }
+    },
+    "Resources": {
+        "APIKeyPlan": {
+            "Type": "AWS::ApiGateway::UsagePlanKey",
+            "Properties": {
+                "KeyId": {
+                    "Ref": "ApiKey"
+                },
+                "KeyType": "API_KEY",
+                "UsagePlanId": {
+                    "Ref": "UseagePlan"
+                }
+            }
+        },
+        "ApiKey": {
+            "Type": "AWS::ApiGateway::ApiKey",
+            "DependsOn": [
+                "ApiGatewayDeployment",
+                "RestApi"
+            ],
+            "Properties": {
+                "Description": "API key created to authrize Cherwell API calls.",
+                "Enabled": "true",
+                "StageKeys": [
+                    {
+                        "RestApiId": {
+                            "Ref": "RestApi"
+                        },
+                        "StageName": "production"
+                    }
+                ]
+            }
+        },
+        "UseagePlan": {
+            "Type": "AWS::ApiGateway::UsagePlan",
+            "DependsOn": [
+                "ApiGatewayDeployment",
+                "RestApi"
+            ],
+            "Properties": {
+                "ApiStages": [
+                    {
+                        "ApiId": {
+                            "Ref": "RestApi"
+                        },
+                        "Stage": "production"
+                    }
+                ],
+                "Description": "Useage plan for Cherwell",
+                "Throttle": {
+                    "BurstLimit": 200,
+                    "RateLimit": 100
+                }
+            }
+        },
+        "IamRoleExecution": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "AssumeRolePolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Principal": {
+                                "Service": [
+                                    "apigateway.amazonaws.com"
+                                ]
+                            },
+                            "Action": [
+                                "sts:AssumeRole"
+                            ]
+                        }
+                    ]
+                },
+                "Policies": [
+                    {
+                        "PolicyName": {
+                            "Fn::Join": [
+                                "-",
+                                [
+                                    "cherdwell-service",
+                                    {
+                                        "Ref": "AWS::StackName"
+                                    }
+                                ]
+                            ]
+                        },
+                        "PolicyDocument": {
+                            "Version": "2012-10-17",
+                            "Statement": [
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "cloudformation:CreateStack",
+                                        "cloudformation:DeleteStack",
+                                        "cloudformation:DescribeStackEvents",
+                                        "cloudformation:DescribeStacks",
+                                        "cloudformation:SetStackPolicy",
+                                        "cloudformation:ValidateTemplate",
+                                        "cloudformation:UpdateStack",
+                                        "cloudformation:CreateChangeSet",
+                                        "cloudformation:DescribeChangeSet",
+                                        "cloudformation:ExecuteChangeSet",
+                                        "cloudformation:ListChangeSets",
+                                        "cloudformation:DeleteChangeSet"
+                                    ],
+                                    "Resource": [
+                                        "arn:aws:cloudformation:*:*:stack/SC-*",
+                                        "arn:aws:cloudformation:*:*:changeSet/SC-*"
+                                    ]
+                                },
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "cloudformation:GetTemplateSummary",
+                                        "servicecatalog:DescribeProduct",
+                                        "servicecatalog:DescribeProductView",
+                                        "servicecatalog:DescribeProvisioningParameters",
+                                        "servicecatalog:ListLaunchPaths",
+                                        "servicecatalog:ProvisionProduct",
+                                        "servicecatalog:SearchProducts",
+                                        "servicecatalog:DescribeRecord",
+                                        "ssm:DescribeDocument",
+                                        "ssm:GetDocument",
+                                        "ssm:ListDocuments",
+                                        "ssm:ListDocumentVersions",
+                                        "ssm:StartAutomationExecution",
+                                        "ssm:StopAutomationExecution"
+                                    ],
+                                    "Resource": "*"
+                                },
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "servicecatalog:DescribeProvisionedProduct",
+                                        "servicecatalog:ListRecordHistory",
+                                        "servicecatalog:ScanProvisionedProducts",
+                                        "servicecatalog:TerminateProvisionedProduct",
+                                        "servicecatalog:UpdateProvisionedProduct",
+                                        "servicecatalog:SearchProvisionedProducts",
+                                        "servicecatalog:CreateProvisionedProductPlan",
+                                        "servicecatalog:DescribeProvisionedProductPlan",
+                                        "servicecatalog:ExecuteProvisionedProductPlan",
+                                        "servicecatalog:DeleteProvisionedProductPlan",
+                                        "servicecatalog:ListProvisionedProductPlans"
+                                    ],
+                                    "Resource": "*",
+                                    "Condition": {
+                                        "StringEquals": {
+                                            "servicecatalog:userLevel": "self"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                ],
+                "Path": "/"
+            }
+        },
+        "RestApi": {
+            "Type": "AWS::ApiGateway::RestApi",
+            "Properties": {
+                "Name": "Cherwell"
+            }
+        },
+        "ApiGatewayDeployment": {
+            "Type": "AWS::ApiGateway::Deployment",
+            "Properties": {
+                "RestApiId": {
+                    "Ref": "RestApi"
+                },
+                "StageName": "production"
+            },
+            "DependsOn": [
+                "SearchProductsMethod",
+                "CreateProvisionedProductPlanMethod",
+                "DeleteProvisionedProductPlanMethod",
+                "DescribeProductMethod",
+                "DescribeProvisionedProductMethod",
+                "DescribeProvisionedProductPlanMethod",
+                "DescribeProvisioningParametersMethod",
+                "ExecuteProvisionedProductPlanMethod",
+                "ListLaunchPathsMethod",
+                "ListProvisionedProductPlansMethod",
+                "ListRecordHistoryMethod",
+                "ProvisionProductMethod",
+                "TerminateProvisionedProductMethod",
+                "GetestimateOptionsMethod",
+                "GetestimatePostMethod"
+            ]
+        },
+        "GetestimateResource": {
+            "Type": "AWS::ApiGateway::Resource",
+            "Properties": {
+                "ParentId": {
+                    "Fn::GetAtt": [
+                        "RestApi",
+                        "RootResourceId"
+                    ]
+                },
+                "PathPart": "getEstimate",
+                "RestApiId": {
+                    "Ref": "RestApi"
+                }
+            }
+        },
+        "GetestimateOptionsMethod": {
+            "Type": "AWS::ApiGateway::Method",
+            "Properties": {
+                "AuthorizationType": "NONE",
+                "HttpMethod": "OPTIONS",
+                "ApiKeyRequired": true,
+                "MethodResponses": [
+                    {
+                        "StatusCode": "200",
+                        "ResponseParameters": {
+                            "method.response.header.Access-Control-Allow-Origin": true,
+                            "method.response.header.Access-Control-Allow-Headers": true,
+                            "method.response.header.Access-Control-Allow-Methods": true,
+                            "method.response.header.Access-Control-Allow-Credentials": true,
+                            "method.response.header.Access-Control-Max-Age": true
+                        },
+                        "ResponseModels": {}
+                    }
+                ],
+                "RequestParameters": {},
+                "Integration": {
+                    "Type": "MOCK",
+                    "RequestTemplates": {
+                        "application/json": "{statusCode:200}"
+                    },
+                    "ContentHandling": "CONVERT_TO_TEXT",
+                    "IntegrationResponses": [
+                        {
+                            "StatusCode": "200",
+                            "ResponseParameters": {
+                                "method.response.header.Access-Control-Allow-Origin": "'*'",
+                                "method.response.header.Access-Control-Allow-Headers": "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Amz-User-Agent'",
+                                "method.response.header.Access-Control-Allow-Methods": "'OPTIONS,POST'",
+                                "method.response.header.Access-Control-Allow-Credentials": "'false'",
+                                "method.response.header.Access-Control-Max-Age": "'86400'"
+                            },
+                            "ResponseTemplates": {
+                                "application/json": ""
+                            }
+                        }
+                    ]
+                },
+                "ResourceId": {
+                    "Ref": "GetestimateResource"
+                },
+                "RestApiId": {
+                    "Ref": "RestApi"
+                }
+            }
+        },
+        "GetestimatePostMethod": {
+            "Type": "AWS::ApiGateway::Method",
+            "Properties": {
+                "HttpMethod": "POST",
+                "RequestParameters": {},
+                "ResourceId": {
+                    "Ref": "GetestimateResource"
+                },
+                "RestApiId": {
+                    "Ref": "RestApi"
+                },
+                "ApiKeyRequired": true,
+                "AuthorizationType": "NONE",
+                "Integration": {
+                    "IntegrationHttpMethod": "POST",
+                    "Type": "AWS_PROXY",
+                    "Uri": {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "arn:",
+                                {
+                                    "Ref": "AWS::Partition"
+                                },
+                                ":apigateway:",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                ":lambda:path/2015-03-31/functions/",
+                                {
+                                    "Ref": "GetEstimateFunction"
+                                },
+                                "/invocations"
+                            ]
+                        ]
+                    }
+                },
+                "MethodResponses": []
+            }
+        },
+        "GetestimatePermission": {
+            "Type": "AWS::Lambda::Permission",
+            "Properties": {
+                "FunctionName": {
+                    "Ref": "GetEstimateFunction"
+                },
+                "Action": "lambda:InvokeFunction",
+                "Principal": {
+                    "Fn::Join": [
+                        "",
+                        [
+                            "apigateway.",
+                            {
+                                "Ref": "AWS::URLSuffix"
+                            }
+                        ]
+                    ]
+                },
+                "SourceArn": {
+                    "Fn::Join": [
+                        "",
+                        [
+                            "arn:",
+                            {
+                                "Ref": "AWS::Partition"
+                            },
+                            ":execute-api:",
+                            {
+                                "Ref": "AWS::Region"
+                            },
+                            ":",
+                            {
+                                "Ref": "AWS::AccountId"
+                            },
+                            ":",
+                            {
+                                "Ref": "RestApi"
+                            },
+                            "/*/*"
+                        ]
+                    ]
+                }
+            }
+        },
+        "SearchProductsResource": {
+            "Type": "AWS::ApiGateway::Resource",
+            "Properties": {
+                "ParentId": {
+                    "Fn::GetAtt": [
+                        "RestApi",
+                        "RootResourceId"
+                    ]
+                },
+                "PathPart": "searchproducts",
+                "RestApiId": {
+                    "Ref": "RestApi"
+                }
+            }
+        },
+        "SearchProductsMethod": {
+            "Type": "AWS::ApiGateway::Method",
+            "Properties": {
+                "ApiKeyRequired": true,
+                "HttpMethod": "POST",
+                "ResourceId": {
+                    "Ref": "SearchProductsResource"
+                },
+                "RestApiId": {
+                    "Ref": "RestApi"
+                },
+                "AuthorizationType": "NONE",
+                "Integration": {
+                    "Type": "AWS",
+                    "Credentials": {
+                        "Fn::GetAtt": [
+                            "IamRoleExecution",
+                            "Arn"
+                        ]
+                    },
+                    "IntegrationHttpMethod": "POST",
+                    "Uri": {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "arn:aws:apigateway:",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                ":servicecatalog:path//"
+                            ]
+                        ]
+                    },
+                    "IntegrationResponses": [
+                        {
+                            "StatusCode": "200",
+                            "ResponseTemplates": {
+                                "application/json": ""
+                            }
+                        },
+                        {
+                            "StatusCode": "400",
+                            "SelectionPattern": "4\\d{2}",
+                            "ResponseTemplates": {
+                                "application/json": ""
+                            }
+                        }
+                    ],
+                    "RequestParameters": {
+                        "integration.request.header.Content-Type": "'application/x-amz-json-1.1'",
+                        "integration.request.header.x-Amz-Target": "'AWS242ServiceCatalogService.SearchProducts'"
+                    }
+                },
+                "MethodResponses": [
+                    {
+                        "StatusCode": "200"
+                    },
+                    {
+                        "StatusCode": "400"
+                    }
+                ]
+            }
+        },
+        "CreateProvisionedProductplanResource": {
+            "Type": "AWS::ApiGateway::Resource",
+            "Properties": {
+                "ParentId": {
+                    "Fn::GetAtt": [
+                        "RestApi",
+                        "RootResourceId"
+                    ]
+                },
+                "PathPart": "createprovisionedproductplan",
+                "RestApiId": {
+                    "Ref": "RestApi"
+                }
+            }
+        },
+        "CreateProvisionedProductPlanMethod": {
+            "Type": "AWS::ApiGateway::Method",
+            "Properties": {
+                "ApiKeyRequired": true,
+                "HttpMethod": "POST",
+                "ResourceId": {
+                    "Ref": "CreateProvisionedProductplanResource"
+                },
+                "RestApiId": {
+                    "Ref": "RestApi"
+                },
+                "AuthorizationType": "NONE",
+                "Integration": {
+                    "Type": "AWS",
+                    "Credentials": {
+                        "Fn::GetAtt": [
+                            "IamRoleExecution",
+                            "Arn"
+                        ]
+                    },
+                    "IntegrationHttpMethod": "POST",
+                    "Uri": {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "arn:aws:apigateway:",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                ":servicecatalog:path//"
+                            ]
+                        ]
+                    },
+                    "IntegrationResponses": [
+                        {
+                            "StatusCode": "200",
+                            "ResponseTemplates": {
+                                "application/json": ""
+                            }
+                        },
+                        {
+                            "StatusCode": "400",
+                            "SelectionPattern": "4\\d{2}",
+                            "ResponseTemplates": {
+                                "application/json": ""
+                            }
+                        }
+                    ],
+                    "RequestParameters": {
+                        "integration.request.header.Content-Type": "'application/x-amz-json-1.1'",
+                        "integration.request.header.x-Amz-Target": "'AWS242ServiceCatalogService.CreateProvisionedProductPlan'"
+                    }
+                },
+                "MethodResponses": [
+                    {
+                        "StatusCode": "200"
+                    },
+                    {
+                        "StatusCode": "400"
+                    }
+                ]
+            }
+        },
+        "DeleteProvisionedProductPlanResource": {
+            "Type": "AWS::ApiGateway::Resource",
+            "Properties": {
+                "ParentId": {
+                    "Fn::GetAtt": [
+                        "RestApi",
+                        "RootResourceId"
+                    ]
+                },
+                "PathPart": "deleteprovisionedproductplan",
+                "RestApiId": {
+                    "Ref": "RestApi"
+                }
+            }
+        },
+        "DeleteProvisionedProductPlanMethod": {
+            "Type": "AWS::ApiGateway::Method",
+            "Properties": {
+                "ApiKeyRequired": true,
+                "HttpMethod": "POST",
+                "ResourceId": {
+                    "Ref": "DeleteProvisionedProductPlanResource"
+                },
+                "RestApiId": {
+                    "Ref": "RestApi"
+                },
+                "AuthorizationType": "NONE",
+                "Integration": {
+                    "Type": "AWS",
+                    "Credentials": {
+                        "Fn::GetAtt": [
+                            "IamRoleExecution",
+                            "Arn"
+                        ]
+                    },
+                    "IntegrationHttpMethod": "POST",
+                    "Uri": {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "arn:aws:apigateway:",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                ":servicecatalog:path//"
+                            ]
+                        ]
+                    },
+                    "IntegrationResponses": [
+                        {
+                            "StatusCode": "200",
+                            "ResponseTemplates": {
+                                "application/json": ""
+                            }
+                        },
+                        {
+                            "StatusCode": "400",
+                            "SelectionPattern": "4\\d{2}",
+                            "ResponseTemplates": {
+                                "application/json": ""
+                            }
+                        }
+                    ],
+                    "RequestParameters": {
+                        "integration.request.header.Content-Type": "'application/x-amz-json-1.1'",
+                        "integration.request.header.x-Amz-Target": "'AWS242ServiceCatalogService.DeleteProvisionedProductPlan'"
+                    }
+                },
+                "MethodResponses": [
+                    {
+                        "StatusCode": "200"
+                    },
+                    {
+                        "StatusCode": "400"
+                    }
+                ]
+            }
+        },
+        "DescribeProductResource": {
+            "Type": "AWS::ApiGateway::Resource",
+            "Properties": {
+                "ParentId": {
+                    "Fn::GetAtt": [
+                        "RestApi",
+                        "RootResourceId"
+                    ]
+                },
+                "PathPart": "describeproduct",
+                "RestApiId": {
+                    "Ref": "RestApi"
+                }
+            }
+        },
+        "DescribeProductMethod": {
+            "Type": "AWS::ApiGateway::Method",
+            "Properties": {
+                "ApiKeyRequired": true,
+                "HttpMethod": "POST",
+                "ResourceId": {
+                    "Ref": "DescribeProductResource"
+                },
+                "RestApiId": {
+                    "Ref": "RestApi"
+                },
+                "AuthorizationType": "NONE",
+                "Integration": {
+                    "Type": "AWS",
+                    "Credentials": {
+                        "Fn::GetAtt": [
+                            "IamRoleExecution",
+                            "Arn"
+                        ]
+                    },
+                    "IntegrationHttpMethod": "POST",
+                    "Uri": {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "arn:aws:apigateway:",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                ":servicecatalog:path//"
+                            ]
+                        ]
+                    },
+                    "IntegrationResponses": [
+                        {
+                            "StatusCode": "200",
+                            "ResponseTemplates": {
+                                "application/json": ""
+                            }
+                        },
+                        {
+                            "StatusCode": "400",
+                            "SelectionPattern": "4\\d{2}",
+                            "ResponseTemplates": {
+                                "application/json": ""
+                            }
+                        }
+                    ],
+                    "RequestParameters": {
+                        "integration.request.header.Content-Type": "'application/x-amz-json-1.1'",
+                        "integration.request.header.x-Amz-Target": "'AWS242ServiceCatalogService.DescribeProduct'"
+                    }
+                },
+                "MethodResponses": [
+                    {
+                        "StatusCode": "200"
+                    },
+                    {
+                        "StatusCode": "400"
+                    }
+                ]
+            }
+        },
+        "DescribeProvisionedProductResource": {
+            "Type": "AWS::ApiGateway::Resource",
+            "Properties": {
+                "ParentId": {
+                    "Fn::GetAtt": [
+                        "RestApi",
+                        "RootResourceId"
+                    ]
+                },
+                "PathPart": "describeprovisionedproduct",
+                "RestApiId": {
+                    "Ref": "RestApi"
+                }
+            }
+        },
+        "DescribeProvisionedProductMethod": {
+            "Type": "AWS::ApiGateway::Method",
+            "Properties": {
+                "ApiKeyRequired": true,
+                "HttpMethod": "POST",
+                "ResourceId": {
+                    "Ref": "DescribeProvisionedProductResource"
+                },
+                "RestApiId": {
+                    "Ref": "RestApi"
+                },
+                "AuthorizationType": "NONE",
+                "Integration": {
+                    "Type": "AWS",
+                    "Credentials": {
+                        "Fn::GetAtt": [
+                            "IamRoleExecution",
+                            "Arn"
+                        ]
+                    },
+                    "IntegrationHttpMethod": "POST",
+                    "Uri": {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "arn:aws:apigateway:",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                ":servicecatalog:path//"
+                            ]
+                        ]
+                    },
+                    "IntegrationResponses": [
+                        {
+                            "StatusCode": "200",
+                            "ResponseTemplates": {
+                                "application/json": ""
+                            }
+                        },
+                        {
+                            "StatusCode": "400",
+                            "SelectionPattern": "4\\d{2}",
+                            "ResponseTemplates": {
+                                "application/json": ""
+                            }
+                        }
+                    ],
+                    "RequestParameters": {
+                        "integration.request.header.Content-Type": "'application/x-amz-json-1.1'",
+                        "integration.request.header.x-Amz-Target": "'AWS242ServiceCatalogService.DescribeProvisionedProduct'"
+                    }
+                },
+                "MethodResponses": [
+                    {
+                        "StatusCode": "200"
+                    },
+                    {
+                        "StatusCode": "400"
+                    }
+                ]
+            }
+        },
+        "DescribeProvisionedProductPlanResource": {
+            "Type": "AWS::ApiGateway::Resource",
+            "Properties": {
+                "ParentId": {
+                    "Fn::GetAtt": [
+                        "RestApi",
+                        "RootResourceId"
+                    ]
+                },
+                "PathPart": "describeprovisionedproductplan",
+                "RestApiId": {
+                    "Ref": "RestApi"
+                }
+            }
+        },
+        "DescribeProvisionedProductPlanMethod": {
+            "Type": "AWS::ApiGateway::Method",
+            "Properties": {
+                "ApiKeyRequired": true,
+                "HttpMethod": "POST",
+                "ResourceId": {
+                    "Ref": "DescribeProvisionedProductPlanResource"
+                },
+                "RestApiId": {
+                    "Ref": "RestApi"
+                },
+                "AuthorizationType": "NONE",
+                "Integration": {
+                    "Type": "AWS",
+                    "Credentials": {
+                        "Fn::GetAtt": [
+                            "IamRoleExecution",
+                            "Arn"
+                        ]
+                    },
+                    "IntegrationHttpMethod": "POST",
+                    "Uri": {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "arn:aws:apigateway:",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                ":servicecatalog:path//"
+                            ]
+                        ]
+                    },
+                    "IntegrationResponses": [
+                        {
+                            "StatusCode": "200",
+                            "ResponseTemplates": {
+                                "application/json": ""
+                            }
+                        },
+                        {
+                            "StatusCode": "400",
+                            "SelectionPattern": "4\\d{2}",
+                            "ResponseTemplates": {
+                                "application/json": ""
+                            }
+                        }
+                    ],
+                    "RequestParameters": {
+                        "integration.request.header.Content-Type": "'application/x-amz-json-1.1'",
+                        "integration.request.header.x-Amz-Target": "'AWS242ServiceCatalogService.DescribeProvisionedProductPlan'"
+                    }
+                },
+                "MethodResponses": [
+                    {
+                        "StatusCode": "200"
+                    },
+                    {
+                        "StatusCode": "400"
+                    }
+                ]
+            }
+        },
+        "DescribeProvisioningParametersResource": {
+            "Type": "AWS::ApiGateway::Resource",
+            "Properties": {
+                "ParentId": {
+                    "Fn::GetAtt": [
+                        "RestApi",
+                        "RootResourceId"
+                    ]
+                },
+                "PathPart": "describeprovisioningparameters",
+                "RestApiId": {
+                    "Ref": "RestApi"
+                }
+            }
+        },
+        "DescribeProvisioningParametersMethod": {
+            "Type": "AWS::ApiGateway::Method",
+            "Properties": {
+                "ApiKeyRequired": true,
+                "HttpMethod": "POST",
+                "ResourceId": {
+                    "Ref": "DescribeProvisioningParametersResource"
+                },
+                "RestApiId": {
+                    "Ref": "RestApi"
+                },
+                "AuthorizationType": "NONE",
+                "Integration": {
+                    "Type": "AWS",
+                    "Credentials": {
+                        "Fn::GetAtt": [
+                            "IamRoleExecution",
+                            "Arn"
+                        ]
+                    },
+                    "IntegrationHttpMethod": "POST",
+                    "Uri": {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "arn:aws:apigateway:",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                ":servicecatalog:path//"
+                            ]
+                        ]
+                    },
+                    "IntegrationResponses": [
+                        {
+                            "StatusCode": "200",
+                            "ResponseTemplates": {
+                                "application/json": ""
+                            }
+                        },
+                        {
+                            "StatusCode": "400",
+                            "SelectionPattern": "4\\d{2}",
+                            "ResponseTemplates": {
+                                "application/json": ""
+                            }
+                        }
+                    ],
+                    "RequestParameters": {
+                        "integration.request.header.Content-Type": "'application/x-amz-json-1.1'",
+                        "integration.request.header.x-Amz-Target": "'AWS242ServiceCatalogService.DescribeProvisioningParameters'"
+                    }
+                },
+                "MethodResponses": [
+                    {
+                        "StatusCode": "200"
+                    },
+                    {
+                        "StatusCode": "400"
+                    }
+                ]
+            }
+        },
+        "ExecuteProvisionedProductPlanResource": {
+            "Type": "AWS::ApiGateway::Resource",
+            "Properties": {
+                "ParentId": {
+                    "Fn::GetAtt": [
+                        "RestApi",
+                        "RootResourceId"
+                    ]
+                },
+                "PathPart": "executeprovisionedproductplan",
+                "RestApiId": {
+                    "Ref": "RestApi"
+                }
+            }
+        },
+        "ExecuteProvisionedProductPlanMethod": {
+            "Type": "AWS::ApiGateway::Method",
+            "Properties": {
+                "ApiKeyRequired": true,
+                "HttpMethod": "POST",
+                "ResourceId": {
+                    "Ref": "ExecuteProvisionedProductPlanResource"
+                },
+                "RestApiId": {
+                    "Ref": "RestApi"
+                },
+                "AuthorizationType": "NONE",
+                "Integration": {
+                    "Type": "AWS",
+                    "Credentials": {
+                        "Fn::GetAtt": [
+                            "IamRoleExecution",
+                            "Arn"
+                        ]
+                    },
+                    "IntegrationHttpMethod": "POST",
+                    "Uri": {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "arn:aws:apigateway:",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                ":servicecatalog:path//"
+                            ]
+                        ]
+                    },
+                    "IntegrationResponses": [
+                        {
+                            "StatusCode": "200",
+                            "ResponseTemplates": {
+                                "application/json": ""
+                            }
+                        },
+                        {
+                            "StatusCode": "400",
+                            "SelectionPattern": "4\\d{2}",
+                            "ResponseTemplates": {
+                                "application/json": ""
+                            }
+                        }
+                    ],
+                    "RequestParameters": {
+                        "integration.request.header.Content-Type": "'application/x-amz-json-1.1'",
+                        "integration.request.header.x-Amz-Target": "'AWS242ServiceCatalogService.ExecuteProvisionedProductPlan'"
+                    }
+                },
+                "MethodResponses": [
+                    {
+                        "StatusCode": "200"
+                    },
+                    {
+                        "StatusCode": "400"
+                    }
+                ]
+            }
+        },
+        "ListLaunchPathsResource": {
+            "Type": "AWS::ApiGateway::Resource",
+            "Properties": {
+                "ParentId": {
+                    "Fn::GetAtt": [
+                        "RestApi",
+                        "RootResourceId"
+                    ]
+                },
+                "PathPart": "listlaunchpaths",
+                "RestApiId": {
+                    "Ref": "RestApi"
+                }
+            }
+        },
+        "ListLaunchPathsMethod": {
+            "Type": "AWS::ApiGateway::Method",
+            "Properties": {
+                "ApiKeyRequired": true,
+                "HttpMethod": "POST",
+                "ResourceId": {
+                    "Ref": "ListLaunchPathsResource"
+                },
+                "RestApiId": {
+                    "Ref": "RestApi"
+                },
+                "AuthorizationType": "NONE",
+                "Integration": {
+                    "Type": "AWS",
+                    "Credentials": {
+                        "Fn::GetAtt": [
+                            "IamRoleExecution",
+                            "Arn"
+                        ]
+                    },
+                    "IntegrationHttpMethod": "POST",
+                    "Uri": {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "arn:aws:apigateway:",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                ":servicecatalog:path//"
+                            ]
+                        ]
+                    },
+                    "IntegrationResponses": [
+                        {
+                            "StatusCode": "200",
+                            "ResponseTemplates": {
+                                "application/json": ""
+                            }
+                        },
+                        {
+                            "StatusCode": "400",
+                            "SelectionPattern": "4\\d{2}",
+                            "ResponseTemplates": {
+                                "application/json": ""
+                            }
+                        }
+                    ],
+                    "RequestParameters": {
+                        "integration.request.header.Content-Type": "'application/x-amz-json-1.1'",
+                        "integration.request.header.x-Amz-Target": "'AWS242ServiceCatalogService.ListLaunchPaths'"
+                    }
+                },
+                "MethodResponses": [
+                    {
+                        "StatusCode": "200"
+                    },
+                    {
+                        "StatusCode": "400"
+                    }
+                ]
+            }
+        },
+        "ListProvisionedProductPlansResource": {
+            "Type": "AWS::ApiGateway::Resource",
+            "Properties": {
+                "ParentId": {
+                    "Fn::GetAtt": [
+                        "RestApi",
+                        "RootResourceId"
+                    ]
+                },
+                "PathPart": "listprovisionedproductplans",
+                "RestApiId": {
+                    "Ref": "RestApi"
+                }
+            }
+        },
+        "ListProvisionedProductPlansMethod": {
+            "Type": "AWS::ApiGateway::Method",
+            "Properties": {
+                "ApiKeyRequired": true,
+                "HttpMethod": "POST",
+                "ResourceId": {
+                    "Ref": "ListProvisionedProductPlansResource"
+                },
+                "RestApiId": {
+                    "Ref": "RestApi"
+                },
+                "AuthorizationType": "NONE",
+                "Integration": {
+                    "Type": "AWS",
+                    "Credentials": {
+                        "Fn::GetAtt": [
+                            "IamRoleExecution",
+                            "Arn"
+                        ]
+                    },
+                    "IntegrationHttpMethod": "POST",
+                    "Uri": {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "arn:aws:apigateway:",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                ":servicecatalog:path//"
+                            ]
+                        ]
+                    },
+                    "IntegrationResponses": [
+                        {
+                            "StatusCode": "200",
+                            "ResponseTemplates": {
+                                "application/json": ""
+                            }
+                        },
+                        {
+                            "StatusCode": "400",
+                            "SelectionPattern": "4\\d{2}",
+                            "ResponseTemplates": {
+                                "application/json": ""
+                            }
+                        }
+                    ],
+                    "RequestParameters": {
+                        "integration.request.header.Content-Type": "'application/x-amz-json-1.1'",
+                        "integration.request.header.x-Amz-Target": "'AWS242ServiceCatalogService.ListProvisionedProductPlans'"
+                    }
+                },
+                "MethodResponses": [
+                    {
+                        "StatusCode": "200"
+                    },
+                    {
+                        "StatusCode": "400"
+                    }
+                ]
+            }
+        },
+        "ListRecordHistoryResource": {
+            "Type": "AWS::ApiGateway::Resource",
+            "Properties": {
+                "ParentId": {
+                    "Fn::GetAtt": [
+                        "RestApi",
+                        "RootResourceId"
+                    ]
+                },
+                "PathPart": "listrecordhistory",
+                "RestApiId": {
+                    "Ref": "RestApi"
+                }
+            }
+        },
+        "ListRecordHistoryMethod": {
+            "Type": "AWS::ApiGateway::Method",
+            "Properties": {
+                "ApiKeyRequired": true,
+                "HttpMethod": "POST",
+                "ResourceId": {
+                    "Ref": "ListRecordHistoryResource"
+                },
+                "RestApiId": {
+                    "Ref": "RestApi"
+                },
+                "AuthorizationType": "NONE",
+                "Integration": {
+                    "Type": "AWS",
+                    "Credentials": {
+                        "Fn::GetAtt": [
+                            "IamRoleExecution",
+                            "Arn"
+                        ]
+                    },
+                    "IntegrationHttpMethod": "POST",
+                    "Uri": {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "arn:aws:apigateway:",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                ":servicecatalog:path//"
+                            ]
+                        ]
+                    },
+                    "IntegrationResponses": [
+                        {
+                            "StatusCode": "200",
+                            "ResponseTemplates": {
+                                "application/json": ""
+                            }
+                        },
+                        {
+                            "StatusCode": "400",
+                            "SelectionPattern": "4\\d{2}",
+                            "ResponseTemplates": {
+                                "application/json": ""
+                            }
+                        }
+                    ],
+                    "RequestParameters": {
+                        "integration.request.header.Content-Type": "'application/x-amz-json-1.1'",
+                        "integration.request.header.x-Amz-Target": "'AWS242ServiceCatalogService.ListRecordHistory'"
+                    }
+                },
+                "MethodResponses": [
+                    {
+                        "StatusCode": "200"
+                    },
+                    {
+                        "StatusCode": "400"
+                    }
+                ]
+            }
+        },
+        "ProvisionProductResource": {
+            "Type": "AWS::ApiGateway::Resource",
+            "Properties": {
+                "ParentId": {
+                    "Fn::GetAtt": [
+                        "RestApi",
+                        "RootResourceId"
+                    ]
+                },
+                "PathPart": "provisionproduct",
+                "RestApiId": {
+                    "Ref": "RestApi"
+                }
+            }
+        },
+        "ProvisionProductMethod": {
+            "Type": "AWS::ApiGateway::Method",
+            "Properties": {
+                "ApiKeyRequired": true,
+                "HttpMethod": "POST",
+                "ResourceId": {
+                    "Ref": "ProvisionProductResource"
+                },
+                "RestApiId": {
+                    "Ref": "RestApi"
+                },
+                "AuthorizationType": "NONE",
+                "Integration": {
+                    "Type": "AWS",
+                    "Credentials": {
+                        "Fn::GetAtt": [
+                            "IamRoleExecution",
+                            "Arn"
+                        ]
+                    },
+                    "IntegrationHttpMethod": "POST",
+                    "Uri": {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "arn:aws:apigateway:",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                ":servicecatalog:path//"
+                            ]
+                        ]
+                    },
+                    "IntegrationResponses": [
+                        {
+                            "StatusCode": "200",
+                            "ResponseTemplates": {
+                                "application/json": ""
+                            }
+                        },
+                        {
+                            "StatusCode": "400",
+                            "SelectionPattern": "4\\d{2}",
+                            "ResponseTemplates": {
+                                "application/json": ""
+                            }
+                        }
+                    ],
+                    "RequestParameters": {
+                        "integration.request.header.Content-Type": "'application/x-amz-json-1.1'",
+                        "integration.request.header.x-Amz-Target": "'AWS242ServiceCatalogService.ProvisionProduct'"
+                    }
+                },
+                "MethodResponses": [
+                    {
+                        "StatusCode": "200"
+                    },
+                    {
+                        "StatusCode": "400"
+                    }
+                ]
+            }
+        },
+        "TerminateProvisionedProductResource": {
+            "Type": "AWS::ApiGateway::Resource",
+            "Properties": {
+                "ParentId": {
+                    "Fn::GetAtt": [
+                        "RestApi",
+                        "RootResourceId"
+                    ]
+                },
+                "PathPart": "terminateprovisionedproduct",
+                "RestApiId": {
+                    "Ref": "RestApi"
+                }
+            }
+        },
+        "TerminateProvisionedProductMethod": {
+            "Type": "AWS::ApiGateway::Method",
+            "Properties": {
+                "ApiKeyRequired": true,
+                "HttpMethod": "POST",
+                "ResourceId": {
+                    "Ref": "TerminateProvisionedProductResource"
+                },
+                "RestApiId": {
+                    "Ref": "RestApi"
+                },
+                "AuthorizationType": "NONE",
+                "Integration": {
+                    "Type": "AWS",
+                    "Credentials": {
+                        "Fn::GetAtt": [
+                            "IamRoleExecution",
+                            "Arn"
+                        ]
+                    },
+                    "IntegrationHttpMethod": "POST",
+                    "Uri": {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "arn:aws:apigateway:",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                ":servicecatalog:path//"
+                            ]
+                        ]
+                    },
+                    "IntegrationResponses": [
+                        {
+                            "StatusCode": "200",
+                            "ResponseTemplates": {
+                                "application/json": ""
+                            }
+                        },
+                        {
+                            "StatusCode": "400",
+                            "SelectionPattern": "4\\d{2}",
+                            "ResponseTemplates": {
+                                "application/json": ""
+                            }
+                        }
+                    ],
+                    "RequestParameters": {
+                        "integration.request.header.Content-Type": "'application/x-amz-json-1.1'",
+                        "integration.request.header.x-Amz-Target": "'AWS242ServiceCatalogService.TerminateProvisionedProduct'"
+                    }
+                },
+                "MethodResponses": [
+                    {
+                        "StatusCode": "200"
+                    },
+                    {
+                        "StatusCode": "400"
+                    }
+                ]
+            }
+        }
+    },
+    "Outputs": {
+        "GatewayRole": {
+            "Description": "Iam role to allow API gateway to launch Service Catalog products.",
+            "Value": {
+                "Fn::GetAtt": [
+                    "IamRoleExecution",
+                    "Arn"
+                ]
+            }
+        },
+        "ServiceEndPoint": {
+            "Description": "URL of the service endpoint",
+            "Value": {
+                "Fn::Join": [
+                    "",
+                    [
+                        "https://",
+                        {
+                            "Ref": "RestApi"
+                        },
+                        ".execute-api.",
+                        {
+                            "Ref": "AWS::Region"
+                        },
+                        ".amazonaws.com/production/"
+                    ]
+                ]
+            }
+        },
+        "APIKey": {
+            "Description": "API key ID",
+            "Value": {
+                "Ref": "ApiKey"
+            }
+        }
+    }
+}

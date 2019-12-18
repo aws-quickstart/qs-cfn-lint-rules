@@ -1,0 +1,499 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "Datastax template, License: Apache 2.0 (Please do not remove) May,30,2017 (qs-1nbqhl4uf)",
+    "Parameters": {
+        "KeyName": {
+            "Description": "Name of an existing EC2 KeyPair to enable SSH access to the instance",
+            "Type": "AWS::EC2::KeyPair::KeyName",
+            "ConstraintDescription": "must be the name of an existing EC2 KeyPair."
+        },
+        "OpsCenterSecurityGroupId": {
+            "Type": "AWS::EC2::SecurityGroup::Id",
+            "Description": "OpsCenter security group id"
+        },
+        "SubnetId": {
+            "Type": "AWS::EC2::Subnet::Id",
+            "Description": "SubnetId in existing VPC`"
+        },
+        "ClusterName": {
+            "Description": "Name of DSE cluster",
+            "Type": "String",
+            "Default": "DSE Cluster"
+        },
+        "DC0Size": {
+            "Description": "The number of nodes to create in the 1st DSE data center.",
+            "Type": "Number"
+        },
+        "DC1Size": {
+            "Description": "The number of nodes to create in the 2nd DSE data center.",
+            "Type": "Number"
+        },
+        "Profile": {
+            "Description": "InstanceProfile for OpsC instance",
+            "Type": "String"
+        },
+        "DSEVersion": {
+            "Type": "String",
+            "Description": "DSE version to install."
+        },
+        "DSAcademyUser": {
+            "Type": "String",
+            "Description": "User for academy.datastax.com account"
+        },
+        "DSAcademyPW": {
+            "Type": "String",
+            "Description": "PW for academy.datastax.com account",
+            "NoEcho": true
+        },
+        "DBPassword": {
+            "Type": "String",
+            "Description": "C* password",
+            "NoEcho": true
+        },
+        "OpsCPassword": {
+            "Type": "String",
+            "Description": "Password for default OpsCenter user 'admin'",
+            "NoEcho": true
+        },
+        "S3Bucket": {
+            "Description": "S3Bucket for public key passing",
+            "Type": "String"
+        },
+        "InstanceType": {
+            "Description": "OpsCenter EC2 instance type",
+            "Type": "String",
+            "Default": "m4.xlarge",
+            "AllowedValues": [
+                "m4.large",
+                "m4.xlarge",
+                "m4.2xlarge"
+            ],
+            "ConstraintDescription": "Must be a valid EC2 instance type."
+        }
+    },
+    "Mappings": {
+        "AWSAMIRegionMap": {
+            "AMI": {
+                "US1604HVM": "ubuntu/images/hvm-ssd/ubuntu-xenial-16.04-amd64-server-20190628"
+            },
+            "ap-southeast-2": {
+                "US1604HVM": "ami-00d7116c396e73b04"
+            },
+            "eu-central-1": {
+                "US1604HVM": "ami-0062c497b55437b01"
+            },
+            "eu-west-1": {
+                "US1604HVM": "ami-0987ee37af7792903"
+            },
+            "us-east-1": {
+                "US1604HVM": "ami-09f9d773751b9d606"
+            },
+            "us-east-2": {
+                "US1604HVM": "ami-0891395d749676c2e"
+            },
+            "us-west-2": {
+                "US1604HVM": "ami-0bbe9b07c5fe8e86e"
+            }
+        }
+    },
+    "Resources": {
+        "OpsCenterEIP": {
+            "Type": "AWS::EC2::EIP",
+            "Properties": {
+                "Domain": "vpc"
+            }
+        },
+        "IPAssoc": {
+            "Type": "AWS::EC2::EIPAssociation",
+            "Properties": {
+                "InstanceId": {
+                    "Ref": "OpsCenterInstance"
+                },
+                "AllocationId": {
+                    "Fn::GetAtt": [
+                        "OpsCenterEIP",
+                        "AllocationId"
+                    ]
+                }
+            }
+        },
+        "OpsCenterWaitCondition": {
+            "Type": "AWS::CloudFormation::WaitCondition",
+            "Properties": {
+                "Handle": {
+                    "Ref": "OpsCenterWaitHandle"
+                },
+                "Timeout": "5400"
+            }
+        },
+        "OpsCenterWaitHandle": {
+            "Type": "AWS::CloudFormation::WaitConditionHandle",
+            "Properties": {}
+        },
+        "OpsCenterInstance": {
+            "Type": "AWS::EC2::Instance",
+            "Metadata": {
+                "AWS::CloudFormation::Init": {
+                    "configSets": {
+                        "full_install": [
+                            "install_cfn",
+                            "install_opsc",
+                            "gen_ssh_key",
+                            "setup_cluster",
+                            "post_install"
+                        ]
+                    },
+                    "install_cfn": {
+                        "files": {
+                            "/etc/cfn/cfn-hup.conf": {
+                                "content": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "[main]\n",
+                                            "stack=",
+                                            {
+                                                "Ref": "AWS::StackId"
+                                            },
+                                            "\n",
+                                            "region=",
+                                            {
+                                                "Ref": "AWS::Region"
+                                            },
+                                            "\n"
+                                        ]
+                                    ]
+                                },
+                                "mode": "000400",
+                                "owner": "root",
+                                "group": "root"
+                            },
+                            "/etc/cfn/hooks.d/cfn-auto-reloader.conf": {
+                                "content": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "[cfn-auto-reloader-hook]\n",
+                                            "triggers=post.update\n",
+                                            "path=Resources.OpsCenterInstance.Metadata.AWS::CloudFormation::Init\n",
+                                            "action=/usr/local/bin/cfn-init -v ",
+                                            "         --stack ",
+                                            {
+                                                "Ref": "AWS::StackName"
+                                            },
+                                            "         --resource OpsCenterInstance ",
+                                            "         --configsets full_install ",
+                                            "         --region ",
+                                            {
+                                                "Ref": "AWS::Region"
+                                            },
+                                            "\n",
+                                            "runas=root\n"
+                                        ]
+                                    ]
+                                }
+                            }
+                        },
+                        "services": {
+                            "sysvinit": {
+                                "cfn-hup": {
+                                    "enabled": "true",
+                                    "ensureRunning": "true",
+                                    "files": [
+                                        "/etc/cfn/cfn-hup.conf",
+                                        "/etc/cfn/hooks.d/cfn-auto-reloader.conf"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "install_opsc": {
+                        "commands": {
+                            "01_install_opsc": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "#!/usr/bin/env bash -e \n",
+                                            "cloud_type=\"aws\" \n",
+                                            "cd ~ubuntu \n",
+                                            "release=\"7.3.0\" \n",
+                                            "export OPSC_VERSION='6.7.4' \n",
+                                            "wget https://github.com/DSPN/install-datastax-ubuntu/archive/$release.tar.gz \n",
+                                            "tar -xvf $release.tar.gz \n",
+                                            "cd install-datastax-ubuntu-$release/bin \n",
+                                            "./os/extra_packages.sh \n",
+                                            "./os/install_java.sh -o \n",
+                                            "./opscenter/install.sh $cloud_type \n",
+                                            "./opscenter/set_opsc_pw_https.sh '",
+                                            {
+                                                "Ref": "OpsCPassword"
+                                            },
+                                            "' \n"
+                                        ]
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "gen_ssh_key": {
+                        "commands": {
+                            "01_gen_ssh_key": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "#!/usr/bin/env bash -e \n",
+                                            "pip install awscli \n",
+                                            "cd ~ubuntu/.ssh/ \n",
+                                            "ssh-keygen -t rsa -N '' -f lcm.pem \n",
+                                            "chown ubuntu:ubuntu lcm.pem* \n",
+                                            "echo 'Generated lcm.pem and lcm.pem.pub' \n",
+                                            "aws s3 cp lcm.pem.pub s3://",
+                                            {
+                                                "Ref": "S3Bucket"
+                                            },
+                                            " --region ",
+                                            {
+                                                "Ref": "AWS::Region"
+                                            },
+                                            " \n"
+                                        ]
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "setup_cluster": {
+                        "commands": {
+                            "01_setup_cluster": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "#!/usr/bin/env bash -e \n",
+                                            "cd ~ubuntu \n",
+                                            "release=\"7.3.0\" \n",
+                                            "cd install-datastax-ubuntu-$release/bin \n",
+                                            "privkey=$(readlink -f ~ubuntu/.ssh/lcm.pem) \n",
+                                            "sleep 1m \n",
+                                            "./lcm/setupCluster.py ",
+                                            " --clustername '",
+                                            {
+                                                "Ref": "ClusterName"
+                                            },
+                                            "' ",
+                                            " --dsever '",
+                                            {
+                                                "Ref": "DSEVersion"
+                                            },
+                                            "' ",
+                                            " --repouser '",
+                                            {
+                                                "Ref": "DSAcademyUser"
+                                            },
+                                            "' ",
+                                            " --repopw '",
+                                            {
+                                                "Ref": "DSAcademyPW"
+                                            },
+                                            "' ",
+                                            " --dbpasswd '",
+                                            {
+                                                "Ref": "DBPassword"
+                                            },
+                                            "' ",
+                                            " --privkey $privkey",
+                                            " --user ubuntu",
+                                            " --datapath \"/data/cassandra\"",
+                                            " --verbose",
+                                            " --opscpw '",
+                                            {
+                                                "Ref": "OpsCPassword"
+                                            },
+                                            "' \n"
+                                        ]
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "post_install": {
+                        "commands": {
+                            "01_post_install": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "#!/usr/bin/env bash -e \n",
+                                            "echo 'Post install/setup actions...' \n",
+                                            "release=\"7.3.0\" \n",
+                                            "/usr/local/bin/cfn-signal -e 0 -r \"OpsCenter Setup Complete\" \"",
+                                            {
+                                                "Ref": "OpsCenterWaitHandle"
+                                            },
+                                            "\" \n",
+                                            "cd ~ubuntu/install-datastax-ubuntu-$release/bin \n",
+                                            "echo 'Triggering install...' \n",
+                                            "csize=$(( ",
+                                            {
+                                                "Fn::Join": [
+                                                    "+",
+                                                    [
+                                                        {
+                                                            "Ref": "DC0Size"
+                                                        },
+                                                        {
+                                                            "Ref": "DC1Size"
+                                                        }
+                                                    ]
+                                                ]
+                                            },
+                                            " )) \n",
+                                            "echo csize=$csize \n",
+                                            "./lcm/triggerInstall.py ",
+                                            " --clustername '",
+                                            {
+                                                "Ref": "ClusterName"
+                                            },
+                                            "' ",
+                                            " --clustersize $csize ",
+                                            " --opscpw '",
+                                            {
+                                                "Ref": "OpsCPassword"
+                                            },
+                                            "' \n",
+                                            "echo 'Blocking execution till LCM jobs finish...' \n",
+                                            "./lcm/waitForJobs.py ",
+                                            " --opscpw '",
+                                            {
+                                                "Ref": "OpsCPassword"
+                                            },
+                                            "' \n",
+                                            "./lcm/alterKeyspaces.py ",
+                                            " --opscpw '",
+                                            {
+                                                "Ref": "OpsCPassword"
+                                            },
+                                            "' \n",
+                                            "echo 'Removing lcm.pem.pub from bucket...' \n",
+                                            "aws s3 rm s3://",
+                                            {
+                                                "Ref": "S3Bucket"
+                                            },
+                                            "/lcm.pem.pub --region ",
+                                            {
+                                                "Ref": "AWS::Region"
+                                            },
+                                            " \n"
+                                        ]
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "Properties": {
+                "ImageId": {
+                    "Fn::FindInMap": [
+                        "AWSAMIRegionMap",
+                        {
+                            "Ref": "AWS::Region"
+                        },
+                        "US1604HVM"
+                    ]
+                },
+                "InstanceType": {
+                    "Ref": "InstanceType"
+                },
+                "IamInstanceProfile": {
+                    "Ref": "Profile"
+                },
+                "SecurityGroupIds": [
+                    {
+                        "Ref": "OpsCenterSecurityGroupId"
+                    }
+                ],
+                "SubnetId": {
+                    "Ref": "SubnetId"
+                },
+                "KeyName": {
+                    "Ref": "KeyName"
+                },
+                "UserData": {
+                    "Fn::Base64": {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "#!/bin/bash -xe\n",
+                                "apt-get update\n",
+                                "apt-get -y install python-setuptools python-pip\n",
+                                "n=1 \n",
+                                "until [ $n -ge 8 ] \n",
+                                "do \n",
+                                "pip install https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-latest.tar.gz && break \n",
+                                "echo \"pip install cfn-bootstrap try $n failed, retry...\" \n",
+                                "n=$[$n+1] \n",
+                                "done \n",
+                                "ln -s /usr/local/init/ubuntu/cfn-hup /etc/init.d/cfn-hup \n",
+                                "chmod 775 /usr/local/init/ubuntu/cfn-hup \n",
+                                "update-rc.d cfn-hup defaults \n",
+                                "/usr/local/bin/cfn-init -v ",
+                                "         --stack ",
+                                {
+                                    "Ref": "AWS::StackId"
+                                },
+                                "         --resource OpsCenterInstance ",
+                                "         --configsets full_install ",
+                                "         --region ",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                "\n"
+                            ]
+                        ]
+                    }
+                }
+            }
+        }
+    },
+    "Outputs": {
+        "OpsCenterURL": {
+            "Value": {
+                "Fn::Join": [
+                    "",
+                    [
+                        "https://",
+                        {
+                            "Fn::GetAtt": [
+                                "OpsCenterInstance",
+                                "PublicDnsName"
+                            ]
+                        },
+                        ":8443"
+                    ]
+                ]
+            },
+            "Description": "URL for OpsCenter"
+        },
+        "OpsCenterPublicIP": {
+            "Value": {
+                "Fn::GetAtt": [
+                    "OpsCenterInstance",
+                    "PublicIp"
+                ]
+            },
+            "Description": "Public IP for OpsCenter"
+        },
+        "OpsCenterPrivateIP": {
+            "Value": {
+                "Fn::GetAtt": [
+                    "OpsCenterInstance",
+                    "PrivateIp"
+                ]
+            },
+            "Description": "Private IP for OpsCenter"
+        }
+    }
+}

@@ -18,6 +18,7 @@
 #         self.helper_file_negative('test/fixtures/templates/bad/mynewrule.yaml', 1)  # Amount of expected matches
 import unittest
 import cfnlint
+import json
 from qs_cfn_lint_rules.stack import StackHelper
 
 
@@ -54,6 +55,10 @@ class TestStackHelper(unittest.TestCase):
 
     # Test TemplateURL to path extraction
     def test_flatten_template_url(self):
+        with open("test/fixtures/templates/stackhelper/test.json") as test_file:
+            self.tests = json.load(test_file)
+            self.tests = self.tests['tests']
+
         total = len(self.tests)
         matched = 0
 
@@ -62,11 +67,15 @@ class TestStackHelper(unittest.TestCase):
             StackHelper.mappings = cfn.get("Mappings")
             if test["output"]["url_paths"] == StackHelper.flatten_template_url(test["input"]["child_template"]):
                 matched = matched + 1
-
+        print("matched {} total {}".format(matched, total))
         self.assertEqual(matched, total)
 
     # Test TemplateURL to path extraction
     def test_find_local_child_template(self):
+        with open("test/fixtures/templates/stackhelper/test.json") as test_file:
+            self.tests = json.load(test_file)
+            self.tests = self.tests['tests']
+
         total = 0
         matched = 0
         for test in self.tests:
@@ -80,6 +89,7 @@ class TestStackHelper(unittest.TestCase):
                     matched = matched + 1
                 index = index + 1
 
+        print("matched {} total {}".format(matched, total))
         self.assertEqual(matched, total)
 
     # Test all the individual functions

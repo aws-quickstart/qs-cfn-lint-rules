@@ -1,0 +1,1121 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "CloudFormation template to deploy Confluent Platform on AWS QS(5011)",
+    "Metadata": {
+        "AWS::CloudFormation::Interface": {
+            "ParameterGroups": [
+                {
+                    "Label": {
+                        "default": "Network Configuration"
+                    },
+                    "Parameters": [
+                        "VPCID",
+                        "SubnetID",
+                        "RemoteAccessCIDR",
+                        "SSHAccessCIDR"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "Confluent Platform Configuration"
+                    },
+                    "Parameters": [
+                        "ClusterName",
+                        "ConfluentEdition",
+                        "ConfluentVersion",
+                        "ConnectorURLs"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "Common Amazon EC2 Configuration"
+                    },
+                    "Parameters": [
+                        "KeyPairName",
+                        "LinuxOSAMI",
+                        "BootDiskSize",
+                        "AssignPublicIP"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "Broker Instance Configuration"
+                    },
+                    "Parameters": [
+                        "NumBrokers",
+                        "BrokerNodeInstanceType",
+                        "BrokerNodeStorage",
+                        "BrokerNodeStorageType",
+                        "BrokerNodeSpotPrice"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "Zookeeper Instance Configuration"
+                    },
+                    "Parameters": [
+                        "NumZookeepers",
+                        "ZookeeperNodeInstanceType",
+                        "ZookeeperNodeStorage",
+                        "ZookeeperNodeSpotPrice"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "Worker Instance Configuration"
+                    },
+                    "Parameters": [
+                        "NumWorkers",
+                        "WorkerNodeInstanceType",
+                        "WorkerNodeStorage",
+                        "WorkerNodeSpotPrice"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "AWS Quick Start Configuration"
+                    },
+                    "Parameters": [
+                        "QSS3BucketName",
+                        "QSS3KeyPrefix"
+                    ]
+                }
+            ],
+            "ParameterLabels": {
+                "AssignPublicIP": {
+                    "default": "Allocate a public IP for each instance"
+                },
+                "BootDiskSize": {
+                    "default": "Boot Disk Capacity (GiB)"
+                },
+                "BrokerNodeInstanceType": {
+                    "default": "Instance Type"
+                },
+                "BrokerNodeSpotPrice": {
+                    "default": "Spot Price (optional)"
+                },
+                "BrokerNodeStorage": {
+                    "default": "Persistent Storage"
+                },
+                "BrokerNodeStorageType": {
+                    "default": "EBS Volume Type"
+                },
+                "ClusterName": {
+                    "default": "Cluster Name"
+                },
+                "ConfluentEdition": {
+                    "default": "Confluent Platform Edition"
+                },
+                "ConfluentVersion": {
+                    "default": "Confluent Platform Version"
+                },
+                "ConnectorURLs": {
+                    "default": "Repo(s) for additional Connector jars"
+                },
+                "KeyPairName": {
+                    "default": "Key Pair Name"
+                },
+                "LinuxOSAMI": {
+                    "default": "Linux Operating System AMI"
+                },
+                "NumBrokers": {
+                    "default": "Broker count"
+                },
+                "NumWorkers": {
+                    "default": "Worker count"
+                },
+                "NumZookeepers": {
+                    "default": "Zookeeper count"
+                },
+                "QSS3BucketName": {
+                    "default": "Quick Start S3 Bucket Name"
+                },
+                "QSS3KeyPrefix": {
+                    "default": "Quick Start S3 Key Prefix"
+                },
+                "RemoteAccessCIDR": {
+                    "default": "Allowed External Access CIDR"
+                },
+                "SSHAccessCIDR": {
+                    "default": "Allowed SSH Access CIDR"
+                },
+                "SubnetID": {
+                    "default": "Subnet ID"
+                },
+                "VPCID": {
+                    "default": "VPC ID"
+                },
+                "WorkerNodeInstanceType": {
+                    "default": "Instance Type"
+                },
+                "WorkerNodeSpotPrice": {
+                    "default": "Spot Price (optional)"
+                },
+                "WorkerNodeStorage": {
+                    "default": "Persistent Storage"
+                },
+                "ZookeeperNodeInstanceType": {
+                    "default": "Instance Type"
+                },
+                "ZookeeperNodeSpotPrice": {
+                    "default": "Spot Price (optional)"
+                },
+                "ZookeeperNodeStorage": {
+                    "default": "Persistent Storage"
+                }
+            }
+        }
+    },
+    "Parameters": {
+        "AssignPublicIP": {
+            "AllowedValues": [
+              "true",
+              "false"
+            ],
+            "ConstraintDescription": "Either true or false",
+            "Default": "true",
+            "Description": "Allociate a public IP address to each instance",
+            "Type": "String"
+        },
+        "BootDiskSize": {
+            "ConstraintDescription": "Deployment supports 8 to 128 GiB for boot volumes",
+            "Default": "24",
+            "Description": "Allocated EBS storage for boot disk",
+            "MaxValue": "128",
+            "MinValue": "8",
+            "Type": "Number"
+        },
+        "BrokerNodeInstanceType": {
+            "AllowedValues": [
+                "m4.large",
+                "m4.xlarge",
+                "m4.2xlarge",
+                "m4.4xlarge",
+                "m5.large",
+                "m5.xlarge",
+                "m5.2xlarge",
+                "m5.4xlarge",
+                "c3.xlarge",
+                "c3.2xlarge",
+                "c3.4xlarge",
+                "d2.xlarge",
+                "d2.2xlarge",
+                "d2.4xlarge",
+                "d2.8xlarge",
+                "i2.xlarge",
+                "i2.2xlarge"
+            ],
+            "ConstraintDescription": "Must be a valid EC2 instance type.",
+            "Default": "m4.xlarge",
+            "Description": "Instance Type for Kafka brokers; select m3/m4 or i2 instance types for us-west-1 and sa-east-1",
+            "Type": "String"
+        },
+        "BrokerNodeSpotPrice": {
+            "AllowedPattern": "([0-9]{1}[.]{1}[0-9]{2})",
+            "ConstraintDescription": "Must be decimal numeric value",
+            "Default": "0.00",
+            "Description": "Spot Price to bid for requested instances (0.00 will result in using on-demand instances)",
+            "Type": "String"
+        },
+        "BrokerNodeStorage": {
+            "ConstraintDescription": "No more than 4000 GiB per device (16 TB per node). Be Careful About Exceeding your AWS Storage Limit.",
+            "Default": "512",
+            "Description": "Allocated EBS storage for each block device (in GiB; 4 devs per node); 0 indicates ephemeral storage only",
+            "MaxValue": "4000",
+            "MinValue": "0",
+            "Type": "Number"
+        },
+        "BrokerNodeStorageType": {
+            "AllowedValues": [
+                "",
+                "gp2",
+                "sc1",
+                "st1"
+            ],
+            "Default": "st1",
+            "Description": "EBS volume type (blank indicates default type for ami/region).  sc1 and st1 volumes must be at least 500 GiB in size.",
+            "Type": "String"
+        },
+        "ClusterName": {
+            "AllowedPattern": "([A-Za-z]{1}[0-9A-Za-z_-]*)",
+            "ConstraintDescription": "The ClusterName value must be alphanumeric",
+            "Default": "awsqs",
+            "Description": "Confluent Cluster ID",
+            "Type": "String"
+        },
+        "ConfluentEdition": {
+            "AllowedValues": [
+                "Confluent Open Source",
+                "Confluent Enterprise"
+            ],
+            "Default": "Confluent Enterprise",
+            "Description": "Confluent Software Edition",
+            "Type": "String"
+        },
+        "ConfluentVersion": {
+            "AllowedValues": [
+                "5.0.0",
+                "4.1.0",
+                "4.0.0",
+                "3.3.1"
+            ],
+            "ConstraintDescription": "Supported versions of Confluent Platform within AWS Marketplace",
+            "Default": "5.0.0",
+            "Description": "Confluent Software Version",
+            "Type": "String"
+        },
+        "ConnectorURLs": {
+            "Default": "",
+            "Description": "Public locations (comma-separated list) from which to download additional Kafka Connect jars (eg https://s3.amazonaws.com/connector-bucket/dynamo)",
+            "Type": "String"
+        },
+        "KeyPairName": {
+            "Description": "Name of an existing EC2 key pair within the AWS region; all instances will launch with this key pair",
+            "Type": "AWS::EC2::KeyPair::KeyName"
+        },
+        "LinuxOSAMI": {
+            "AllowedValues": [
+                "CentOS-7-HVM",
+                "Ubuntu-Server-16.04-LTS-HVM",
+                "Amazon-Linux-HVM"
+            ],
+            "ConstraintDescription": "Supported versions of Linux AMIs for Confluent deployments",
+            "Default": "CentOS-7-HVM",
+            "Description": "Operating system AMI for cluster instances; you MUST authorize access to the proper AMI at https://aws.amazon.com/marketplace",
+            "Type": "String"
+        },
+        "NumBrokers": {
+            "Default": "3",
+            "Description": "Number of Kafka Brokers",
+            "MaxValue": "9",
+            "MinValue": "1",
+            "Type": "Number"
+        },
+        "NumWorkers": {
+            "Default": "2",
+            "Description": "Number of Kafka Connect Workers",
+            "MaxValue": "9",
+            "MinValue": "0",
+            "Type": "Number"
+        },
+        "NumZookeepers": {
+            "AllowedValues": [
+                "0",
+                "1",
+                "3",
+                "5"
+            ],
+            "Default": "0",
+            "Description": "Number of independent Zookeepers (if 0, zookeeper will be deployed on the Kafka brokers)",
+            "Type": "String"
+        },
+        "QSS3BucketName": {
+            "AllowedPattern": "^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$",
+            "ConstraintDescription": "Quick Start bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-).",
+            "Default": "aws-quickstart",
+            "Description": "S3 bucket name for the Quick Start assets. Quick Start bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-).",
+            "Type": "String"
+        },
+        "QSS3KeyPrefix": {
+            "AllowedPattern": "^[0-9a-zA-Z-/]*$",
+            "ConstraintDescription": "Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).",
+            "Default": "quickstart-confluent-kafka/",
+            "Description": "S3 key prefix for the Quick Start assets. Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).",
+            "Type": "String"
+        },
+        "RemoteAccessCIDR": {
+            "AllowedPattern": "^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\\/([0-9]|[1-2][0-9]|3[0-2]))$",
+            "ConstraintDescription": "CIDR block parameter must be in the form x.x.x.x/x",
+            "Description": "Allowed CIDR block for external access to cluster nodes",
+            "Type": "String"
+        },
+        "SSHAccessCIDR": {
+            "AllowedPattern": "^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\\/([0-9]|[1-2][0-9]|3[0-2]))$",
+            "ConstraintDescription": "CIDR block parameter must be in the form x.x.x.x/x",
+            "Description": "Allowed CIDR block for SSH access to cluster nodes",
+            "Type": "String"
+        },
+        "SubnetID": {
+            "Description": "Comma separated list of VPC subnet IDs for the cluster deployment (e.g. subnet-4b8d329f,subnet-bd73afc8); VPC must exist with proper configuration for Confluent cluster access (internal and external)",
+            "Type": "List<AWS::EC2::Subnet::Id>"
+        },
+        "VPCID": {
+            "Description": "ID of the VPC (e.g. vpc-0343606e)",
+            "Type": "AWS::EC2::VPC::Id"
+        },
+        "WorkerNodeInstanceType": {
+            "AllowedValues": [
+                "m4.xlarge",
+                "m4.2xlarge",
+                "m4.4xlarge",
+                "m5.large",
+                "m5.xlarge",
+                "m5.2xlarge",
+                "m5.4xlarge",
+                "c3.xlarge",
+                "c3.2xlarge",
+                "c3.4xlarge",
+                "d2.xlarge",
+                "d2.2xlarge",
+                "d2.4xlarge",
+                "d2.8xlarge",
+                "i2.xlarge",
+                "i2.2xlarge"
+            ],
+            "ConstraintDescription": "Must be a valid EC2 instance type.",
+            "Default": "m4.xlarge",
+            "Description": "Instance Type for Kafka Connect workers; select m3/m4 or i2 instance types for us-west-1 and sa-east-1",
+            "Type": "String"
+        },
+        "WorkerNodeSpotPrice": {
+            "AllowedPattern": "([0-9]{1}[.]{1}[0-9]{2})",
+            "ConstraintDescription": "Must be decimal numeric value",
+            "Default": "0.00",
+            "Description": "Spot Price to bid for requested instances (0.00 will result in using on-demand instances)",
+            "Type": "String"
+        },
+        "WorkerNodeStorage": {
+            "ConstraintDescription": "No more than 1000 GiB per device (4 TB per node).",
+            "Default": "0",
+            "Description": "Allocated EBS storage for each block device (in GiB; 4 devs per node); 0 indicates ephemeral storage only",
+            "MaxValue": "1000",
+            "MinValue": "0",
+            "Type": "Number"
+        },
+        "ZookeeperNodeInstanceType": {
+            "AllowedValues": [
+                "m4.large",
+                "m4.xlarge",
+                "m4.2xlarge",
+                "m5.large",
+                "m5.xlarge",
+                "m5.2xlarge",
+                "m5.4xlarge"
+            ],
+            "ConstraintDescription": "Must be a valid EC2 instance type.",
+            "Default": "m4.large",
+            "Description": "Instance Type for Zookeeper servers; select m3/m4 for us-west-1 and sa-east-1",
+            "Type": "String"
+        },
+        "ZookeeperNodeSpotPrice": {
+            "AllowedPattern": "([0-9]{1}[.]{1}[0-9]{2})",
+            "ConstraintDescription": "Must be decimal numeric value",
+            "Default": "0.00",
+            "Description": "Spot Price to bid for requested instances (0.00 will result in using on-demand instances)",
+            "Type": "String"
+        },
+        "ZookeeperNodeStorage": {
+            "ConstraintDescription": "No more than 1000 GiB per device (4 TB per node).",
+            "Default": "0",
+            "Description": "Allocated EBS storage for each block device (in GiB; 4 devs per node); 0 indicates ephemeral storage only",
+            "MaxValue": "1000",
+            "MinValue": "0",
+            "Type": "Number"
+        }
+    },
+    "Rules": {
+        "SubnetsInVPC": {
+            "Assertions": [
+                {
+                    "Assert": {
+                        "Fn::EachMemberIn": [
+                            {
+                                "Fn::ValueOfAll": [
+                                    "AWS::EC2::Subnet::Id",
+                                    "VpcId"
+                                ]
+                            },
+                            {
+                                "Fn::RefAll": "AWS::EC2::VPC::Id"
+                            }
+                        ]
+                    },
+                    "AssertDescription": "All subnets must in the VPC"
+                }
+            ]
+        }
+    },
+    "Conditions": {
+        "IndependentWorkers": {
+            "Fn::Not": [
+                {
+                    "Fn::Equals": [
+                        {
+                            "Ref": "NumWorkers"
+                        },
+                        "0"
+                    ]
+                }
+            ]
+        },
+        "IndependentZookeepers": {
+            "Fn::Not": [
+                {
+                    "Fn::Equals": [
+                        {
+                            "Ref": "NumZookeepers"
+                        },
+                        "0"
+                    ]
+                }
+            ]
+        },
+        "EnableWaitConditions": {
+            "Fn::Equals": [
+                "1",
+                "1"
+            ]
+        }
+    },
+    "Resources": {
+        "InstanceIAMRole": {
+            "Properties": {
+                "AssumeRolePolicyDocument": {
+                    "Statement": [
+                        {
+                            "Action": [
+                                "sts:AssumeRole"
+                            ],
+                            "Effect": "Allow",
+                            "Principal": {
+                                "Service": [
+                                    "ec2.amazonaws.com"
+                                ]
+                            }
+                        }
+                    ],
+                    "Version": "2012-10-17"
+                },
+                "Path": "/",
+                "Policies": [
+                    {
+                        "PolicyDocument": {
+                            "Version": "2012-10-17",
+                            "Statement": [
+                                {
+                                    "Action": [
+                                        "s3:GetObject"
+                                    ],
+                                    "Resource": {
+                                        "Fn::Sub": "arn:aws:s3:::${QSS3BucketName}/${QSS3KeyPrefix}*"
+                                    },
+                                    "Effect": "Allow"
+                                }
+                            ]
+                        },
+                        "PolicyName": "aws-quick-start-s3-policy"
+                    },
+                    {
+                        "PolicyDocument": {
+                            "Statement": [
+                                {
+                                    "Action": [
+                                        "ec2:CreateTags",
+                                        "ec2:DescribeInstances",
+                                        "cloudformation:DescribeStackResources",
+                                        "s3:Get*",
+                                        "s3:List*"
+                                    ],
+                                    "Effect": "Allow",
+                                    "Resource": "*"
+                                }
+                            ]
+                        },
+                        "PolicyName": "DescribeAccessEC2andCFN"
+                    }
+                ]
+            },
+            "Type": "AWS::IAM::Role"
+        },
+        "InstanceProfile": {
+            "Properties": {
+                "Path": "/",
+                "Roles": [
+                    {
+                        "Ref": "InstanceIAMRole"
+                    }
+                ]
+            },
+            "Type": "AWS::IAM::InstanceProfile"
+        },
+        "BrokerStack": {
+            "Type": "AWS::CloudFormation::Stack",
+            "Properties": {
+                "TemplateURL": {
+                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}templates/nodegroup.template"
+                },
+                "Parameters": {
+                    "AssignPublicIP": {
+                        "Ref": "AssignPublicIP"
+                    },
+                    "BootDiskSize": {
+                        "Ref": "BootDiskSize"
+                    },
+                    "ClusterInfoHandle": {
+                        "Ref": "ClusterInfoHandle"
+                    },
+                    "ClusterName": {
+                        "Ref": "ClusterName"
+                    },
+                    "ConfluentEdition": {
+                        "Ref": "ConfluentEdition"
+                    },
+                    "ConfluentVersion": {
+                        "Ref": "ConfluentVersion"
+                    },
+                    "ConnectorURLs": {
+                        "Ref": "ConnectorURLs"
+                    },
+                    "InstanceProfile": {
+                        "Ref": "InstanceProfile"
+                    },
+                    "InstanceRole": {
+                        "Ref": "InstanceIAMRole"
+                    },
+                    "KeyPairName": {
+                        "Ref": "KeyPairName"
+                    },
+                    "LinuxOSAMI": {
+                        "Ref": "LinuxOSAMI"
+                    },
+                    "NodeDesignation": "broker",
+                    "NodeInstanceType": {
+                        "Ref": "BrokerNodeInstanceType"
+                    },
+                    "NodeSecurityGroup": {
+                        "Ref" : "BrokerSecurityGroup"
+                    },
+                    "NodeSpotPrice": {
+                        "Ref": "BrokerNodeSpotPrice"
+                    },
+                    "NumNodes": {
+                        "Ref": "NumBrokers"
+                    },
+                    "ParentStackName": {
+                        "Ref": "AWS::StackName"
+                    },
+                    "PersistentStorage": {
+                        "Ref": "BrokerNodeStorage"
+                    },
+                    "PersistentStorageType": {
+                        "Ref": "BrokerNodeStorageType"
+                    },
+                    "QSS3BucketName": {
+                        "Ref": "QSS3BucketName"
+                    },
+                    "QSS3KeyPrefix": {
+                        "Ref": "QSS3KeyPrefix"
+                    },
+                    "SubnetID": {
+                        "Fn::Join": [
+                            ",",
+                            {
+                                "Ref": "SubnetID"
+                            }
+                        ]
+                    }
+                }
+            }
+        },
+        "ZookeeperStack": {
+            "Type": "AWS::CloudFormation::Stack",
+            "Condition": "IndependentZookeepers",
+            "Properties": {
+                "TemplateURL": {
+                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}templates/nodegroup.template"
+                },
+                "Parameters": {
+                    "AssignPublicIP": {
+                        "Ref": "AssignPublicIP"
+                    },
+                    "BootDiskSize": {
+                        "Ref": "BootDiskSize"
+                    },
+                    "ClusterInfoHandle": {
+                        "Ref": "ClusterInfoHandle"
+                    },
+                    "ClusterName": {
+                        "Ref": "ClusterName"
+                    },
+                    "ConfluentEdition": {
+                        "Ref": "ConfluentEdition"
+                    },
+                    "ConfluentVersion": {
+                        "Ref": "ConfluentVersion"
+                    },
+                    "InstanceProfile": {
+                        "Ref": "InstanceProfile"
+                    },
+                    "InstanceRole": {
+                        "Ref": "InstanceIAMRole"
+                    },
+                    "KeyPairName": {
+                        "Ref": "KeyPairName"
+                    },
+                    "LinuxOSAMI": {
+                        "Ref": "LinuxOSAMI"
+                    },
+                    "NodeDesignation": "zookeeper",
+                    "NodeInstanceType": {
+                        "Ref": "ZookeeperNodeInstanceType"
+                    },
+                    "NodeSecurityGroup": {
+                        "Ref" : "ZookeeperSecurityGroup"
+                    },
+                    "NodeSpotPrice": {
+                        "Ref": "ZookeeperNodeSpotPrice"
+                    },
+                    "NumNodes": {
+                        "Ref": "NumZookeepers"
+                    },
+                    "ParentStackName": {
+                        "Ref": "AWS::StackName"
+                    },
+                    "PersistentStorage": {
+                        "Ref": "ZookeeperNodeStorage"
+                    },
+                    "QSS3BucketName": {
+                        "Ref": "QSS3BucketName"
+                    },
+                    "QSS3KeyPrefix": {
+                        "Ref": "QSS3KeyPrefix"
+                    },
+                    "SubnetID": {
+                        "Fn::Join": [
+                            ",",
+                            {
+                                "Ref": "SubnetID"
+                            }
+                        ]
+                    }
+                }
+            }
+        },
+        "WorkerStack": {
+            "Type": "AWS::CloudFormation::Stack",
+            "Condition": "IndependentWorkers",
+            "Properties": {
+                "TemplateURL": {
+                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}templates/nodegroup.template"
+                },
+                "Parameters": {
+                    "AssignPublicIP": {
+                        "Ref": "AssignPublicIP"
+                    },
+                    "BootDiskSize": {
+                        "Ref": "BootDiskSize"
+                    },
+                    "ClusterInfoHandle": {
+                        "Ref": "ClusterInfoHandle"
+                    },
+                    "ClusterName": {
+                        "Ref": "ClusterName"
+                    },
+                    "ConfluentEdition": {
+                        "Ref": "ConfluentEdition"
+                    },
+                    "ConfluentVersion": {
+                        "Ref": "ConfluentVersion"
+                    },
+                    "ConnectorURLs": {
+                        "Ref": "ConnectorURLs"
+                    },
+                    "InstanceProfile": {
+                        "Ref": "InstanceProfile"
+                    },
+                    "InstanceRole": {
+                        "Ref": "InstanceIAMRole"
+                    },
+                    "KeyPairName": {
+                        "Ref": "KeyPairName"
+                    },
+                    "LinuxOSAMI": {
+                        "Ref": "LinuxOSAMI"
+                    },
+                    "NodeDesignation": "worker",
+                    "NodeInstanceType": {
+                        "Ref": "WorkerNodeInstanceType"
+                    },
+                    "NodeSecurityGroup": {
+                        "Ref" : "WorkerSecurityGroup"
+                    },
+                    "NodeSpotPrice": {
+                        "Ref": "WorkerNodeSpotPrice"
+                    },
+                    "NumNodes": {
+                        "Ref": "NumWorkers"
+                    },
+                    "ParentStackName": {
+                        "Ref": "AWS::StackName"
+                    },
+                    "PersistentStorage": {
+                        "Ref": "WorkerNodeStorage"
+                    },
+                    "QSS3BucketName": {
+                        "Ref": "QSS3BucketName"
+                    },
+                    "QSS3KeyPrefix": {
+                        "Ref": "QSS3KeyPrefix"
+                    },
+                    "SubnetID": {
+                        "Fn::Join": [
+                            ",",
+                            {
+                                "Ref": "SubnetID"
+                            }
+                        ]
+                    }
+                }
+            }
+        },
+        "BrokerSecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "VPCID"
+                },
+                "GroupDescription": "Kafka Brokers Security Group",
+                "SecurityGroupIngress": [
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "9092",
+                        "ToPort": "9093",
+                        "CidrIp": {
+                            "Ref": "RemoteAccessCIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "22",
+                        "ToPort": "22",
+                        "CidrIp": {
+                            "Ref": "SSHAccessCIDR"
+                        }
+                    }
+                ]
+            }
+        },
+        "BrokerIngressReplication": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "Properties": {
+                "GroupId": {
+                    "Ref": "BrokerSecurityGroup"
+                },
+                "IpProtocol": "tcp",
+                "FromPort": "9092",
+                "ToPort": "9093",
+                "SourceSecurityGroupId": {
+                    "Ref": "BrokerSecurityGroup"
+                }
+            }
+        },
+        "BrokerWorkerIngress": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "Condition": "IndependentWorkers",
+            "Properties": {
+                "GroupId": {
+                    "Ref": "BrokerSecurityGroup"
+                },
+                "IpProtocol": "tcp",
+                "FromPort": "9092",
+                "ToPort": "9093",
+                "SourceSecurityGroupId": {
+                    "Ref": "WorkerSecurityGroup"
+                }
+            }
+        },
+        "ZookeeperSecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Condition": "IndependentZookeepers",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "VPCID"
+                },
+                "GroupDescription": "Zookeeper Security Group",
+                "SecurityGroupIngress": [
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "22",
+                        "ToPort": "22",
+                        "CidrIp": {
+                            "Ref": "SSHAccessCIDR"
+                        }
+                    }
+                ]
+            }
+        },
+        "ZookeeperIngressTcp2888": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "Properties": {
+                "GroupId": {
+                    "Fn::If": [
+                        "IndependentZookeepers",
+                        {
+                            "Ref": "ZookeeperSecurityGroup"
+                        },
+                        {
+                            "Ref": "BrokerSecurityGroup"
+                        }
+                    ]
+                },
+                "IpProtocol": "tcp",
+                "FromPort": "2888",
+                "ToPort": "2888",
+                "SourceSecurityGroupId": {
+                    "Fn::If": [
+                        "IndependentZookeepers",
+                        {
+                            "Ref": "ZookeeperSecurityGroup"
+                        },
+                        {
+                            "Ref": "BrokerSecurityGroup"
+                        }
+                    ]
+                }
+            }
+        },
+        "ZookeeperIngressTcp3888": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "Properties": {
+                "GroupId": {
+                    "Fn::If": [
+                        "IndependentZookeepers",
+                        {
+                            "Ref": "ZookeeperSecurityGroup"
+                        },
+                        {
+                            "Ref": "BrokerSecurityGroup"
+                        }
+                    ]
+                },
+                "IpProtocol": "tcp",
+                "FromPort": "3888",
+                "ToPort": "3888",
+                "SourceSecurityGroupId": {
+                    "Fn::If": [
+                        "IndependentZookeepers",
+                        {
+                            "Ref": "ZookeeperSecurityGroup"
+                        },
+                        {
+                            "Ref": "BrokerSecurityGroup"
+                        }
+                    ]
+                }
+            }
+        },
+        "ZookeeperBrokerIngress": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "Properties": {
+                "GroupId": {
+                    "Fn::If": [
+                        "IndependentZookeepers",
+                        {
+                            "Ref": "ZookeeperSecurityGroup"
+                        },
+                        {
+                            "Ref": "BrokerSecurityGroup"
+                        }
+                    ]
+                },
+                "IpProtocol": "tcp",
+                "FromPort": "2181",
+                "ToPort": "2181",
+                "SourceSecurityGroupId": {
+                    "Ref": "BrokerSecurityGroup"
+                }
+            }
+        },
+        "ZookeeperWorkerIngress": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "Condition": "IndependentWorkers",
+            "Properties": {
+                "GroupId": {
+                    "Fn::If": [
+                        "IndependentZookeepers",
+                        {
+                            "Ref": "ZookeeperSecurityGroup"
+                        },
+                        {
+                            "Ref": "BrokerSecurityGroup"
+                        }
+                    ]
+                },
+                "IpProtocol": "tcp",
+                "FromPort": "2181",
+                "ToPort": "2181",
+                "SourceSecurityGroupId": {
+                    "Ref": "WorkerSecurityGroup"
+                }
+            }
+        },
+        "ZookeeperRemoteIngress": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "Properties": {
+                "GroupId": {
+                    "Fn::If": [
+                        "IndependentZookeepers",
+                        {
+                            "Ref": "ZookeeperSecurityGroup"
+                        },
+                        {
+                            "Ref": "BrokerSecurityGroup"
+                        }
+                    ]
+                },
+                "IpProtocol": "tcp",
+                "FromPort": "2181",
+                "ToPort": "2181",
+                "CidrIp": {
+                    "Ref": "RemoteAccessCIDR"
+                }
+            }
+        },
+        "WorkerSecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Condition": "IndependentWorkers",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "VPCID"
+                },
+                "GroupDescription": "Kafka Workers Security Group",
+                "SecurityGroupIngress": [
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "22",
+                        "ToPort": "22",
+                        "CidrIp": {
+                            "Ref": "SSHAccessCIDR"
+                        }
+                    }
+                ]
+            }
+        },
+        "SchemaRegistryRemoteIngress": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "Properties": {
+                "GroupId": {
+                    "Fn::If": [
+                        "IndependentWorkers",
+                        {
+                            "Ref": "WorkerSecurityGroup"
+                        },
+                        {
+                            "Ref": "BrokerSecurityGroup"
+                        }
+                    ]
+                },
+                "IpProtocol": "tcp",
+                "FromPort": "8081",
+                "ToPort": "8081",
+                "CidrIp": {
+                    "Ref": "RemoteAccessCIDR"
+                }
+            }
+        },
+        "RESTProxyRemoteIngress": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "Properties": {
+                "GroupId": {
+                    "Fn::If": [
+                        "IndependentWorkers",
+                        {
+                            "Ref": "WorkerSecurityGroup"
+                        },
+                        {
+                            "Ref": "BrokerSecurityGroup"
+                        }
+                    ]
+                },
+                "IpProtocol": "tcp",
+                "FromPort": "8082",
+                "ToPort": "8082",
+                "CidrIp": {
+                    "Ref": "RemoteAccessCIDR"
+                }
+            }
+        },
+        "KafkaConnectRemoteIngress": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "Properties": {
+                "GroupId": {
+                    "Fn::If": [
+                        "IndependentWorkers",
+                        {
+                            "Ref": "WorkerSecurityGroup"
+                        },
+                        {
+                            "Ref": "BrokerSecurityGroup"
+                        }
+                    ]
+                },
+                "IpProtocol": "tcp",
+                "FromPort": "8083",
+                "ToPort": "8083",
+                "CidrIp": {
+                    "Ref": "RemoteAccessCIDR"
+                }
+            }
+        },
+        "ControlCenterRemoteIngress": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "Properties": {
+                "GroupId": {
+                    "Fn::If": [
+                        "IndependentWorkers",
+                        {
+                            "Ref": "WorkerSecurityGroup"
+                        },
+                        {
+                            "Ref": "BrokerSecurityGroup"
+                        }
+                    ]
+                },
+                "IpProtocol": "tcp",
+                "FromPort": "9021",
+                "ToPort": "9021",
+                "CidrIp": {
+                    "Ref": "RemoteAccessCIDR"
+                }
+            }
+        },
+        "ClusterInfoHandle": {
+            "Type": "AWS::CloudFormation::WaitConditionHandle"
+        },
+        "ClusterInfoCondition": {
+            "Type": "AWS::CloudFormation::WaitCondition",
+            "Condition": "EnableWaitConditions",
+            "DependsOn": "BrokerStack",
+            "Properties": {
+                "Handle": {
+                    "Ref": "ClusterInfoHandle"
+                },
+                "Timeout": "120",
+                "Count": "1"
+            }
+        }
+    },
+    "Outputs": {
+        "ClusterInfo": {
+            "Condition": "EnableWaitConditions",
+            "Description": "Cluster Information",
+            "Value": {
+                "Fn::GetAtt": [
+                    "ClusterInfoCondition",
+                    "Data"
+                ]
+            }
+        },
+        "SubnetID": {
+            "Description": "Subnet(s) used by deployment",
+            "Value": {
+                "Fn::Join": [
+                    ",",
+                    {
+                        "Ref": "SubnetID"
+                    }
+                ]
+            }
+        }
+    }
+}

@@ -1,0 +1,205 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "Drupal Security Groups template. (qs-1nqqf5kog)",
+    "Parameters": {
+        "VPC": {
+            "Description": "VPC-ID of your existing Virtual Private Cloud (VPC) where you want to depoy RDS.",
+            "Type": "AWS::EC2::VPC::Id"
+        },
+        "VPCCIDR": {
+            "AllowedPattern": "^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\\/([0-9]|[1-2][0-9]|3[0-2]))$",
+            "ConstraintDescription": "Must be a valid IP range in x.x.x.x/x notation",
+            "Description": "The CIDR block for VPC",
+            "Type": "String"
+        },
+        "BastionSecurityGroupID": {
+            "Description": "ID of the Bastion Security Group (e.g., sg-7f16e910)",
+            "Type": "AWS::EC2::SecurityGroup::Id"
+        },
+        "EnableElastiCache":{
+            "Description": "Enable ElastiCache",
+            "AllowedValues": [
+                "true",
+                "false"
+            ],
+            "Default": "true",
+            "Type": "String"
+        }
+    },
+    "Conditions":{
+        "EnableElastiCacheCondition":{
+            "Fn::Equals": [
+                {
+                    "Ref": "EnableElastiCache"
+                },
+                "true"
+            ]
+        }
+    },
+    "Resources": {
+        "AuroraRDSSecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "GroupDescription": "Allow access to Aurora Port (AWS Quick Start)",
+                "VpcId": {
+                    "Ref": "VPC"
+                },
+                "SecurityGroupIngress": [
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "3306",
+                        "ToPort": "3306",
+                        "SourceSecurityGroupId": {
+                            "Fn::GetAtt": [
+                                "WebServerSecurityGroup",
+                                "GroupId"
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        "ELBSecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "GroupDescription": "ELB Security Group (AWS Quick Start)",
+                "VpcId": {
+                    "Ref": "VPC"
+                },
+                "SecurityGroupIngress": [
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "80",
+                        "ToPort": "80",
+                        "CidrIp": "0.0.0.0/0"
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "443",
+                        "ToPort": "443",
+                        "CidrIp": "0.0.0.0/0"
+                    }
+                ]
+            }
+        },
+        "WebServerSecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "GroupDescription": "App Server Security Group (AWS Quick Start)",
+                "VpcId": {
+                    "Ref": "VPC"
+                },
+                "SecurityGroupIngress": [
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "22",
+                        "ToPort": "22",
+                        "SourceSecurityGroupId": {
+                            "Ref": "BastionSecurityGroupID"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "443",
+                        "ToPort": "443",
+                        "SourceSecurityGroupId": {
+                            "Fn::GetAtt": [
+                                "ELBSecurityGroup",
+                                "GroupId"
+                            ]
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "80",
+                        "ToPort": "80",
+                        "SourceSecurityGroupId": {
+                            "Fn::GetAtt": [
+                                "ELBSecurityGroup",
+                                "GroupId"
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        "EFSSecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "GroupDescription": "EFS Security Group",
+                "VpcId": {
+                    "Ref": "VPC"
+                },
+                "SecurityGroupIngress": [
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "2049",
+                        "ToPort": "2049",
+                        "CidrIp": {
+                            "Ref": "VPCCIDR"
+                        }
+                    }
+                ]
+            }
+        },
+        "ElastiCacheSecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Condition": "EnableElastiCacheCondition",
+            "Properties": {
+                "GroupDescription": "Allow access to ElastiCache-Memcached Port (AWS Quick Start)",
+                "VpcId": {
+                    "Ref": "VPC"
+                },
+                "SecurityGroupIngress": [
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "11211",
+                        "ToPort": "11211",
+                        "SourceSecurityGroupId": {
+                            "Fn::GetAtt": [
+                                "WebServerSecurityGroup",
+                                "GroupId"
+                            ]
+                        }
+                    }
+                ]
+            }
+        }
+    },
+    "Outputs": {
+        "AuroraRDSSecurityGroup": {
+            "Description": "Aurora Security Group",
+            "Value": {
+                "Ref": "AuroraRDSSecurityGroup"
+            }
+        },
+        "ELBSecurityGroup": {
+            "Description": "ELB Security Group",
+            "Value": {
+                "Ref": "ELBSecurityGroup"
+            }
+        },
+        "WebServerSecurityGroup": {
+            "Description": "Web Server Security Group",
+            "Value": {
+                "Ref": "WebServerSecurityGroup"
+            }
+        },
+        "EFSSecurityGroup": {
+            "Description": "EFS Security Group",
+            "Value": {
+                "Ref": "EFSSecurityGroup"
+            }
+        },
+        "ElastiCacheSecurityGroup": {
+            "Description": "ElastiCache Security Group",
+            "Value": {
+                "Fn::If":[
+                    "EnableElastiCacheCondition",
+                    {"Ref": "ElastiCacheSecurityGroup"},
+                    ""
+                ]
+            }
+        }
+    }
+}

@@ -1,0 +1,162 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Amazon Connect ChoiceView Integration Quick Start. (qs-1pqmcejqs)
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+    - Label:
+        default: ChoiceView Integration Configuration
+      Parameters:
+      - ChoiceViewClientId
+      - ChoiceViewClientSecret
+      - ChoiceViewServiceUrl
+      - TwilioAccountSid
+      - TwilioAuthToken
+      - TwilioPhoneNumber
+    - Label:
+        default: AWS Quick Start Configuration
+      Parameters:
+      - QSS3BucketName
+      - QSS3KeyPrefix
+    ParameterLabels:
+      ChoiceViewClientId:
+        default: ChoiceView client id
+      ChoiceViewClientSecret:
+        default: ChoiceView client secret
+      ChoiceViewServiceUrl:
+        default: ChoiceView API base url
+      QSS3BucketName:
+        default: Quick Start S3 Bucket Name
+      QSS3KeyPrefix:
+        default: Quick Start S3 Key Prefix
+      TwilioAccountSid:
+        default: Twilio account sid
+      TwilioAuthToken:
+        default: Twilio auth token
+      TwilioPhoneNumber:
+        default: Twilio phone number
+Parameters:
+  ChoiceViewClientId:
+    Description: The ChoiceView client id. This is provided by Radish Systems when your account is activated.
+    Type: String
+  ChoiceViewClientSecret:
+    Description: The ChoiceView client secret. This is provided by Radish Systems when your account is activated.
+    Type: String
+  ChoiceViewServiceUrl:
+    AllowedPattern: ^https:\/\/[a-zA-Z0-9-\/\.]+$
+    Description: The base url of the ChoiceView API. This is provided by Radish Systems when your account is activated.
+    Default: https://cvnet.radishsystems.com/ivr/api/
+    Type: String
+  QSS3BucketName:
+    AllowedPattern: ^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$
+    ConstraintDescription: Quick Start bucket name can include numbers, lowercase
+      letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen
+      (-).
+    Default: aws-quickstart
+    Description: S3 bucket name for the Quick Start assets. This string can include
+      numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start
+      or end with a hyphen (-).
+    Type: String
+  QSS3KeyPrefix:
+    AllowedPattern: ^[0-9a-zA-Z-/]*$
+    ConstraintDescription: Quick Start key prefix can include numbers, lowercase letters,
+      uppercase letters, hyphens (-), and forward slash (/).
+    Default: connect-integration-radish-choiceview/
+    Description: S3 key prefix for the Quick Start assets. Quick Start key prefix
+      can include numbers, lowercase letters, uppercase letters, hyphens (-), and
+      forward slash (/).
+    Type: String
+  TwilioAccountSid:
+    AllowedPattern: ^AC[0-9a-f]{32}$
+    ConstraintDescription: Twilio account sids must start with the string 'AC'. There are 32 lower case hex digits.
+    Description: The Twilio account sid. If you don't have a Twilio account, Radish Systems will set one up for you.
+    Type: String
+  TwilioAuthToken:
+    AllowedPattern: ^[0-9a-f]{32}$
+    ConstraintDescription: Twilio auth tokens contain 32 lower case hex digits.
+    Description: The Twilio auth token. If you don't have a Twilio account, Radish Systems will set one up for you.
+    Type: String
+  TwilioPhoneNumber:
+    AllowedPattern: ^\+[1-9]\d{1,14}$
+    ConstraintDescription: The Twilio phone number must be in E.164 format. No punctuation characters are allowed and
+      the number must start with a plus sign (+) and the country code. Phone numbers must start with the country code.
+      The US and Canada country code is 1, so US and Canadian phone numbers must start with +1.
+    Description: The Twilio phone number that will send SMS messages. If you don't have a Twilio account,
+      Radish Systems will set one up for you.
+    Type: String
+Rules:
+  RegionSupport:
+    Assertions:
+    - Assert:
+        Fn::Or:
+          - Fn::Equals:
+            - Ref: AWS::Region
+            - us-east-1
+          - Fn::Equals:
+            - Ref: AWS::Region
+            - us-west-2
+      AssertDescription: Region must be either US East (N. Virginia) - us-east-1 or US West (Oregon) - us-west-2
+Resources:
+  ChoiceviewFunctionExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Path: /
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+  ChoiceviewIntegration:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: ChoiceViewAPI::ChoiceViewAPI.Function::FunctionHandler
+      Runtime: dotnetcore2.1
+      Description: Amazon Connect ChoiceView Integration Function
+      MemorySize: 1024
+      Timeout: 8
+      Role:
+        Fn::GetAtt: ChoiceviewFunctionExecutionRole.Arn
+      Environment:
+        Variables:
+          CHOICEVIEW_CLIENTID:
+            Ref: ChoiceViewClientId
+          CHOICEVIEW_CLIENTSECRET:
+            Ref: ChoiceViewClientSecret
+          CHOICEVIEW_SERVICEURL:
+            Ref: ChoiceViewServiceUrl
+          TWILIO_ACCOUNTSID:
+            Ref: TwilioAccountSid
+          TWILIO_AUTHTOKEN:
+            Ref: TwilioAuthToken
+          TWILIO_PHONENUMBER:
+            Ref: TwilioPhoneNumber
+      Code:
+        S3Bucket:
+          Ref: QSS3BucketName
+        S3Key:
+          Fn::Sub: ${QSS3KeyPrefix}functions/packages/choiceview-integration/ChoiceViewAPI.zip
+  ChoiceviewFunctionPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName:
+        Ref: ChoiceviewIntegration
+      Action: lambda:InvokeFunction
+      Principal: connect.amazonaws.com
+      SourceAccount:
+        Ref: AWS::AccountId
+Outputs:
+  ChoiceviewIntegrationExecutionRole:
+    Description: Lambda Function Execution Role ARN
+    Value:
+      Fn::GetAtt: ChoiceviewFunctionExecutionRole.Arn
+  ChoiceviewIntegration:
+    Description: Lambda Function for Amazon Connect ChoiceView Integration
+    Value:
+      Fn::GetAtt: ChoiceviewIntegration.Arn
+...

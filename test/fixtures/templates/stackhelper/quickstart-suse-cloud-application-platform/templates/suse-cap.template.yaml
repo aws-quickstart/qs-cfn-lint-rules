@@ -1,0 +1,1032 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Deploys Suse Cloud Application Platform into an existing Kubernetes Cluster (qs-1p817shrd)
+Parameters:
+  CleanupSecurityGroupDependenciesLambdaArn:
+    Type: String
+  HelmLambdaArn:
+    Type: String
+  KubeManifestLambdaArn:
+    Type: String
+  KubeGetLambdaArn:
+    Type: String
+  KubeConfigPath:
+    Type: String
+  KubeConfigKmsContext:
+    Type: String
+    Default: "EKSQuickStart"
+  NodeInstanceProfile:
+    Type: String
+  HostedZoneID:
+    Type: String
+  DomainName:
+    Type: String
+  PrivateSubnet1ID:
+    Type: String
+  PrivateSubnet2ID:
+    Type: String
+  PrivateSubnet3ID:
+    Type: String
+  QSS3BucketName:
+    Type: String
+  QSS3KeyPrefix:
+    Type: String
+    Default: quickstart-suse-cloud-application-platform/
+  KeyPairName:
+    Type: AWS::EC2::KeyPair::KeyName
+  VPCID:
+    Type: "AWS::EC2::VPC::Id"
+  NodeInstanceType:
+    Default: m5.large
+    AllowedValues:
+      - t2.large
+      - t2.xlarge
+      - t2.2xlarge
+      - t3.large
+      - t3.xlarge
+      - t3.2xlarge
+      - m3.xlarge
+      - m3.2xlarge
+      - m4.large
+      - m4.xlarge
+      - m4.2xlarge
+      - m4.4xlarge
+      - m4.10xlarge
+      - m5.large
+      - m5.xlarge
+      - m5.2xlarge
+      - m5.4xlarge
+      - m5.12xlarge
+      - m5.24xlarge
+      - c4.2xlarge
+      - c4.4xlarge
+      - c4.8xlarge
+      - c5.xlarge
+      - c5.2xlarge
+      - c5.4xlarge
+      - c5.9xlarge
+      - c5.18xlarge
+      - i3.large
+      - i3.xlarge
+      - i3.2xlarge
+      - i3.4xlarge
+      - i3.8xlarge
+      - i3.16xlarge
+      - r3.xlarge
+      - r3.2xlarge
+      - r3.4xlarge
+      - r3.8xlarge
+      - r4.large
+      - r4.xlarge
+      - r4.2xlarge
+      - r4.4xlarge
+      - r4.8xlarge
+      - r4.16xlarge
+      - x1.16xlarge
+      - x1.32xlarge
+      - p2.xlarge
+      - p2.8xlarge
+      - p2.16xlarge
+      - p3.2xlarge
+      - p3.8xlarge
+      - p3.16xlarge
+      - r5.large
+      - r5.xlarge
+      - r5.2xlarge
+      - r5.4xlarge
+      - r5.12xlarge
+      - r5.24xlarge
+      - r5d.large
+      - r5d.xlarge
+      - r5d.2xlarge
+      - r5d.4xlarge
+      - r5d.12xlarge
+      - r5d.24xlarge
+      - z1d.large
+      - z1d.xlarge
+      - z1d.2xlarge
+      - z1d.3xlarge
+      - z1d.6xlarge
+      - z1d.12xlarge
+    ConstraintDescription: Must be a valid EC2 instance type
+    Type: String
+  NumberOfNodes:
+    Default: 3
+    Type: Number
+  NodeGroupName:
+    Default: CAP-Infra
+    Type: String
+  NodeVolumeSize:
+    Default: 80
+    Type: String
+  ControlPlaneSecurityGroup:
+    Type: String
+  EKSClusterName:
+    Type: String
+  KubernetesVersion:
+    Type: String
+    AllowedValues: [ "1.12", "1.11", "1.10" ]
+    Default: "1.12"
+  UaaPassword:
+    Type: String
+    NoEcho: true
+  AdminPassword:
+    Type: String
+    NoEcho: true
+  NodeInstanceRoleName:
+    Type: String
+  NodeGroupSecurityGroup:
+    Type: AWS::EC2::SecurityGroup::Id
+  SubDomainPrefix:
+    Default: 'scf'
+    Type: String
+  LambdaZipsBucketName:
+    Default: ""
+    Type: String
+  UaaMysqlReplicas:
+    Default: 2
+    Type: Number
+  UaaReplicas:
+    Default: 2
+    Type: Number
+  TcpRouterReplicas:
+    Default: 2
+    Type: Number
+  ScfMysqlReplicas:
+    Default: 2
+    Type: Number
+  RoutingApiReplicas:
+    Default: 2
+    Type: Number
+  RouterReplicas:
+    Default: 2
+    Type: Number
+  NatsReplicas:
+    Default: 2
+    Type: Number
+  DiegoSshReplicas:
+    Default: 2
+    Type: Number
+  DiegoBrainReplicas:
+    Default: 2
+    Type: Number
+  DiegoApiReplicas:
+    Default: 2
+    Type: Number
+  CcUploaderReplicas:
+    Default: 2
+    Type: Number
+  DiegoCellReplicas:
+    Default: 3
+    Type: Number
+  AdapterReplicas:
+    Default: 2
+    Type: Number
+  ApiGroupReplicas:
+    Default: 2
+    Type: Number
+  CcClockReplicas:
+    Default: 2
+    Type: Number
+  CcWorkerReplicas:
+    Default: 2
+    Type: Number
+  CfUsbReplicas:
+    Default: 2
+    Type: Number
+  ConsoleChartVersion:
+    Type: String
+  StratosWebConsole:
+    Type: String
+    AllowedValues: ["Enabled", "Disabled"]
+    Default: "Disabled"
+  RemoteAccessCIDRs:
+    Type: CommaDelimitedList
+  BastionSecurityGroupID:
+    Type: AWS::EC2::SecurityGroup::Id
+  StratosAZ:
+    Type: String
+Conditions:
+  CreateLambdaZipsBucket: !Equals [!Ref 'LambdaZipsBucketName', '']
+  EnableConsole: !Equals [!Ref StratosWebConsole, 'Enabled']
+  IsHA: !Not
+    - !Or
+      - !Equals [!Ref NumberOfNodes, 1]
+      - !Equals [!Ref DiegoCellReplicas, 1]
+Resources:
+  LambdaZipsBucket:
+    Type: AWS::S3::Bucket
+    Condition: CreateLambdaZipsBucket
+  ACMCertificateRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Path: /
+      Policies:
+        - PolicyName: lambda-acm
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - acm:RequestCertificate
+                  - acm:DescribeCertificate
+                  - acm:DeleteCertificate
+                Resource:
+                  - '*'
+              - Effect: Allow
+                Action:
+                  - lambda:InvokeFunction
+                Resource:
+                  - '*'
+              - Effect: Allow
+                Action:
+                  - route53:ChangeResourceRecordSets
+                Resource:
+                  - !Sub 'arn:aws:route53:::hostedzone/${Route53HostedSubdomainZone}'
+              - Effect: Allow
+                Action:
+                  - logs:FilterLogEvents
+                Resource:
+                  - '*'
+  ACMCertificateLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Description: Creates and verifies an ACM certificate using DNS validation and route53
+      Handler: lambda_function.handler
+      Runtime: python2.7
+      Role: !GetAtt 'ACMCertificateRole.Arn'
+      Timeout: 300
+      Code:
+        S3Bucket: !If [ CreateLambdaZipsBucket, !Ref LambdaZipsBucket, !Ref LambdaZipsBucketName ]
+        S3Key: !Sub '${QSS3KeyPrefix}functions/packages/ACMCert/lambda.zip'
+  ACMCertificateDNS:
+    Type: Custom::ACMCert
+    Properties:
+      ServiceToken: !GetAtt 'ACMCertificateLambda.Arn'
+      HostedZoneId: !Ref 'Route53HostedSubdomainZone'
+      HostNames:
+        - !Sub '${SubDomainPrefix}.${DomainName}'
+        - !Sub '*.${SubDomainPrefix}.${DomainName}'
+        - !Sub '*.uaa.${SubDomainPrefix}.${DomainName}'
+  Route53HostedSubdomainZone:
+    Type: AWS::Route53::HostedZone
+    Properties:
+      Name: !Sub '${SubDomainPrefix}.${DomainName}'
+  Route53SubdomainNS:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref 'HostedZoneID'
+      Name: !Sub '${SubDomainPrefix}.${DomainName}'
+      ResourceRecords: !GetAtt 'Route53HostedSubdomainZone.NameServers'
+      Type: NS
+      TTL: '600'
+  ScfWildcardDns:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      Type: A
+      Name: !Sub '*.${SubDomainPrefix}.${DomainName}'
+      AliasTarget:
+        HostedZoneId: !Ref RouterElbZoneId
+        DNSName: !Ref RouterElbHostName
+      HostedZoneId: !Ref 'Route53HostedSubdomainZone'
+  TcpScfDns:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      Type: A
+      Name: !Sub 'tcp.${SubDomainPrefix}.${DomainName}'
+      AliasTarget:
+        HostedZoneId: !Ref TcpRouterElbZoneId
+        DNSName: !Ref TcpRouterElbHostName
+      HostedZoneId: !Ref 'Route53HostedSubdomainZone'
+  SshScfDns:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      Type: A
+      Name: !Sub 'ssh.${SubDomainPrefix}.${DomainName}'
+      AliasTarget:
+        HostedZoneId: !Ref SshElbZoneId
+        DNSName: !Ref SshElbHostName
+      HostedZoneId: !Ref 'Route53HostedSubdomainZone'
+  UaaDns:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      Type: A
+      Name: !Sub 'uaa.${SubDomainPrefix}.${DomainName}'
+      AliasTarget:
+        HostedZoneId: !Ref UaaElbZoneId
+        DNSName: !Ref UaaElbHostName
+      HostedZoneId: !Ref 'Route53HostedSubdomainZone'
+  UaaWildcardDns:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      Type: A
+      Name: !Sub '*.uaa.${SubDomainPrefix}.${DomainName}'
+      AliasTarget:
+        HostedZoneId: !Ref UaaElbZoneId
+        DNSName: !Ref UaaElbHostName
+      HostedZoneId: !Ref 'Route53HostedSubdomainZone'
+  ConsoleDns:
+    Condition: EnableConsole
+    DependsOn: Scf
+    Type: AWS::Route53::RecordSet
+    Properties:
+      Type: A
+      Name: !Sub '${SubDomainPrefix}.${DomainName}'
+      AliasTarget:
+        HostedZoneId: !Ref ConsoleElbZoneId
+        DNSName: !Ref ConsoleElbHostName
+      HostedZoneId: !Ref 'Route53HostedSubdomainZone'
+  UaaElbHostName:
+    DependsOn: Uaa
+    Type: "Custom::KubeGet"
+    Version: '1.0'
+    Properties:
+      ServiceToken: !Ref KubeGetLambdaArn
+      KubeConfigPath: !Ref KubeConfigPath
+      KubeConfigKmsContext: !Ref KubeConfigKmsContext
+      Namespace: uaa
+      Name: 'svc/uaa-uaa-public'
+      JsonPath: '{.status.loadBalancer.ingress[0].hostname}'
+  ConsoleElbHostName:
+    Condition: EnableConsole
+    DependsOn: StratosConsole
+    Type: "Custom::KubeGet"
+    Version: '1.0'
+    Properties:
+      ServiceToken: !Ref KubeGetLambdaArn
+      KubeConfigPath: !Ref KubeConfigPath
+      KubeConfigKmsContext: !Ref KubeConfigKmsContext
+      Namespace: stratos
+      Name: !Sub 'svc/${StratosConsole}-ui-ext'
+      JsonPath: '{.status.loadBalancer.ingress[0].hostname}'
+  RouterElbHostName:
+    DependsOn: Scf
+    Type: "Custom::KubeGet"
+    Version: '1.0'
+    Properties:
+      ServiceToken: !Ref KubeGetLambdaArn
+      KubeConfigPath: !Ref KubeConfigPath
+      KubeConfigKmsContext: !Ref KubeConfigKmsContext
+      Namespace: scf
+      Name: 'svc/router-gorouter-public'
+      JsonPath: '{.status.loadBalancer.ingress[0].hostname}'
+  TcpRouterElbHostName:
+    DependsOn: Scf
+    Type: "Custom::KubeGet"
+    Version: '1.0'
+    Properties:
+      ServiceToken: !Ref KubeGetLambdaArn
+      KubeConfigPath: !Ref KubeConfigPath
+      KubeConfigKmsContext: !Ref KubeConfigKmsContext
+      Namespace: scf
+      Name: 'svc/tcp-router-tcp-router-public'
+      JsonPath: '{.status.loadBalancer.ingress[0].hostname}'
+  SshElbHostName:
+    DependsOn: Scf
+    Type: "Custom::KubeGet"
+    Version: '1.0'
+    Properties:
+      ServiceToken: !Ref KubeGetLambdaArn
+      KubeConfigPath: !Ref KubeConfigPath
+      KubeConfigKmsContext: !Ref KubeConfigKmsContext
+      Namespace: scf
+      Name: 'svc/diego-ssh-ssh-proxy-public'
+      JsonPath: '{.status.loadBalancer.ingress[0].hostname}'
+  UaaElbZoneId:
+    Type: "Custom::GetElbZone"
+    Version: 1.0
+    Properties:
+      ServiceToken: !GetAtt GetElbZoneIdFunction.Arn
+      DnsName: !Ref UaaElbHostName
+  RouterElbZoneId:
+    Type: "Custom::GetElbZone"
+    Version: 1.0
+    Properties:
+      ServiceToken: !GetAtt GetElbZoneIdFunction.Arn
+      DnsName: !Ref RouterElbHostName
+  TcpRouterElbZoneId:
+    Type: "Custom::GetElbZone"
+    Version: 1.0
+    Properties:
+      ServiceToken: !GetAtt GetElbZoneIdFunction.Arn
+      DnsName: !Ref TcpRouterElbHostName
+  SshElbZoneId:
+    Type: "Custom::GetElbZone"
+    Version: 1.0
+    Properties:
+      ServiceToken: !GetAtt GetElbZoneIdFunction.Arn
+      DnsName: !Ref SshElbHostName
+  ConsoleElbZoneId:
+    Condition: EnableConsole
+    Type: "Custom::GetElbZone"
+    Version: 1.0
+    Properties:
+      ServiceToken: !GetAtt GetElbZoneIdFunction.Arn
+      DnsName: !Ref ConsoleElbHostName
+  B64DecodeRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+  B64DecodeFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Description: decodes a base64 string and returns output
+      Handler: index.handler
+      Runtime: python3.6
+      Role: !GetAtt B64DecodeRole.Arn
+      Timeout: 900
+      Code:
+        ZipFile: |
+          import json
+          import logging
+          import threading
+          import cfnresponse
+          import base64
+          from hashlib import md5
+          def timeout(event, context):
+              logging.error('Execution is about to time out, sending failure response to CloudFormation')
+              cfnresponse.send(event, context, cfnresponse.FAILED, {}, physical_resource_id)
+          def handler(event, context):
+              data = {}
+              physical_resource_id = None
+              # make sure we send a failure to CloudFormation if the function is going to timeout
+              timer = threading.Timer((context.get_remaining_time_in_millis()
+              / 1000.00) - 0.5, timeout, args=[event, context])
+              timer.start()
+              print('Received event: %s' % json.dumps(event))
+              status = cfnresponse.SUCCESS
+              try:
+                  if event['RequestType'] in ['Create', 'Update']:
+                      encoded = event['ResourceProperties']['String']
+                      decoded = base64.b64decode(encoded).decode('utf-8')
+                      physical_resource_id = md5(decoded.encode('utf-8')).hexdigest()
+                      data["Decoded"] = decoded
+              except Exception as e:
+                  logging.error('Exception: %s' % e, exc_info=True)
+                  status = cfnresponse.FAILED
+              finally:
+                  timer.cancel()
+                  cfnresponse.send(event, context, status, data, physical_resource_id)
+  GetElbZoneIdRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: describe-elbs
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: elasticloadbalancing:DescribeLoadBalancers
+                Resource: '*'
+  GetElbZoneIdFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Description: Gets the Zone Name ID for a classic loadbalancer
+      Handler: index.handler
+      Runtime: python2.7
+      Role: !GetAtt GetElbZoneIdRole.Arn
+      Timeout: 900
+      Code:
+        ZipFile: |
+          import json
+          import logging
+          import threading
+          import boto3
+          import cfnresponse
+          def timeout(event, context):
+              logging.error('Execution is about to time out, sending failure response to CloudFormation')
+              cfnresponse.send(event, context, cfnresponse.FAILED, {}, physical_resource_id)
+          def handler(event, context):
+              physical_resource_id = None
+              # make sure we send a failure to CloudFormation if the function is going to timeout
+              timer = threading.Timer((context.get_remaining_time_in_millis()
+              / 1000.00) - 0.5, timeout, args=[event, context])
+              timer.start()
+              print('Received event: %s' % json.dumps(event))
+              status = cfnresponse.SUCCESS
+              try:
+                  if event['RequestType'] in ['Create', 'Update']:
+                      elb_dns = event['ResourceProperties']['DnsName']
+                      elb_client = boto3.client('elb')
+                      elbs = elb_client.describe_load_balancers()['LoadBalancerDescriptions']
+                      for elb in elbs:
+                          if elb['DNSName'] == elb_dns:
+                              physical_resource_id = elb['CanonicalHostedZoneNameID']
+                              break
+                      if not physical_resource_id:
+                        raise Exception("No ELB found matching dns name %s" % elb_dns)
+              except Exception as e:
+                  logging.error('Exception: %s' % e, exc_info=True)
+                  status = cfnresponse.FAILED
+              finally:
+                  timer.cancel()
+                  cfnresponse.send(event, context, status, {}, physical_resource_id)
+  UaaNamespace:
+    Type: "Custom::KubeManifest"
+    Version: '1.0'
+    DependsOn: NodeGroupStack
+    Properties:
+      ServiceToken: !Ref KubeManifestLambdaArn
+      KubeConfigPath: !Ref KubeConfigPath
+      KubeConfigKmsContext: !Ref KubeConfigKmsContext
+      Manifest:
+        kind: Namespace
+        apiVersion: v1
+        metadata:
+          name: uaa
+  Uaa:
+    Type: "Custom::Helm"
+    DependsOn: NodeGroupStack
+    Version: '1.0'
+    Properties:
+      ServiceToken: !Ref HelmLambdaArn
+      KubeConfigPath: !Ref KubeConfigPath
+      KubeConfigKmsContext: !Ref KubeConfigKmsContext
+      ChartBucket: !Ref QSS3BucketName
+      ChartKey: !Sub '${QSS3KeyPrefix}charts/uaa.tgz'
+      Namespace: !GetAtt UaaNamespace.name
+      Values:
+        env.DOMAIN: !Sub '${SubDomainPrefix}.${DomainName}'
+        env.UAA_HOST: !Sub "uaa.${SubDomainPrefix}.${DomainName}"
+        secrets.UAA_ADMIN_CLIENT_SECRET: !Ref UaaPassword
+        secrets.CLUSTER_ADMIN_PASSWORD: !Ref AdminPassword
+        services.acmArn: !GetAtt ACMCertificateDNS.Arn
+      ValueYaml: !Sub
+        - |
+          config:
+            HA: ${HA}
+          env:
+            UAA_PORT: 2793
+            GARDEN_ROOTFS_DRIVER: overlay-xfs
+            GARDEN_APPARMOR_PROFILE: ""
+          sizing:
+            mysql:
+              affinity:
+                nodeAffinity:
+                  requiredDuringSchedulingIgnoredDuringExecution:
+                    nodeSelectorTerms: [matchExpressions: [ {key: nodegroup, operator: In, values: [ CapInfra ] } ]]
+              count: ${UaaMysqlReplicas}
+            secret_generation:
+              affinity:
+                nodeAffinity:
+                  requiredDuringSchedulingIgnoredDuringExecution:
+                    nodeSelectorTerms: [matchExpressions: [ {key: nodegroup, operator: In, values: [ CapInfra ] } ]]
+            uaa:
+              affinity:
+                nodeAffinity:
+                  requiredDuringSchedulingIgnoredDuringExecution:
+                    nodeSelectorTerms: [matchExpressions: [ {key: nodegroup, operator: In, values: [ CapInfra ] } ]]
+              count: ${UaaReplicas}
+          services:
+            loadbalanced: true
+            remoteAccessCidr: [${IngressIPs}]
+          kube:
+            storage_class:
+              persistent: gp2
+              shared: gp2
+          registry:
+            hostname: "registry.suse.com"
+            username: ""
+            password: ""
+            organization: "cap"
+          auth: rbac
+        - IngressIPs: !Join [",", !Ref RemoteAccessCIDRs]
+          HA: !If [ IsHA, true, false ]
+  ScfNamespace:
+    Type: "Custom::KubeManifest"
+    Version: '1.0'
+    DependsOn: NodeGroupStack
+    Properties:
+      ServiceToken: !Ref KubeManifestLambdaArn
+      KubeConfigPath: !Ref KubeConfigPath
+      KubeConfigKmsContext: !Ref KubeConfigKmsContext
+      Manifest:
+        kind: Namespace
+        apiVersion: v1
+        metadata:
+          name: scf
+  UaaSecretName:
+    DependsOn: Uaa
+    Type: "Custom::KubeGet"
+    Version: '1.0'
+    Properties:
+      ServiceToken: !Ref KubeGetLambdaArn
+      KubeConfigPath: !Ref KubeConfigPath
+      KubeConfigKmsContext: !Ref KubeConfigKmsContext
+      Namespace: uaa
+      Name: 'pod'
+      JsonPath: "{.items[?(.metadata.name=='uaa-0')].spec.containers[?(.name=='uaa')].env[?(.name=='INTERNAL_CA_CERT')].valueFrom.secretKeyRef.name}"
+      Timeout: 600
+  UaaCaCert:
+    Type: "Custom::KubeGet"
+    Version: '1.0'
+    Properties:
+      ServiceToken: !Ref KubeGetLambdaArn
+      KubeConfigPath: !Ref KubeConfigPath
+      KubeConfigKmsContext: !Ref KubeConfigKmsContext
+      Namespace: uaa
+      Name: !Sub 'secret/${UaaSecretName}'
+      JsonPath: "{.data['internal-ca-cert']}"
+      Timeout: 600
+      ResponseKey: CaCert
+  DecodedUaaCaCert:
+    Type: "Custom::B64Decode"
+    Version: '1.0'
+    Properties:
+      ServiceToken: !GetAtt B64DecodeFunction.Arn
+      String: !GetAtt UaaCaCert.CaCert
+  Scf:
+    Type: "Custom::Helm"
+    DependsOn: Uaa
+    Version: '1.0'
+    Properties:
+      ServiceToken: !Ref HelmLambdaArn
+      KubeConfigPath: !Ref KubeConfigPath
+      KubeConfigKmsContext: !Ref KubeConfigKmsContext
+      ChartBucket: !Ref QSS3BucketName
+      ChartKey: !Sub '${QSS3KeyPrefix}charts/cf.tgz'
+      Namespace: !GetAtt ScfNamespace.name
+      Values:
+        env.DOMAIN: !Sub '${SubDomainPrefix}.${DomainName}'
+        env.UAA_HOST: !Sub "uaa.${SubDomainPrefix}.${DomainName}"
+        secrets.UAA_ADMIN_CLIENT_SECRET: !Ref UaaPassword
+        secrets.CLUSTER_ADMIN_PASSWORD: !Ref AdminPassword
+        secrets.UAA_CA_CERT: !Sub "'${DecodedUaaCaCert.Decoded}'"
+        services.acmArn: !GetAtt ACMCertificateDNS.Arn
+      ValueYaml: !Sub
+        - |
+          config:
+            HA: ${HA}
+          env:
+            UAA_PORT: 2793
+            GARDEN_ROOTFS_DRIVER: overlay-xfs
+            GARDEN_APPARMOR_PROFILE: ""
+          sizing:
+            adapter:
+              affinity:
+                nodeAffinity:
+                  requiredDuringSchedulingIgnoredDuringExecution:
+                    nodeSelectorTerms: [matchExpressions: [ {key: nodegroup, operator: In, values: [ CapInfra ] } ]]
+              count: ${AdapterReplicas}
+            api_group:
+              affinity:
+                nodeAffinity:
+                  requiredDuringSchedulingIgnoredDuringExecution:
+                    nodeSelectorTerms: [matchExpressions: [ {key: nodegroup, operator: In, values: [ CapInfra ] } ]]
+              count: ${ApiGroupReplicas}
+            cc_clock:
+              affinity:
+                nodeAffinity:
+                  requiredDuringSchedulingIgnoredDuringExecution:
+                    nodeSelectorTerms: [matchExpressions: [ {key: nodegroup, operator: In, values: [ CapInfra ] } ]]
+              count: ${CcClockReplicas}
+            cc_uploader:
+              capabilities: ["SYS_RESOURCE"]
+              affinity:
+                nodeAffinity:
+                  requiredDuringSchedulingIgnoredDuringExecution:
+                    nodeSelectorTerms: [matchExpressions: [ {key: nodegroup, operator: In, values: [ CapInfra ] } ]]
+              count: ${CcUploaderReplicas}
+            cc_worker:
+              capabilities: ["SYS_RESOURCE"]
+              affinity:
+                nodeAffinity:
+                  requiredDuringSchedulingIgnoredDuringExecution:
+                    nodeSelectorTerms: [matchExpressions: [ {key: nodegroup, operator: In, values: [ CapInfra ] } ]]
+              count: ${CcWorkerReplicas}
+            cf_usb:
+              capabilities: ["SYS_RESOURCE"]
+              affinity:
+                nodeAffinity:
+                  requiredDuringSchedulingIgnoredDuringExecution:
+                    nodeSelectorTerms: [matchExpressions: [ {key: nodegroup, operator: In, values: [ CapInfra ] } ]]
+              count: ${CfUsbReplicas}
+            diego_api:
+              capabilities: ["SYS_RESOURCE"]
+              affinity:
+                nodeAffinity:
+                  requiredDuringSchedulingIgnoredDuringExecution:
+                    nodeSelectorTerms: [matchExpressions: [ {key: nodegroup, operator: In, values: [ CapInfra ] } ]]
+              count: ${DiegoApiReplicas}
+            diego_brain:
+              capabilities: ["SYS_RESOURCE"]
+              affinity:
+                nodeAffinity:
+                  requiredDuringSchedulingIgnoredDuringExecution:
+                    nodeSelectorTerms: [matchExpressions: [ {key: nodegroup, operator: In, values: [ CapInfra ] } ]]
+              count: ${DiegoBrainReplicas}
+            diego_cell:
+              affinity:
+                nodeAffinity:
+                  requiredDuringSchedulingIgnoredDuringExecution:
+                    nodeSelectorTerms: [matchExpressions: [ {key: nodegroup, operator: In, values: [ Default ] } ]]
+              count: ${DiegoCellReplicas}
+            diego_ssh:
+              capabilities: ["SYS_RESOURCE"]
+              affinity:
+                nodeAffinity:
+                  requiredDuringSchedulingIgnoredDuringExecution:
+                    nodeSelectorTerms: [matchExpressions: [ {key: nodegroup, operator: In, values: [ CapInfra ] } ]]
+              count: ${DiegoSshReplicas}
+            nats:
+              capabilities: ["SYS_RESOURCE"]
+              affinity:
+                nodeAffinity:
+                  requiredDuringSchedulingIgnoredDuringExecution:
+                    nodeSelectorTerms: [matchExpressions: [ {key: nodegroup, operator: In, values: [ CapInfra ] } ]]
+              count: ${NatsReplicas}
+            router:
+              capabilities: ["SYS_RESOURCE"]
+              affinity:
+                nodeAffinity:
+                  requiredDuringSchedulingIgnoredDuringExecution:
+                    nodeSelectorTerms: [matchExpressions: [ {key: nodegroup, operator: In, values: [ Default ] } ]]
+              count: ${RouterReplicas}
+            routing_api:
+              capabilities: ["SYS_RESOURCE"]
+              affinity:
+                nodeAffinity:
+                  requiredDuringSchedulingIgnoredDuringExecution:
+                    nodeSelectorTerms: [matchExpressions: [ {key: nodegroup, operator: In, values: [ CapInfra ] } ]]
+              count: ${RoutingApiReplicas}
+            mysql:
+              affinity:
+                nodeAffinity:
+                  requiredDuringSchedulingIgnoredDuringExecution:
+                    nodeSelectorTerms: [matchExpressions: [ {key: nodegroup, operator: In, values: [ CapInfra ] } ]]
+              count: ${ScfMysqlReplicas}
+            secret_generation:
+              affinity:
+                nodeAffinity:
+                  requiredDuringSchedulingIgnoredDuringExecution:
+                    nodeSelectorTerms: [matchExpressions: [ {key: nodegroup, operator: In, values: [ CapInfra ] } ]]
+            tcp_router:
+              affinity:
+                nodeAffinity:
+                  requiredDuringSchedulingIgnoredDuringExecution:
+                    nodeSelectorTerms: [matchExpressions: [ {key: nodegroup, operator: In, values: [ CapInfra ] } ]]
+              count: ${TcpRouterReplicas}
+          services:
+            loadbalanced: true
+            remoteAccessCidr: [ ${IngressIPs} ]
+          kube:
+            storage_class:
+              persistent: gp2
+              shared: gp2
+          registry:
+            hostname: "registry.suse.com"
+            username: ""
+            password: ""
+            organization: "cap"
+          auth: rbac
+        - IngressIPs: !Join [ ",", !Ref RemoteAccessCIDRs ]
+          HA: !If [ IsHA, true, false ]
+  StratosConsoleNamespace:
+    Condition: EnableConsole
+    Type: "Custom::KubeManifest"
+    Version: '1.0'
+    DependsOn: NodeGroupStack
+    Properties:
+      ServiceToken: !Ref KubeManifestLambdaArn
+      KubeConfigPath: !Ref KubeConfigPath
+      KubeConfigKmsContext: !Ref KubeConfigKmsContext
+      Manifest:
+        kind: Namespace
+        apiVersion: v1
+        metadata:
+          name: stratos
+  StratosConsoleStorageClass:
+    Condition: EnableConsole
+    Type: "Custom::KubeManifest"
+    Version: '1.0'
+    DependsOn: Scf
+    Properties:
+      ServiceToken: !Ref KubeManifestLambdaArn
+      KubeConfigPath: !Ref KubeConfigPath
+      KubeConfigKmsContext: !Ref KubeConfigKmsContext
+      Manifest:
+        kind: StorageClass
+        apiVersion: storage.k8s.io/v1
+        metadata:
+          name: gp2scoped
+        provisioner: kubernetes.io/aws-ebs
+        parameters:
+          type: gp2
+          zone: !Ref StratosAZ
+        reclaimPolicy: Retain
+        mountOptions:
+          - debug
+  StratosConsole:
+    Condition: EnableConsole
+    Type: "Custom::Helm"
+    DependsOn: StratosConsoleStorageClass
+    Version: '1.0'
+    Properties:
+      ServiceToken: !Ref HelmLambdaArn
+      KubeConfigPath: !Ref KubeConfigPath
+      KubeConfigKmsContext: !Ref KubeConfigKmsContext
+      RepoUrl: https://kubernetes-charts.suse.com/
+      Chart: suse/console
+      Namespace: !GetAtt StratosConsoleNamespace.name
+      Version: !Ref ConsoleChartVersion
+      Values:
+        env.DOMAIN: !Sub '${SubDomainPrefix}.${DomainName}'
+        env.UAA_HOST: !Sub "uaa.${SubDomainPrefix}.${DomainName}"
+      ValueYaml: !Sub
+        - |
+          storageClass: gp2scoped
+          env:
+            UAA_PORT: 2793
+          kube:
+            external_console_https_port: 443
+            storage_class:
+              persistent: gp2scoped
+            organization: cap
+          services:
+            loadbalanced: true
+          metrics:
+            enabled: true
+          console:
+            service:
+              loadBalancerSourceRanges: [ '"${IngressIPs}"' ]
+              annotations:
+                service.beta.kubernetes.io/aws-load-balancer-ssl-cert: ${AcmArn}
+                service.beta.kubernetes.io/aws-load-balancer-backend-protocol: ssl
+        - IngressIPs: !Join [ "\"', '\"", !Ref RemoteAccessCIDRs ]
+          AcmArn: !GetAtt ACMCertificateDNS.Arn
+  NodeGroupStack:
+    Type: "AWS::CloudFormation::Stack"
+    Properties:
+      TemplateURL: !Sub 'https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}submodules/quickstart-amazon-eks/templates/amazon-eks-nodegroup.template.yaml'
+      Parameters:
+        KeyPairName: !Ref 'KeyPairName'
+        PrivateSubnet1ID: !Ref PrivateSubnet1ID
+        PrivateSubnet2ID: !Ref PrivateSubnet2ID
+        PrivateSubnet3ID: !Ref PrivateSubnet3ID
+        VPCID: !Ref VPCID
+        NodeInstanceType: !Ref NodeInstanceType
+        NumberOfNodes: !Ref NumberOfNodes
+        MaxNumberOfNodes: !Ref NumberOfNodes
+        NodeGroupName: !Ref NodeGroupName
+        NodeVolumeSize: !Ref NodeVolumeSize
+        EKSControlPlane: !Ref EKSClusterName
+        ControlPlaneSecurityGroup: !Ref ControlPlaneSecurityGroup
+        NodeInstanceProfile: !Ref NodeInstanceProfile
+        KubernetesVersion: !Ref KubernetesVersion
+        BootstrapArguments: "--kubelet-extra-args --node-labels=nodegroup=CapInfra"
+        NodeInstanceRoleName: !Ref NodeInstanceRoleName
+        NodeAMIOS: SUSE-SLES-15-HVM
+        QSS3KeyPrefix: !Sub "${QSS3KeyPrefix}submodules/quickstart-amazon-eks/"
+        QSS3BucketName: !Ref QSS3BucketName
+        CleanupSecurityGroupDependenciesLambdaArn: !Ref CleanupSecurityGroupDependenciesLambdaArn
+  BastionSShToNodes:
+    Type: "AWS::EC2::SecurityGroupIngress"
+    Properties:
+      Description: Allow bastion ssh access to nodes
+      GroupId: !GetAtt NodeGroupStack.Outputs.EKSNodeSecurityGroup
+      SourceSecurityGroupId: !Ref BastionSecurityGroupID
+      IpProtocol: tcp
+      ToPort: 22
+      FromPort: 22
+  DefaultNodeSecurityGroupIngress:
+    Type: "AWS::EC2::SecurityGroupIngress"
+    Properties:
+      IpProtocol: "-1"
+      SourceSecurityGroupId: !Ref NodeGroupSecurityGroup
+      GroupId: !GetAtt NodeGroupStack.Outputs.EKSNodeSecurityGroup
+  InfraNodeSecurityGroupIngress:
+    Type: "AWS::EC2::SecurityGroupIngress"
+    Properties:
+      IpProtocol: "-1"
+      SourceSecurityGroupId: !GetAtt NodeGroupStack.Outputs.EKSNodeSecurityGroup
+      GroupId: !Ref NodeGroupSecurityGroup
+  CopyZipsRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: lambda-copier
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: s3:GetObject
+                Resource: !Sub 'arn:aws:s3:::${QSS3BucketName}/${QSS3KeyPrefix}*'
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:DeleteObject
+                Resource: !Sub
+                  - 'arn:aws:s3:::${DestBucket}/${QSS3KeyPrefix}*'
+                  - DestBucket: !If [ CreateLambdaZipsBucket, !Ref LambdaZipsBucket, !Ref LambdaZipsBucketName ]
+  CopyZipsFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Description: Copies objects from a source S3 bucket to a destination
+      Handler: index.handler
+      Runtime: python2.7
+      Role: !GetAtt CopyZipsRole.Arn
+      Timeout: 900
+      Code:
+        ZipFile: |
+          import json
+          import logging
+          import threading
+          import boto3
+          import cfnresponse
+          def copy_objects(source_bucket, dest_bucket, prefix, objects):
+              s3 = boto3.client('s3')
+              for o in objects:
+                  key = prefix + o
+                  copy_source = {
+                      'Bucket': source_bucket,
+                      'Key': key
+                  }
+                  print('copy_source: %s' % copy_source)
+                  print('dest_bucket = %s'%dest_bucket)
+                  print('key = %s' %key)
+                  s3.copy_object(CopySource=copy_source, Bucket=dest_bucket,
+              Key=key)
+          def delete_objects(bucket, prefix, objects):
+              s3 = boto3.client('s3')
+              objects = {'Objects': [{'Key': prefix + o} for o in objects]}
+              s3.delete_objects(Bucket=bucket, Delete=objects)
+          def timeout(event, context):
+              logging.error('Execution is about to time out, sending failure response to CloudFormation')
+              cfnresponse.send(event, context, cfnresponse.FAILED, {}, physical_resource_id)
+          def handler(event, context):
+              physical_resource_id = None
+              if "PhysicalResourceId" in event.keys():
+                physical_resource_id = event["PhysicalResourceId"]
+              # make sure we send a failure to CloudFormation if the function is going to timeout
+              timer = threading.Timer((context.get_remaining_time_in_millis()
+              / 1000.00) - 0.5, timeout, args=[event, context])
+              timer.start()
+              print('Received event: %s' % json.dumps(event))
+              status = cfnresponse.SUCCESS
+              try:
+                  source_bucket = event['ResourceProperties']['SourceBucket']
+                  dest_bucket = event['ResourceProperties']['DestBucket']
+                  prefix = event['ResourceProperties']['Prefix']
+                  objects = event['ResourceProperties']['Objects']
+                  if event['RequestType'] == 'Delete':
+                      delete_objects(dest_bucket, prefix, objects)
+                  else:
+                      copy_objects(source_bucket, dest_bucket, prefix, objects)
+              except Exception as e:
+                  logging.error('Exception: %s' % e, exc_info=True)
+                  status = cfnresponse.FAILED
+              finally:
+                  timer.cancel()
+                  cfnresponse.send(event, context, status, {}, physical_resource_id)
+  CopyZips:
+    Type: Custom::CopyZips
+    Properties:
+      ServiceToken: !GetAtt 'CopyZipsFunction.Arn'
+      DestBucket: !If [ CreateLambdaZipsBucket, !Ref LambdaZipsBucket, !Ref LambdaZipsBucketName ]
+      SourceBucket: !Ref 'QSS3BucketName'
+      Prefix: !Ref 'QSS3KeyPrefix'
+      Objects:
+        - functions/packages/ACMCert/lambda.zip
+Outputs:
+  UaaEndpoint:
+    Value: !Sub 'https://uaa.${SubDomainPrefix}.${DomainName}:2793'
+  CfApiEndpoint:
+    Value: !Sub 'https://api.${SubDomainPrefix}.${DomainName}'
+  StratosConsoleEndpoint:
+    Value: !If [EnableConsole, !Sub 'https://${SubDomainPrefix}.${DomainName}', '']
+  NodeSecurityGroup:
+    Value: !GetAtt NodeGroupStack.Outputs.EKSNodeSecurityGroup
