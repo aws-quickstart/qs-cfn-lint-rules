@@ -223,7 +223,7 @@ def evaluate_expression_controller(expression):
     elif "Fn::FindInMap" in expression:
         results = evaluate_fn_findinmap(expression)
 
-    elif "Fn::GettAtt" in expression:
+    elif "Fn::GetAtt" in expression:
         results = evaluate_fn_getatt(expression)
 
     elif "Fn::Split" in expression:
@@ -294,18 +294,11 @@ def _flatten_template_controller(template_url):
 def flatten_template_url(template_url):
     """Flatten template_url and return all permutations"""
     path_list = []
-    url_list = []
-    # print("TemplateURL: {}".format(template_url))
-    try:
-        url_list = _flatten_template_controller(template_url)
-    except Exception as e:
-        print("Error extracting TemplateURL: {}".format(template_url))
-        print(str(e))
 
-    # print(url_list)
+    url_list = _flatten_template_controller(template_url)
+
     # Extract the path portion from the URL
     for url in url_list:
-        # print("url: {}".format(str(url)))
         # TODO: figure where the ' is coming from
         o = urlparse(str(url.strip("'")))
         path_list.append(o.path)
@@ -314,11 +307,11 @@ def flatten_template_url(template_url):
     return path_list
 
 
-def remove_one_level(pathstring):
-    result = pathstring
+def remove_one_level(path_string):
+    result = path_string
 
     result = result.find("/", 0)
-    result = pathstring[result+1:len(pathstring)]
+    result = path_string[result+1:len(path_string)]
 
     return result
 
