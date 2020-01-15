@@ -1,0 +1,805 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "Cloudformation template for configuring Pivotal Cloud Foundry on AWS QS(qs-1ngltrcpa)",
+  "Conditions": {
+    "CreateRDS": {
+      "Fn::And":[
+        { "Fn::Not": [ { "Fn::Equals": [ { "Ref": "04RdsDBName"}, "" ]}]},
+        { "Fn::Not": [ { "Fn::Equals": [ { "Ref": "05RdsUsername"}, "" ]}]},
+        { "Fn::Not": [ { "Fn::Equals": [ { "Ref": "06RdsPassword"}, "" ]}]}
+      ]
+    }
+  },
+  "Parameters": {
+    "01NATKeyPair": {
+      "Type": "AWS::EC2::KeyPair::KeyName",
+      "Description": "Select the SSH keypair to use for the NAT vm"
+    },
+    "02NATInstanceType": {
+      "Type": "String",
+      "AllowedValues": [
+        "t2.micro",
+        "t2.small",
+        "t2.medium",
+        "m4.large",
+        "c4.large",
+        "m4.xlarge",
+        "c4.xlarge",
+        "c4.8xlarge"
+      ],
+      "ConstraintDescription": "Instance Type must be of a valid EC2 type",
+      "Default": "t2.medium",
+      "Description": "Select the Instance Type to use for the NAT vm"
+    },
+    "03OpsManagerIngress": {
+      "Type": "String",
+      "Default": "0.0.0.0/0",
+      "Description": "CIDR range allowed to connect to Ops Manager instance"
+    },
+    "04RdsDBName": {
+      "Type": "String",
+      "AllowedPattern": "(.{4,}|^$)",
+      "Default": "bosh",
+      "Description": "BOSH database name (leave blank to skip RDS)"
+    },
+    "05RdsUsername": {
+      "Type": "String",
+      "Description": "BOSH database username (leave blank to skip RDS)"
+    },
+    "06RdsPassword": {
+      "Type": "String",
+      "NoEcho": "true",
+      "AllowedPattern": "(.{8,}|^$)",
+      "Description": "BOSH database password (leave blank to skip RDS, must be 8+ chars)"
+    }
+  },
+  "Mappings": {
+    "NATRegionToAmiMap": {
+      "us-east-1": {
+        "id": "ami-d4c5efc2"
+      },
+      "us-east-2": {
+        "id": "ami-f27b5a97"
+      },
+      "us-west-1": {
+        "id": "ami-b87f53d8"
+      },
+      "us-west-2": {
+        "id": "ami-8bfce8f2"
+      },
+      "ca-central-1": {
+        "id": "ami-b0a619d4"
+      },
+      "eu-central-1": {
+        "id": "ami-9ebe18f1"
+      },
+      "eu-west-1": {
+        "id": "ami-3a849f5c"
+      },
+      "eu-west-2": {
+        "id": "ami-21120445"
+      },
+      "ap-southeast-1": {
+        "id": "ami-36af2055"
+      },
+      "ap-southeast-2": {
+        "id": "ami-1e91817d"
+      },
+      "ap-northeast-1": {
+        "id": "ami-10dfc877"
+      },
+      "ap-northeast-2": {
+        "id": "ami-1a1bc474"
+      },
+      "ap-south-1": {
+        "id": "ami-e0215f8f"
+      },
+      "sa-east-1": {
+        "id": "ami-8bdab1e7"
+      }
+    }
+  },
+  "Resources": {
+    "PcfInternetGateway": {
+      "Type": "AWS::EC2::InternetGateway"
+    },
+    "PcfVpc": {
+      "Type": "AWS::EC2::VPC",
+      "Properties": {
+        "CidrBlock": "10.0.0.0/16",
+        "EnableDnsSupport": "true",
+        "EnableDnsHostnames": "true",
+        "InstanceTenancy": "default",
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": "pcf-vpc"
+          }
+        ]
+      }
+    },
+    "PcfVpcGatewayAttachment": {
+      "Type": "AWS::EC2::VPCGatewayAttachment",
+      "DependsOn": [
+        "PcfInternetGateway",
+        "PcfVpc"
+      ],
+      "Properties": {
+        "InternetGatewayId": {
+          "Ref": "PcfInternetGateway"
+        },
+        "VpcId": {
+          "Ref": "PcfVpc"
+        }
+      }
+    },
+    "PcfPublicSubnet": {
+      "Type": "AWS::EC2::Subnet",
+      "Properties": {
+        "AvailabilityZone": {
+          "Fn::Select": [
+            "0",
+            {"Fn::GetAZs": {"Ref": "AWS::Region"}}
+          ]
+        },
+        "CidrBlock": "10.0.0.0/24",
+        "VpcId": {
+          "Ref": "PcfVpc"
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": "pcf-public-subnet"
+          }
+        ]
+      }
+    },
+    "PcfPublicSubnet2": {
+      "Type": "AWS::EC2::Subnet",
+      "Properties": {
+        "AvailabilityZone": {
+          "Fn::Select": [
+            "1",
+            {"Fn::GetAZs": {"Ref": "AWS::Region"}}
+          ]
+        },
+        "CidrBlock": "10.0.1.0/24",
+        "VpcId": {
+          "Ref": "PcfVpc"
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": "pcf-public-subnet2"
+          }
+        ]
+      }
+    },
+    "PcfPrivateSubnet": {
+      "Type": "AWS::EC2::Subnet",
+      "Properties": {
+        "AvailabilityZone": {
+          "Fn::Select": [
+            "0",
+            {"Fn::GetAZs": {"Ref": "AWS::Region"}}
+          ]
+        },
+        "CidrBlock": "10.0.16.0/20",
+        "VpcId": {
+          "Ref": "PcfVpc"
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": "pcf-private-subnet"
+          }
+        ]
+      }
+    },
+    "PcfNatSecurityGroup": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "VpcId": {"Ref": "PcfVpc"},
+        "GroupDescription": "NAT Security Group",
+        "SecurityGroupIngress": [
+          {
+            "CidrIp": "10.0.0.0/16",
+            "IpProtocol": "-1"
+          }
+        ]
+      }
+    },
+    "PcfNatInstance": {
+      "Type": "AWS::EC2::Instance",
+      "DependsOn": "PcfVpcGatewayAttachment",
+      "Properties": {
+        "ImageId": {"Fn::FindInMap" : [ "NATRegionToAmiMap", { "Ref" : "AWS::Region" }, "id"]},
+        "InstanceType": {"Ref": "02NATInstanceType"},
+        "KeyName": {"Ref": "01NATKeyPair"},
+        "SecurityGroupIds": [
+          {
+            "Ref": "PcfNatSecurityGroup"
+          }
+        ],
+        "SourceDestCheck": "false",
+        "SubnetId": {"Ref": "PcfPublicSubnet"},
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": "NAT Instance"
+          }
+        ]
+      }
+    },
+    "PcfPrivateSubnet2": {
+      "Type": "AWS::EC2::Subnet",
+      "Properties": {
+        "AvailabilityZone": {
+          "Fn::Select": [
+            "1",
+            {"Fn::GetAZs": {"Ref": "AWS::Region"}}
+          ]
+        },
+        "CidrBlock": "10.0.32.0/20",
+        "VpcId": {
+          "Ref": "PcfVpc"
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": "pcf-private-subnet2"
+          }
+        ]
+      }
+    },
+    "PcfNatElasticIp": {
+      "Type": "AWS::EC2::EIP",
+      "DependsOn": "PcfVpcGatewayAttachment",
+      "Properties": {
+        "Domain": "vpc",
+        "InstanceId": { "Ref": "PcfNatInstance" }
+      }
+    },
+    "PcfOpsManagerS3Bucket": {
+      "DeletionPolicy": "Retain",
+      "Type": "AWS::S3::Bucket",
+      "Properties": {
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": "PCF Ops Manager S3 Bucket"
+          }
+        ]
+      }
+    },
+    "PcfIamInstanceProfile": {
+      "Type": "AWS::IAM::InstanceProfile",
+      "Properties": {
+        "Path": "/",
+        "Roles": [ {
+          "Ref": "PcfIamRole"
+        } ]
+      }
+    },
+    "PcfIamRole": {
+      "Type": "AWS::IAM::Role",
+      "DependsOn": [
+        "PcfVpc",
+        "PcfOpsManagerS3Bucket"
+      ],
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Version" : "2012-10-17",
+          "Statement": [ {
+            "Effect": "Allow",
+            "Principal": {
+              "Service": [ "ec2.amazonaws.com" ]
+            },
+            "Action": [ "sts:AssumeRole" ]
+          } ]
+        },
+        "Policies": [  ]
+      }
+    },
+    "PcfIamPolicy" : {
+      "Type": "AWS::IAM::ManagedPolicy",
+      "Properties": {
+        "PolicyDocument" : {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Deny",
+              "Action": [
+                "iam:Add*",
+                "iam:Attach*",
+                "iam:ChangePassword",
+                "iam:Create*",
+                "iam:DeactivateMFADevice",
+                "iam:Delete*",
+                "iam:Detach*",
+                "iam:EnableMFADevice",
+                "iam:GenerateCredentialReport",
+                "iam:GenerateServiceLastAccessedDetails",
+                "iam:GetAccessKeyLastUsed",
+                "iam:GetAccountAuthorizationDetails",
+                "iam:GetAccountPasswordPolicy",
+                "iam:GetAccountSummary",
+                "iam:GetContextKeysForCustomPolicy",
+                "iam:GetContextKeysForPrincipalPolicy",
+                "iam:GetCredentialReport",
+                "iam:GetGroup",
+                "iam:GetGroupPolicy",
+                "iam:GetLoginProfile",
+                "iam:GetOpenIDConnectProvider",
+                "iam:GetPolicy",
+                "iam:GetPolicyVersion",
+                "iam:GetRole",
+                "iam:GetRolePolicy",
+                "iam:GetSAMLProvider",
+                "iam:GetSSHPublicKey",
+                "iam:GetServerCertificate",
+                "iam:GetServiceLastAccessedDetails",
+                "iam:GetUser",
+                "iam:GetUserPolicy",
+                "iam:List*",
+                "iam:Put*",
+                "iam:RemoveClientIDFromOpenIDConnectProvider",
+                "iam:RemoveRoleFromInstanceProfile",
+                "iam:RemoveUserFromGroup",
+                "iam:ResyncMFADevice",
+                "iam:SetDefaultPolicyVersion",
+                "iam:SimulateCustomPolicy",
+                "iam:SimulatePrincipalPolicy",
+                "iam:Update*"
+              ],
+              "Resource": [
+                "*"
+              ]
+            },
+            {
+              "Sid": "AllowToGetInfoAboutCurrentInstanceProfile",
+              "Effect": "Allow",
+              "Action": [
+                "iam:GetInstanceProfile"
+              ],
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "PcfIamInstanceProfile",
+                    "Arn"
+                  ]
+                }
+              ]
+
+            },
+            {
+              "Sid": "AllowToCreateInstanceWithCurrentInstanceProfile",
+              "Effect": "Allow",
+              "Action": [
+                "iam:PassRole"
+              ],
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "PcfIamRole",
+                    "Arn"
+                  ]
+                }
+              ]
+            },
+            {
+              "Sid": "OpsManagerS3Permissions",
+              "Effect": "Allow",
+              "Action": ["s3:*"],
+              "Resource": [
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:aws:s3:::",
+                      {"Ref": "PcfOpsManagerS3Bucket"}
+                    ]
+                  ]
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:aws:s3:::",
+                      {"Ref": "PcfOpsManagerS3Bucket"},
+                      "/*"
+                    ]
+                  ]
+                }
+              ]
+            },
+            {
+              "Sid": "OpsManagerEc2Permissions",
+              "Effect": "Allow",
+              "Action": [
+                "ec2:DescribeAccountAttributes",
+                "ec2:DescribeAddresses",
+                "ec2:AssociateAddress",
+                "ec2:DisassociateAddress",
+                "ec2:DescribeAvailabilityZones",
+                "ec2:DescribeImages",
+                "ec2:DescribeInstances",
+                "ec2:RunInstances",
+                "ec2:RebootInstances",
+                "ec2:TerminateInstances",
+                "ec2:CreateKeyPair",
+                "ec2:DeleteKeyPair",
+                "ec2:DescribeKeyPairs",
+                "ec2:DescribeRegions",
+                "ec2:DescribeSnapshots",
+                "ec2:CreateSnapshot",
+                "ec2:DeleteSnapshot",
+                "ec2:DescribeSecurityGroups",
+                "ec2:DescribeSubnets",
+                "ec2:DescribeVpcs",
+                "ec2:CreateTags",
+                "ec2:DescribeVolumes",
+                "ec2:CreateVolume",
+                "ec2:AttachVolume",
+                "ec2:DeleteVolume",
+                "ec2:DetachVolume"
+              ],
+              "Resource": ["*"]
+            },
+            {
+              "Sid": "OpsManagerElbPermissions",
+              "Effect": "Allow",
+              "Action": [
+                "elasticloadbalancing:DescribeLoadBalancers",
+                "elasticloadbalancing:DeregisterInstancesFromLoadBalancer",
+                "elasticloadbalancing:RegisterInstancesWithLoadBalancer"
+              ],
+              "Resource": ["*"]
+            }
+          ]
+        },
+        "Description" : {"Fn::Join": [ "", ["Managed policy for OpsManager and BOSH director in ", {"Ref": "AWS::StackName"}]]},
+        "Roles" : [ { "Ref" : "PcfIamRole" } ],
+        "Users" : [ { "Ref" : "PcfIamUser" } ]
+      }
+    },
+    "PcfIamUser": {
+      "Type": "AWS::IAM::User",
+      "DependsOn": [
+        "PcfVpc",
+        "PcfOpsManagerS3Bucket"
+      ],
+      "Properties": {
+        "Policies": []
+      }
+    },
+    "PcfOpsManagerSecurityGroup": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "GroupDescription": "Ops Manager Security Group",
+        "VpcId": {
+          "Ref": "PcfVpc"
+        },
+        "SecurityGroupIngress": [
+          {
+            "IpProtocol": "tcp",
+            "FromPort": "22",
+            "ToPort": "22",
+            "CidrIp": {"Ref": "03OpsManagerIngress"}
+          },
+          {
+            "IpProtocol": "tcp",
+            "FromPort": "80",
+            "ToPort": "80",
+            "CidrIp": {"Ref": "03OpsManagerIngress"}
+          },
+          {
+            "IpProtocol": "tcp",
+            "FromPort": "443",
+            "ToPort": "443",
+            "CidrIp": {"Ref": "03OpsManagerIngress"}
+          },
+          {
+            "IpProtocol": "tcp",
+            "FromPort": "22",
+            "ToPort": "22",
+            "CidrIp": "10.0.0.0/16"
+          },
+          {
+            "IpProtocol": "tcp",
+            "FromPort": "443",
+            "ToPort": "443",
+            "CidrIp": "10.0.0.0/16"
+          },
+          {
+            "IpProtocol": "tcp",
+            "FromPort": "25555",
+            "ToPort": "25555",
+            "CidrIp": "10.0.0.0/16"
+          },
+          {
+            "IpProtocol": "tcp",
+            "FromPort": "6868",
+            "ToPort": "6868",
+            "CidrIp": "10.0.0.0/16"
+          }
+        ]
+      }
+    },
+    "PcfVmsSecurityGroup": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "GroupDescription": "PCF VMs Security Group",
+        "VpcId": {
+          "Ref": "PcfVpc"
+        },
+        "SecurityGroupIngress": [
+          {
+            "IpProtocol": "-1",
+            "CidrIp": "10.0.0.0/16"
+          }
+        ]
+      }
+    },
+    "PcfMysqlSecurityGroup": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "GroupDescription": "PCF MySQL Security Group",
+        "VpcId": {
+          "Ref": "PcfVpc"
+        },
+        "SecurityGroupIngress": [
+          {
+            "IpProtocol": "tcp",
+            "FromPort": "3306",
+            "ToPort": "3306",
+            "CidrIp": "10.0.0.0/16"
+          }
+        ]
+      }
+    },
+    "PcfPublicRouteTable": {
+      "Type": "AWS::EC2::RouteTable",
+      "Properties": {
+        "VpcId": {
+          "Ref": "PcfVpc"
+        }
+      }
+    },
+    "PcfPublicDefaultRoute": {
+      "Type": "AWS::EC2::Route",
+      "DependsOn": [ "PcfVpcGatewayAttachment" ],
+      "Properties": {
+        "DestinationCidrBlock": "0.0.0.0/0",
+        "GatewayId": {
+          "Ref": "PcfInternetGateway"
+        },
+        "RouteTableId": {
+          "Ref": "PcfPublicRouteTable"
+        }
+      }
+    },
+    "PcfPublicSubnetRouteTableAssociation": {
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+      "Properties": {
+        "RouteTableId": {
+          "Ref": "PcfPublicRouteTable"
+        },
+        "SubnetId": {
+          "Ref": "PcfPublicSubnet"
+        }
+      }
+    },
+    "PcfPublicSubnetRouteTableAssociation2": {
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+      "Properties": {
+        "RouteTableId": {
+          "Ref": "PcfPublicRouteTable"
+        },
+        "SubnetId": {
+          "Ref": "PcfPublicSubnet2"
+        }
+      }
+    },
+    "PcfPrivateRouteTable": {
+      "Type": "AWS::EC2::RouteTable",
+      "Properties": {
+        "VpcId": {
+          "Ref": "PcfVpc"
+        }
+      }
+    },
+    "PcfPrivateRouteTable2": {
+      "Type": "AWS::EC2::RouteTable",
+      "Properties": {
+        "VpcId": {
+          "Ref": "PcfVpc"
+        }
+      }
+    },
+    "PcfPrivateDefaultRoute": {
+      "Type": "AWS::EC2::Route",
+      "DependsOn": "PcfNatInstance",
+      "Properties": {
+        "DestinationCidrBlock": "0.0.0.0/0",
+        "InstanceId": {
+          "Ref": "PcfNatInstance"
+        },
+        "RouteTableId": {
+          "Ref": "PcfPrivateRouteTable"
+        }
+      }
+    },
+    "PcfPrivateDefaultRoute2": {
+      "Type": "AWS::EC2::Route",
+      "DependsOn": "PcfNatInstance",
+      "Properties": {
+        "DestinationCidrBlock": "0.0.0.0/0",
+        "InstanceId": {
+          "Ref": "PcfNatInstance"
+        },
+        "RouteTableId": {
+          "Ref": "PcfPrivateRouteTable2"
+        }
+      }
+    },
+    "PcfPrivateSubnetRouteTableAssociation": {
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+      "Properties": {
+        "RouteTableId": {
+          "Ref": "PcfPrivateRouteTable"
+        },
+        "SubnetId": {
+          "Ref": "PcfPrivateSubnet"
+        }
+      }
+    },
+    "PcfPrivateSubnet2RouteTableAssociation": {
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+      "Properties": {
+        "RouteTableId": {
+          "Ref": "PcfPrivateRouteTable2"
+        },
+        "SubnetId": {
+          "Ref": "PcfPrivateSubnet2"
+        }
+      }
+    },
+    "PcfRdsSubnet1": {
+      "Type": "AWS::EC2::Subnet",
+      "Condition": "CreateRDS",
+      "Properties": {
+        "AvailabilityZone": {
+          "Fn::Select": [
+            "0",
+            {"Fn::GetAZs": {"Ref": "AWS::Region"}}
+          ]
+        },
+        "CidrBlock": "10.0.2.0/24",
+        "VpcId": {
+          "Ref": "PcfVpc"
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": "pcf-rds-subnet-1"
+          }
+        ]
+      }
+    },
+    "PcfRdsSubnet2": {
+      "Type": "AWS::EC2::Subnet",
+      "Condition": "CreateRDS",
+      "Properties": {
+        "AvailabilityZone": {
+          "Fn::Select": [
+            "1",
+            {"Fn::GetAZs": {"Ref": "AWS::Region"}}
+          ]
+        },
+        "CidrBlock": "10.0.3.0/24",
+        "VpcId": {
+          "Ref": "PcfVpc"
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": "pcf-rds-subnet-2"
+          }
+        ]
+      }
+    },
+    "PcfRdsSubnetGroup": {
+      "Type": "AWS::RDS::DBSubnetGroup",
+      "Condition": "CreateRDS",
+      "Properties": {
+        "DBSubnetGroupDescription": "PCF RDS Subnet Group",
+        "SubnetIds": [
+          {"Ref": "PcfRdsSubnet1"},
+          {"Ref": "PcfRdsSubnet2"}
+        ]
+      }
+    },
+    "PcfRds": {
+      "Type": "AWS::RDS::DBInstance",
+      "Condition": "CreateRDS",
+      "Properties": {
+        "AllocatedStorage": "100",
+        "DBInstanceClass": "db.m4.large",
+        "Engine": "MySQL",
+        "EngineVersion": "5.6.35",
+        "MultiAZ": "True",
+        "DBName": {"Ref": "04RdsDBName"},
+        "Iops": "1000",
+        "MasterUsername": {"Ref": "05RdsUsername"},
+        "MasterUserPassword": {"Ref": "06RdsPassword"},
+        "PubliclyAccessible": "False",
+        "VPCSecurityGroups": [{"Ref": "PcfMysqlSecurityGroup"}],
+        "DBSubnetGroupName": {"Ref": "PcfRdsSubnetGroup"}
+      }
+    }
+  },
+  "Outputs": {
+    "PcfVpc": {
+      "Value": {"Ref": "PcfVpc"}
+    },
+    "PcfIamUserName": {
+      "Value": {"Ref": "PcfIamUser"}
+    },
+    "PcfIamInstanceProfile": {
+      "Value": {"Ref": "PcfIamInstanceProfile"}
+    },
+    "PcfIamRole": {
+      "Value": {"Ref": "PcfIamRole"}
+    },
+    "PcfOpsManagerS3Bucket": {
+      "Value": {"Ref": "PcfOpsManagerS3Bucket"}
+    },
+    "PcfVmsSecurityGroupId": {
+      "Value": {"Ref": "PcfVmsSecurityGroup"}
+    },
+    "PcfOpsManagerSecurityGroupId": {
+      "Value": {"Ref": "PcfOpsManagerSecurityGroup"}
+    },
+    "PcfPrivateSubnetId": {
+      "Value": {"Ref": "PcfPrivateSubnet"}
+    },
+    "PcfPrivateSubnet2Id": {
+      "Value": {"Ref": "PcfPrivateSubnet2"}
+    },
+    "PcfPrivateSubnetAvailabilityZone": {
+      "Value": { "Fn::GetAtt" : [ "PcfPrivateSubnet", "AvailabilityZone" ] }
+    },
+    "PcfPrivateSubnet2AvailabilityZone": {
+      "Value": { "Fn::GetAtt" : [ "PcfPrivateSubnet2", "AvailabilityZone" ] }
+    },
+    "PcfPublicSubnetId": {
+      "Value": {"Ref": "PcfPublicSubnet"}
+    },
+    "PcfPublicSubnetId2": {
+      "Value": {"Ref": "PcfPublicSubnet2"}
+    },
+    "PcfPublicSubnetAvailabilityZone": {
+      "Value": { "Fn::GetAtt" : [ "PcfPublicSubnet", "AvailabilityZone" ] }
+    },
+    "PcfPublicSubnetAvailabilityZone2": {
+      "Value": { "Fn::GetAtt" : [ "PcfPublicSubnet2", "AvailabilityZone" ] }
+    },
+    "PcfRdsAddress": {
+      "Condition": "CreateRDS",
+      "Value": { "Fn::GetAtt": [ "PcfRds", "Endpoint.Address"]}
+    },
+    "PcfRdsPort": {
+      "Condition": "CreateRDS",
+      "Value": {"Fn::GetAtt": [ "PcfRds", "Endpoint.Port"] }
+    },
+    "PcfRdsUsername": {
+      "Condition": "CreateRDS",
+      "Value": {"Ref": "05RdsUsername"}
+    },
+    "PcfRdsDBName": {
+      "Condition": "CreateRDS",
+      "Value": {"Ref": "04RdsDBName"}
+    }
+  }
+}

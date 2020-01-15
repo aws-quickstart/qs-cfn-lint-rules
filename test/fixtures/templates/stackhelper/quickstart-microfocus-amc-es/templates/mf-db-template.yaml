@@ -1,0 +1,320 @@
+# © Copyright 2018 Micro Focus or one of its affiliates
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+AWSTemplateFormatVersion: 2010-09-09
+Description: >-
+  "This template deploys a Micro Focus Enterprise Server Database instance in
+  private subnets. **WARNING** This template creates EC2 instances and related
+  resources. You will be billed for the AWS resources used if you create a stack
+  from this template. Micro Focus Enterprise Server is licensed separately,
+  please review the terms and conditions here
+  (https://www.microfocus.com/about/legal/) for further details. (qs-1p440hhtu)"
+Metadata:
+  'AWS::CloudFormation::Interface':
+    ParameterGroups:
+      - Label:
+          default: Network Configuration
+        Parameters:
+          - VPCID
+          - PrivateSubnet1AID
+          - PrivateSubnet2AID
+      - Label:
+          default: Microsoft Active Directory Configuration
+        Parameters:
+          - DirectoryServiceID
+      - Label:
+          default: Enterprise Server Database Configuration
+        Parameters:
+          - DBInstanceClass
+          - DBStorageInGiB
+          - DBMasterUsername
+          - DBMasterUserPassword
+          - ESClientAccessSGID
+          - NotificationARN
+          - ESResourceNamePrefix
+          - DeployMultiAZ
+          - DBBackupRetentionPeriod
+          - DBPreferredBackupWindow
+          - DBPreferredMaintenanceWindow
+    ParameterLabels:
+      DBBackupRetentionPeriod:
+        default: Database backup retention period
+      DBInstanceClass:
+        default: Database instance class
+      DBMasterUsername:
+        default: Database Master username
+      DBMasterUserPassword:
+        default: Database Master password
+      DBPreferredBackupWindow:
+        default: Database preferred backup window
+      DBPreferredMaintenanceWindow:
+        default: Database preferred maintenance window
+      DBStorageInGiB:
+        default: Database allocated storage size
+      DeployMultiAZ:
+        default: Deploy in multiple Availability Zones
+      DirectoryServiceID:
+        default: Directory Service ID
+      ESClientAccessSGID:
+        default: ES Client Access Security Group ID
+      ESResourceNamePrefix:
+        default: Resource 'Name' prefix
+      NotificationARN:
+        default: Notification ARN
+      PrivateSubnet1AID:
+        default: Private Subnet 1A ID
+      PrivateSubnet2AID:
+        default: Private Subnet 2A ID
+      VPCID:
+        default: VPC ID
+Parameters:
+  DBBackupRetentionPeriod:
+    Description: >-
+      Select the number of days that Amazon RDS should retain automatic backups
+      of the DB instance. A backup retention period of zero days will disable
+      automated backups for the DB Instance.
+    Default: 30
+    MinValue: 0
+    MaxValue: 35
+    Type: Number
+  DBInstanceClass:
+    AllowedValues:
+      - db.r4.large
+      - db.r4.xlarge
+      - db.r4.2xlarge
+      - db.r4.4xlarge
+      - db.r2.8xlarge
+    Description: The type of Amazon RDS DB instance.
+    Default: db.r4.large
+    Type: String
+  DBMasterUsername:
+    Description: >-
+      Specify an alphanumeric string that defines the login ID for the master
+      user. Master Username must start with a letter. Must contain 1 to 64
+      alphanumeric characters.
+    AllowedPattern: >-
+      ^[a-zA-Z][a-zA-Z0-9]{1,64}$
+    ConstraintDescription: >-
+      Must start with a letter. Must contain 1 to 64 alphanumeric characters.
+    Default: DBAdmin
+    Type: String
+  DBMasterUserPassword:
+    AllowedPattern: >-
+      ^((?![\/"@])[^\x00-\x1F\x80-\x9F]){8,}$
+    ConstraintDescription: >-
+      Must be at least eight characters long, as in "mypassword". Can be any
+      printable ASCII character except "/", """, or "@".
+    Description: >-
+      The password for the DB master user. Must be at least eight characters
+      long, as in "mypassword". Can be any printable ASCII character except
+      "/", """, or "@".
+    Type: String
+    NoEcho: true
+  DBPreferredBackupWindow:
+    Description: >-
+      Must be in the format hh24:mi-hh24:mi, in UTC. Must be at least 30
+      minutes, and must not conflict with the preferred maintenance window.
+    Type: String
+  DBPreferredMaintenanceWindow:
+    Description: >-
+      Must be in the format ddd:hh24:mi-ddd:hh24:mi, in UTC. Must be at least 30
+      minutes.
+    Type: String
+  DBStorageInGiB:
+    Type: Number
+    Description: Enter 20-16384 GiB.
+    MinValue: 20
+    MaxValue: 16384
+    Default: 100
+  DeployMultiAZ:
+    AllowedValues:
+      - true
+      - false
+    Default: false
+    Description: >-
+      Choose 'true' to deploy the database across multiple Availability Zones.
+    Type: String
+  DirectoryServiceID:
+    Type: String
+    Description: >-
+      The ID of the AWS Managed Microsoft AD directory in which you want to
+      deploy.
+  ESClientAccessSGID:
+    Type: 'AWS::EC2::SecurityGroup::Id'
+  ESResourceNamePrefix:
+    Default: 'AWS::StackName'
+    Description: >-
+      Used to prefix resource 'Name' tags. Leave empty for no prefix.
+      Otherwise, use 'AWS::StackName' or a value such as the parent stack's
+      name.
+    Type: String
+  NotificationARN:
+    Description: >-
+      An existing Amazon SNS topic where notifications about are sent, e.g.,
+      email notifications.
+    Type: String
+    Default: ''
+  PrivateSubnet1AID:
+    Description: >-
+      The ID of private subnet 1A in Availability Zone 1 (e.g.,
+      subnet-a0246dcd).
+    Type: 'AWS::EC2::Subnet::Id'
+  PrivateSubnet2AID:
+    Description: >-
+      The ID of private subnet 2A in Availability Zone 2 (e.g.,
+      subnet-01a43dc1ca1fa7f9b).
+    Type: 'AWS::EC2::Subnet::Id'
+  VPCID:
+    Description: ID of your existing VPC for deployment.
+    Type: 'AWS::EC2::VPC::Id'
+Rules:
+  SubnetsInVPC:
+    Assertions:
+      - Assert:
+          'Fn::EachMemberIn':
+            - 'Fn::ValueOfAll':
+                - 'AWS::EC2::Subnet::Id'
+                - VpcId
+            - 'Fn::RefAll': 'AWS::EC2::VPC::Id'
+        AssertDescription: All subnets must in the VPC.
+Conditions:
+  NamePrefixIaUndefined: !Equals
+    - !Ref ESResourceNamePrefix
+    - ''
+  NamePrefixIsAWSStackname: !Equals
+    - !Ref ESResourceNamePrefix
+    - 'AWS::StackName'
+  HaveDirectoryService: !Not
+    - !Equals
+      - !Ref DirectoryServiceID
+      - ''
+  HaveDBPreferredBackupWindow: !Not
+    - !Equals
+      - !Ref DBPreferredBackupWindow
+      - ''
+  HaveDBPreferredMaintenanceWindow: !Not
+    - !Equals
+      - !Ref DBPreferredMaintenanceWindow
+      - ''
+  HaveNotificationARN: !Not
+    - !Equals
+      - !Ref NotificationARN
+      - ''
+Resources:
+  ESDatabaseSG:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: Enterprise Server SQL Server Security Group
+      VpcId: !Ref VPCID
+      SecurityGroupIngress:
+        - Description: Allow client access
+          IpProtocol: tcp
+          FromPort: 1433
+          ToPort: 1433
+          SourceSecurityGroupId: !Ref ESClientAccessSGID
+  ESDatabaseSubnetGroup:
+    Type: 'AWS::RDS::DBSubnetGroup'
+    Properties:
+      DBSubnetGroupDescription: !Sub
+        - '${StackNamePrefix}Database Subnet Group'
+        - StackNamePrefix: !If
+            - NamePrefixIaUndefined
+            - ''
+            - !If
+              - NamePrefixIsAWSStackname
+              - !Sub '${AWS::StackName}-'
+              - !Sub '${ESResourceNamePrefix}-'
+      SubnetIds:
+        - !Ref PrivateSubnet1AID
+        - !Ref PrivateSubnet2AID
+  ESDatabaseADIAMRole:
+    Type: 'AWS::IAM::Role'
+    Condition: HaveDirectoryService
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action:
+              - 'sts:AssumeRole'
+            Effect: Allow
+            Principal:
+              Service:
+                - rds.amazonaws.com
+      Path: /
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/service-role/AmazonRDSDirectoryServiceAccess'
+  ESDatabase:
+    Type: 'AWS::RDS::DBInstance'
+    DeletionPolicy: Delete
+    Properties:
+      DBSubnetGroupName: !Ref ESDatabaseSubnetGroup
+      Domain: !If
+        - HaveDirectoryService
+        - !Ref DirectoryServiceID
+        - !Ref 'AWS::NoValue'
+      DomainIAMRoleName: !If
+        - HaveDirectoryService
+        - !Ref ESDatabaseADIAMRole
+        - !Ref 'AWS::NoValue'
+      AllowMajorVersionUpgrade: false
+      AutoMinorVersionUpgrade: true
+      PreferredBackupWindow: !If
+        - HaveDBPreferredBackupWindow
+        - !Ref DBPreferredBackupWindow
+        - !Ref 'AWS::NoValue'
+      PreferredMaintenanceWindow: !If
+        - HaveDBPreferredMaintenanceWindow
+        - !Ref DBPreferredMaintenanceWindow
+        - !Ref 'AWS::NoValue'
+      VPCSecurityGroups:
+        - !GetAtt ESDatabaseSG.GroupId
+      LicenseModel: license-included
+      Engine: sqlserver-se
+      EngineVersion: 14.00.3035.2.v1
+      MultiAZ: !Ref DeployMultiAZ
+      DBInstanceClass: !Ref DBInstanceClass
+      AllocatedStorage: !Ref DBStorageInGiB
+      MasterUsername: !Ref DBMasterUsername
+      MasterUserPassword: !Ref DBMasterUserPassword
+      PubliclyAccessible: false
+      Tags:
+        - Key: Name
+          Value: !Sub
+            - '${StackNamePrefix}SQLServer Database'
+            - StackNamePrefix: !If
+                - NamePrefixIaUndefined
+                - ''
+                - !If
+                  - NamePrefixIsAWSStackname
+                  - !Sub '${AWS::StackName}-'
+                  - !Sub '${ESResourceNamePrefix}-'
+      BackupRetentionPeriod: !Ref DBBackupRetentionPeriod
+  ESDatabaseEventSubscriptions:
+    Type: 'AWS::RDS::EventSubscription'
+    Condition: HaveNotificationARN
+    Properties:
+      Enabled: true
+      EventCategories:
+        - configuration change
+        - failure
+        - deletion
+      SnsTopicArn: !Ref NotificationARN
+      SourceIds:
+        - !Ref ESDatabase
+      SourceType: db-instance
+Outputs:
+  ESDatabaseEndpointAddress:
+    Description: The connection endpoint for the database
+    Value: !GetAtt ESDatabase.Endpoint.Address
+  ESDatabaseEndpointPort:
+    Description: The port number on which the database accepts connections
+    Value: !GetAtt ESDatabase.Endpoint.Port

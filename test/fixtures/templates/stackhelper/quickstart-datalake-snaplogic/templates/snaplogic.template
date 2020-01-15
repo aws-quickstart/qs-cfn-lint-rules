@@ -1,0 +1,510 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "This template deploys Groundplex Servers, Datasources (Redshift) . Groundplex servers which are deployed to the private subnet. The Redshift servers are all dpeloyed to the private subnet.  Private subnets must be available in at least two availability zones.  **WARNING** This template creates AWS resources. You will be billed for the AWS resources used if you create a stack from this template. (qs-1pk2pq5jm)",
+    "Metadata": {
+        "AWS::CloudFormation::Interface": {
+            "ParameterGroups": [
+                {
+                    "Label": {
+                        "default": "Network configuration"
+                    },
+                    "Parameters": [
+                        "VpcId",
+                        "PrivateSubnetId1",
+                        "PrivateSubnetId2"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "Sizing configuration"
+                    },
+                    "Parameters": [
+                        "KeyPairName",
+                        "InstanceType",
+                        "RedshiftNodeType",
+                        "RedshiftNumberOfNodes"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "Amazon EC2 Auto Scaling configuration"
+                    },
+                    "Parameters": [
+                        "CloudplexServerAutoscaleDesiredCapacity",
+                        "CloudplexServerAutoscaleMaxSize"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "Amazon Redshift configuration"
+                    },
+                    "Parameters": [
+                        "RedshiftHost",
+                        "RedshiftUsername",
+                        "RedshiftPassword",
+                        "RedshiftDbName"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "SnapLogic configuration"
+                    },
+                    "Parameters": [
+                        "SnapLogicLicenseBucket",
+                        "SnaplexConfS3Key"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "AWS Quick Start configuration"
+                    },
+                    "Parameters": [
+                        "QSS3BucketName",
+                        "QSS3KeyPrefix"
+                    ]
+                }
+            ],
+            "ParameterLabels": {
+                "QSS3BucketName": {
+                    "default": "Quick Start S3 bucket name"
+                },
+                "QSS3KeyPrefix": {
+                    "default": "Quick Start S3 key prefix"
+                },
+                "SnapLogicLicenseBucket": {
+                    "default": "SnapLogic license bucket"
+                },
+                "SnaplexConfS3Key": {
+                    "default": "SnapLogic configuration path"
+                },
+                "VpcId": {
+                    "default": "VPC ID"
+                },
+                "PrivateSubnetId1": {
+                    "default": "Private subnet 1 ID"
+                },
+                "PrivateSubnetId2": {
+                    "default": "Private subnet 2 ID"
+                },
+                "KeyPairName": {
+                    "default": "Key pair name"
+                },
+                "InstanceType": {
+                    "default": "Groundplex server instance type"
+                },
+                "CloudplexServerAutoscaleDesiredCapacity": {
+                    "default": "Groundplex servers desired capacity"
+                },
+                "CloudplexServerAutoscaleMaxSize": {
+                    "default": "Groundplex servers max size"
+                },
+                "RedshiftNodeType": {
+                    "default": "Amazon Redshift node type"
+                },
+                "RedshiftNumberOfNodes": {
+                    "default": "Number of Amazon Redshift nodes"
+                },
+                "RedshiftHost": {
+                    "default": "Amazon Redshift host (optional)"
+                },
+                "RedshiftDbName": {
+                    "default": "Redshift database name"
+                },
+                "RedshiftUsername": {
+                    "default": "Redshift user name"
+                },
+                "RedshiftPassword": {
+                    "default": "Redshift password"
+                }
+            }
+        }
+    },
+    "Parameters": {
+        "QSS3BucketName": {
+            "AllowedPattern": "^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$",
+            "ConstraintDescription": "Quick Start bucket name can include numbers, lowercase letters, uppercase letters, periods (.), and hyphens (-). It cannot start or end with a hyphen (-) or period (.).",
+            "Default": "aws-quickstart",
+            "Description": "S3 bucket name for the Quick Start assets. Quick Start bucket name can include numbers, lowercase letters, uppercase letters, periods (.), and hyphens (-). It cannot start or end with a hyphen (-) or period (.).",
+            "Type": "String"
+        },
+        "QSS3KeyPrefix": {
+            "AllowedPattern": "^[0-9a-zA-Z-/]*$",
+            "ConstraintDescription": "Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).  Prefix cannot start with a slash but must end with a slash unless it is the empty string.",
+            "Description": "The S3 key name prefix used to simulate a folder for your copy of Quick Start assets, if you decide to customize or extend the Quick Start for your own use. This prefix can include numbers, lowercase letters, uppercase letters, hyphens, and forward slashes",
+            "Default": "quickstart-datalake-snaplogic/",
+            "Type": "String"
+        },
+        "SnapLogicLicenseBucket": {
+            "Description": "The Amazon S3 bucket where the SnapLogic license file is stored.",
+            "Type": "String"
+        },
+        "SnaplexConfS3Key": {
+            "Description": "The path at which SnapLogic configuration has been uploaded to the SnapLogic license S3 bucket.",
+            "Type": "String"
+        },
+        "KeyPairName": {
+            "Description": "Public/private key pair, which allows you to connect securely to your instance after it launches.",
+            "Type": "AWS::EC2::KeyPair::KeyName"
+        },
+        "VpcId": {
+            "Description": "The ID of your existing VPC (e.g., vpc-0123456789abcdeff).",
+            "Type": "AWS::EC2::VPC::Id"
+        },
+        "PrivateSubnetId1": {
+            "Description": "The ID of the private subnet 1 in Availability Zone 1 (e.g., subnet-a0246dcd).",
+            "Type": "AWS::EC2::Subnet::Id"
+        },
+        "PrivateSubnetId2": {
+            "Description": "The ID of the private subnet 2 in Availability Zone 2 (e.g., subnet-a0246dce).",
+            "Type": "AWS::EC2::Subnet::Id"
+        },
+        "InstanceType": {
+            "Description": "The Amazon EC2 instance type for the SnapLogic Groundplex servers.",
+            "Type": "String",
+            "Default": "t2.large",
+            "AllowedValues": [
+                "t2.medium",
+                "t2.large",
+                "t2.xlarge",
+                "t2.2xlarge",
+                "m4.large",
+                "m4.xlarge",
+                "m4.2xlarge",
+                "m4.4xlarge",
+                "m4.10xlarge",
+                "m4.16xlarge",
+                "c4.large",
+                "c4.xlarge",
+                "c4.2xlarge",
+                "c4.4xlarge",
+                "c4.8xlarge",
+                "x1.16xlarge",
+                "x1.32xlarge",
+                "x1e.32xlarge",
+                "r4.large",
+                "r4.xlarge",
+                "r4.2xlarge",
+                "r4.4xlarge",
+                "r4.8xlarge",
+                "r4.16xlarge",
+                "d2.xlarge",
+                "d2.2xlarge",
+                "d2.4xlarge",
+                "d2.8xlarge",
+                "i3.large",
+                "i3.xlarge",
+                "i3.2xlarge",
+                "i3.4xlarge",
+                "i3.8xlarge",
+                "i3.16xlarge"
+            ],
+            "ConstraintDescription": "must be a valid EC2 instance type."
+        },
+        "RedshiftHost": {
+            "Description": "DNS name or IP address of the master node of an existing Redshift cluster that you intend to use for the SnapLogic jobs. Leave this blank to create a new Redshift cluster.",
+            "Type": "String",
+            "Default": ""
+        },
+        "RedshiftUsername": {
+            "Description": "The user name for the Redshift database.",
+            "Type": "String",
+            "Default": "tadmin"
+        },
+        "RedshiftPassword": {
+            "Description": "The password for the Redshift database. Can only contain alphanumeric characters or the following special characters !^*-_+.",
+            "NoEcho": true,
+            "Type": "String",
+            "MinLength": 8,
+            "MaxLength": 28,
+            "AllowedPattern": "[a-zA-Z0-9!^*\\-_+]*"
+        },
+        "RedshiftDbName": {
+            "Description": "The name of the database to be created in the Redshift cluster. Please provide the valid database name if you are using an existing cluster. The name must contain only a-z or 0-9.",
+            "Type": "String",
+            "Default": "snaplogicdb"
+        },
+        "RedshiftNodeType": {
+            "Type": "String",
+            "Default": "dc2.large",
+            "Description": "The node type to be provisioned for the Redshift cluster.",
+            "ConstraintDescription": "must be a valid RedShift node type.",
+            "AllowedValues": [
+                "dc2.large",
+                "dc2.8xlarge",
+                "ds2.xlarge",
+                "ds2.8xlarge"
+            ]
+        },
+        "RedshiftNumberOfNodes": {
+            "Description": "The number of nodes in the Redshift cluster.",
+            "Type": "Number",
+            "Default": "1"
+        },
+        "CloudplexServerAutoscaleMaxSize": {
+            "Description": "The maximum number of Groundplex servers in the Auto Scaling group.",
+            "Type": "Number",
+            "MinValue": "1",
+            "MaxValue": "10",
+            "Default": "5"
+        },
+        "CloudplexServerAutoscaleDesiredCapacity": {
+            "Description": "The desired capacity for Groundplex servers in the Auto Scaling group.",
+            "Type": "Number",
+            "MinValue": "1",
+            "MaxValue": "10",
+            "Default": "1"
+        }
+    },
+    "Rules": {
+        "SubnetsInVPC": {
+            "Assertions": [
+                {
+                    "Assert": {
+                        "Fn::EachMemberIn": [
+                            {
+                                "Fn::ValueOfAll": [
+                                    "AWS::EC2::Subnet::Id",
+                                    "VpcId"
+                                ]
+                            },
+                            {
+                                "Fn::RefAll": "AWS::EC2::VPC::Id"
+                            }
+                        ]
+                    },
+                    "AssertDescription": "All subnets must exist in the VPC"
+                }
+            ]
+        }
+    },
+    "Mappings": {
+        "Datasource": {
+            "Redshift": {
+                "port": "5439"
+            }
+        }
+    },
+    "Conditions": {
+        "CreateRedshiftCondition": {
+            "Fn::Equals": [
+                "",
+                {
+                    "Ref": "RedshiftHost"
+                }
+            ]
+        }
+    },
+    "Resources": {
+        "IamStack": {
+            "Type": "AWS::CloudFormation::Stack",
+            "Properties": {
+                "TemplateURL": {
+                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}templates/snaplogic-iam.template"
+                },
+                "Parameters": {
+                    "QSS3BucketName": {
+                        "Ref": "QSS3BucketName"
+                    },
+                    "QSS3KeyPrefix": {
+                        "Ref": "QSS3KeyPrefix"
+                    },
+                    "SnapLogicLicenseBucket": {
+                        "Ref": "SnapLogicLicenseBucket"
+                    },
+                    "StackRoot": {
+                        "Fn::Sub": "${AWS::StackName}"
+                    }
+                }
+            }
+        },
+        "SecurityGroupsStack": {
+            "Type": "AWS::CloudFormation::Stack",
+            "Properties": {
+                "TemplateURL": {
+                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}templates/snaplogic-securitygroups.template"
+                },
+                "Parameters": {
+                    "RedshiftSecurityGroupID": {
+                        "Fn::If": [
+                            "CreateRedshiftCondition",
+                            {
+                                "Fn::GetAtt": [
+                                    "RedshiftStack",
+                                    "Outputs.RedshiftSecurityGroupID"
+                                ]
+                            },
+                            ""
+                        ]
+                    },
+                    "RedshiftPort": {
+                        "Fn::If": [
+                            "CreateRedshiftCondition",
+                            {
+                                "Fn::FindInMap": [
+                                    "Datasource",
+                                    "Redshift",
+                                    "port"
+                                ]
+                            },
+                            ""
+                        ]
+                    },
+                    "CloudplexServerSecurityGroupID": {
+                        "Fn::GetAtt": [
+                            "SnaplogicServersStack",
+                            "Outputs.CloudplexServerSecurityGroupID"
+                        ]
+                    }
+                }
+            }
+        },
+        "RedshiftStack": {
+            "Type": "AWS::CloudFormation::Stack",
+            "Condition": "CreateRedshiftCondition",
+            "Properties": {
+                "TemplateURL": {
+                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}templates/datasource-redshift.template"
+                },
+                "TimeoutInMinutes": 30,
+                "Parameters": {
+                    "VpcId": {
+                        "Ref": "VpcId"
+                    },
+                    "RedshiftSubnetA": {
+                        "Ref": "PrivateSubnetId1"
+                    },
+                    "RedshiftSubnetB": {
+                        "Ref": "PrivateSubnetId2"
+                    },
+                    "RedshiftUsername": {
+                        "Ref": "RedshiftUsername"
+                    },
+                    "RedshiftPassword": {
+                        "Ref": "RedshiftPassword"
+                    },
+                    "RedshiftDbName": {
+                        "Ref": "RedshiftDbName"
+                    },
+                    "RedshiftPort": "5439",
+                    "RedshiftNodeType": {
+                        "Ref": "RedshiftNodeType"
+                    },
+                    "RedshiftNumberOfNodes": {
+                        "Ref": "RedshiftNumberOfNodes"
+                    }
+                }
+            }
+        },
+        "SnaplogicServersStack": {
+            "Type": "AWS::CloudFormation::Stack",
+            "Properties": {
+                "TemplateURL": {
+                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}templates/snaplogic-servers.template"
+                },
+                "TimeoutInMinutes": "10",
+                "Parameters": {
+                    "QSS3BucketName": {
+                        "Ref": "QSS3BucketName"
+                    },
+                    "QSS3KeyPrefix": {
+                        "Ref": "QSS3KeyPrefix"
+                    },
+                    "KeyName": {
+                        "Ref": "KeyPairName"
+                    },
+                    "SnapLogicLicenseBucket": {
+                        "Ref": "SnapLogicLicenseBucket"
+                    },
+                    "SnaplexConfS3Key": {
+                        "Ref": "SnaplexConfS3Key"
+                    },
+                    "InstanceRole": {
+                        "Fn::GetAtt": [
+                            "IamStack",
+                            "Outputs.InstanceRole"
+                        ]
+                    },
+                    "InstanceProfile": {
+                        "Fn::GetAtt": [
+                            "IamStack",
+                            "Outputs.InstanceProfile"
+                        ]
+                    },
+                    "PrivateSubnetId1": {
+                        "Ref": "PrivateSubnetId1"
+                    },
+                    "PrivateSubnetId2": {
+                        "Ref": "PrivateSubnetId2"
+                    },
+                    "VpcId": {
+                        "Ref": "VpcId"
+                    },
+                    "CloudplexServerAutoscaleMinSize": "1",
+                    "CloudplexServerAutoscaleMaxSize": {
+                        "Ref": "CloudplexServerAutoscaleMaxSize"
+                    },
+                    "CloudplexServerAutoscaleDesiredCapacity": {
+                        "Ref": "CloudplexServerAutoscaleDesiredCapacity"
+                    },
+                    "InstanceType": {
+                        "Ref": "InstanceType"
+                    }
+                }
+            }
+        }
+    },
+    "Outputs": {
+        "IamStack": {
+            "Value": {
+                "Ref": "IamStack"
+            },
+            "Description": "Nested IAM stack",
+            "Export": {
+                "Name": {
+                    "Fn::Sub": "${AWS::StackName}:IamStack"
+                }
+            }
+        },
+        "SnaplogicServersStack": {
+            "Value": {
+                "Ref": "SnaplogicServersStack"
+            },
+            "Description": "Nested Snaplogic Servers stack",
+            "Export": {
+                "Name": {
+                    "Fn::Sub": "${AWS::StackName}:SnaplogicServersStack"
+                }
+            }
+        },
+        "RedshiftJDBC": {
+            "Condition": "CreateRedshiftCondition",
+            "Value": {
+                "Fn::GetAtt": [
+                    "RedshiftStack",
+                    "Outputs.RedshiftJdbcUrl"
+                ]
+            },
+            "Description": "Redshift JDBC Url",
+            "Export": {
+                "Name": {
+                    "Fn::Sub": "${AWS::StackName}:RedshiftJDBC"
+                }
+            }
+        },
+        "RedshiftEndpoint": {
+            "Condition": "CreateRedshiftCondition",
+            "Value": {
+                "Fn::GetAtt": [
+                    "RedshiftStack",
+                    "Outputs.RedshiftEndpoint"
+                ]
+            },
+            "Description": "Redshift Endpoint",
+            "Export": {
+                "Name": {
+                    "Fn::Sub": "${AWS::StackName}:RedshiftEndpoint"
+                }
+            }
+        }
+    }
+}

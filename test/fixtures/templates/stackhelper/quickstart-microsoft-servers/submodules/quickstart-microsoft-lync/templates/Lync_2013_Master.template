@@ -1,0 +1,368 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "This template deploys two Lync Server 2013 Standard Edition servers. This template also deploys the required AD architecture outlined in \"Implementing Active Directory Domain Services in the AWS Cloud\" **WARNING** This template creates Amazon EC2 Windows instance and related resources. You will be billed for the AWS resources used if you create a stack from this template.",
+    "Parameters": {
+        "KeyPairName": {
+            "Description": "Public/private key pairs allow you to securely connect to your instance after it launches",
+            "Type": "AWS::EC2::KeyPair::KeyName"
+        },
+        "ADInstanceType": {
+            "Description": "Amazon EC2 instance type for the first Active Directory Instance",
+            "Type": "String",
+            "Default": "m4.xlarge",
+            "AllowedValues": [
+                "m4.large",
+                "m4.xlarge",
+                "m4.2xlarge",
+                "m4.4xlarge"
+            ]
+        },
+        "AD2InstanceType": {
+            "Description": "Amazon EC2 instance type for the second Active Directory Instance",
+            "Type": "String",
+            "Default": "m4.xlarge",
+            "AllowedValues": [
+                "m4.large",
+                "m4.xlarge",
+                "m4.2xlarge",
+                "m4.4xlarge"
+            ]
+        },
+        "RDGWInstanceType": {
+            "Description": "Amazon EC2 instance type for the Remote Desktop Gatweway Instance",
+            "Type": "String",
+            "Default": "m4.xlarge",
+            "AllowedValues": [
+                "m4.large",
+                "m4.xlarge",
+                "m4.2xlarge",
+                "m4.4xlarge"
+            ]
+        },
+        "LyncFEInstanceType": {
+            "Description": "Amazon EC2 instance type for the Lync Standard Edition Front End Servers",
+            "Type": "String",
+            "Default": "m4.2xlarge",
+            "AllowedValues": [
+                "m4.2xlarge"
+            ]
+        },
+        "LyncEdgeInstanceType": {
+            "Description": "Amazon EC2 instance type for the Lync Edge Servers",
+            "Type": "String",
+            "Default": "m4.xlarge",
+            "AllowedValues": [
+                "m4.xlarge"
+            ]
+        },
+        "DomainDNSName": {
+            "Description": "Fully qualified domain name (FQDN) of the forest root domain e.g. example.com",
+            "Type": "String",
+            "Default": "example.com",
+            "MinLength": "3",
+            "MaxLength": "25",
+            "AllowedPattern": "[a-zA-Z0-9]+\\..+"
+        },
+        "DomainNetBIOSName": {
+            "Description": "NetBIOS name of the domain (upto 15 characters) for users of earlier versions of Windows e.g. EXAMPLE",
+            "Type": "String",
+            "Default": "example",
+            "MinLength": "1",
+            "MaxLength": "15",
+            "AllowedPattern": "[a-zA-Z0-9]+"
+        },
+        "ADServerNetBIOSName1": {
+            "Description": "NetBIOS name of the 1st AD Server (upto 15 characters)",
+            "Type": "String",
+            "Default": "DC1",
+            "MinLength": "1",
+            "MaxLength": "15",
+            "AllowedPattern": "[a-zA-Z0-9]+"
+        },
+        "ADServerNetBIOSName2": {
+            "Description": "NetBIOS name of the 2nd AD Server (upto 15 characters)",
+            "Type": "String",
+            "Default": "DC2",
+            "MinLength": "1",
+            "MaxLength": "15",
+            "AllowedPattern": "[a-zA-Z0-9]+"
+        },
+        "RestoreModePassword": {
+            "Description": "Password for a separate Administrator account when the domain controller is in Restore Mode. Must be at least 8 characters containing letters, numbers and symbols",
+            "Type": "String",
+            "MinLength": "8",
+            "MaxLength": "32",
+            "AllowedPattern": "(?=^.{6,255}$)((?=.*\\d)(?=.*[A-Z])(?=.*[a-z])|(?=.*\\d)(?=.*[^A-Za-z0-9])(?=.*[a-z])|(?=.*[^A-Za-z0-9])(?=.*[A-Z])(?=.*[a-z])|(?=.*\\d)(?=.*[A-Z])(?=.*[^A-Za-z0-9]))^.*",
+            "NoEcho": "True"
+        },
+        "DomainAdminUser": {
+            "Description": "User name for the account that will be added as Domain Administrator. This is separate from the default \"Administrator\" account",
+            "Type": "String",
+            "Default": "StackAdmin",
+            "MinLength": "5",
+            "MaxLength": "25",
+            "AllowedPattern": "[a-zA-Z0-9]*"
+        },
+        "DomainAdminPassword": {
+            "Description": "Password for the domain admin user. Must be at least 8 characters containing letters, numbers and symbols.  This password will also be set for the local administrator account on each Lync edge server, if configured.",
+            "Type": "String",
+            "MinLength": "8",
+            "MaxLength": "32",
+            "AllowedPattern": "(?=^.{6,255}$)((?=.*\\d)(?=.*[A-Z])(?=.*[a-z])|(?=.*\\d)(?=.*[^A-Za-z0-9])(?=.*[a-z])|(?=.*[^A-Za-z0-9])(?=.*[A-Z])(?=.*[a-z])|(?=.*\\d)(?=.*[A-Z])(?=.*[^A-Za-z0-9]))^.*",
+            "NoEcho": "true"
+        },
+        "DMZ1CIDR": {
+            "Description": "CIDR Block for the Public DMZ Subnet located in AZ1",
+            "Type": "String",
+            "Default": "10.0.32.0/20",
+            "AllowedPattern": "[a-zA-Z0-9]+\\..+"
+        },
+        "DMZ2CIDR": {
+            "Description": "CIDR Block for the Public DMZ Subnet located in AZ2",
+            "Type": "String",
+            "Default": "10.0.96.0/20",
+            "AllowedPattern": "[a-zA-Z0-9]+\\..+"
+        },
+        "PrivSub1CIDR": {
+            "Description": "CIDR block for the AD Server tier located in AZ1.",
+            "Type": "String",
+            "Default": "10.0.0.0/19",
+            "AllowedPattern": "[a-zA-Z0-9]+\\..+"
+        },
+        "PrivSub2CIDR": {
+            "Description": "CIDR block for the AD Server tier located in AZ2.",
+            "Type": "String",
+            "Default": "10.0.64.0/19",
+            "AllowedPattern": "[a-zA-Z0-9]+\\..+"
+        },
+        "VPCCIDR": {
+            "Description": "CIDR Block for the VPC",
+            "Type": "String",
+            "Default": "10.0.0.0/16",
+            "AllowedPattern": "[a-zA-Z0-9]+\\..+"
+        },
+        "AD1PrivateIp": {
+            "Description": "Fixed private IP for the first Active Directory server located in AZ1",
+            "Type": "String",
+            "Default": "10.0.0.10"
+        },
+        "AD2PrivateIp": {
+            "Description": "Fixed private IP for the second Active Directory serverr located in AZ2",
+            "Type": "String",
+            "Default": "10.0.64.10"
+        },
+        "FE1PrivateIp": {
+            "Description": "Primary private IP for the first Lync Front-End Server",
+            "Type": "String",
+            "Default": "10.0.0.160"
+        },
+        "FE2PrivateIp": {
+            "Description": "Primary private IP for the second Lync Front-End Server",
+            "Type": "String",
+            "Default": "10.0.64.160"
+        },
+        "LE1PrivateIp": {
+            "Description": "Primary private IP for the first Lync Edge Server",
+            "Type": "String",
+            "Default": "10.0.0.161"
+        },
+        "LE2PrivateIp": {
+            "Description": "Primary private IP for the second Edge Server",
+            "Type": "String",
+            "Default": "10.0.64.161"
+        },
+        "LE1PublicIp": {
+            "Description": "Primary public subnet IP for the first Lync Edge Server",
+            "Type": "String",
+            "Default": "10.0.32.161"
+        },
+        "LE2PublicIp": {
+            "Description": "Primary public subnet IP for the second Edge Server",
+            "Type": "String",
+            "Default": "10.0.96.161"
+        },
+        "IncludeEdge": {
+            "Description": "Set this parameter to true to include Lync Edge servers in the public subnets",
+            "AllowedValues": [
+                "true",
+                "false"
+            ],
+            "Type": "String",
+            "Default": "false"
+        },
+        "LyncISOImageURI": {
+            "AllowedPattern": "^(?i)(s3|http|https):\\/\\/.+",
+            "Description": "S3 URI to an S3 bucket containing the Lync Server 2013 Standard Edition installation media ISO image file (e.g., s3://sample-bucket/microsoft/lync/installation-media.iso). An HTTP/HTTPS URI can also be used (e.g., https://example.com/microsoft/lync/installation-media.iso)",
+            "Type": "String"
+        }
+    },
+    "Resources": {
+        "ADStack": {
+            "Type": "AWS::CloudFormation::Stack",
+            "Properties": {
+                "TemplateURL": "https://s3.amazonaws.com/aws-quickstart/quickstart-microsoft-lync/submodules/quickstart-microsoft-activedirectory/templates/Template_1_AD_2012R2.template",
+                "Parameters": {
+                    "ADServer1InstanceType": {
+                        "Ref": "ADInstanceType"
+                    },
+                    "ADServer1NetBIOSName": {
+                        "Ref": "ADServerNetBIOSName1"
+                    },
+                    "ADServer1PrivateIP": {
+                        "Ref": "AD1PrivateIp"
+                    },
+                    "ADServer2InstanceType": {
+                        "Ref": "AD2InstanceType"
+                    },
+                    "ADServer2NetBIOSName": {
+                        "Ref": "ADServerNetBIOSName2"
+                    },
+                    "ADServer2PrivateIP": {
+                        "Ref": "AD2PrivateIp"
+                    },
+                    "DomainAdminPassword": {
+                        "Ref": "DomainAdminPassword"
+                    },
+                    "DomainAdminUser": {
+                        "Ref": "DomainAdminUser"
+                    },
+                    "DomainDNSName": {
+                        "Ref": "DomainDNSName"
+                    },
+                    "DomainNetBIOSName": {
+                        "Ref": "DomainNetBIOSName"
+                    },
+                    "KeyPairName": {
+                        "Ref": "KeyPairName"
+                    },
+                    "PrivateSubnet1CIDR": {
+                        "Ref": "PrivSub1CIDR"
+                    },
+                    "PrivateSubnet2CIDR": {
+                        "Ref": "PrivSub2CIDR"
+                    },
+                    "PublicSubnet1CIDR": {
+                        "Ref": "DMZ1CIDR"
+                    },
+                    "PublicSubnet2CIDR": {
+                        "Ref": "DMZ2CIDR"
+                    },
+                    "RDGWInstanceType": {
+                        "Ref": "RDGWInstanceType"
+                    },
+                    "RestoreModePassword": {
+                        "Ref": "RestoreModePassword"
+                    },
+                    "VPCCIDR": {
+                        "Ref": "VPCCIDR"
+                    }
+                }
+            }
+        },
+        "LyncStack": {
+            "Type": "AWS::CloudFormation::Stack",
+            "DependsOn": "ADStack",
+            "Properties": {
+                "TemplateURL": "https://s3.amazonaws.com/aws-quickstart/quickstart-microsoft-lync/templates/Template_1_Lync_2013.template",
+                "Parameters": {
+                    "ADServer1PrivateIp": {
+                        "Ref": "AD1PrivateIp"
+                    },
+                    "ADServer2PrivateIp": {
+                        "Ref": "AD2PrivateIp"
+                    },
+                    "ADServerNetBIOSName1": {
+                        "Ref": "ADServerNetBIOSName1"
+                    },
+                    "ADServerNetBIOSName2": {
+                        "Ref": "ADServerNetBIOSName2"
+                    },
+                    "LyncFEInstanceType": {
+                        "Ref": "LyncFEInstanceType"
+                    },
+                    "LyncEdgeInstanceType": {
+                        "Ref": "LyncEdgeInstanceType"
+                    },
+                    "IncludeEdge": {
+                        "Ref": "IncludeEdge"
+                    },
+                    "DomainAdminPassword": {
+                        "Ref": "DomainAdminPassword"
+                    },
+                    "DomainAdminUser": {
+                        "Ref": "DomainAdminUser"
+                    },
+                    "DomainDNSName": {
+                        "Ref": "DomainDNSName"
+                    },
+                    "DomainMemberSGID": {
+                        "Fn::GetAtt": [
+                            "ADStack",
+                            "Outputs.DomainMemberSGID"
+                        ]
+                    },
+                    "DomainNetBIOSName": {
+                        "Ref": "DomainNetBIOSName"
+                    },
+                    "KeyPairName": {
+                        "Ref": "KeyPairName"
+                    },
+                    "VPC": {
+                        "Fn::GetAtt": [
+                            "ADStack",
+                            "Outputs.VPCID"
+                        ]
+                    },
+                    "FE1PrivateIp": {
+                        "Ref": "FE1PrivateIp"
+                    },
+                    "FE2PrivateIp": {
+                        "Ref": "FE2PrivateIp"
+                    },
+                    "LE1PrivateIp": {
+                        "Ref": "LE1PrivateIp"
+                    },
+                    "LE2PrivateIp": {
+                        "Ref": "LE2PrivateIp"
+                    },
+                    "LE1PublicIp": {
+                        "Ref": "LE1PublicIp"
+                    },
+                    "LE2PublicIp": {
+                        "Ref": "LE2PublicIp"
+                    },
+                    "PrivateSubnet1": {
+                        "Fn::GetAtt": [
+                            "ADStack",
+                            "Outputs.PrivateSubnet1ID"
+                        ]
+                    },
+                    "PrivateSubnet2": {
+                        "Fn::GetAtt": [
+                            "ADStack",
+                            "Outputs.PrivateSubnet2ID"
+                        ]
+                    },
+                    "PublicSubnet1": {
+                        "Fn::GetAtt": [
+                            "ADStack",
+                            "Outputs.PublicSubnet1ID"
+                        ]
+                    },
+                    "PublicSubnet2": {
+                        "Fn::GetAtt": [
+                            "ADStack",
+                            "Outputs.PublicSubnet2ID"
+                        ]
+                    },
+                    "VPCCIDR": {
+                        "Ref": "VPCCIDR"
+                    },
+                    "LyncISOImageURI": {
+                        "Ref": "LyncISOImageURI"
+                    }
+                }
+            }
+        }
+    }
+}

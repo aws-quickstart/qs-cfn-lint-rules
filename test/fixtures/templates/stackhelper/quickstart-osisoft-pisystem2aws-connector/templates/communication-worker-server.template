@@ -1,0 +1,377 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "AWS Cloudformation template to create EC2 instance and run server. **WARNING** This template creates an Amazon EC2 instance. You will be billed for the AWS resources used if you create a stack from this template.",
+    "Parameters": {
+        "CommunicationWorkerServerInstanceProfileARN": {
+            "Type": "String"
+        },
+        "EventsStatusTable": {
+            "Description": "Table name for DynamoDB database which holds state of point updates",
+            "Type": "String"
+        },
+        "InstanceType": {
+            "AllowedValues": [
+                "t2.micro",
+                "t2.small",
+                "t2.medium",
+                "t2.large",
+                "m4.large",
+                "m4.xlarge",
+                "m4.2xlarge",
+                "m5.large",
+                "m5.xlarge",
+                "m5.2xlarge",
+                "c4.large",
+                "c4.xlarge",
+                "c4.2xlarge",
+                "c4.4xlarge",
+                "c4.8xlarge"
+            ],
+            "ConstraintDescription": "must be a valid EC2 instance type.",
+            "Default": "t2.micro",
+            "Description": "Server EC2 instance type",
+            "Type": "String"
+        },
+        "KeyName": {
+            "ConstraintDescription": "Can contain only ASCII characters.",
+            "Description": "Name of an existing EC2 KeyPair to enable SSH access to the instance",
+            "Type": "AWS::EC2::KeyPair::KeyName"
+        },
+        "NumCommunicationWorkerInstances": {
+            "Default": 1,
+            "Description": "Number of communication worker server instances in Auto scaling group",
+            "Type": "Number"
+        },
+        "PiPointsTableName": {
+            "Description": "Table name for DynamoDB database which holds subscriptions of managed feeds",
+            "Type": "String"
+        },
+        "PrivateSubnet1ID": {
+            "Description": "Worker server subnet 1",
+            "Type": "AWS::EC2::Subnet::Id"
+        },
+        "PrivateSubnet2ID": {
+            "Description": "Worker server subnet 2",
+            "Type": "AWS::EC2::Subnet::Id"
+        },
+        "QSDeploymentSuffix": {
+            "AllowedPattern": "[a-z0-9]+",
+            "ConstraintDescription": "Deployment suffix can include numbers, lowercase letters and should have the maximum length of 7 characters.",
+            "Default": "qs",
+            "Description": "You can deploy this Quick Start multiple times in the same region if you provide a different suffix that is added to resource names to make them unique per each deployment. Use this parameter to support deployment of production and test environments in the same region in the same AWS account.",
+            "MaxLength": 7,
+            "MinLength": 1,
+            "Type": "String"
+        },
+        "QSS3Bucket": {
+            "AllowedPattern": "^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$",
+            "ConstraintDescription": "Quick Start bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-).",
+            "Default": "aws-quickstart",
+            "Description": "S3 bucket where the templates and scripts are installed. Use this parameter to specify the S3 bucket name you've created for your copy of Quick Start assets, if you decide to customize or extend the Quick Start for your own use. The bucket name can include numbers, lowercase letters, uppercase letters, and hyphens, but should not start or end with a hyphen.",
+            "Type": "String"
+        },
+        "QSS3KeyPrefix": {
+            "AllowedPattern": "^[0-9a-zA-Z-][0-9a-zA-Z-/]*/$",
+            "ConstraintDescription": "Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).",
+            "Default": "osisoft/47lining/latest/",
+            "Description": "S3 key prefix for the Quick Start assets. Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).",
+            "Type": "String"
+        },
+        "VPCCIDR": {
+            "AllowedPattern": "^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\\/(1[6-9]|2[0-8]))$",
+            "ConstraintDescription": "CIDR block parameter must be in the form x.x.x.x/16-28",
+            "Description": "CIDR block for the VPC.",
+            "Type": "String"
+        },
+        "VpcId": {
+            "Description": "Communication Worker VPC",
+            "Type": "AWS::EC2::VPC::Id"
+        }
+    },
+    "Mappings": {
+        "AWSAMIRegionMap": {
+            "AMI": {
+                "AMZNLINUXHVM": "amzn-ami-hvm-2017.09.1.20180307-x86_64-gp2"
+            },
+            "eu-west-1": {
+                "AMZNLINUXHVM": "ami-3bfab942"
+            },
+            "us-east-1": {
+                "AMZNLINUXHVM": "ami-1853ac65"
+            },
+            "us-west-2": {
+                "AMZNLINUXHVM": "ami-d874e0a0"
+            }
+        }
+    },
+    "Resources": {
+        "CommunicationWorkerServerAutoScalingGroup": {
+            "CreationPolicy": {
+                "ResourceSignal": {
+                    "Count": {
+                        "Ref": "NumCommunicationWorkerInstances"
+                    },
+                    "Timeout": "PT15M"
+                }
+            },
+            "Properties": {
+                "Cooldown": "300",
+                "DesiredCapacity": {
+                    "Ref": "NumCommunicationWorkerInstances"
+                },
+                "LaunchConfigurationName": {
+                    "Ref": "CommunicationWorkerServerLaunchConfiguration"
+                },
+                "MaxSize": {
+                    "Ref": "NumCommunicationWorkerInstances"
+                },
+                "MinSize": {
+                    "Ref": "NumCommunicationWorkerInstances"
+                },
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "PropagateAtLaunch": "true",
+                        "Value": {
+                            "Fn::Sub": "PI2AWSWorkerServer-${QSDeploymentSuffix}"
+                        }
+                    }
+                ],
+                "VPCZoneIdentifier": [
+                    {
+                        "Ref": "PrivateSubnet1ID"
+                    },
+                    {
+                        "Ref": "PrivateSubnet2ID"
+                    }
+                ]
+            },
+            "Type": "AWS::AutoScaling::AutoScalingGroup"
+        },
+        "CommunicationWorkerServerLaunchConfiguration": {
+            "Metadata": {
+                "AWS::CloudFormation::Init": {
+                    "config": {
+                        "commands": {
+                            "1_run_bootstrap": {
+                                "command": "sh -e /etc/bootstrap.sh"
+                            },
+                            "2_run_worker": {
+                                "command": "/usr/local/bin/supervisord"
+                            }
+                        },
+                        "files": {
+                            "/etc/bootstrap.sh": {
+                                "content": {
+                                    "Fn::Join": [
+                                        "\n",
+                                        [
+                                            "# Install python requirements",
+                                            "pip-3.4 install boto3==1.4.4",
+                                            "# Set up supervisor",
+                                            "easy_install supervisor",
+                                            "mkdir -p /var/log/supervisord/",
+                                            "chown -R ec2-user:ec2-user /var/log/supervisord/",
+                                            "cd /home/ec2-user",
+                                            {
+                                                "Fn::Sub": "aws s3 cp s3://${QSS3Bucket}/${QSS3KeyPrefix}assets/assets.zip ."
+                                            },
+                                            "unzip assets.zip",
+                                            "rm assets.zip",
+                                            "chown -R ec2-user:ec2-user .",
+                                            "cd assets",
+                                            "python3.4 setup.py develop"
+                                        ]
+                                    ]
+                                },
+                                "group": "ec2-user",
+                                "mode": "000770",
+                                "owner": "ec2-user"
+                            },
+                            "/etc/supervisord.conf": {
+                                "content": {
+                                    "Fn::Join": [
+                                        "\n",
+                                        [
+                                            "[unix_http_server]",
+                                            "file=/tmp/supervisor.sock",
+                                            "",
+                                            "[supervisord]",
+                                            "logfile=/var/log/supervisord/supervisord.log",
+                                            "logfile_maxbytes=50MB",
+                                            "logfile_backups=10",
+                                            "loglevel=error",
+                                            "pidfile=/var/log/supervisord/supervisord.pid",
+                                            "nodaemon=false",
+                                            "user=ec2-user",
+                                            "childlogdir=/var/log/supervisord/",
+                                            "",
+                                            "[rpcinterface:supervisor]",
+                                            "supervisor.rpcinterface_factory = supervisor.rpcinterface:make_main_rpcinterface",
+                                            "",
+                                            "[supervisorctl]",
+                                            "serverurl=unix:///tmp/supervisor.sock",
+                                            "",
+                                            "[program:pi-worker]",
+                                            {
+                                                "Fn::Sub": [
+                                                    "command=python3.4 /home/ec2-user/assets/workers/pi_worker.py --pi_points_table_name ${PiPointsTableName} --events_status_table_name ${EventsStatusTable} --outgoing_sqs_name ${OutgoingSQSName} --region ${AWS::Region}",
+                                                    {
+                                                        "OutgoingSQSName": {
+                                                            "Fn::GetAtt": [
+                                                                "PIOutgoingQueue",
+                                                                "QueueName"
+                                                            ]
+                                                        }
+                                                    }
+                                                ]
+                                            },
+                                            "process_name=pi-worker-%(process_num)s",
+                                            "autostart=true",
+                                            "autorestart=true",
+                                            "startsecs=2",
+                                            "numprocs=8",
+                                            "stderr_logfile=/var/log/supervisord/pi-worker-%(process_num)s-stderr.log",
+                                            "stdout_logfile=/var/log/supervisord/pi-worker-%(process_num)s-stdout.log"
+                                        ]
+                                    ]
+                                },
+                                "group": "ec2-user",
+                                "mode": "000444",
+                                "owner": "ec2-user"
+                            }
+                        },
+                        "packages": {
+                            "yum": {
+                                "python34": [],
+                                "python34-pip": []
+                            }
+                        }
+                    }
+                },
+                "Comment": "Install server"
+            },
+            "Properties": {
+                "IamInstanceProfile": {
+                    "Ref": "CommunicationWorkerServerInstanceProfileARN"
+                },
+                "ImageId": {
+                    "Fn::FindInMap": [
+                        "AWSAMIRegionMap",
+                        {
+                            "Ref": "AWS::Region"
+                        },
+                        "AMZNLINUXHVM"
+                    ]
+                },
+                "InstanceType": {
+                    "Ref": "InstanceType"
+                },
+                "KeyName": {
+                    "Ref": "KeyName"
+                },
+                "SecurityGroups": [
+                    {
+                        "Ref": "InstanceSecurityGroup"
+                    }
+                ],
+                "UserData": {
+                    "Fn::Base64": {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "#!/bin/bash\n",
+                                "yum update -y\n",
+                                "yum install -y aws-cfn-bootstrap\n",
+                                "# Install the files and packages from the metadata\n",
+                                {
+                                    "Fn::Sub": "/opt/aws/bin/cfn-init -v --stack ${AWS::StackName} --resource CommunicationWorkerServerLaunchConfiguration --region ${AWS::Region}\n"
+                                },
+                                "# Signal the status from cfn-init\n",
+                                {
+                                    "Fn::Sub": "/opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource CommunicationWorkerServerAutoScalingGroup --region ${AWS::Region}\n"
+                                }
+                            ]
+                        ]
+                    }
+                }
+            },
+            "Type": "AWS::AutoScaling::LaunchConfiguration"
+        },
+        "InstanceSecurityGroup": {
+            "Properties": {
+                "GroupDescription": "Enable SSH access from Bastion via port 22",
+                "SecurityGroupIngress": [
+                    {
+                        "CidrIp": {
+                            "Ref": "VPCCIDR"
+                        },
+                        "FromPort": "22",
+                        "IpProtocol": "tcp",
+                        "ToPort": "22"
+                    }
+                ],
+                "VpcId": {
+                    "Ref": "VpcId"
+                }
+            },
+            "Type": "AWS::EC2::SecurityGroup"
+        },
+        "PIIncomingQueue": {
+            "Type": "AWS::SQS::Queue"
+        },
+        "PIOutgoingQueue": {
+            "Type": "AWS::SQS::Queue"
+        }
+    },
+    "Outputs": {
+        "IncomingQueueURL": {
+            "Description": "URL of Incoming SQS Queue",
+            "Value": {
+                "Ref": "PIIncomingQueue"
+            }
+        },
+        "IncomingQueueARN": {
+            "Description": "ARN of IncomingQueue SQS Queue",
+            "Value": {
+                "Fn::GetAtt": [
+                    "PIIncomingQueue",
+                    "Arn"
+                ]
+            }
+        },
+        "IncomingQueueName": {
+            "Description": "Name IncomingQueue SQS Queue",
+            "Value": {
+                "Fn::GetAtt": [
+                    "PIIncomingQueue",
+                    "QueueName"
+                ]
+            }
+        },
+        "OutgoingQueueURL": {
+            "Description": "URL of Outgoing SQS Queue",
+            "Value": {
+                "Ref": "PIOutgoingQueue"
+            }
+        },
+        "OutgoingQueueARN": {
+            "Description": "ARN of OutgoingQueue SQS Queue",
+            "Value": {
+                "Fn::GetAtt": [
+                    "PIOutgoingQueue",
+                    "Arn"
+                ]
+            }
+        },
+        "OutgoingQueueName": {
+            "Description": "Name OutgoingQueue SQS Queue",
+            "Value": {
+                "Fn::GetAtt": [
+                    "PIOutgoingQueue",
+                    "QueueName"
+                ]
+            }
+        }
+    }
+}

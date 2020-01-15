@@ -1,0 +1,168 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "Create the API Gateway related resources for FortiGate AutoScale Handler. **WARNING!** This template is designed for being called within FortiGate AutoScale Solution only but not compatible with any other Cloud Formation template. Do not directly use it anywhere else.",
+    "Parameters": {
+        "CustomIdentifier": {
+            "Type": "String",
+            "Default": "fgtASG",
+            "MaxLength": "10",
+            "AllowedPattern": "[A-Za-z0-9]+",
+            "ConstraintDescription": "must only contain uppercase and lowercase letters and digits",
+            "Description": "A custom identifier as resource name prefix to help organize your API Gateway. Can only contain uppercase, lowercase letters, and digits. Max length is 10."
+        },
+        "APIGatewayName": {
+            "Type": "String",
+            "Description": "The API Gateway name which is used by the Lambda function."
+        },
+        "VpcEndpointId": {
+            "Type": "String",
+            "Description": "The Physical ID of VPC Endpoint resource which is allowed to call the REST API defined in this API Gateway."
+        },
+        "LambdaFunctionArn": {
+            "Type": "String",
+            "Description": "The Arn of Lambda function which is integrated with the REST API defined in this API Gateway."
+        }
+    },
+    "Resources": {
+        "ApiGatewayFgtAsg": {
+            "Type": "AWS::ApiGateway::RestApi",
+            "Properties": {
+                "Name": {
+                    "Ref": "APIGatewayName"
+                },
+                "EndpointConfiguration": {
+                    "Types": [
+                        "PRIVATE"
+                    ]
+                },
+                "Policy": {
+                    "Fn::Sub": [
+                        "{\\\"Version\\\":\\\"2012-10-17\\\",\\\"Statement\\\":[{\\\"Effect\\\":\\\"Allow\\\",\\\"Principal\\\":\\\"*\\\",\\\"Action\\\":\\\"execute-api:Invoke\\\",\\\"Resource\\\":\\\"execute-api:\\/*\\\",\\\"Condition\\\":{\\\"StringEquals\\\":{\\\"aws:sourceVpce\\\":\\\"${vpce}\\\"}}}]}",
+                        {
+                            "vpce": {
+                                "Ref": "VpcEndpointId"
+                            }
+                        }
+                    ]
+                }
+            }
+        },
+        "ApiGwDeploymentFgtAsg": {
+            "DependsOn": [
+                "ApiGwMethodFgtAsgComplete",
+                "ApiGwMethodFgtAsgGetConfig"
+            ],
+            "Type": "AWS::ApiGateway::Deployment",
+            "Properties": {
+                "RestApiId": {
+                    "Ref": "ApiGatewayFgtAsg"
+                },
+                "StageName": "prod"
+            }
+        },
+        "ApiGwResFgtAsgComplete": {
+            "Type": "AWS::ApiGateway::Resource",
+            "Properties": {
+                "RestApiId": {
+                    "Ref": "ApiGatewayFgtAsg"
+                },
+                "PathPart": "complete",
+                "ParentId": {
+                    "Fn::GetAtt": [
+                        "ApiGatewayFgtAsg",
+                        "RootResourceId"
+                    ]
+                }
+            }
+        },
+        "ApiGwMethodFgtAsgComplete": {
+            "Type": "AWS::ApiGateway::Method",
+            "Properties": {
+                "ResourceId": {
+                    "Ref": "ApiGwResFgtAsgComplete"
+                },
+                "RestApiId": {
+                    "Ref": "ApiGatewayFgtAsg"
+                },
+                "AuthorizationType": "NONE",
+                "HttpMethod": "POST",
+                "Integration": {
+                    "Type": "AWS_PROXY",
+                    "IntegrationHttpMethod": "POST",
+                    "Uri": {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "arn:aws:apigateway:",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                ":lambda:path/2015-03-31/functions/",
+                                {
+                                    "Ref": "LambdaFunctionArn"
+                                },
+                                "/invocations"
+                            ]
+                        ]
+                    }
+                }
+            }
+        },
+        "ApiGwResFgtAsgGetConfig": {
+            "Type": "AWS::ApiGateway::Resource",
+            "Properties": {
+                "RestApiId": {
+                    "Ref": "ApiGatewayFgtAsg"
+                },
+                "PathPart": "get-config",
+                "ParentId": {
+                    "Fn::GetAtt": [
+                        "ApiGatewayFgtAsg",
+                        "RootResourceId"
+                    ]
+                }
+            }
+        },
+        "ApiGwMethodFgtAsgGetConfig": {
+            "Type": "AWS::ApiGateway::Method",
+            "Properties": {
+                "ResourceId": {
+                    "Ref": "ApiGwResFgtAsgGetConfig"
+                },
+                "RestApiId": {
+                    "Ref": "ApiGatewayFgtAsg"
+                },
+                "AuthorizationType": "NONE",
+                "HttpMethod": "GET",
+                "Integration": {
+                    "Type": "AWS_PROXY",
+                    "IntegrationHttpMethod": "POST",
+                    "Uri": {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "arn:aws:apigateway:",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                ":lambda:path/2015-03-31/functions/",
+                                {
+                                    "Ref": "LambdaFunctionArn"
+                                },
+                                "/invocations"
+                            ]
+                        ]
+                    }
+                }
+            }
+        }
+    },
+    "Outputs": {
+        "APIGatewayId": {
+            "Description": "The Physical ID of the API Gateway created in this stack.",
+            "Value": {
+                "Ref": "ApiGatewayFgtAsg"
+            }
+        }
+    }
+}

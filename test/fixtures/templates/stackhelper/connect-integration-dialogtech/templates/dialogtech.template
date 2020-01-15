@@ -1,0 +1,135 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+Description: DialogTech Integration for Amazon Connect Quick Start (qs-1nr3h4h6r)
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+    - Label:
+        default: Amazon Connect DialogTech Integration
+      Parameters:
+      - DKey
+      - DSecret
+    ParameterLabels:
+      DKey:
+        default: DialogTech Key
+      DSecret:
+        default: DialogTech Secret
+Parameters:
+  DKey:
+    Default: ''
+    Description: In order to access the DialogTech API, users will first need to generate
+      API keys. Please visit https://secure.dialogtech.com/key-manager to generate
+      a key and secret before launching this template.
+    Type: String
+  DSecret:
+    Default: ''
+    Description: Please provide the generated API secret obtained from the DialogTech
+      Access Key Manager as detailed in the step above.
+    Type: String
+Rules:
+  RegionSupport:
+    Assertions:
+    - Assert:
+        Fn::Equals:
+        - Ref: AWS::Region
+        - us-east-1
+      AssertDescription: Region must be US East (N. Virginia) - us-east-1
+  DKeyParameterDefaults:
+    Assertions:
+    - Assert:
+        Fn::Not:
+        - Fn::Equals:
+          - Ref: DKey
+          - ''
+      AssertDescription: Amazon Connect DialogTech Integration key cannot be empty
+  DSecretParameterDefaults:
+    Assertions:
+    - Assert:
+        Fn::Not:
+        - Fn::Equals:
+          - Ref: DSecret
+          - ''
+      AssertDescription: Amazon Connect DialogTech Integration secret cannot be empty
+Resources:
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Policies:
+      - PolicyName: lambdalogtocloudwatch
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - logs:CreateLogGroup
+            - logs:CreateLogStream
+            - logs:PutLogEvents
+            Resource: arn:aws:logs:*:*:*
+  DialogtechTestLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: dialogtech-test.handler
+      Role:
+        Fn::GetAtt: LambdaExecutionRole.Arn
+      Code:
+        S3Bucket: aws-quickstart
+        S3Key: connect-integration-dialogtech/functions/packages/dialogtech-integration-test/dialogtech-integration-test.zip
+      Runtime: nodejs6.10
+      Timeout: '10'
+  IntegrationTest:
+    Type: Custom::IntegrationTest
+    Version: '1.0'
+    Properties:
+      ServiceToken:
+        Fn::GetAtt: DialogtechTestLambda.Arn
+      accessKey:
+        Ref: DKey
+      secretAccessKey:
+        Ref: DSecret
+      customerNumber: 8887776666
+  DialogtechLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: dialogtech.handler
+      Role:
+        Fn::GetAtt: LambdaExecutionRole.Arn
+      Code:
+        S3Bucket: aws-quickstart
+        S3Key: connect-integration-dialogtech/functions/packages/dialogtech-integration/dialogtech-integration.zip
+      Runtime: nodejs6.10
+      Timeout: '10'
+      Environment:
+        Variables:
+          access_key:
+            Ref: DKey
+          secret_access_key:
+            Ref: DSecret
+  DialogtechLambdaInvokePermission:
+    Type: AWS::Lambda::Permission
+    DependsOn: DialogtechLambda
+    Properties:
+      FunctionName:
+        Ref: DialogtechLambda
+      Action: lambda:InvokeFunction
+      Principal: connect.amazonaws.com
+      SourceAccount:
+        Ref: AWS::AccountId
+Outputs:
+  LambdaExecutionRole:
+    Description: Lambda Function Execution Role
+    Value:
+      Fn::GetAtt: LambdaExecutionRole.Arn
+  DialogtechLambda:
+    Description: Lambda Function for Dialogtech Integration
+    Value:
+      Fn::GetAtt: DialogtechLambda.Arn
+...

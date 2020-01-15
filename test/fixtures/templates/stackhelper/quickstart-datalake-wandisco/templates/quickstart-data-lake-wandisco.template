@@ -1,0 +1,725 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "This template will deploy Hybrid Datalake solution using WANdisco Fusion and other AWS Services into an existing VPC. **WARNING** You will be billed for the AWS resources used if you create a stack from this template.(qs-1nmjm728l)",
+    "Conditions": {
+        "AthenaBucketExistingCondition": {
+            "Fn::And": [
+                {
+                    "Condition": "AthenaCreateCondition"
+                },
+                {
+                    "Fn::Equals": [
+                        {
+                            "Ref": "AthenaBucketExisting"
+                        },
+                        "false"
+                    ]
+                }
+            ]
+        },
+        "AthenaCreateCondition": {
+            "Fn::Equals": [
+                {
+                    "Ref": "AthenaCreateTable"
+                },
+                "true"
+            ]
+        },
+        "S3BucketExistingCondition": {
+            "Fn::Equals": [
+                {
+                    "Ref": "S3BucketExisting"
+                },
+                "false"
+            ]
+        }
+    },
+    "Metadata": {
+        "AWSAMIRegionMap":{
+          "Filters":{
+            "WDFUSIONHVM":{
+              "name":"WANdisco Fusion - ???? ?? ??-*",
+              "owner-alias":"aws-marketplace",
+              "product-code.type":"marketplace"
+            }
+          }
+        },
+        "AWS::CloudFormation::Interface": {
+            "ParameterGroups": [
+                {
+                    "Label": {
+                        "default": "Network Configuration"
+                    },
+                    "Parameters": [
+                        "VPCID",
+                        "SubnetIdA",
+                        "SubnetIdB"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "WD Fusion Cluster Configuration"
+                    },
+                    "Parameters": [
+                        "ClusterName",
+                        "ClusterNodeType",
+                        "PersistentStorage",
+                        "ClusterInstanceCount",
+                        "KeyName",
+                        "LocalFusionAccess",
+                        "AdminFusionAccess"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "WD Fusion Data Storage Configuration"
+                    },
+                    "Parameters": [
+                        "S3BucketExisting",
+                        "S3Bucket",
+                        "KMSKey",
+                        "S3ServerEncryption"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "WD Fusion Application Configuration"
+                    },
+                    "Parameters": [
+                        "ZoneName",
+                        "Username",
+                        "Password",
+                        "SubscribeARN",
+                        "EMRVersion",
+                        "FusionLicense"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "Athena Configuration"
+                    },
+                    "Parameters": [
+                        "AthenaCreateTable",
+                        "AthenaBucketExisting",
+                        "AthenaBucket"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "AWS Quick Start Configuration"
+                    },
+                    "Parameters": [
+                        "QSS3BucketName",
+                        "QSS3KeyPrefix"
+                    ]
+                }
+            ],
+            "ParameterLabels": {
+                "AdminFusionAccess": {
+                    "default": "Administration Access CIDR"
+                },
+                "AthenaBucket": {
+                    "default": "Athena Output Bucket"
+                },
+                "AthenaBucketExisting": {
+                    "default": "Athena Output to Existing Bucket"
+                },
+                "AthenaCreateTable": {
+                    "default": "Create Athena Table"
+                },
+                "ClusterInstanceCount": {
+                    "default": "Cluster Instance Count"
+                },
+                "ClusterName": {
+                    "default": "Cluster Name"
+                },
+                "ClusterNodeType": {
+                    "default": "Cluster Node Type"
+                },
+                "EMRVersion": {
+                    "default": "EMR Version"
+                },
+                "FusionLicense": {
+                    "default": "Fusion License (Optional)"
+                },
+                "KMSKey": {
+                    "default": "KMS Key (Optional)"
+                },
+                "KeyName": {
+                    "default": "EC2 key pair name"
+                },
+                "LocalFusionAccess": {
+                    "default": "Local Fusion Access CIDR"
+                },
+                "Password": {
+                    "default": "Fusion Admin Password"
+                },
+                "PersistentStorage": {
+                    "default": "Fusion server storage (in GB)"
+                },
+                "QSS3BucketName": {
+                    "default": "AWS Quick Start Bucket Name"
+                },
+                "QSS3KeyPrefix": {
+                    "default": "AWS Quick Start Version"
+                },
+                "S3Bucket": {
+                    "default": "Data Replication S3 Bucket"
+                },
+                "S3BucketExisting": {
+                    "default": "Replicate to Existing Bucket"
+                },
+                "S3ServerEncryption": {
+                    "default": "S3 Server-side Encryption Algorithm"
+                },
+                "SubnetIdA": {
+                    "default": "VPC Subnet ID for Zone 1"
+                },
+                "SubnetIdB": {
+                    "default": "VPC Subnet ID for Zone 2"
+                },
+                "SubscribeARN": {
+                    "default": "ARN Topic to publish messages to (Optional)"
+                },
+                "Username": {
+                    "default": "Fusion Admin Username"
+                },
+                "VPCID": {
+                    "default": "VPC ID"
+                },
+                "ZoneName": {
+                    "default": "Zone Name"
+                }
+            }
+        }
+    },
+    "Outputs": {
+        "AdminSecurityGroupID": {
+            "Description": "SecurityGroup ID used on WANdisco Fusion for administrator access",
+            "Value": {
+                "Ref": "FusionAdminSecurityGroup"
+            }
+        },
+        "AthenaBucketResourceArn": {
+            "Condition": "AthenaBucketExistingCondition",
+            "Description": "Amazon Resource Name (ARN) of the specified bucket",
+            "Value": {
+                "Fn::GetAtt": [
+                    "AthenaBucketResource",
+                    "Outputs.Arn"
+                ]
+            }
+        },
+        "AthenaBucketResourceBucket": {
+            "Condition": "AthenaBucketExistingCondition",
+            "Description": "Bucket name",
+            "Value": {
+                "Fn::GetAtt": [
+                    "AthenaBucketResource",
+                    "Outputs.Bucket"
+                ]
+            }
+        },
+        "AthenaBucketResourceDomainName": {
+            "Condition": "AthenaBucketExistingCondition",
+            "Description": "IPv4 DNS name of the specified bucket",
+            "Value": {
+                "Fn::GetAtt": [
+                    "AthenaBucketResource",
+                    "Outputs.DomainName"
+                ]
+            }
+        },
+        "AthenaDatabase": {
+            "Condition": "AthenaCreateCondition",
+            "Description": "Sample Athena Database",
+            "Value": {
+                "Fn::GetAtt": [
+                    "CreateAthena",
+                    "Outputs.AthenaDatabase"
+                ]
+            }
+        },
+        "AthenaTable": {
+            "Condition": "AthenaCreateCondition",
+            "Description": "Sample table for demo Taxi data",
+            "Value": {
+                "Fn::GetAtt": [
+                    "CreateAthena",
+                    "Outputs.AthenaTable"
+                ]
+            }
+        },
+        "S3BucketResourceArn": {
+            "Condition": "S3BucketExistingCondition",
+            "Description": "Amazon Resource Name (ARN) of the specified bucket",
+            "Value": {
+                "Fn::GetAtt": [
+                    "S3BucketResource",
+                    "Outputs.Arn"
+                ]
+            }
+        },
+        "S3BucketResourceBucket": {
+            "Condition": "S3BucketExistingCondition",
+            "Description": "Bucket name",
+            "Value": {
+                "Fn::GetAtt": [
+                    "S3BucketResource",
+                    "Outputs.Bucket"
+                ]
+            }
+        },
+        "S3BucketResourceDomainName": {
+            "Condition": "S3BucketExistingCondition",
+            "Description": "IPv4 DNS name of the specified bucket",
+            "Value": {
+                "Fn::GetAtt": [
+                    "S3BucketResource",
+                    "Outputs.DomainName"
+                ]
+            }
+        },
+        "SecurityGroupID": {
+            "Description": "SecurityGroup ID used on WANdisco Fusion instance",
+            "Value": {
+                "Ref": "FusionSecurityGroup"
+            }
+        }
+    },
+    "Parameters": {
+        "AdminFusionAccess": {
+            "AllowedPattern": "^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\\/([0-9]|[1-2][0-9]|3[0-2]))$",
+            "ConstraintDescription": "CIDR block parameter must be in the form x.x.x.x/x",
+            "Description": "CIDR block for administration access",
+            "Type": "String"
+        },
+        "AthenaBucket": {
+            "Description": "Athena Output Bucket",
+            "Type": "String"
+        },
+        "AthenaBucketExisting": {
+            "AllowedValues": [
+                "true",
+                "false"
+            ],
+            "Default": "false",
+            "Description": "Specify if athena output bucket is an existing S3 bucket. If set to false, the template will create a new bucket (with the name specified below). Othewrise, expects an existing bucket with the name specified below.",
+            "Type": "String"
+        },
+        "AthenaCreateTable": {
+            "AllowedValues": [
+                "true",
+                "false"
+            ],
+            "Default": "true",
+            "Description": "Specify to create athena table",
+            "Type": "String"
+        },
+        "ClusterInstanceCount": {
+            "Default": "1",
+            "Description": "Size of Fusion Server cluster",
+            "MinValue": "1",
+            "Type": "Number"
+        },
+        "ClusterName": {
+            "AllowedPattern": "[0-9A-z]+",
+            "ConstraintDescription": "The Cluster Name must be alphanumeric",
+            "Default": "awsfs",
+            "Description": "Fusion Cluster ID",
+            "Type": "String"
+        },
+        "ClusterNodeType": {
+            "AllowedValues": [
+                "m4.xlarge",
+                "m4.2xlarge",
+                "m4.4xlarge",
+                "m4.10xlarge",
+                "m4.16xlarge",
+                "c4.2xlarge",
+                "c4.4xlarge",
+                "c4.8xlarge",
+                "r4.large",
+                "r4.2xlarge",
+                "r4.4xlarge",
+                "r4.8xlarge",
+                "r4.16xlarge",
+                "i3.large",
+                "i3.xlarge",
+                "i3.2xlarge",
+                "i3.4xlarge",
+                "i3.8xlarge",
+                "i3.16xlarge"
+            ],
+            "Default": "m4.2xlarge",
+            "Description": "Instance Type for Fusion nodes",
+            "Type": "String"
+        },
+        "EMRVersion": {
+            "AllowedValues": [
+                "5.3.0",
+                "5.4.0"
+            ],
+            "Default": "5.4.0",
+            "Description": "The version of Amazon EMR, if you decide to attach an Amazon EMR cluster to replicate data back to your on-premises server after deployment. The two options are 5.3.0 and 5.4.0.",
+            "Type": "String"
+        },
+        "FusionLicense": {
+            "Description": "S3 Path (format: s3://bucket-name/path) or URL of Fusion License (leave blank for a trial license)",
+            "Type": "String"
+        },
+        "KMSKey": {
+            "AllowedPattern": ".*",
+            "ConstraintDescription": "Must be a valid ARN",
+            "Default": "",
+            "Description": "ARN for KMS Encryption Key ID (leave blank to disable KMS encryption)",
+            "Type": "String"
+        },
+        "KeyName": {
+            "ConstraintDescription": "Must be the name of an existing EC2 KeyPair.",
+            "Description": "Name of an existing EC2 KeyPair within the AWS account; all instances will launch with this KeyPair",
+            "Type": "AWS::EC2::KeyPair::KeyName"
+        },
+        "LocalFusionAccess": {
+            "AllowedPattern": "^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\\/([0-9]|[1-2][0-9]|3[0-2]))$",
+            "ConstraintDescription": "CIDR block parameter must be in the form x.x.x.x/x",
+            "Description": "CIDR block for local fusion access",
+            "Type": "String"
+        },
+        "Password": {
+            "AllowedPattern": "[!@#$&*0-9A-z]+",
+            "ConstraintDescription": "The password value must be alphanumeric or special character (!@#$&*)",
+            "Description": "The password for the WD Fusion admin. Password value must be alphanumeric and include one of these special characters (!@#$&*)",
+            "NoEcho": true,
+            "Type": "String"
+        },
+        "PersistentStorage": {
+            "ConstraintDescription": "No more than 1024 GB per device (4 TB per node).",
+            "Default": "0",
+            "Description": "Allocated EBS storage for each block device (in GB; 4 devices per node); 0 indicates ephemeral storage only. No more than 1024 GB per device (4 TB per node)",
+            "MaxValue": "1024",
+            "MinValue": "0",
+            "Type": "Number"
+        },
+        "QSS3BucketName": {
+            "AllowedPattern": "^[0-9a-zA-Z-]+(/[0-9a-zA-Z-]+)*$",
+            "ConstraintDescription": "must be a valid s3 bucket name",
+            "Default": "aws-quickstart",
+            "Description": "Quick Start S3 bucket name",
+            "Type": "String"
+        },
+        "QSS3KeyPrefix": {
+            "AllowedPattern": "^[0-9a-zA-Z-/]*$",
+            "ConstraintDescription": "Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).",
+            "Default": "quickstart-datalake-wandisco/",
+            "Description": "S3 key prefix for the Quick Start assets. Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).",
+            "Type": "String"
+        },
+        "S3Bucket": {
+            "AllowedPattern": "^[0-9a-zA-Z-]+(/[0-9a-zA-Z-]+)*$",
+            "ConstraintDescription": "Must provide valid S3 Bucket name",
+            "Description": "The name of S3 bucket to replicate local Hadoop HDFS drive data.",
+            "Type": "String"
+        },
+        "S3BucketExisting": {
+            "AllowedValues": [
+                "true",
+                "false"
+            ],
+            "Default": "false",
+            "Description": "Specify if destination bucket is an existing S3 bucket. If set to false, the template will create a new bucket (with the name specified below). Othewrise, expects an existing bucket with the name specified below.",
+            "Type": "String"
+        },
+        "S3ServerEncryption": {
+            "AllowedValues": [
+                "Yes",
+                "No"
+            ],
+            "ConstraintDescription": "Must respond \"Yes\" or \"No\"",
+            "Default": "Yes",
+            "Description": "Enable server-side encryption on S3",
+            "Type": "String"
+        },
+        "SubnetIdA": {
+            "Description": "The Id of the Subnet to use. Fusion will be launched in this subnet associated with your chosen VPC. You must ensure that the IP address range of this subnet is routable from your other Fusion servers so that they can communicate directly with an IP address in this subnet. You must also ensure that the subnet has a route table defined that allows hosts within it to communicate with all other Fusion servers. Please refer to the quickstart guide for details: http://docs.wandisco.com/bigdata/wdfusion/quickstart_alt.html#cf",
+            "Type": "AWS::EC2::Subnet::Id"
+        },
+        "SubnetIdB": {
+            "Description": "The Id of the Subnet to use. Fusion will be launched in this subnet associated with your chosen VPC. You must ensure that the IP address range of this subnet is routable from your other Fusion servers so that they can communicate directly with an IP address in this subnet. You must also ensure that the subnet has a route table defined that allows hosts within it to communicate with all other Fusion servers. Please refer to the quickstart guide for details: http://docs.wandisco.com/bigdata/wdfusion/quickstart_alt.html#cf",
+            "Type": "AWS::EC2::Subnet::Id"
+        },
+        "SubscribeARN": {
+            "Description": "ARN of topic to email.",
+            "Type": "String"
+        },
+        "Username": {
+            "AllowedPattern": "[0-9A-z]+",
+            "ConstraintDescription": "The username value must be alphanumeric",
+            "Default": "admin",
+            "Description": "The name of the default admin user for WD Fusion",
+            "Type": "String"
+        },
+        "VPCID": {
+            "Description": "The Id of the VPC to use. Your Fusion instance will be launched in this Virtual Private Cloud. You need to select an existing VPC, and you must ensure that you have configured that VPC previously in a way that allows bi-directional network connectivity with all your other Fusion servers. The VPC must have an appropriate IP address range, associated subnet, route table, network gateway, and security settings. Please refer to the quickstart guide for details: http://docs.wandisco.com/bigdata/wdfusion/quickstart_alt.html#cf",
+            "Type": "AWS::EC2::VPC::Id"
+        },
+        "ZoneName": {
+            "AllowedPattern": "^[^ ].+",
+            "ConstraintDescription": "ZoneName should not start with a space",
+            "Default": "AWSCloud",
+            "Description": "Name used to identify the zone in which the server operates",
+            "Type": "String"
+        }
+    },
+    "Resources": {
+        "AthenaBucketResource": {
+            "Condition": "AthenaBucketExistingCondition",
+            "Properties": {
+                "Parameters": {
+                    "S3Bucket": {
+                        "Ref": "AthenaBucket"
+                    }
+                },
+                "TemplateURL": {
+                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}templates/quickstart-data-lake-wandisco-s3.template"
+                }
+            },
+            "Type": "AWS::CloudFormation::Stack"
+        },
+        "CreateAthena": {
+            "Condition": "AthenaCreateCondition",
+            "Properties": {
+                "Parameters": {
+                    "AthenaBucket": {
+                        "Fn::If": [
+                            "AthenaBucketExistingCondition",
+                            {
+                                "Fn::GetAtt": [
+                                    "AthenaBucketResource",
+                                    "Outputs.Bucket"
+                                ]
+                            },
+                            {
+                                "Ref": "AthenaBucket"
+                            }
+                        ]
+                    },
+                    "S3Bucket": {
+                        "Fn::If": [
+                            "S3BucketExistingCondition",
+                            {
+                                "Fn::GetAtt": [
+                                    "S3BucketResource",
+                                    "Outputs.Bucket"
+                                ]
+                            },
+                            {
+                                "Ref": "S3Bucket"
+                            }
+                        ]
+                    }
+                },
+                "TemplateURL": {
+                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}templates/quickstart-data-lake-wandisco-athena.template"
+                }
+            },
+            "Type": "AWS::CloudFormation::Stack"
+        },
+        "FusionAdminSecurityGroup": {
+            "Properties": {
+                "GroupDescription": "Add administrator access to WANdisco server",
+                "SecurityGroupIngress": [
+                    {
+                        "CidrIp": {
+                            "Ref": "AdminFusionAccess"
+                        },
+                        "FromPort": "22",
+                        "IpProtocol": "tcp",
+                        "ToPort": "22"
+                    }
+                ],
+                "VpcId": {
+                    "Ref": "VPCID"
+                }
+            },
+            "Type": "AWS::EC2::SecurityGroup"
+        },
+        "FusionSecurityGroup": {
+            "Properties": {
+                "GroupDescription": "Enable WD Fusion remote access",
+                "SecurityGroupIngress": [
+                    {
+                        "CidrIp": {
+                            "Ref": "LocalFusionAccess"
+                        },
+                        "FromPort": "8023",
+                        "IpProtocol": "tcp",
+                        "ToPort": "8023"
+                    },
+                    {
+                        "CidrIp": {
+                            "Ref": "LocalFusionAccess"
+                        },
+                        "FromPort": "8023",
+                        "IpProtocol": "tcp",
+                        "ToPort": "8024"
+                    },
+                    {
+                        "CidrIp": {
+                            "Ref": "LocalFusionAccess"
+                        },
+                        "FromPort": "8082",
+                        "IpProtocol": "tcp",
+                        "ToPort": "8082"
+                    },
+                    {
+                        "CidrIp": {
+                            "Ref": "LocalFusionAccess"
+                        },
+                        "FromPort": "8083",
+                        "IpProtocol": "tcp",
+                        "ToPort": "8083"
+                    },
+                    {
+                        "CidrIp": {
+                            "Ref": "LocalFusionAccess"
+                        },
+                        "FromPort": "6444",
+                        "IpProtocol": "tcp",
+                        "ToPort": "6444"
+                    },
+                    {
+                        "CidrIp": {
+                            "Ref": "LocalFusionAccess"
+                        },
+                        "FromPort": "7000",
+                        "IpProtocol": "tcp",
+                        "ToPort": "7555"
+                    },
+                    {
+                        "CidrIp": {
+                            "Ref": "LocalFusionAccess"
+                        },
+                        "FromPort": "9000",
+                        "IpProtocol": "tcp",
+                        "ToPort": "9500"
+                    }
+                ],
+                "VpcId": {
+                    "Ref": "VPCID"
+                }
+            },
+            "Type": "AWS::EC2::SecurityGroup"
+        },
+        "FusionStack": {
+            "DependsOn": [
+                "FusionSecurityGroup"
+            ],
+            "Properties": {
+                "Parameters": {
+                    "AdminSecurityGroupId": {
+                        "Ref": "FusionAdminSecurityGroup"
+                    },
+                    "ClusterInstanceCount": {
+                        "Ref": "ClusterInstanceCount"
+                    },
+                    "ClusterName": {
+                        "Ref": "ClusterName"
+                    },
+                    "ClusterNodeType": {
+                        "Ref": "ClusterNodeType"
+                    },
+                    "EMRVersion": {
+                        "Ref": "EMRVersion"
+                    },
+                    "FusionLicense": {
+                        "Ref": "FusionLicense"
+                    },
+                    "FusionVersion": "2.10.3.1",
+                    "KMSKey": {
+                        "Ref": "KMSKey"
+                    },
+                    "KeyName": {
+                        "Ref": "KeyName"
+                    },
+                    "Password": {
+                        "Ref": "Password"
+                    },
+                    "PersistentStorage": {
+                        "Ref": "PersistentStorage"
+                    },
+                    "QSS3BucketName": {
+                        "Ref": "QSS3BucketName"
+                    },
+                    "QSS3KeyPrefix": {
+                        "Ref": "QSS3KeyPrefix"
+                    },
+                    "S3Bucket": {
+                        "Fn::If": [
+                            "S3BucketExistingCondition",
+                            {
+                                "Fn::GetAtt": [
+                                    "S3BucketResource",
+                                    "Outputs.Bucket"
+                                ]
+                            },
+                            {
+                                "Ref": "S3Bucket"
+                            }
+                        ]
+                    },
+                    "S3ServerEncryption": {
+                        "Ref": "S3ServerEncryption"
+                    },
+                    "SecurityGroupId": {
+                        "Ref": "FusionSecurityGroup"
+                    },
+                    "SubnetIdA": {
+                        "Ref": "SubnetIdA"
+                    },
+                    "SubnetIdB": {
+                        "Ref": "SubnetIdB"
+                    },
+                    "SubscribeARN": {
+                        "Ref": "SubscribeARN"
+                    },
+                    "UserName": {
+                        "Ref": "Username"
+                    },
+                    "VpcId": {
+                        "Ref": "VPCID"
+                    },
+                    "ZoneName": {
+                        "Ref": "ZoneName"
+                    }
+                },
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackName"
+                        }
+                    }
+                ],
+                "TemplateURL": {
+                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}templates/quickstart-data-lake-wandisco-fusion.template"
+                }
+            },
+            "Type": "AWS::CloudFormation::Stack"
+        },
+        "S3BucketResource": {
+            "Condition": "S3BucketExistingCondition",
+            "Properties": {
+                "Parameters": {
+                    "S3Bucket": {
+                        "Ref": "S3Bucket"
+                    }
+                },
+                "TemplateURL": {
+                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}templates/quickstart-data-lake-wandisco-s3.template"
+                }
+            },
+            "Type": "AWS::CloudFormation::Stack"
+        }
+    }
+}

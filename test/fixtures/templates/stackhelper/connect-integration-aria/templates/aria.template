@@ -1,0 +1,483 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Aria Solutions Salesforce Toolkit Integration for Amazon Connect Quick
+  Start (qs-1nr3h253u)
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+    - Label:
+        default: Amazon Connect Configuration
+      Parameters:
+      - ConnectS3BucketName
+      - TranscriptionAPIKey
+    - Label:
+        default: Salesforce API Configuration
+      Parameters:
+      - SalesforceProduction
+      - SalesforceVersion
+      - SalesforceConsumerKey
+      - SalesforceConsumerSecret
+      - SalesforceAccessToken
+      - SalesforceUsername
+      - SalesforcePassword
+    ParameterLabels:
+      ConnectS3BucketName:
+        default: S3 Bucket Name
+      TranscriptionAPIKey:
+        default: Transcription API Key
+      SalesforceAccessToken:
+        default: Access Token
+      SalesforceConsumerKey:
+        default: Consumer key
+      SalesforceConsumerSecret:
+        default: Consumer secret
+      SalesforcePassword:
+        default: Password
+      SalesforceProduction:
+        default: Production Environment
+      SalesforceUsername:
+        default: Username
+      SalesforceVersion:
+        default: API Version
+Parameters:
+  SalesforceProduction:
+    Default: true
+    Description: True for Production Environment, False for Sandbox
+    Type: String
+    AllowedPattern: ^([Tt]rue|[Ff]alse)$
+    AllowedValues:
+    - true
+    - true
+    - false
+    - false
+    ConstraintDescription: True or False
+  SalesforceConsumerKey:
+    Default: ''
+    Description: Your Salesforce consumer key will be available after you have completed
+      installation of the Salesforce portion of this Toolkit. See section 4.1 on "Toolkit
+      for Amazon Connect Setup and User Guide" for instructions on configuring your
+      Salesforce environment.
+    Type: String
+  SalesforceConsumerSecret:
+    Default: ''
+    Description: Your Salesforce consumer secret is available in Salesforce immediately
+      to the right of your Salesforce Consumer Key. See section 4.1 on "Toolkit for
+      Amazon Connect Setup and User Guide" for instructions on retrieving this secret.
+    Type: String
+  SalesforceUsername:
+    Default: Salesforce API Username
+    Description: The username of a valid Salesforce API account for your environment.
+      For example, user@domain.com
+    Type: String
+  SalesforcePassword:
+    Default: ''
+    Description: The password of a valid Salesforce API account for your environment.
+      This account must be the same one as entered in the “Salesforce API Configuration
+      Username” parameter above.
+    Type: String
+    NoEcho: true
+  SalesforceAccessToken:
+    Default: ''
+    Description: The security token of the Salesforce API user account used above.
+      See section 4.1 on "Toolkit for Amazon Connect Setup and User Guide" for instructions
+      on generating the token for this account.
+    Type: String
+  SalesforceVersion:
+    Default: v40.0
+    Description: To find the Salesforce Edition and API Version please visit https://help.salesforce.com/articleView?id=000199268&type=1
+    Type: String
+  TranscriptionAPIKey:
+    Default: ''
+    Description: OPTIONAL. API keys for transcription service. For example, Cloud
+      Speech API
+    Type: String
+  ConnectS3BucketName:
+    Description: This is the S3 bucket where Amazon Connect stores call recordings
+      and scheduled reports. Please refer to http://docs.aws.amazon.com/connect/latest/adminguide/amazon-connect-instance.html#datastorage
+      for details on how retrieve the S3 bucket associated with your Amazon Connect
+      instance.
+    Type: String
+Rules:
+  RegionSupport:
+    Assertions:
+    - Assert:
+        Fn::Equals:
+        - Ref: AWS::Region
+        - us-east-1
+      AssertDescription: Region must be US East (N. Virginia) - us-east-1
+  ParameterDefaults:
+    Assertions:
+    - Assert:
+        Fn::Not:
+        - Fn::Equals:
+          - Ref: SalesforceConsumerKey
+          - ''
+      AssertDescription: SalesforceConsumerKey is required
+    - Assert:
+        Fn::Not:
+        - Fn::Equals:
+          - Ref: SalesforceConsumerSecret
+          - ''
+      AssertDescription: SalesforceConsumerSecret is required
+    - Assert:
+        Fn::Not:
+        - Fn::Equals:
+          - Ref: SalesforceUsername
+          - ''
+      AssertDescription: SalesforceUsername is required
+    - Assert:
+        Fn::Not:
+        - Fn::Equals:
+          - Ref: SalesforcePassword
+          - ''
+      AssertDescription: SalesforcePassword is required
+    - Assert:
+        Fn::Not:
+        - Fn::Equals:
+          - Ref: SalesforceAccessToken
+          - ''
+      AssertDescription: SalesforceAccessToken is required
+    - Assert:
+        Fn::Not:
+        - Fn::Equals:
+          - Ref: SalesforceVersion
+          - ''
+      AssertDescription: SalesforceVersion is required
+    - Assert:
+        Fn::Not:
+        - Fn::Equals:
+          - Ref: ConnectS3BucketName
+          - ''
+      AssertDescription: ConnectS3BucketName is required
+Resources:
+  IntegrationTestFunctionExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Path: /
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+  IntegrationTestFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: main.handler
+      MemorySize: 128
+      Role:
+        Fn::GetAtt: IntegrationTestFunctionExecutionRole.Arn
+      Runtime: python3.6
+      Timeout: 30
+      Code:
+        S3Bucket: aws-quickstart
+        S3Key: connect-integration-aria/functions/packages/integration-test/integration-test.zip
+  IntegrationTest:
+    Type: Custom::IntegrationTest
+    Version: '1.0'
+    Properties:
+      ServiceToken:
+        Fn::GetAtt: IntegrationTestFunction.Arn
+      SF_PRODUCTION:
+        Ref: SalesforceProduction
+      SF_CONSUMER_KEY:
+        Ref: SalesforceConsumerKey
+      SF_CONSUMER_SECRET:
+        Ref: SalesforceConsumerSecret
+      SF_USERNAME:
+        Ref: SalesforceUsername
+      SF_PASSWORD:
+        Ref: SalesforcePassword
+      SF_ACCESS_TOKEN:
+        Ref: SalesforceAccessToken
+      SF_VERSION:
+        Ref: SalesforceVersion
+      GOOGLE_KEY:
+        Ref: TranscriptionAPIKey
+  LambdaBasicExecWithS3Read:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Policies:
+      - PolicyName: connect-bucket-read
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+            Effect: Allow
+            Action:
+            - s3:GetObject
+            Resource:
+              Fn::Sub: arn:aws:s3:::${ConnectS3BucketName}
+      Path: /
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+  LambdaBasicExec:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Path: /
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+  SalesforceCreateFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: act_sf_create.lambda_handler
+      Runtime: python3.6
+      Description: Toolkit for Amazon Connect by Aria Solutions - Create
+      MemorySize: 128
+      Timeout: 7
+      Role:
+        Fn::GetAtt: LambdaBasicExec.Arn
+      Environment:
+        Variables:
+          SF_PRODUCTION:
+            Ref: SalesforceProduction
+          SF_CONSUMER_KEY:
+            Ref: SalesforceConsumerKey
+          SF_CONSUMER_SECRET:
+            Ref: SalesforceConsumerSecret
+          SF_USERNAME:
+            Ref: SalesforceUsername
+          SF_PASSWORD:
+            Ref: SalesforcePassword
+          SF_ACCESS_TOKEN:
+            Ref: SalesforceAccessToken
+          SF_VERSION:
+            Ref: SalesforceVersion
+      Code:
+        S3Bucket: aws-quickstart
+        S3Key: connect-integration-aria/functions/packages/integration/integration.zip
+  SalesforceCreateFunctionPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName:
+        Ref: SalesforceCreateFunction
+      Action: lambda:InvokeFunction
+      Principal: connect.amazonaws.com
+      SourceAccount:
+        Ref: AWS::AccountId
+  SalesforceUpdateFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: act_sf_update.lambda_handler
+      Runtime: python3.6
+      Description: Toolkit for Amazon Connect by Aria Solutions - Salesforce - Update
+      MemorySize: 128
+      Timeout: 7
+      Role:
+        Fn::GetAtt: LambdaBasicExec.Arn
+      Environment:
+        Variables:
+          SF_PRODUCTION:
+            Ref: SalesforceProduction
+          SF_CONSUMER_KEY:
+            Ref: SalesforceConsumerKey
+          SF_CONSUMER_SECRET:
+            Ref: SalesforceConsumerSecret
+          SF_USERNAME:
+            Ref: SalesforceUsername
+          SF_PASSWORD:
+            Ref: SalesforcePassword
+          SF_ACCESS_TOKEN:
+            Ref: SalesforceAccessToken
+          SF_VERSION:
+            Ref: SalesforceVersion
+      Code:
+        S3Bucket: aws-quickstart
+        S3Key: connect-integration-aria/functions/packages/integration/integration.zip
+  SalesforceUpdateFunctionPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName:
+        Ref: SalesforceUpdateFunction
+      Action: lambda:InvokeFunction
+      Principal: connect.amazonaws.com
+      SourceAccount:
+        Ref: AWS::AccountId
+  SalesforceLookupFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: act_sf_lookup.lambda_handler
+      Runtime: python3.6
+      Description: Toolkit for Amazon Connect by Aria Solutions - Salesforce - Lookup
+      MemorySize: 128
+      Timeout: 7
+      Role:
+        Fn::GetAtt: LambdaBasicExec.Arn
+      Environment:
+        Variables:
+          SF_PRODUCTION:
+            Ref: SalesforceProduction
+          SF_CONSUMER_KEY:
+            Ref: SalesforceConsumerKey
+          SF_CONSUMER_SECRET:
+            Ref: SalesforceConsumerSecret
+          SF_USERNAME:
+            Ref: SalesforceUsername
+          SF_PASSWORD:
+            Ref: SalesforcePassword
+          SF_ACCESS_TOKEN:
+            Ref: SalesforceAccessToken
+          SF_VERSION:
+            Ref: SalesforceVersion
+      Code:
+        S3Bucket: aws-quickstart
+        S3Key: connect-integration-aria/functions/packages/integration/integration.zip
+  SalesforceLookupFunctionPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName:
+        Ref: SalesforceLookupFunction
+      Action: lambda:InvokeFunction
+      Principal: connect.amazonaws.com
+      SourceAccount:
+        Ref: AWS::AccountId
+  SalesforceIntervalAgentFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: act_sf_interval_agent.lambda_handler
+      Runtime: python3.6
+      Description: Toolkit for Amazon Connect by Aria Solutions - Salesforce - Interval
+        Agent
+      MemorySize: 128
+      Timeout: 60
+      Role:
+        Fn::GetAtt: LambdaBasicExecWithS3Read.Arn
+      Environment:
+        Variables:
+          SF_PRODUCTION:
+            Ref: SalesforceProduction
+          SF_CONSUMER_KEY:
+            Ref: SalesforceConsumerKey
+          SF_CONSUMER_SECRET:
+            Ref: SalesforceConsumerSecret
+          SF_USERNAME:
+            Ref: SalesforceUsername
+          SF_PASSWORD:
+            Ref: SalesforcePassword
+          SF_ACCESS_TOKEN:
+            Ref: SalesforceAccessToken
+          SF_VERSION:
+            Ref: SalesforceVersion
+      Code:
+        S3Bucket: aws-quickstart
+        S3Key: connect-integration-aria/functions/packages/integration/integration.zip
+  SalesforceIntervalQueueFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: act_sf_interval_queue.lambda_handler
+      Runtime: python3.6
+      Description: Toolkit for Amazon Connect by Aria Solutions - Salesforce - Interval
+        Queue
+      MemorySize: 128
+      Timeout: 60
+      Role:
+        Fn::GetAtt: LambdaBasicExecWithS3Read.Arn
+      Environment:
+        Variables:
+          SF_PRODUCTION:
+            Ref: SalesforceProduction
+          SF_VERSION:
+            Ref: SalesforceVersion
+          SF_CONSUMER_KEY:
+            Ref: SalesforceConsumerKey
+          SF_CONSUMER_SECRET:
+            Ref: SalesforceConsumerSecret
+          SF_USERNAME:
+            Ref: SalesforceUsername
+          SF_PASSWORD:
+            Ref: SalesforcePassword
+          SF_ACCESS_TOKEN:
+            Ref: SalesforceAccessToken
+      Code:
+        S3Bucket: aws-quickstart
+        S3Key: connect-integration-aria/functions/packages/integration/integration.zip
+  TranscribeRecordingFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: act_sf_transcribe.lambda_handler
+      Runtime: python3.6
+      Description: Toolkit for Amazon Connect by Aria Solutions - Transcribe Recording
+      MemorySize: 128
+      Timeout: 60
+      Role:
+        Fn::GetAtt: LambdaBasicExecWithS3Read.Arn
+      Environment:
+        Variables:
+          SF_PRODUCTION:
+            Ref: SalesforceProduction
+          SF_CONSUMER_KEY:
+            Ref: SalesforceConsumerKey
+          SF_CONSUMER_SECRET:
+            Ref: SalesforceConsumerSecret
+          SF_USERNAME:
+            Ref: SalesforceUsername
+          SF_PASSWORD:
+            Ref: SalesforcePassword
+          SF_ACCESS_TOKEN:
+            Ref: SalesforceAccessToken
+          SF_VERSION:
+            Ref: SalesforceVersion
+          GOOGLE_KEY:
+            Ref: TranscriptionAPIKey
+      Code:
+        S3Bucket: aws-quickstart
+        S3Key: connect-integration-aria/functions/packages/integration/integration.zip
+Outputs:
+  LambdaBasicExec:
+    Description: Lambda Function Execution Role ARN
+    Value:
+      Fn::GetAtt: LambdaBasicExec.Arn
+  LambdaBasicExecWithS3Read:
+    Description: Lambda Function Execution and S3 Read Role ARN
+    Value:
+      Fn::GetAtt: LambdaBasicExecWithS3Read.Arn
+  SalesforceCreateFunction:
+    Description: Lambda Function for Amazon Connect Call Flows for Salesforce Object
+      creation
+    Value:
+      Fn::GetAtt: SalesforceCreateFunction.Arn
+  SalesforceUpdateFunction:
+    Description: Lambda Function for Amazon Connect Call Flows for Salesforce Object
+      update
+    Value:
+      Fn::GetAtt: SalesforceUpdateFunction.Arn
+  SalesforceLookupFunction:
+    Description: Lambda Function for Amazon Connect Call Flows for Salesforce Object
+      loopup
+    Value:
+      Fn::GetAtt: SalesforceLookupFunction.Arn
+  SalesforceIntervalAgentFunction:
+    Description: Lambda Function for Amazon Connect Example Integration
+    Value:
+      Fn::GetAtt: SalesforceIntervalAgentFunction.Arn
+  SalesforceIntervalQueueFunction:
+    Description: Lambda Function for Amazon Connect Example Integration
+    Value:
+      Fn::GetAtt: SalesforceIntervalQueueFunction.Arn
+  TranscribeRecordingFunction:
+    Description: Lambda Function for Amazon Connect Example Integration
+    Value:
+      Fn::GetAtt: TranscribeRecordingFunction.Arn
+...

@@ -1,0 +1,187 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "TeleOpti WFM integration for Amazon Connect (qs-1ofbedn5h)",
+    "Metadata": {
+        "AWS::CloudFormation::Interface": {
+            "ParameterGroups": [
+                {
+                    "Label": {
+                        "default": "Teleopti SFTP Credentials"
+                    },
+                    "Parameters": [
+                        "SFTPHostname",
+                        "SFTPUserName",
+                        "SFTPPassword"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "AWS Quick Start Configuration"
+                    },
+                    "Parameters": [
+                        "QSS3BucketName",
+                        "QSS3KeyPrefix"
+                    ]
+                }
+            ],
+            "ParameterLabels": {
+                "SFTPUserName": {
+                    "default": "Teleopti SFTP User ID:"
+                },
+                "SFTPPassword": {
+                    "default": "Teleopti SFTP User Password:"
+                },
+                "SFTPHostname": {
+                    "default": "Teleopti SFTP Hostname:"
+                },
+                "QSS3BucketName": {
+                    "default": "Quick Start S3 Bucket Name:"
+                },
+                "QSS3KeyPrefix": {
+                    "default": "Quick Start lamdba S3 Prefix:"
+                }
+            }
+        }
+    },
+    "Parameters": {
+        "SFTPUserName": {
+            "AllowedPattern": "^[a-zA-Z0-9_]+$",
+            "ConstraintDescription": " Password must contain only alphanumeric and underscore characters.",
+            "Type": "String",
+            "Description": "The Teleopti provided username for your SFTP account."
+        },
+        "SFTPPassword": {
+            "AllowedPattern": "^(?=.*[0-9])(?=.*[a-z])(?=.*[A-Z]).{8,}$",
+            "ConstraintDescription": " Password must be at least 8 characters, and contain uppercase and lowercase letters, and at least one numeric.",
+            "Type": "String",
+            "Description": "The Teleopti provided password for your SFTP account.",
+            "NoEcho": true
+        },
+        "SFTPHostname": {
+            "Type": "String",
+            "Description": "The Teleopti provided hostname of your SFTP server."
+        },
+		"QSS3BucketName": {
+            "AllowedPattern": "^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$",
+            "ConstraintDescription": "Quick Start bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-).",
+            "Default": "aws-quickstart",
+            "Description": "S3 bucket name for the Quick Start assets. Quick Start bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-).",
+            "Type": "String"
+        },
+        "QSS3KeyPrefix": {
+            "AllowedPattern": "^[0-9a-zA-Z-/]*$",
+            "ConstraintDescription": "Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).",
+            "Default": "connect-integration-teleopti-wfm/",
+            "Description": "S3 key prefix for the Quick Start assets. Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).",
+            "Type": "String"
+        }
+    },
+	"Rules": {
+        "RegionSupport": {
+            "Assertions": [
+                {
+                    "Assert": {
+                        "Fn::Contains": [
+                            [
+                                "us-east-1",
+                                "us-west-2",
+                                "eu-central-1",
+                                "ap-southeast-2"
+                            ],
+                            {
+                                "Ref": "AWS::Region"
+                            }
+                        ]
+                    },
+                    "AssertDescription": "Region must be either US East (N. Virginia) - us-east-1, US West (Oregon) - us-west-2, EU (Frankfurt) - eu-central-1, Asia Pacific (Sydney) - ap-southeast-2"
+                }
+            ]
+        }
+    },
+	"Resources": {
+		"TeleoptiCopyLambdaStack": {
+			"Type": "AWS::CloudFormation::Stack",
+			"Properties": {
+				"TemplateURL": {
+					"Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}templates/teleopti_copy_lambda.json"
+				},
+				"Parameters": {
+					"QSS3BucketName": {
+						"Ref": "QSS3BucketName"
+					},
+					"QSS3KeyPrefix": {
+						"Ref": "QSS3KeyPrefix"
+					}
+				}
+			}
+		},
+		"TeleoptiIntegrationStack": {
+			"Type": "AWS::CloudFormation::Stack",
+			"Properties": {
+				"TemplateURL": {
+					"Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}templates/connect-integration-teleopti-wfm-workload.json"
+				},
+				"Parameters": {
+					"QSS3BucketName": {
+						"Fn::GetAtt": "TeleoptiCopyLambdaStack.Outputs.TeleoptiLambdasBucket"
+					},
+					"QSS3KeyPrefix": {
+						"Ref": "QSS3KeyPrefix"
+					},
+					"SFTPHostname": {
+						"Ref": "SFTPHostname"
+					},
+					"SFTPUserName": {
+						"Ref": "SFTPUserName"
+					},
+					"SFTPPassword": {
+						"Ref": "SFTPPassword"
+					}
+				}
+			}
+		}
+	},
+	"Outputs": {
+		"TeleoptiIntegrationFunctionArn": {
+			"Description": "The ARN of the function that moves files between S3 and SFTP.",
+			"Value": {
+				"Fn::GetAtt": "TeleoptiIntegrationStack.Outputs.TeleoptiIntegrationFunctionArn"
+			}
+		},
+		"TeleoptiIntegrationFunctionName": {
+			"Description": "The Name of the function that moves files between S3 and SFTP.",
+			"Value": {
+				"Fn::GetAtt": "TeleoptiIntegrationStack.Outputs.TeleoptiIntegrationFunctionName"
+			}
+		},
+		"TeleoptiIntegrationFunctionRole": {
+			"Description": "The role used by the generated Lambda function, to be added to any KMS keys.",
+			"Value": {
+				"Fn::GetAtt": "TeleoptiIntegrationStack.Outputs.TeleoptiIntegrationFunctionRole"
+			}
+		},
+		"FirehoseDeliveryStreamName": {
+			"Description": "The Firehose Delivery Stream to assign for CTR and Report Delivery.",
+			"Value": {
+				"Fn::GetAtt": "TeleoptiIntegrationStack.Outputs.FirehoseDeliveryStreamName"
+			}
+		},
+		"RTAIAMUserName": {
+			"Description": "The UserName of the RTA IAM User.",
+			"Value": {
+				"Fn::GetAtt": "TeleoptiIntegrationStack.Outputs.RTAIAMUserName"
+			}
+		},
+		"AccessKeyforTeleoptiRTA": {
+			"Value": {
+				"Fn::GetAtt": "TeleoptiIntegrationStack.Outputs.AccessKeyforTeleoptiRTA"
+			}
+		},
+		"SecretKeyforTeleoptiRTA": {
+			"Value": {
+				"Fn::GetAtt": "TeleoptiIntegrationStack.Outputs.SecretKeyforTeleoptiRTA"
+			}
+		}
+	}
+}
+

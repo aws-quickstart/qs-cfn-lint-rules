@@ -1,0 +1,301 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "AWS CloudFormation Template: Creates a Sample Service Catalog to demonstrate the kind of resources that can be provisioned by the Cherwell connector. **WARNING** This template creates an Amazon You will be billed for the AWS resources used if you create a stack from this catalog.",
+    "Metadata": {
+        "AWS::CloudFormation::Interface": {
+            "ParameterGroups": [
+                {
+                    "Label": {
+                        "default": "Catalog Configuration"
+                    },
+                    "Parameters": [
+                        "GatewayRole"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "AWS Quick Start Configuration"
+                    },
+                    "Parameters": [
+                        "QSS3BucketName",
+                        "QSS3KeyPrefix"
+                    ]
+                }
+            ]
+        },
+        "ParameterLabels": {
+            "QSS3BucketName": {
+                "default": "Quick Start S3 Bucket Name"
+            },
+            "QSS3KeyPrefix": {
+                "default": "Quick Start S3 Key Prefix"
+            },
+            "GatewayRole": {
+                "default": "API Gateway acccess role"
+            }
+        }
+    },
+    "Parameters": {
+        "QSS3BucketName": {
+            "AllowedPattern": "^[0-9a-zA-Z]+([0-9a-zA-Z\\-]*[0-9a-zA-Z])*$",
+            "ConstraintDescription": "Quick Start bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-).",
+            "Description": "S3 bucket name for the Quick Start assets. Quick Start bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-)",
+            "Type": "String"
+        },
+        "QSS3KeyPrefix": {
+            "AllowedPattern": "^[0-9a-zA-Z-/]*$",
+            "ConstraintDescription": "Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).",
+            "Default": "quickstart-cherwell-intergration/",
+            "Description": "S3 key prefix for the Quick Start assets. Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).",
+            "Type": "String"
+        },
+        "GatewayRole": {
+            "Description": "Iam role to allow API gateway to launch Service Catalog products.",
+            "Type": "String"
+        }
+    },
+    "Resources": {
+        "IamRoleExecution": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "AssumeRolePolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Principal": {
+                                "Service": [
+                                    "servicecatalog.amazonaws.com"
+                                ]
+                            },
+                            "Action": [
+                                "sts:AssumeRole"
+                            ]
+                        }
+                    ]
+                },
+                "Policies": [
+                    {
+                        "PolicyName": {
+                            "Fn::Join": [
+                                "-",
+                                [
+                                    "cherdwell-service",
+                                    "servicecatalog",
+                                    {
+                                        "Ref": "AWS::StackName"
+                                    }
+                                ]
+                            ]
+                        },
+                        "PolicyDocument": {
+                            "Version": "2012-10-17",
+                            "Statement": [
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "catalog-user:*",
+                                        "cloudformation:*",
+                                        "servicecatalog:*",
+                                        "ec2:*",
+                                        "s3:*",
+                                        "rds:*"
+                                    ],
+                                    "Resource": "*"
+                                }
+                            ]
+                        }
+                    }
+                ],
+                "Path": "/"
+            }
+        },
+        "ServiceCatalog": {
+            "Type": "AWS::ServiceCatalog::Portfolio",
+            "DependsOn": "IamRoleExecution",
+            "Properties": {
+                "ProviderName": "AWS",
+                "Description": "This Catalog is a demonstration of the resources that can be provisioned by the Cherwell connector. **WARNING** This template creates an Amazon You will be billed for the AWS resources used if you create a stack from this catalog.",
+                "DisplayName": "Cherwell"
+            }
+        },
+        "RoleAssociation": {
+            "DependsOn": "ServiceCatalog",
+            "Type": "AWS::ServiceCatalog::PortfolioPrincipalAssociation",
+            "Properties": {
+                "PrincipalARN": {
+                    "Ref": "GatewayRole"
+                },
+                "PortfolioId": {
+                    "Ref": "ServiceCatalog"
+                },
+                "PrincipalType": "IAM"
+            }
+        },
+        "RDSProduct": {
+            "DependsOn": "RoleAssociation",
+            "Type": "AWS::ServiceCatalog::CloudFormationProduct",
+            "Properties": {
+                "Owner": "AWS Customer",
+                "SupportDescription": "Add any support information about the product.",
+                "Description": "Creates a RDS database.",
+                "Distributor": "AWS",
+                "SupportEmail": "supportemail@yourdomain.com",
+                "SupportUrl": "http://yourdomain.com",
+                "Name": "RDS database",
+                "ProvisioningArtifactParameters": [
+                    {
+                        "Description": "Create an RDS database.  **WARNING** This template creates an Amazon S3 Bucket. You will be billed for the AWS resources used if you create a stack from this template.",
+                        "Info": {
+                            "LoadTemplateFromURL": {
+                                "Fn::Sub": "https://s3.amazonaws.com/${QSS3BucketName}/${QSS3KeyPrefix}serviceCatalogTemplates/rds.json"
+                            }
+                        },
+                        "Name": "v1.0"
+                    }
+                ]
+            }
+        },
+        "S3Product": {
+            "Type": "AWS::ServiceCatalog::CloudFormationProduct",
+            "DependsOn": "RDSProduct",
+            "Properties": {
+                "Owner": "AWS Customer",
+                "SupportDescription": "Add any support information about the product.",
+                "Description": "Creates a S3 Bucket.",
+                "Distributor": "AWS",
+                "SupportEmail": "supportemail@yourdomain.com",
+                "SupportUrl": "http://yourdomain.com",
+                "Name": "S3 Bucket",
+                "ProvisioningArtifactParameters": [
+                    {
+                        "Description": "AWS CloudFormation Sample Template S3 Bucket: Create an Amazon S3 Bucket.  **WARNING** This template creates an Amazon S3 Bucket. You will be billed for the AWS resources used if you create a stack from this template.",
+                        "Info": {
+                            "LoadTemplateFromURL": {
+                                "Fn::Sub": "https://s3.amazonaws.com/${QSS3BucketName}/${QSS3KeyPrefix}serviceCatalogTemplates/s3.yml"
+                            }
+                        },
+                        "Name": "v1.0"
+                    }
+                ]
+            }
+        },
+        "EC2Product": {
+            "Type": "AWS::ServiceCatalog::CloudFormationProduct",
+            "DependsOn": "S3Product",
+            "Properties": {
+                "Owner": "AWS Customer",
+                "SupportDescription": "Add any support information about the product.",
+                "Description": "Creates an EC2 instance",
+                "Distributor": "AWS",
+                "SupportEmail": "supportemail@yourdomain.com",
+                "SupportUrl": "http://yourdomain.com",
+                "Name": "Simple EC2",
+                "ProvisioningArtifactParameters": [
+                    {
+                        "Description": "AWS CloudFormation Sample Template EC2InstanceWithSecurityGroupSample:Creates an Amazon EC2 instance running the Amazon Linux AMI. The AMI is chosen based on the region in which the stack is run. This example creates an EC2 security group for the instance to give you SSH access. **WARNING** This template creates an Amazon EC2 instance. You will be billed for the AWS resources used if you create a stack from this template.",
+                        "Info": {
+                            "LoadTemplateFromURL": {
+                                "Fn::Sub": "https://s3.amazonaws.com/${QSS3BucketName}/${QSS3KeyPrefix}serviceCatalogTemplates/ec2.yml"
+                            }
+                        },
+                        "Name": "v1.0"
+                    }
+                ]
+            }
+        },
+        "AddRDSToCatalog": {
+            "Type": "AWS::ServiceCatalog::PortfolioProductAssociation",
+            "DependsOn": "EC2Product",
+            "Properties": {
+                "PortfolioId": {
+                    "Ref": "ServiceCatalog"
+                },
+                "ProductId": {
+                    "Ref": "RDSProduct"
+                }
+            }
+        },
+        "AddS3ToCatalog": {
+            "Type": "AWS::ServiceCatalog::PortfolioProductAssociation",
+            "DependsOn": "AddRDSToCatalog",
+            "Properties": {
+                "PortfolioId": {
+                    "Ref": "ServiceCatalog"
+                },
+                "ProductId": {
+                    "Ref": "S3Product"
+                }
+            }
+        },
+        "AddEC2ToCatalog": {
+            "Type": "AWS::ServiceCatalog::PortfolioProductAssociation",
+            "DependsOn": "AddS3ToCatalog",
+            "Properties": {
+                "PortfolioId": {
+                    "Ref": "ServiceCatalog"
+                },
+                "ProductId": {
+                    "Ref": "EC2Product"
+                }
+            }
+        },
+        "RDSLaunchRoleConstraint": {
+            "Type": "AWS::ServiceCatalog::LaunchRoleConstraint",
+            "DependsOn": "AddEC2ToCatalog",
+            "Properties": {
+                "Description": "Permisson to create a RDS database",
+                "PortfolioId": {
+                    "Ref": "ServiceCatalog"
+                },
+                "ProductId": {
+                    "Ref": "RDSProduct"
+                },
+                "RoleArn": {
+                    "Fn::GetAtt": [
+                        "IamRoleExecution",
+                        "Arn"
+                    ]
+                }
+            }
+        },
+        "S3LaunchRoleConstraint": {
+            "Type": "AWS::ServiceCatalog::LaunchRoleConstraint",
+            "DependsOn": "RDSLaunchRoleConstraint",
+            "Properties": {
+                "Description": "Permisson to create a S3 Bucket",
+                "PortfolioId": {
+                    "Ref": "ServiceCatalog"
+                },
+                "ProductId": {
+                    "Ref": "S3Product"
+                },
+                "RoleArn": {
+                    "Fn::GetAtt": [
+                        "IamRoleExecution",
+                        "Arn"
+                    ]
+                }
+            }
+        },
+        "EC2LaunchRoleConstraint": {
+            "Type": "AWS::ServiceCatalog::LaunchRoleConstraint",
+            "DependsOn": "S3LaunchRoleConstraint",
+            "Properties": {
+                "Description": "Permisson to create an EC2 Instance",
+                "PortfolioId": {
+                    "Ref": "ServiceCatalog"
+                },
+                "ProductId": {
+                    "Ref": "EC2Product"
+                },
+                "RoleArn": {
+                    "Fn::GetAtt": [
+                        "IamRoleExecution",
+                        "Arn"
+                    ]
+                }
+            }
+        }
+    }
+}

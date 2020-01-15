@@ -1,0 +1,124 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Amazon Connect Example Integration Quick Start
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+    - Label:
+        default: Amazon Connect Example Integration
+      Parameters:
+      - IntegrationEndpoint
+    ParameterLabels:
+      IntegrationEndpoint:
+        default: Integration Endpoint
+Parameters:
+  IntegrationEndpoint:
+    AllowedPattern: ^https:\/\/[a-zA-Z0-9-\/\.]+$
+    ConstraintDescription: Endpoint must be a valid https URL.
+    Default: https://example.com/path
+    Description: The endpoint of the integration. You may use https://demo-api.connect.awslabs.net/v1/pets
+      as an example.
+    Type: String
+Rules:
+  RegionSupport:
+    Assertions:
+    - Assert:
+        Fn::Equals:
+        - Ref: AWS::Region
+        - us-east-1
+      AssertDescription: Region must be US East (N. Virginia) - us-east-1
+  ParameterDefaults:
+    Assertions:
+    - Assert:
+        Fn::Not:
+        - Fn::Equals:
+          - Ref: IntegrationEndpoint
+          - https://example.com/path
+      AssertDescription: Amazon Connect Example Integration parameters cannot be defaults
+Resources:
+  IntegrationTestFunctionExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Path: /
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+  IntegrationTestFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: main.handler
+      MemorySize: 128
+      Role:
+        Fn::GetAtt: IntegrationTestFunctionExecutionRole.Arn
+      Runtime: python2.7
+      Timeout: 30
+      Code:
+        S3Bucket: aws-quickstart
+        S3Key: connect-integration-examples/functions/packages/integration-test/lambda.zip
+  IntegrationTest:
+    Type: Custom::IntegrationTest
+    Version: '1.0'
+    Properties:
+      ServiceToken:
+        Fn::GetAtt: IntegrationTestFunction.Arn
+      IntegrationEndpoint:
+        Ref: IntegrationEndpoint
+  IntegrationFunctionExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Path: /
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+  IntegrationFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: index.handler
+      Runtime: nodejs6.10
+      Description: Amazon Connect Example Integration Function
+      MemorySize: 128
+      Timeout: 30
+      Role:
+        Fn::GetAtt: IntegrationFunctionExecutionRole.Arn
+      Environment:
+        Variables:
+          IntegrationEndpoint:
+            Ref: IntegrationEndpoint
+      Code:
+        S3Bucket: aws-quickstart
+        S3Key: connect-integration-examples/functions/packages/integration/lambda.zip
+  IntegrationFunctionPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName:
+        Ref: IntegrationFunction
+      Action: lambda:InvokeFunction
+      Principal: connect.amazonaws.com
+      SourceAccount:
+        Ref: AWS::AccountId
+Outputs:
+  IntegrationFunctionExecutionRole:
+    Description: Lambda Function Execution Role ARN
+    Value:
+      Fn::GetAtt: IntegrationFunctionExecutionRole.Arn
+  IntegrationFunction:
+    Description: Lambda Function for Amazon Connect Example Integration
+    Value:
+      Fn::GetAtt: IntegrationFunction.Arn
+...

@@ -1,0 +1,1377 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "CloudFormation Template for TSM-based Tableau Server on Windows. (qs-1pkrl7c89)",
+    "Metadata": {
+        "AWS::CloudFormation::Interface": {
+            "ParameterGroups": [
+                {
+                    "Label": {
+                        "default": "AWS Environment and Machine Configuration"
+                    },
+                    "Parameters": [
+                        "VPCId",
+                        "PublicSubnetId",
+                        "InstanceType",
+                        "KeyPairName",
+                        "SourceCIDR"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "Secrets"
+                    },
+                    "Parameters": [
+                        "Username",
+                        "Password",
+                        "TableauServerAdminUser",
+                        "TableauServerAdminPassword"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "Registration"
+                    },
+                    "Parameters": [
+                        "AcceptEULA",
+                        "TableauServerLicenseKey",
+                        "RegFirstName",
+                        "RegLastName",
+                        "RegEmail",
+                        "RegCompany",
+                        "RegTitle",
+                        "RegDepartment",
+                        "RegIndustry",
+                        "RegPhone",
+                        "RegCity",
+                        "RegState",
+                        "RegZip",
+                        "RegCountry"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "Snowflake Quick Start Configuration"
+                    },
+                    "Parameters": [
+                        "SnowflakeHost",
+                        "SnowflakeUsername",
+                        "SnowflakePassword",
+                        "SnowflakeDatabaseName"
+                    ]
+                }
+            ],
+            "ParameterLabels": {
+                "AcceptEULA": {
+                    "default": "Accept Tableau End User License Agreement"
+                },
+                "InstanceType": {
+                    "default": "Tableau Amazon EC2 instance type"
+                },
+                "KeyPairName": {
+                    "default": "Key Pair Name"
+                },
+                "Password": {
+                    "default": "Tableau Services Manager (TSM) administrator password"
+                },
+                "PublicSubnetId": {
+                    "default": "Target Public Subnet"
+                },
+                "RegCity": {
+                    "default": "City"
+                },
+                "RegCompany": {
+                    "default": "Company"
+                },
+                "RegCountry": {
+                    "default": "Country"
+                },
+                "RegDepartment": {
+                    "default": "Department"
+                },
+                "RegEmail": {
+                    "default": "Email Address"
+                },
+                "RegFirstName": {
+                    "default": "First Name"
+                },
+                "RegIndustry": {
+                    "default": "Industry"
+                },
+                "RegLastName": {
+                    "default": "Last Name"
+                },
+                "RegPhone": {
+                    "default": "Phone"
+                },
+                "RegState": {
+                    "default": "State"
+                },
+                "RegTitle": {
+                    "default": "Title"
+                },
+                "RegZip": {
+                    "default": "Zip/Postal Code"
+                },
+                "SourceCIDR": {
+                    "default": "Source CIDR for Access"
+                },
+                "TableauServerAdminPassword": {
+                    "default": "Tableau Server administrator password"
+                },
+                "TableauServerAdminUser": {
+                    "default": "Tableau Server administrator username"
+                },
+                "TableauServerLicenseKey": {
+                    "default": "Tableau Activation Key"
+                },
+                "Username": {
+                    "default": "Tableau Services Manager (TSM) administrator username"
+                },
+                "VPCId": {
+                    "default": "Target VPC"
+                },
+                "SnowflakeHost": {
+                    "default": "URL of your Snowflake instance."
+                },
+                "SnowflakeUsername": {
+                    "default": "Username for your Snowflake account"
+                },
+                "SnowflakePassword": {
+                    "default": "Password for your Snowflake account"
+                },
+                "SnowflakeDatabaseName": {
+                    "default": "Snowflake database you are connecting to."
+                }
+            }
+        }
+    },
+    "Parameters": {
+        "AcceptEULA": {
+            "AllowedPattern": "Yes",
+            "AllowedValues": [
+                "Yes",
+                "No"
+            ],
+            "Description": "View the EULA at the Link: https://www.tableau.com/eula",
+            "Type": "String"
+        },
+        "InstanceType": {
+            "AllowedValues": [
+                "m4.2xlarge",
+                "m4.4xlarge",
+                "m4.10xlarge",
+                "m5.4xlarge",
+                "m5.12xlarge"
+            ],
+            "ConstraintDescription": "must be a valid EC2 instance type.",
+            "Default": "m4.4xlarge",
+            "Description": "Amazon EC2 instance type",
+            "Type": "String"
+        },
+        "KeyPairName": {
+            "ConstraintDescription": "must be the name of an existing EC2 KeyPair.",
+            "Description": "Name of an existing EC2 KeyPair to enable SSH access to the instances",
+            "Type": "AWS::EC2::KeyPair::KeyName"
+        },
+        "Password": {
+            "Description": "Tableau Services Manager (TSM) administrator password",
+            "MinLength": "6",
+            "NoEcho": "true",
+            "Type": "String"
+        },
+        "PublicSubnetId": {
+            "Description": "The public subnet to use",
+            "Type": "AWS::EC2::Subnet::Id"
+        },
+        "QSS3BucketName": {
+            "AllowedPattern": "^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$",
+            "ConstraintDescription": "Quick Start bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-).",
+            "Default": "tableau-snowflake-quickstart",
+            "Description": "S3 bucket name for the Quick Start assets. This string can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-).",
+            "Type": "String"
+        },
+        "QSS3KeyPrefix": {
+            "AllowedPattern": "^[0-9a-zA-Z-/]*$",
+            "ConstraintDescription": "Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).",
+            "Default": "tableau-snowflake-quickstart/",
+            "Description": "S3 key prefix for the Quick Start assets. Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).",
+            "Type": "String"
+        },
+        "RegCity": {
+            "Description": "City",
+            "Type": "String"
+        },
+        "RegCompany": {
+            "Description": "Company",
+            "Type": "String"
+        },
+        "RegCountry": {
+            "Description": "Country",
+            "Type": "String"
+        },
+        "RegDepartment": {
+            "Description": "Department",
+            "Type": "String"
+        },
+        "RegEmail": {
+            "Description": "Email",
+            "MinLength": "1",
+            "Type": "String"
+        },
+        "RegFirstName": {
+            "Description": "First Name",
+            "MinLength": "1",
+            "Type": "String"
+        },
+        "RegIndustry": {
+            "Description": "Industry",
+            "Type": "String"
+        },
+        "RegLastName": {
+            "Description": "Last Name",
+            "MinLength": "1",
+            "Type": "String"
+        },
+        "RegPhone": {
+            "Description": "Phone",
+            "Type": "String"
+        },
+        "RegState": {
+            "Description": "State",
+            "Type": "String"
+        },
+        "RegTitle": {
+            "Description": "Title",
+            "Type": "String"
+        },
+        "RegZip": {
+            "Description": "ZIP/Postal Code",
+            "Type": "String"
+        },
+        "SourceCIDR": {
+            "AllowedPattern": "^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\\/([0-9]|[1-2][0-9]|3[0-2]))$",
+            "ConstraintDescription": "CIDR block parameter must be in the form x.x.x.x/x",
+            "Description": "The CIDR address from which you will connect to the instance",
+            "Type": "String"
+        },
+        "TableauServerAdminPassword": {
+            "Description": "The password of the initial administrator for Tableau Server",
+            "MinLength": "1",
+            "NoEcho": "true",
+            "Type": "String"
+        },
+        "TableauServerAdminUser": {
+            "Description": "The name of the initial administrator for Tableau Server",
+            "MinLength": "1",
+            "Type": "String"
+        },
+        "TableauIAMRole": {
+            "Description": "Tableau server IAM role",
+            "Type": "String"
+        },
+        "TableauServerInstanceProfile": {
+            "Description": "Tableau server IAM Instance Profile",
+            "Type": "String"
+        },
+        "TableauServerLicenseKey": {
+            "Description": "License Key (leave blank for trial)",
+            "Type": "String"
+        },
+        "Username": {
+            "AllowedPattern": "^(?!(tableau|tsmagent|admin|root)$)[A-Za-z0-9]+$",
+            "Description": "Tableau Services Manager (TSM) administrator username (cannot be 'tableau' or 'tsmagent' or 'admin' or 'root')",
+            "MaxLength": "30",
+            "Type": "String"
+        },
+        "VPCId": {
+            "Description": "The ID of the VPC into which to deploy the cluster",
+            "Type": "AWS::EC2::VPC::Id"
+        },
+        "SnowflakeHost": {
+            "Description": "URL host name of your Snowflake instance.  Do not include leading 'https:\\\\'.  Should end with '.snowflakecomputing.com'.",
+            "Type": "String",
+            "AllowedPattern": "^(?!https:).*(\\.snowflakecomputing\\.com)$"
+        },
+        "SnowflakeUsername": {
+            "Description": "Username for your Snowflake account",
+            "Type": "String"
+        },
+        "SnowflakePassword": {
+            "Description": "Password for your Snowflake account",
+            "NoEcho": "true",
+            "Type": "String"
+        },
+        "SnowflakeDatabaseName": {
+            "Description": "Name of the Snowflake database you want to connect to.  Do not change unless using your own dataset.",
+            "Type": "String"
+        }
+    },
+    "Mappings": {
+        "AWSAMIRegionMap": {
+            "AMI": {
+                "WS2012R2": "Windows_Server-2012-R2_RTM-English-64Bit-Base-2019.07.12"
+            },
+            "ap-northeast-1": {
+                "WS2012R2": "ami-0da4d2aec4faf903c"
+            },
+            "ap-northeast-2": {
+                "WS2012R2": "ami-0736fa421b03ebc0b"
+            },
+            "ap-south-1": {
+                "WS2012R2": "ami-055b8cce72c3fe0fe"
+            },
+            "ap-southeast-1": {
+                "WS2012R2": "ami-01247b8894d425ad8"
+            },
+            "ap-southeast-2": {
+                "WS2012R2": "ami-05ae58c04d30b1579"
+            },
+            "ca-central-1": {
+                "WS2012R2": "ami-086541da748fd1b23"
+            },
+            "eu-central-1": {
+                "WS2012R2": "ami-08dcceb529e70f875"
+            },
+            "eu-west-1": {
+                "WS2012R2": "ami-023aa6510439dee1d"
+            },
+            "eu-west-2": {
+                "WS2012R2": "ami-0722861d8f432ad84"
+            },
+            "sa-east-1": {
+                "WS2012R2": "ami-03af99f7954cc9501"
+            },
+            "us-east-1": {
+                "WS2012R2": "ami-055c10ae78f3a58a2"
+            },
+            "us-east-2": {
+                "WS2012R2": "ami-03aa4445f535b27bc"
+            },
+            "us-west-1": {
+                "WS2012R2": "ami-02ad1ae3d4204b530"
+            },
+            "us-west-2": {
+                "WS2012R2": "ami-0d639a48468c98db8"
+            }
+        },
+        "DefaultConfiguration": {
+            "InstallationConfig": {
+                "InstallationBucket": "tableau-snowflake-quickstart",
+                "InstallationExecutable": "TableauServer-64bit.exe"
+            },
+            "MachineConfiguration": {
+                "SystemVolumeSize": 50,
+                "DataVolumeSize": 100,
+                "WindowsVersion": "WS2012R2"
+            }
+        }
+    },
+    "Conditions": {
+        "IsTrial": {
+            "Fn::Equals": [
+                "",
+                {
+                    "Ref": "TableauServerLicenseKey"
+                }
+            ]
+        }
+    },
+    "Resources": {
+        "TableauWindowsServer": {
+            "Type": "AWS::EC2::Instance",
+            "Metadata": {
+                "AWS::CloudFormation::Authentication": {
+                    "S3AccessCreds": {
+                        "type": "S3",
+                        "roleName": {
+                            "Ref": "TableauIAMRole"
+                        },
+                        "buckets": [
+                            {
+                                "Ref": "QSS3BucketName"
+                            }
+                        ]
+                    }
+                },
+                "AWS::CloudFormation::Init": {
+                    "config": {
+                        "files": {
+                            "c:\\tabsetup\\secrets.json": {
+                                "content": {
+                                    "local_admin_user": {
+                                        "Ref": "Username"
+                                    },
+                                    "local_admin_pass": {
+                                        "Ref": "Password"
+                                    },
+                                    "content_admin_user": {
+                                        "Ref": "TableauServerAdminUser"
+                                    },
+                                    "content_admin_pass": {
+                                        "Ref": "TableauServerAdminPassword"
+                                    },
+                                    "product_keys": [
+                                        {
+                                            "Fn::If": [
+                                                "IsTrial",
+                                                "trial",
+                                                {
+                                                    "Fn::Sub": "${TableauServerLicenseKey}"
+                                                }
+                                            ]
+                                        }
+                                    ]
+                                }
+                            },
+                            "c:\\tabsetup\\registration.json": {
+                                "content": {
+                                    "first_name": {
+                                        "Ref": "RegFirstName"
+                                    },
+                                    "last_name": {
+                                        "Ref": "RegLastName"
+                                    },
+                                    "email": {
+                                        "Ref": "RegEmail"
+                                    },
+                                    "company": {
+                                        "Fn::Join": [
+                                            ";",
+                                            [
+                                                {
+                                                    "Ref": "RegCompany"
+                                                },
+                                                "AWSSnowflakeQuickStart-Win"
+                                            ]
+                                        ]
+                                    },
+                                    "title": {
+                                        "Ref": "RegTitle"
+                                    },
+                                    "department": {
+                                        "Ref": "RegDepartment"
+                                    },
+                                    "industry": {
+                                        "Ref": "RegIndustry"
+                                    },
+                                    "phone": {
+                                        "Ref": "RegPhone"
+                                    },
+                                    "city": {
+                                        "Ref": "RegCity"
+                                    },
+                                    "state": {
+                                        "Ref": "RegState"
+                                    },
+                                    "zip": {
+                                        "Ref": "RegZip"
+                                    },
+                                    "country": {
+                                        "Ref": "RegCountry"
+                                    }
+                                }
+                            },
+                            "c:\\tabsetup\\SilentInstaller.py": {
+                                "source": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "https://",
+                                            {
+                                                "Fn::FindInMap": [
+                                                    "DefaultConfiguration",
+                                                    "InstallationConfig",
+                                                    "InstallationBucket"
+                                                ]
+                                            },
+                                            ".s3.amazonaws.com/SilentInstaller.py"
+                                        ]
+                                    ]
+                                }
+                            },
+                            "c:\\tabsetup\\config.json": {
+                                "content": {
+                                    "configEntities": {
+                                        "identityStore": {
+                                            "_type": "identityStoreType",
+                                            "type": "local"
+                                        }
+                                    },
+                                    "topologyVersion": {}
+                                }
+                            },
+                            "c:\\tabsetup\\python-3.6.4-amd64.exe": {
+                                "source": "https://www.python.org/ftp/python/3.6.4/python-3.6.4-amd64.exe"
+                            },
+                            "c:\\tabsetup\\tableau-server-webapp-installer.exe": {
+                                "source": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "https://",
+                                            {
+                                                "Fn::FindInMap": [
+                                                    "DefaultConfiguration",
+                                                    "InstallationConfig",
+                                                    "InstallationBucket"
+                                                ]
+                                            },
+                                            ".s3.amazonaws.com/",
+                                            {
+                                                "Fn::FindInMap": [
+                                                    "DefaultConfiguration",
+                                                    "InstallationConfig",
+                                                    "InstallationExecutable"
+                                                ]
+                                            }
+                                        ]
+                                    ]
+                                }
+                            },
+                            "c:\\tabsetup\\update-datasource.py": {
+                                "source": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "https://",
+                                            {
+                                                "Fn::FindInMap": [
+                                                    "DefaultConfiguration",
+                                                    "InstallationConfig",
+                                                    "InstallationBucket"
+                                                ]
+                                            },
+                                            ".s3.amazonaws.com/update-datasource.py"
+                                        ]
+                                    ]
+                                }
+                            },
+                            "c:\\tabsetup\\yellow_trip_data.tds": {
+                                "source": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "https://",
+                                            {
+                                                "Fn::FindInMap": [
+                                                    "DefaultConfiguration",
+                                                    "InstallationConfig",
+                                                    "InstallationBucket"
+                                                ]
+                                            },
+                                            ".s3.amazonaws.com/yellow_trip_data.tds"
+                                        ]
+                                    ]
+                                }
+                            },
+                            "c:\\tabsetup\\QUERY_HISTORY.tds": {
+                                "source": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "https://",
+                                            {
+                                                "Fn::FindInMap": [
+                                                    "DefaultConfiguration",
+                                                    "InstallationConfig",
+                                                    "InstallationBucket"
+                                                ]
+                                            },
+                                            ".s3.amazonaws.com/QUERY_HISTORY.tds"
+                                        ]
+                                    ]
+                                }
+                            },
+                            "c:\\tabsetup\\STORAGE_USAGE.tds": {
+                                "source": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "https://",
+                                            {
+                                                "Fn::FindInMap": [
+                                                    "DefaultConfiguration",
+                                                    "InstallationConfig",
+                                                    "InstallationBucket"
+                                                ]
+                                            },
+                                            ".s3.amazonaws.com/STORAGE_USAGE.tds"
+                                        ]
+                                    ]
+                                }
+                            },
+                            "c:\\tabsetup\\WAREHOUSE_METERING_HISTORY.tds": {
+                                "source": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "https://",
+                                            {
+                                                "Fn::FindInMap": [
+                                                    "DefaultConfiguration",
+                                                    "InstallationConfig",
+                                                    "InstallationBucket"
+                                                ]
+                                            },
+                                            ".s3.amazonaws.com/WAREHOUSE_METERING_HISTORY.tds"
+                                        ]
+                                    ]
+                                }
+                            },
+                            "c:\\tabsetup\\snowsql.msi": {
+                                "source": "http://sfc-snowsql-updates.s3.us-west-2.amazonaws.com/bootstrap/1.1/windows_x86_64/snowsql-1.1.76-windows_x86_64.msi"
+                            },
+                            "c:\\tabsetup\\snowflake-odbc-driver.msi": {
+                                "source": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "https://",
+                                            {
+                                                "Fn::FindInMap": [
+                                                    "DefaultConfiguration",
+                                                    "InstallationConfig",
+                                                    "InstallationBucket"
+                                                ]
+                                            },
+                                            ".s3.amazonaws.com/snowflake-odbc-driver.msi"
+                                        ]
+                                    ]
+                                }
+                            },
+                            "c:\\tabsetup\\snowsetup.txt": {
+                                "source": {
+                                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}assets/scripts/snowsetup.txt"
+                                },
+                                "authentication": "S3AccessCreds"
+                            },
+                            "c:\\tabsetup\\quickstart.twb": {
+                                "source": {
+                                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}assets/workbooks/quickstart.twb"
+                                },
+                                "authentication": "S3AccessCreds"
+                            },
+                            "c:\\tabsetup\\Account_Usage.twb": {
+                                "source": {
+                                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}assets/workbooks/Account_Usage.twb"
+                                },
+                                "authentication": "S3AccessCreds"
+                            },
+                            "c:\\tabsetup\\config-temp": {
+                                "content": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "[connections.quickstart]\n",
+                                            "accountname = ",
+                                            {
+                                                "Fn::Select": [
+                                                    "0",
+                                                    {
+                                                        "Fn::Split": [
+                                                            ".snowflakecomputing",
+                                                            {
+                                                                "Ref": "SnowflakeHost"
+                                                            }
+                                                        ]
+                                                    }
+                                                ]
+                                            },
+                                            "\n",
+                                            "username = ",
+                                            {
+                                                "Ref": "SnowflakeUsername"
+                                            },
+                                            "\n",
+                                            "password = ",
+                                            {
+                                                "Ref": "SnowflakePassword"
+                                            }
+                                        ]
+                                    ]
+                                }
+                            }
+                        },
+                        "commands": {
+                            "00-disable-firewall": {
+                                "cwd": "c:\\Windows\\System32",
+                                "command": "netsh advfirewall set allprofiles state off",
+                                "waitAfterCompletion": "0"
+                            },
+                            "01-install-python": {
+                                "command": "c:\\tabsetup\\python-3.6.4-amd64.exe /quiet InstallAllUsers=1 PrependPath=1",
+                                "cwd": "c:\\tabsetup",
+                                "waitAfterCompletion": "0"
+                            },
+                            "02-create-user": {
+                                "command": {
+                                    "Fn::Join": [
+                                        " ",
+                                        [
+                                            "net",
+                                            "user",
+                                            {
+                                                "Fn::Sub": "${Username}"
+                                            },
+                                            {
+                                                "Fn::Sub": "${Password}"
+                                            },
+                                            "/add",
+                                            "/y"
+                                        ]
+                                    ]
+                                },
+                                "cwd": "c:\\tabsetup",
+                                "waitAfterCompletion": "0"
+                            },
+                            "03-add-admin": {
+                                "command": {
+                                    "Fn::Join": [
+                                        " ",
+                                        [
+                                            "net",
+                                            "localgroup",
+                                            "Administrators",
+                                            {
+                                                "Fn::Sub": "${Username}"
+                                            },
+                                            "/add",
+                                            "/y"
+                                        ]
+                                    ]
+                                },
+                                "cwd": "c:\\tabsetup",
+                                "waitAfterCompletion": "0"
+                            },
+                            "04-run-installer": {
+                                "cwd": "c:\\tabsetup",
+                                "command": {
+                                    "Fn::Join": [
+                                        " ",
+                                        [
+                                            "\"C:\\Program Files\\Python36\\python.exe\"",
+                                            "SilentInstaller.py",
+                                            "install",
+                                            "--secretsFile c:\\tabsetup\\secrets.json",
+                                            "--registrationFile c:\\tabsetup\\registration.json",
+                                            "--configFile c:\\tabsetup\\config.json",
+                                            "--installDir d:\\tableau",
+                                            "c:\\tabsetup\\tableau-server-webapp-installer.exe",
+                                            " > c:\\tabsetup\\tsm_installer-output.txt 2>&1"
+                                        ]
+                                    ]
+                                },
+                                "waitAfterCompletion": "0"
+                            },
+                            "05-cleanup-secrets": {
+                                "cwd": "c:\\tabsetup",
+                                "command": "del c:\\tabsetup\\secrets.json",
+                                "waitAfterCompletion": "0"
+                            },
+                            "06-install-snowsql": {
+                                "cwd": "c:\\tabsetup",
+                                "command": "msiexec /i snowsql.msi /q",
+                                "waitAfterCompletion": "0"
+                            },
+                            "07-install-snowflake-driver": {
+                                "cwd": "c:\\tabsetup",
+                                "command": "msiexec /i snowflake-odbc-driver.msi /q",
+                                "waitAfterCompletion": "0"
+                            },
+                            "08-run-snowflake-command": {
+                                "cwd": "c:\\tabsetup",
+                                "command": "\"c:\\Program Files\\Snowflake SnowSQL\\snowsql.exe\" --config \"c:\\tabsetup\\config-temp\" -c quickstart -f \"c:\\tabsetup\\snowsetup.txt\"",
+                                "waitAfterCompletion": "0"
+                            },
+                            "09-cleanup-config-temp": {
+                                "cwd": "c:\\tabsetup",
+                                "command": "del c:\\tabsetup\\config-temp",
+                                "waitAfterCompletion": "0"
+                            },
+                            "10-install-python-dependancies": {
+                                "cwd": "c:\\tabsetup",
+                                "command": "\"C:\\Program Files\\Python36\\python.exe\" -m pip install tableaudocumentapi",
+                                "waitAfterCompletion": "0"
+                            },
+                            "11-update-sample-datasource": {
+                                "cwd": "c:\\tabsetup",
+                                "command": {
+                                    "Fn::Join": [
+                                        " ",
+                                        [
+                                            "\"C:\\Program Files\\Python36\\python.exe\"",
+                                            "update-datasource.py",
+                                            "--filename c:\\tabsetup\\yellow_trip_data.tds",
+                                            "--server",
+                                            {
+                                                "Ref": "SnowflakeHost"
+                                            },
+                                            "--dbname",
+                                            {
+                                                "Ref": "SnowflakeDatabaseName"
+                                            },
+                                            "--username",
+                                            {
+                                                "Ref": "SnowflakeUsername"
+                                            },
+                                            " > c:\\tabsetup\\update-sample-datasource-output.txt 2>&1"
+                                        ]
+                                    ]
+                                },
+                                "waitAfterCompletion": "0"
+                            },
+                            "12-update-query-history-datasource": {
+                                "cwd": "c:\\tabsetup",
+                                "command": {
+                                    "Fn::Join": [
+                                        " ",
+                                        [
+                                            "\"C:\\Program Files\\Python36\\python.exe\"",
+                                            "update-datasource.py",
+                                            "--filename c:\\tabsetup\\QUERY_HISTORY.tds",
+                                            "--server",
+                                            {
+                                                "Ref": "SnowflakeHost"
+                                            },
+                                            "--dbname SNOWFLAKE",
+                                            "--username",
+                                            {
+                                                "Ref": "SnowflakeUsername"
+                                            },
+                                            " > c:\\tabsetup\\update-query-history-datasource-output.txt 2>&1"
+                                        ]
+                                    ]
+                                },
+                                "waitAfterCompletion": "0"
+                            },
+                            "13-update-storage-usage-datasource": {
+                                "cwd": "c:\\tabsetup",
+                                "command": {
+                                    "Fn::Join": [
+                                        " ",
+                                        [
+                                            "\"C:\\Program Files\\Python36\\python.exe\"",
+                                            "update-datasource.py",
+                                            "--filename c:\\tabsetup\\STORAGE_USAGE.tds",
+                                            "--server",
+                                            {
+                                                "Ref": "SnowflakeHost"
+                                            },
+                                            "--dbname SNOWFLAKE",
+                                            "--username",
+                                            {
+                                                "Ref": "SnowflakeUsername"
+                                            },
+                                            " > c:\\tabsetup\\update-storage-usage-datasource-output.txt 2>&1"
+                                        ]
+                                    ]
+                                },
+                                "waitAfterCompletion": "0"
+                            },
+                            "14-update-warehouse-history-datasource": {
+                                "cwd": "c:\\tabsetup",
+                                "command": {
+                                    "Fn::Join": [
+                                        " ",
+                                        [
+                                            "\"C:\\Program Files\\Python36\\python.exe\"",
+                                            "update-datasource.py",
+                                            "--filename c:\\tabsetup\\WAREHOUSE_METERING_HISTORY.tds",
+                                            "--server",
+                                            {
+                                                "Ref": "SnowflakeHost"
+                                            },
+                                            "--dbname SNOWFLAKE",
+                                            "--username",
+                                            {
+                                                "Ref": "SnowflakeUsername"
+                                            },
+                                            " > c:\\tabsetup\\update-warehouse-history-datasource-output.txt 2>&1"
+                                        ]
+                                    ]
+                                },
+                                "waitAfterCompletion": "0"
+                            },
+                            "15-create-snowflake-sample-project": {
+                                "cwd": "c:\\tabsetup",
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "powershell.exe -ExecutionPolicy RemoteSigned -Command \"",
+                                            "& D:\\tableau\\*\\bin*\\tabcmd.exe createproject -n Snowflake_Samples ",
+                                            "--server http://localhost ",
+                                            "--username ",
+                                            {
+                                                "Ref": "TableauServerAdminUser"
+                                            },
+                                            " ",
+                                            "--password ",
+                                            {
+                                                "Ref": "TableauServerAdminPassword"
+                                            },
+                                            "\"",
+                                            " > c:\\tabsetup\\create-project-output.txt 2>&1"
+                                        ]
+                                    ]
+                                },
+                                "waitAfterCompletion": "0"
+                            },
+                            "16-create-snowflake-admin-project": {
+                                "cwd": "c:\\tabsetup",
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "powershell.exe -ExecutionPolicy RemoteSigned -Command \"",
+                                            "& D:\\tableau\\*\\bin*\\tabcmd.exe createproject -n Snowflake_Admin ",
+                                            "--server http://localhost ",
+                                            "--username ",
+                                            {
+                                                "Ref": "TableauServerAdminUser"
+                                            },
+                                            " ",
+                                            "--password ",
+                                            {
+                                                "Ref": "TableauServerAdminPassword"
+                                            },
+                                            "\"",
+                                            " > c:\\tabsetup\\create-project-output.txt 2>&1"
+                                        ]
+                                    ]
+                                },
+                                "waitAfterCompletion": "0"
+                            },
+                            "17-publish-snowflake-datasource": {
+                                "cwd": "c:\\tabsetup",
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "powershell.exe -ExecutionPolicy RemoteSigned -Command \"",
+                                            "& D:\\tableau\\*\\bin*\\tabcmd.exe publish c:\\tabsetup\\yellow_trip_data.tds ",
+                                            "--server http://localhost ",
+                                            "--project Snowflake_Samples ",
+                                            "--username ",
+                                            {
+                                                "Ref": "TableauServerAdminUser"
+                                            },
+                                            " ",
+                                            "--password ",
+                                            {
+                                                "Ref": "TableauServerAdminPassword"
+                                            },
+                                            " ",
+                                            "--db-username ",
+                                            {
+                                                "Ref": "SnowflakeUsername"
+                                            },
+                                            " ",
+                                            "--db-password ",
+                                            {
+                                                "Ref": "SnowflakePassword"
+                                            },
+                                            " ",
+                                            "--save-db-password",
+                                            "\"",
+                                            " > c:\\tabsetup\\publish-datasource-output.txt 2>&1"
+                                        ]
+                                    ]
+                                },
+                                "waitAfterCompletion": "0"
+                            },
+                            "18-publish-warehouse-metering-datasource": {
+                                "cwd": "c:\\tabsetup",
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "powershell.exe -ExecutionPolicy RemoteSigned -Command \"",
+                                            "& D:\\tableau\\*\\bin*\\tabcmd.exe publish c:\\tabsetup\\WAREHOUSE_METERING_HISTORY.tds ",
+                                            "--server http://localhost ",
+                                            "--project Snowflake_Admin ",
+                                            "--username ",
+                                            {
+                                                "Ref": "TableauServerAdminUser"
+                                            },
+                                            " ",
+                                            "--password ",
+                                            {
+                                                "Ref": "TableauServerAdminPassword"
+                                            },
+                                            " ",
+                                            "--db-username ",
+                                            {
+                                                "Ref": "SnowflakeUsername"
+                                            },
+                                            " ",
+                                            "--db-password ",
+                                            {
+                                                "Ref": "SnowflakePassword"
+                                            },
+                                            " ",
+                                            "--save-db-password",
+                                            "\"",
+                                            " > c:\\tabsetup\\publish-warehouse-metering-datasource-output.txt 2>&1"
+                                        ]
+                                    ]
+                                },
+                                "waitAfterCompletion": "0"
+                            },
+                            "19-publish-storage-datasource": {
+                                "cwd": "c:\\tabsetup",
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "powershell.exe -ExecutionPolicy RemoteSigned -Command \"",
+                                            "& D:\\tableau\\*\\bin*\\tabcmd.exe publish c:\\tabsetup\\STORAGE_USAGE.tds ",
+                                            "--server http://localhost ",
+                                            "--project Snowflake_Admin ",
+                                            "--username ",
+                                            {
+                                                "Ref": "TableauServerAdminUser"
+                                            },
+                                            " ",
+                                            "--password ",
+                                            {
+                                                "Ref": "TableauServerAdminPassword"
+                                            },
+                                            " ",
+                                            "--db-username ",
+                                            {
+                                                "Ref": "SnowflakeUsername"
+                                            },
+                                            " ",
+                                            "--db-password ",
+                                            {
+                                                "Ref": "SnowflakePassword"
+                                            },
+                                            " ",
+                                            "--save-db-password",
+                                            "\"",
+                                            " > c:\\tabsetup\\publish-storage-usage-datasource-output.txt 2>&1"
+                                        ]
+                                    ]
+                                },
+                                "waitAfterCompletion": "0"
+                            },
+                            "20-publish-query-datasource": {
+                                "cwd": "c:\\tabsetup",
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "powershell.exe -ExecutionPolicy RemoteSigned -Command \"",
+                                            "& D:\\tableau\\*\\bin*\\tabcmd.exe publish c:\\tabsetup\\QUERY_HISTORY.tds ",
+                                            "--server http://localhost ",
+                                            "--project Snowflake_Admin ",
+                                            "--username ",
+                                            {
+                                                "Ref": "TableauServerAdminUser"
+                                            },
+                                            " ",
+                                            "--password ",
+                                            {
+                                                "Ref": "TableauServerAdminPassword"
+                                            },
+                                            " ",
+                                            "--db-username ",
+                                            {
+                                                "Ref": "SnowflakeUsername"
+                                            },
+                                            " ",
+                                            "--db-password ",
+                                            {
+                                                "Ref": "SnowflakePassword"
+                                            },
+                                            " ",
+                                            "--save-db-password",
+                                            "\"",
+                                            " > c:\\tabsetup\\publish-query-history-datasource-output.txt 2>&1"
+                                        ]
+                                    ]
+                                },
+                                "waitAfterCompletion": "0"
+                            },
+                            "21-publish-sample-dashboard": {
+                                "cwd": "c:\\tabsetup",
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "powershell.exe -ExecutionPolicy RemoteSigned -Command \"",
+                                            "& D:\\tableau\\*\\bin*\\tabcmd.exe publish c:\\tabsetup\\quickstart.twb ",
+                                            "--server http://localhost ",
+                                            "--project Snowflake_Samples ",
+                                            "--username ",
+                                            {
+                                                "Ref": "TableauServerAdminUser"
+                                            },
+                                            " ",
+                                            "--password ",
+                                            {
+                                                "Ref": "TableauServerAdminPassword"
+                                            },
+                                            "\"",
+                                            " > c:\\tabsetup\\publish-sample-workbook-output.txt 2>&1"
+                                        ]
+                                    ]
+                                },
+                                "waitAfterCompletion": "0"
+                            },
+                            "22-account-usage-dashboard": {
+                                "cwd": "c:\\tabsetup",
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "powershell.exe -ExecutionPolicy RemoteSigned -Command \"",
+                                            "& D:\\tableau\\*\\bin*\\tabcmd.exe publish c:\\tabsetup\\Account_Usage.twb ",
+                                            "--server http://localhost ",
+                                            "--project Snowflake_Admin ",
+                                            "--username ",
+                                            {
+                                                "Ref": "TableauServerAdminUser"
+                                            },
+                                            " ",
+                                            "--password ",
+                                            {
+                                                "Ref": "TableauServerAdminPassword"
+                                            },
+                                            "\"",
+                                            " > c:\\tabsetup\\publish-account-usage-workbook-output.txt 2>&1"
+                                        ]
+                                    ]
+                                },
+                                "waitAfterCompletion": "0"
+                            }
+                        }
+                    }
+                }
+            },
+            "Properties": {
+                "SecurityGroupIds": [
+                    {
+                        "Ref": "ServerSecurityGroup"
+                    }
+                ],
+                "SubnetId": {
+                    "Ref": "PublicSubnetId"
+                },
+                "InstanceType": {
+                    "Ref": "InstanceType"
+                },
+                "IamInstanceProfile": {
+                    "Ref": "TableauServerInstanceProfile"
+                },
+                "ImageId": {
+                    "Fn::FindInMap": [
+                        "AWSAMIRegionMap",
+                        {
+                            "Ref": "AWS::Region"
+                        },
+                        {
+                            "Fn::FindInMap": [
+                                "DefaultConfiguration",
+                                "MachineConfiguration",
+                                "WindowsVersion"
+                            ]
+                        }
+                    ]
+                },
+                "BlockDeviceMappings": [
+                    {
+                        "DeviceName": "/dev/sda1",
+                        "Ebs": {
+                            "VolumeType": "gp2",
+                            "VolumeSize": {
+                                "Fn::FindInMap": [
+                                    "DefaultConfiguration",
+                                    "MachineConfiguration",
+                                    "SystemVolumeSize"
+                                ]
+                            }
+                        }
+                    },
+                    {
+                        "DeviceName": "xvdc",
+                        "Ebs": {
+                            "VolumeSize": {
+                                "Fn::FindInMap": [
+                                    "DefaultConfiguration",
+                                    "MachineConfiguration",
+                                    "DataVolumeSize"
+                                ]
+                            },
+                            "VolumeType": "gp2"
+                        }
+                    }
+                ],
+                "KeyName": {
+                    "Ref": "KeyPairName"
+                },
+                "UserData": {
+                    "Fn::Base64": {
+                        "Fn::Join": [
+                            "\n",
+                            [
+                                "<script>",
+                                {
+                                    "Fn::Sub": "cfn-init.exe -v -s ${AWS::StackId} -r TableauWindowsServer --region ${AWS::Region}"
+                                },
+                                {
+                                    "Fn::Sub": [
+                                        "cfn-signal.exe -e %errorlevel% ${WHUrl}",
+                                        {
+                                            "WHUrl": {
+                                                "Fn::Base64": {
+                                                    "Ref": "TableauServerWaitHandle"
+                                                }
+                                            }
+                                        }
+                                    ]
+                                },
+                                "</script>"
+                            ]
+                        ]
+                    }
+                },
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": {
+                            "Fn::Sub": "${AWS::StackName}-cfn-tableau-server"
+                        }
+                    }
+                ]
+            }
+        },
+        "EIP": {
+            "Type": "AWS::EC2::EIP",
+            "Properties": {
+                "InstanceId": {
+                    "Ref": "TableauWindowsServer"
+                }
+            }
+        },
+        "ServerSecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "VPCId"
+                },
+                "GroupDescription": "Enable HTTP access via port 80 and HTTPS access on port 8850, and RDP access on Port 3389 from the provided network CIDR",
+                "SecurityGroupIngress": [
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "3389",
+                        "ToPort": "3389",
+                        "CidrIp": {
+                            "Ref": "SourceCIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "8850",
+                        "ToPort": "8850",
+                        "CidrIp": {
+                            "Ref": "SourceCIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "80",
+                        "ToPort": "80",
+                        "CidrIp": {
+                            "Ref": "SourceCIDR"
+                        }
+                    }
+                ]
+            }
+        },
+        "TableauServerWaitHandle": {
+            "Type": "AWS::CloudFormation::WaitConditionHandle"
+        },
+        "TableauServerWaitCondition": {
+            "Type": "AWS::CloudFormation::WaitCondition",
+            "Properties": {
+                "Handle": {
+                    "Ref": "TableauServerWaitHandle"
+                },
+                "Timeout": "3600"
+            }
+        }
+    },
+    "Outputs": {
+        "InstanceID": {
+            "Description": "EC2 InstanceID of the instance running Tableau Server",
+            "Value": {
+                "Ref": "TableauWindowsServer"
+            }
+        },
+        "PublicIPAddress": {
+            "Description": "Public IP Address of instance running Tableau Server",
+            "Value": {
+                "Fn::GetAtt": [
+                    "TableauWindowsServer",
+                    "PublicIp"
+                ]
+            }
+        },
+        "TableauServicesManagerURL": {
+            "Description": "URL for the TSM Web UI",
+            "Value": {
+                "Fn::Join": [
+                    "",
+                    [
+                        "https://",
+                        {
+                            "Fn::GetAtt": [
+                                "TableauWindowsServer",
+                                "PublicIp"
+                            ]
+                        },
+                        ":8850/"
+                    ]
+                ]
+            }
+        },
+        "TableauServerURL": {
+            "Description": "Public DNS name of instance running Tableau Server",
+            "Value": {
+                "Fn::Join": [
+                    "",
+                    [
+                        "http://",
+                        {
+                            "Fn::GetAtt": [
+                                "TableauWindowsServer",
+                                "PublicDnsName"
+                            ]
+                        },
+                        "/"
+                    ]
+                ]
+            }
+        },
+        "SnowflakeHost": {
+            "Description": "SnowflakeHost",
+            "Value": {
+                "Ref": "SnowflakeHost"
+            }
+        },
+        "SnowflakeUsername": {
+            "Description": "SnowflakeUsername",
+            "Value": {
+                "Ref": "SnowflakeUsername"
+            }
+        },
+        "SnowflakeDatabaseName": {
+            "Description": "SnowflakeDatabaseName",
+            "Value": {
+                "Ref": "SnowflakeDatabaseName"
+            }
+        }
+    }
+}

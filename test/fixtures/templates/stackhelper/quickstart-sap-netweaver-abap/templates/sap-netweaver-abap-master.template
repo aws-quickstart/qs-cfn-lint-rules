@@ -1,0 +1,1776 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "Deploy SAP App Server Cluster (ASCS, PAS & DB instance) + AAS (qs-1no61sjkm)",
+    "Metadata": {
+      "AWSAMIRegionMap":{
+          "Filters":{
+              "RHEL73SAPHVM":{
+                  "name":"SAP-7.3_HVM-????????-x86_64-?-Hourly2-GP2-b676039c-a4f8-4be7-9866-c804b1ade684-*",
+                  "owner-alias":"aws-marketplace",
+                  "product-code.type":"marketplace"
+              },
+              "SLES12SP1SAPHVM":{
+                "name":"*-f0188081-b780-4ee4-aef6-cbcb063fd11e-*",
+                "owner-alias":"aws-marketplace",
+                "product-code.type":"marketplace"
+              },
+              "SLES12SP2SAPHVM":{
+                "name":"*-e3458d64-5c36-4577-bd98-0ee19e3eaeec-*",
+                "owner-alias":"aws-marketplace",
+                "product-code.type":"marketplace"
+              },
+              "SLES12SP3SAPHVM":{
+                "name":"*-da7aa9c3-97db-4573-89a6-7fe7348d90b0-*",
+                "owner-alias":"aws-marketplace",
+                "product-code.type":"marketplace"
+              }
+          }
+      },
+        "AWS::CloudFormation::Interface": {
+            "ParameterGroups": [
+                {
+                    "Label": {
+                        "default": "Network infrastructure details"
+                    },
+                    "Description": {
+                        "default": ""
+                    },
+                    "Parameters": [
+                        "AvailabilityZones",
+                        "VPCCIDR",
+                        "PrivateSubnet1CIDR",
+                        "PrivateSubnet2CIDR",
+                        "PublicSubnet1CIDR",
+                        "PublicSubnet2CIDR",
+                        "RemoteAccessCIDR"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "HANA Server and storage configuration"
+                    },
+                    "Description": {
+                        "default": ""
+                    },
+                    "Parameters": [
+                        "MyOSHANA",
+                        "SLESBYOSRegCode",
+                        "SAPHANAHostname",
+                        "HANAInstanceType",
+                        "HANAHostCount",
+                        "HANAMasterPass",
+                        "Encryption",
+                        "VolumeTypeHanaData",
+                        "VolumeTypeHanaLog",
+                        "KeyName",
+                        "HANAInstallMedia",
+                        "EnableLogging",
+                        "CloudTrailS3Bucket"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "SAP NetWeaver Cluster setup and configuration"
+                    },
+                    "Description": {
+                        "default": ""
+                    },
+                    "Parameters": [
+                        "HostedZoneName",
+                        "MyOS",
+                        "AutoRecoveryPAS",
+                        "DistributedInstall",
+                        "EFSSapmnt",
+                        "SAPASCSHostname",
+                        "StbySAPASCS",
+                        "SAPPASHostname",
+                        "SID",
+                        "SAPSchemaName",
+                        "ASCSMyInstanceType",
+                        "MyInstanceType",
+                        "SAPInstanceNum",
+                        "SIDadmUID",
+                        "SAPTZ",
+                        "SAPInstallMediaBucket",
+                        "SAPInstallMediaKeyPrefix",
+                        "InstallSAP",
+                         "InstallSAPVersion"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "SAP Additional App Server setup and configuration"
+                    },
+                    "Description": {
+                        "default": ""
+                    },
+                    "Parameters": [
+                        "SAPAASHostname",
+                        "AASMyInstanceType",
+                        "AutoRecoveryAAS",
+                        "InstallSAPAAS"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "Optional configuration"
+                    },
+                    "Description": {
+                        "default": ""
+                    },
+                    "Parameters": [
+                        "InstallRDPAndBastionInstance",
+                        "RDPInstanceType",
+                        "BASTIONInstanceType"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "Advanced configuration (Do not modify unless directed by AWS Support)"
+                    },
+                    "Description": {
+                        "default": ""
+                    },
+                    "Parameters": [
+                        "QSS3BucketName",
+                        "QSS3KeyPrefix"
+                    ]
+                }
+            ],
+            "ParameterLabels": {
+                "AASMyInstanceType": {
+                    "default": "SAP Additional App Server instance type"
+                },
+                "ASCSMyInstanceType": {
+                    "default": "SAP ASCS instance type"
+                },
+                "AvailabilityZones": {
+                    "default": "Availability Zones"
+                },
+                "AutoRecoveryAAS": {
+                    "default": "AAS EC2 Auto Recovery"
+                },
+                "AutoRecoveryPAS": {
+                    "default": "PAS EC2 Auto Recovery"
+                },
+                "BASTIONInstanceType": {
+                    "default": "Bastion host"
+                },
+                "CloudTrailS3Bucket": {
+                    "default": "S3 bucket for AWS CloudTrail & AWS Config logs"
+                },
+                "DistributedInstall": {
+                    "default": "Split the ASCS and PAS (Distributed installation)"
+                },
+                "EFSSapmnt": {
+                    "default": "Use EFS for /sapmnt"
+                },
+                "EnableLogging": {
+                    "default": "Enable AWS CloudTrail & AWS Config logs"
+                },
+                "Encryption": {
+                    "default": "Enable encryption"
+                },
+                "HANAHostCount": {
+                    "default": "SAP HANA host count"
+                },
+                "HANAInstallMedia": {
+                    "default": "S3 bucket for HANA s/w."
+                },
+                "HANAInstanceType": {
+                    "default": "SAP HANA Server "
+                },
+                "HANAMasterPass": {
+                    "default": "SAP HANA & NetWeaver password"
+                },
+                "HostedZoneName": {
+                    "default": "R53 private hosted zone"
+                },
+                "InstallRDPAndBastionInstance": {
+                    "default": "Install RDP and Bastion"
+                },
+                "InstallSAP": {
+                    "default": "Install SAP software"
+                },
+                "InstallSAPVersion": {
+                    "default": "SAP NW version"
+                },
+                "InstallSAPAAS": {
+                    "default": "Install SAP Additional App Server"
+                },
+                "KeyName": {
+                    "default": "SSH key pair"
+                },
+                "MyInstanceType": {
+                    "default": "SAP PAS Server type"
+                },
+                "MyOS": {
+                    "default": "O.S. version for SAP Servers (SLES only)"
+                },
+                "MyOSHANA": {
+                    "default": "Operating system version for HANA (RHEL or SLES)"
+                },
+                "PrivateSubnet1CIDR": {
+                    "default": "Private subnet 1 CIDR"
+                },
+                "PrivateSubnet2CIDR": {
+                    "default": "Private subnet 2 CIDR"
+                },
+                "PublicSubnet1CIDR": {
+                    "default": "Public subnet 1 CIDR"
+                },
+                "PublicSubnet2CIDR": {
+                    "default": "Public subnet 2 CIDR"
+                },
+                "QSS3BucketName": {
+                    "default": "S3 bucket name for the Quick Start assets."
+                },
+                "QSS3KeyPrefix": {
+                    "default": "S3 key prefix for the Quick Start assets"
+                },
+                "RDPInstanceType": {
+                    "default": "RDP instance"
+                },
+                "RemoteAccessCIDR": {
+                    "default": "CIDR block for RDP & Bastion access"
+                },
+                "SAPAASHostname": {
+                    "default": "SAP AAS Server host name (i.e. sapaas00)"
+                },
+                "SAPASCSHostname": {
+                    "default": "SAP ASCS Server virtual name (i.e. sapasc00)"
+                },
+                "StbySAPASCS": {
+                    "default": "Standby ASCS Server in a different Availability Zone"
+                },
+                "SAPHANAHostname": {
+                    "default": "SAP HANA Server host name (i.e. saphanaqs)"
+                },
+                "SAPInstallMediaBucket": {
+                    "default": "S3 bucket for SAP NetWeaver s/w."
+                },
+                "SAPInstallMediaKeyPrefix": {
+                    "default": "S3 Key Prefix for SAP NetWeaver s/w."
+                },
+                "SAPInstanceNum": {
+                    "default": "SAP instance number"
+                },
+                "SAPPASHostname": {
+                    "default": "SAP PAS Server host name (i.e. sappas00)"
+                },
+                "SAPTZ": {
+                    "default": "SAP Server timezone"
+                },
+                "SAPSchemaName": {
+                    "default": "SAP database schema"
+                },
+                "SID": {
+                    "default": "SAP system ID"
+                },
+                "SIDadmUID": {
+                    "default": "SIDadm user id"
+                },
+                "SLESBYOSRegCode": {
+                    "default": "Enter SUSE BYOS Registration Code"
+                },
+                "VPCCIDR": {
+                    "default": "VPC CIDR"
+                },
+                "VolumeTypeHanaData": {
+                    "default": "Choose storage volume type for SAP HANA Data"
+                },
+                "VolumeTypeHanaLog": {
+                    "default": "Choose storage volume type for SAP HANA Log"
+                },
+                "VolumeType": {
+                    "default": "EBS storage volume type"
+                }
+            }
+        }
+    },
+    "Parameters": {
+        "AutoRecoveryAAS": {
+            "Type": "String",
+            "Description": "EC2 Automatic recovery feature",
+            "Default": "Yes",
+            "AllowedValues": [
+                "Yes",
+                "No"
+            ]
+        },
+        "AutoRecoveryPAS": {
+            "Type": "String",
+            "Description": "EC2 Automatic recovery feature",
+            "Default": "Yes",
+            "AllowedValues": [
+                "Yes",
+                "No"
+            ]
+        },
+        "AASMyInstanceType": {
+            "AllowedValues": [
+                "r4.4xlarge",
+                "r4.2xlarge",
+                "r4.xlarge",
+                "r4.large",
+                "m4.4xlarge",
+                "m4.2xlarge",
+                "m4.xlarge",
+                "m4.large",
+                "c4.4xlarge",
+                "c4.2xlarge",
+                "c4.xlarge",
+                "c4.large"
+            ],
+            "Default": "r4.xlarge",
+            "Description": "Instance type for SAP App Servers.",
+            "Type": "String"
+        },
+        "ASCSMyInstanceType": {
+            "AllowedValues": [
+                "r4.4xlarge",
+                "r4.2xlarge",
+                "r4.xlarge",
+                "r4.large",
+                "m4.4xlarge",
+                "m4.2xlarge",
+                "m4.xlarge",
+                "m4.large",
+                "c4.4xlarge",
+                "c4.2xlarge",
+                "c4.xlarge",
+                "c4.large"
+            ],
+            "Default": "r4.large",
+            "Description": "Instance type for SAP ASCS Server.",
+            "Type": "String"
+        },
+        "AvailabilityZones": {
+            "Description": "Availability Zones to use for the subnets in the VPC. Two Availability Zones are used for this deployment and the logical order of your selections is preserved.",
+            "Type": "List<AWS::EC2::AvailabilityZone::Name>"
+        },
+        "BASTIONInstanceType": {
+            "AllowedValues": [
+                "t2.small",
+                "t2.medium",
+                "t2.large",
+                "m4.large",
+                "c4.large"
+            ],
+            "Default": "t2.small",
+            "Description": "Amazon EC2 instance type for the bastion host.",
+            "Type": "String"
+        },
+        "CloudTrailS3Bucket": {
+            "Description": "Name of Amazon S3 bucket where AWS CloudTrail Trail and AWS Config logs can be stored (e.g. mycloudtrail).",
+            "Default": "",
+            "Type": "String"
+        },
+        "DistributedInstall": {
+            "Description": "Split ASCS and PAS onto 2 different instances",
+            "Default": "No",
+            "Type": "String",
+            "AllowedValues": [
+                "Yes",
+                "No"
+            ]
+        },
+        "EnableLogging": {
+            "Description": "Enable (Yes) or disable (No) logging with AWS CloudTrail and AWS Config",
+            "Default": "No",
+            "Type": "String",
+            "AllowedValues": [
+                "Yes",
+                "No"
+            ]
+        },
+        "Encryption": {
+            "AllowedValues": [
+                "Yes",
+                "No"
+            ],
+            "Default": "No",
+            "Description": "Enable (Yes) or disable (No) encryption on EBS volumes.",
+            "Type": "String"
+        },
+        "EFSSapmnt": {
+            "AllowedValues": [
+                "Yes",
+                "No"
+            ],
+            "Default": "No",
+            "Description": "Enable (Yes) or disable (No) EFS for /sapmnt.",
+            "Type": "String"
+        },
+        "HANAHostCount": {
+            "Default": "1",
+            "Description": "Total number of SAP HANA nodes you want to deploy in the SAP HANA cluster.",
+            "MaxValue": "5",
+            "MinValue": "1",
+            "Type": "Number"
+        },
+        "HANAInstallMedia": {
+            "Default": "s3://   /",
+            "Description": "Name of your S3 bucket for your SAP HANA s/w. The s/w will *not* download if the format is not correct (e.g., s3://mysapbucket/HANA-media/).",
+            "Type": "String"
+        },
+        "HANAInstanceType": {
+            "AllowedValues": [
+                "r3.8xlarge",
+                "r3.4xlarge",
+                "r3.2xlarge",
+                "r4.16xlarge",
+                "r4.8xlarge",
+                "r4.4xlarge",
+                "r4.2xlarge",
+                "x1.16xlarge",
+                "x1.32xlarge",
+                "x1e.32xlarge"
+            ],
+            "Default": "r4.4xlarge",
+            "Description": "Instance type for SAP HANA host.",
+            "Type": "String"
+        },
+        "HANAMasterPass": {
+            "AllowedPattern": "^(?=.*?[a-z])(?=.*?[A-Z])(?=.*[0-9]).*",
+            "ConstraintDescription": "This must be at least 8 characters, including uppercase, lowercase, and numeric values.",
+            "Description": "SAP HANA password to use during installation.",
+            "MinLength": "8",
+            "NoEcho": "true",
+            "Type": "String"
+        },
+        "HostedZoneName": {
+            "Description": "A R53 privated hosted zone will be created. Use a fully-qualified domain name e.g. mycompany.local",
+            "Type": "String",
+            "MinLength": "1",
+            "MaxLength": "64",
+            "AllowedPattern": "(?!-)[a-zA-Z0-9-.]*(?<!-)",
+            "ConstraintDescription": "must be a valid fully-qualified domain name."
+        },
+        "InstallRDPAndBastionInstance": {
+            "AllowedValues": [
+                "Yes",
+                "No"
+            ],
+            "Default": "Yes",
+            "Description": "Install (Yes) or don't install (No) optional RDP & Bastion instances.",
+            "Type": "String"
+        },
+        "InstallSAP": {
+            "AllowedValues": [
+                "Yes",
+                "No"
+            ],
+            "Default": "Yes",
+            "Description": "Install (Yes) or don't install (No) SAP App Server. When No, *only* the AWS infrastructure is provisioned.",
+            "Type": "String"
+        },
+        "InstallSAPVersion": {
+            "Type": "String",
+            "Description": "SAP NW version to install.",
+            "Default": "SAP-NetWeaver-7.4",
+            "AllowedValues": [
+                "SAP-NetWeaver-7.4",
+                "SAP-NetWeaver-7.5"
+            ]
+        },
+        "InstallSAPAAS": {
+            "AllowedValues": [
+                "Yes",
+                "No"
+            ],
+            "Default": "No",
+            "Description": "Install (Yes) or (No) don't install SAP Additional App Servers. When No, *only* the SAP ASCS, DB & PAS are installed.",
+            "Type": "String"
+        },
+        "KeyName": {
+            "Description": "Name of an existing Amazon EC2 key pair. All instances will launch with this key pair.",
+            "Type": "AWS::EC2::KeyPair::KeyName"
+        },
+        "MyInstanceType": {
+            "AllowedValues": [
+                "r4.4xlarge",
+                "r4.2xlarge",
+                "r4.xlarge",
+                "r4.large",
+                "m4.4xlarge",
+                "m4.2xlarge",
+                "m4.xlarge",
+                "m4.large",
+                "c4.4xlarge",
+                "c4.2xlarge",
+                "c4.xlarge",
+                "c4.large"
+            ],
+            "Default": "r4.xlarge",
+            "Description": "Instance type for SAP Server.",
+            "Type": "String"
+        },
+        "MyOS": {
+            "AllowedValues": [
+                "SuSE-Linux-11-SP4-HVM",
+                "SuSE-Linux-12-SP1-HVM",
+                "SuSE-Linux-12-SP2-HVM",
+                "SuSE-Linux-12-SP3-HVM",
+                "SuSE-Linux-12-SP1-For-SAP-HVM",
+                "SuSE-Linux-12-SP2-For-SAP-HVM",
+                "SuSE-Linux-12-SP3-For-SAP-HVM",
+                "SuSE-Linux-12-SP1-For-SAP-BYOS-HVM",
+                "SuSE-Linux-12-SP2-For-SAP-BYOS-HVM",
+                "SuSE-Linux-12-SP3-For-SAP-BYOS-HVM"
+            ],
+            "Default": "SuSE-Linux-12-SP3-HVM",
+            "Description": "Operating system (SLES only) version for SAP servers.",
+            "Type": "String"
+        },
+        "MyOSHANA": {
+            "Type": "String",
+            "Description": "Operating system version for HANA servers.",
+            "Default": "SuSE-Linux-12-SP3-HVM",
+            "AllowedValues": [
+                "Red-Hat-Enterprise-Linux-7.3-For-SAP-HVM",
+                "SuSE-Linux-12-SP1-HVM",
+                "SuSE-Linux-12-SP3-HVM",
+                "SuSE-Linux-12-SP1-For-SAP-HVM",
+                "SuSE-Linux-12-SP2-For-SAP-HVM",
+                "SuSE-Linux-12-SP3-For-SAP-HVM",
+                "SuSE-Linux-12-SP1-For-SAP-BYOS-HVM",
+                "SuSE-Linux-12-SP2-For-SAP-BYOS-HVM",
+                "SuSE-Linux-12-SP3-For-SAP-BYOS-HVM"
+            ]
+        },
+        "PrivateSubnet1CIDR": {
+            "AllowedPattern": "^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\\/(1[6-9]|2[0-8]))$",
+            "ConstraintDescription": "CIDR block parameter must be in the form x.x.x.x/16-28",
+            "Default": "10.0.0.0/19",
+            "Description": "CIDR block for private subnet 1 located in Availability Zone 1",
+            "Type": "String"
+        },
+        "PrivateSubnet2CIDR": {
+            "AllowedPattern": "^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\\/(1[6-9]|2[0-8]))$",
+            "ConstraintDescription": "CIDR block parameter must be in the form x.x.x.x/16-28",
+            "Default": "10.0.32.0/19",
+            "Description": "CIDR block for private subnet 2 located in Availability Zone 2",
+            "Type": "String"
+        },
+        "PublicSubnet1CIDR": {
+            "AllowedPattern": "^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\\/(1[6-9]|2[0-8]))$",
+            "ConstraintDescription": "CIDR block parameter must be in the form x.x.x.x/16-28",
+            "Default": "10.0.128.0/20",
+            "Description": "CIDR block for the public (DMZ) subnet 1 located in Availability Zone 1",
+            "Type": "String"
+        },
+        "PublicSubnet2CIDR": {
+            "AllowedPattern": "^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\\/(1[6-9]|2[0-8]))$",
+            "ConstraintDescription": "CIDR block parameter must be in the form x.x.x.x/16-28",
+            "Default": "10.0.144.0/20",
+            "Description": "CIDR block for the public (DMZ) subnet 2 located in Availability Zone 2",
+            "Type": "String"
+        },
+        "QSS3BucketName": {
+            "AllowedPattern": "^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$",
+            "ConstraintDescription": "Quick Start bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-).",
+            "Default": "aws-quickstart",
+            "Description": "S3 bucket name for the Quick Start assets. This string can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-).",
+            "Type": "String"
+        },
+        "QSS3KeyPrefix": {
+            "AllowedPattern": "^[0-9a-zA-Z-/]*$",
+            "ConstraintDescription": "Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).",
+            "Default": "quickstart-sap-netweaver-abap/",
+            "Description": "S3 key prefix for the Quick Start assets. Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).",
+            "Type": "String"
+        },
+        "RDPInstanceType": {
+            "AllowedValues": [
+                "c4.large",
+                "c4.xlarge",
+                "m4.large",
+                "m4.xlarge"
+            ],
+            "Default": "m4.large",
+            "Description": "Instance type for Windows RDP instance.",
+            "Type": "String"
+        },
+        "RemoteAccessCIDR": {
+            "AllowedPattern": "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})",
+            "ConstraintDescription": "This must be a valid CIDR range in the format x.x.x.x/x.",
+            "Description": "CIDR block from where you want to access instances in your public subnet(s).",
+            "MaxLength": "18",
+            "MinLength": "9",
+            "Type": "String"
+        },
+        "SAPAASHostname": {
+            "Default": "sapaas00",
+            "Description": "Host name *template* to use for SAP AAS Server",
+            "Type": "String"
+        },
+        "SAPASCSHostname": {
+            "Default": "sapasc00",
+            "Description": "Virtual Hostname for SAP ASCS Server",
+            "Type": "String"
+        },
+        "StbySAPASCS": {
+            "AllowedValues": [
+                "Yes",
+                "No"
+            ],
+            "Default": "No",
+            "Description": "Enable (Yes) or disable (No) Standby ASCS instance.",
+            "Type": "String"
+        },
+        "SAPHANAHostname": {
+            "Default": "saphanaqs",
+            "Description": "Host name to use for SAP HANA database (SAP App server must be able to access HANA server).",
+            "Type": "String"
+        },
+        "SAPInstallMediaBucket": {
+            "Default": "my-sw-bucket",
+            "Description": "Name of your S3 bucket for your SAP NetWeaver s/w. Do *NOT* include s3:// (use just your bucket name)",
+            "Type": "String"
+        },
+        "SAPInstallMediaKeyPrefix": {
+            "Default": "my/sw/version/",
+            "Description": "Name of your S3 Key Prefix for your SAP NetWeaver s/w. Leave blank if you do not use a Key Prefix",
+            "Type": "String"
+        },
+        "SAPInstanceNum": {
+            "AllowedPattern": "([0-9]{1}[0-7]{1})",
+            "Default": "00",
+            "Description": "SAP instance number to use for installation and setup, and to open ports for security groups.",
+            "Type": "String"
+        },
+        "SAPPASHostname": {
+            "Default": "sappas00",
+            "Description": "Host name to use for SAP PAS Server (DNS short name).",
+            "Type": "String"
+        },
+        "SAPTZ": {
+            "AllowedValues": [
+                "PT",
+                "CT",
+                "ET",
+                "UC"
+            ],
+            "ConstraintDescription": "This value must consist of 2 characters.",
+            "Default": "UC",
+            "Description": "The TimeZone of your SAP Server (PT, CT, ET, or UTC)",
+            "Type": "String"
+        },
+        "SID": {
+            "AllowedPattern": "([A-Z]{1}[0-9A-Z]{2})",
+            "ConstraintDescription": "This value must consist of 3 characters.",
+            "Default": "HDB",
+            "Description": "SAP system ID for installation and setup.",
+            "Type": "String"
+        },
+        "SAPSchemaName": {
+            "Default": "SAPABAP1",
+            "Description": "SAP ABAP Schema name for HANA database.",
+            "Type": "String"
+        },
+        "SIDadmUID": {
+            "Default": "1002",
+            "Description": "UID (default is 1002) for the SIDadm user.",
+            "Type": "String"
+        },
+        "SLESBYOSRegCode": {
+            "Type": "String",
+            "Default": "",
+            "Description": "Registration code for SUSE BYOS (Applicable only if you use BYOS Option)."
+        },
+        "VolumeTypeHanaData": {
+            "Type": "String",
+            "Description": "EBS volume type for SAP HANA Data: General Purpose SSD (gp2) or Provisioned IOPS SSD (io1).",
+            "Default": "gp2",
+            "AllowedValues": [
+                "gp2",
+                "io1"
+            ]
+        },
+        "VolumeTypeHanaLog": {
+            "Type": "String",
+            "Description": "EBS volume type for SAP HANA Log: General Purpose SSD (gp2) or Provisioned IOPS SSD (io1).",
+            "Default": "gp2",
+            "AllowedValues": [
+                "gp2",
+                "io1"
+            ]
+        },
+        "VPCCIDR": {
+            "AllowedPattern": "^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\\/(1[6-9]|2[0-8]))$",
+            "ConstraintDescription": "CIDR block parameter must be in the form x.x.x.x/16-28",
+            "Default": "10.0.0.0/16",
+            "Description": "CIDR block for the VPC",
+            "Type": "String"
+        }
+    },
+    "Conditions": {
+        "InstallRDPAndBastion": {
+            "Fn::Equals": [
+                {
+                    "Ref": "InstallRDPAndBastionInstance"
+                },
+                "Yes"
+            ]
+        },
+        "SplitASCS": {
+            "Fn::Equals": [
+                {
+                    "Ref": "DistributedInstall"
+                },
+                "Yes"
+            ]
+        },
+        "NoSplitASCS": {
+            "Fn::Equals": [
+                {
+                    "Ref": "DistributedInstall"
+                },
+                "No"
+            ]
+        },
+        "UseEFS": {
+            "Fn::Equals": [
+                {
+                    "Ref": "EFSSapmnt"
+                },
+                "Yes"
+            ]
+        },
+        "NoUseEFS": {
+            "Fn::Equals": [
+                {
+                    "Ref": "EFSSapmnt"
+                },
+                "No"
+            ]
+        },
+        "SplitandEFS": {"Fn::And": [{"Condition": "SplitASCS"}, {"Condition": "UseEFS" }]},
+        "SplitandNoEFS": {"Fn::And": [{"Condition": "SplitASCS"}, {"Condition": "NoUseEFS" }]},
+        "NoSplitandEFS": {"Fn::And": [{"Condition": "NoSplitASCS"}, {"Condition": "UseEFS" }]},
+        "NoSplitandNoEFS": {"Fn::And": [{"Condition": "NoSplitASCS"}, {"Condition": "NoUseEFS" }]}
+        },
+    "Mappings": {
+    },
+    "Resources": {
+        "VPCStack": {
+            "Type": "AWS::CloudFormation::Stack",
+            "Properties": {
+                "TemplateURL": {
+                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}submodules/quickstart-aws-vpc/templates/aws-vpc.template"
+                },
+                "Parameters": {
+                    "AvailabilityZones": {
+                        "Fn::Join": [
+                            ",",
+                            {
+                                "Ref": "AvailabilityZones"
+                            }
+                        ]
+                    },
+                    "KeyPairName": {
+                        "Ref": "KeyName"
+                    },
+                    "NumberOfAZs": "2",
+                    "PrivateSubnet1ACIDR": {
+                        "Ref": "PrivateSubnet1CIDR"
+                    },
+                    "PrivateSubnet2ACIDR": {
+                        "Ref": "PrivateSubnet2CIDR"
+                    },
+                    "PublicSubnet1CIDR": {
+                        "Ref": "PublicSubnet1CIDR"
+                    },
+                    "PublicSubnet2CIDR": {
+                        "Ref": "PublicSubnet2CIDR"
+                    },
+                    "VPCCIDR": {
+                        "Ref": "VPCCIDR"
+                    }
+                }
+            }
+        },
+        "LinuxBastionStack": {
+            "DependsOn": "VPCStack",
+            "Type": "AWS::CloudFormation::Stack",
+            "Condition": "InstallRDPAndBastion",
+            "Properties": {
+                "TemplateURL": {
+                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}submodules/quickstart-linux-bastion/templates/linux-bastion.template"
+                },
+                "Parameters": {
+                    "BastionInstanceType": {
+                        "Ref": "BASTIONInstanceType"
+                    },
+                    "KeyPairName": {
+                        "Ref": "KeyName"
+                    },
+                    "PublicSubnet1ID": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.PublicSubnet1ID"
+                        ]
+                    },
+                    "PublicSubnet2ID": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.PublicSubnet2ID"
+                        ]
+                    },
+                    "QSS3BucketName": {
+                        "Ref": "QSS3BucketName"
+                    },
+                    "QSS3KeyPrefix": {
+                        "Fn::Sub": "${QSS3KeyPrefix}submodules/quickstart-linux-bastion/"
+                    },
+                    "RemoteAccessCIDR": {
+                        "Ref": "RemoteAccessCIDR"
+                    },
+                    "VPCID": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.VPCID"
+                        ]
+                    }
+                }
+            }
+        },
+        "SAPASCSStackSplitandEFS": {
+            "DependsOn": "VPCStack",
+            "Type": "AWS::CloudFormation::Stack",
+            "Condition": "SplitandEFS",
+            "Properties": {
+                "TemplateURL": {
+                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}templates/sap-netweaver-abap-ascs.template"
+                },
+                "Parameters": {
+                    "EFSSapmnt": {
+                        "Ref": "EFSSapmnt"
+                    },
+                    "HostedZoneName": {
+                        "Ref": "HostedZoneName"
+                    },
+                    "InstallSAP": {
+                        "Ref": "InstallSAP"
+                    },
+                    "InstallSAPVersion": {
+                        "Ref": "InstallSAPVersion"
+                    },
+                    "KeyName": {
+                        "Ref": "KeyName"
+                    },
+                    "MyInstanceType": {
+                        "Ref": "MyInstanceType"
+                    },
+                    "MyOS": {
+                        "Ref": "MyOS"
+                    },
+                    "ApplicationCIDR": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.PrivateSubnet2AID"
+                        ]
+                    },
+                    "PrivateSubnetID": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.PrivateSubnet1AID"
+                        ]
+                    },
+                    "PrivateSubnet1CIDR": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.PrivateSubnet1ACIDR"
+                        ]
+                    },
+                    "PrivateSubnet2CIDR": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.PrivateSubnet2ACIDR"
+                        ]
+                    },
+                    "PublicSubnet1CIDR": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.PublicSubnet1CIDR"
+                        ]
+                    },
+                    "PublicSubnet2CIDR": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.PublicSubnet2CIDR"
+                        ]
+                    },
+                    "QSS3BucketName": {
+                        "Ref": "QSS3BucketName"
+                    },
+                    "QSS3KeyPrefix": {
+                        "Ref": "QSS3KeyPrefix"
+                    },
+                    "SAPASCSHostname": {
+                        "Ref": "SAPASCSHostname"
+                    },
+                    "StbySAPASCS": {
+                        "Ref": "StbySAPASCS"
+                    },
+                    "SAPInstallMediaBucket": {
+                        "Ref": "SAPInstallMediaBucket"
+                    },
+                    "SAPInstallMediaKeyPrefix": {
+                        "Ref": "SAPInstallMediaKeyPrefix"
+                    },
+                    "SAPInstanceNum": {
+                        "Ref": "SAPInstanceNum"
+                    },
+                    "SAPNetWeaverPass": {
+                        "Ref": "HANAMasterPass"
+                    },
+                    "SAPTZ": {
+                        "Ref": "SAPTZ"
+                    },
+                    "SID": {
+                        "Ref": "SID"
+                    },
+                    "SIDadmUID": {
+                        "Ref": "SIDadmUID"
+                    },
+                    "SLESBYOSRegCode": {
+                        "Ref": "SLESBYOSRegCode"
+                    },
+                    "VPCID": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.VPCID"
+                        ]
+                    }
+                }
+            }
+        },
+        "SAPASCSStackSplitNoEFS": {
+            "DependsOn": "VPCStack",
+            "Type": "AWS::CloudFormation::Stack",
+            "Condition": "SplitandNoEFS",
+            "Properties": {
+                "TemplateURL": {
+                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}templates/sap-netweaver-abap-ascs.template"
+                },
+                "Parameters": {
+                    "EFSSapmnt": {
+                        "Ref": "EFSSapmnt"
+                    },
+                    "HostedZoneName": {
+                        "Ref": "HostedZoneName"
+                    },
+                    "InstallSAP": {
+                        "Ref": "InstallSAP"
+                    },
+                    "InstallSAPVersion": {
+                        "Ref": "InstallSAPVersion"
+                    },
+                    "KeyName": {
+                        "Ref": "KeyName"
+                    },
+                    "MyInstanceType": {
+                        "Ref": "MyInstanceType"
+                    },
+                    "MyOS": {
+                        "Ref": "MyOS"
+                    },
+                    "ApplicationCIDR": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.PrivateSubnet2AID"
+                        ]
+                    },
+                    "PrivateSubnetID": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.PrivateSubnet1AID"
+                        ]
+                    },
+                    "PrivateSubnet1CIDR": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.PrivateSubnet1ACIDR"
+                        ]
+                    },
+                    "PrivateSubnet2CIDR": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.PrivateSubnet2ACIDR"
+                        ]
+                    },
+                    "PublicSubnet1CIDR": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.PublicSubnet1CIDR"
+                        ]
+                    },
+                    "PublicSubnet2CIDR": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.PublicSubnet2CIDR"
+                        ]
+                    },
+                    "QSS3BucketName": {
+                        "Ref": "QSS3BucketName"
+                    },
+                    "QSS3KeyPrefix": {
+                        "Ref": "QSS3KeyPrefix"
+                    },
+                    "SAPASCSHostname": {
+                        "Ref": "SAPASCSHostname"
+                    },
+                    "SAPInstallMediaBucket": {
+                        "Ref": "SAPInstallMediaBucket"
+                    },
+                    "SAPInstallMediaKeyPrefix": {
+                        "Ref": "SAPInstallMediaKeyPrefix"
+                    },
+                    "SAPInstanceNum": {
+                        "Ref": "SAPInstanceNum"
+                    },
+                    "SAPNetWeaverPass": {
+                        "Ref": "HANAMasterPass"
+                    },
+                    "SAPTZ": {
+                        "Ref": "SAPTZ"
+                    },
+                    "SID": {
+                        "Ref": "SID"
+                    },
+                    "SIDadmUID": {
+                        "Ref": "SIDadmUID"
+                    },
+                    "SLESBYOSRegCode": {
+                        "Ref": "SLESBYOSRegCode"
+                    },
+                    "VPCID": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.VPCID"
+                        ]
+                    }
+                }
+            }
+        },
+        "SAPPASStackSplitandEFS": {
+            "DependsOn": "SAPASCSStackSplitandEFS",
+            "Condition": "SplitandEFS",
+            "Type": "AWS::CloudFormation::Stack",
+            "Properties": {
+                "TemplateURL": {
+                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}templates/sap-netweaver-abap-pas.template"
+                },
+                "Parameters": {
+                    "AutoRecoveryAAS": {
+                        "Ref": "AutoRecoveryAAS"
+                    },
+                    "AutoRecoveryPAS": {
+                        "Ref": "AutoRecoveryPAS"
+                    },
+                    "AASMyInstanceType": {
+                        "Ref": "AASMyInstanceType"
+                    },
+                    "CloudTrailS3Bucket": {
+                        "Ref": "CloudTrailS3Bucket"
+                    },
+                    "EFSFSName": {
+                        "Fn::GetAtt": [
+                            "SAPASCSStackSplitandEFS",
+                            "Outputs.EFSFSName"
+                        ]
+                    },
+                    "EFSSapmnt": {
+                        "Fn::GetAtt": [
+                            "SAPASCSStackSplitandEFS",
+                            "Outputs.EFSSapmnt"
+                        ]
+                    },
+                    "EnableLogging": {
+                        "Ref": "EnableLogging"
+                    },
+                    "Encryption": {
+                        "Ref": "Encryption"
+                    },
+                    "HANAHostCount": {
+                        "Ref": "HANAHostCount"
+                    },
+                    "HANAInstallMedia": {
+                        "Ref": "HANAInstallMedia"
+                    },
+                    "HANAInstanceType": {
+                        "Ref": "HANAInstanceType"
+                    },
+                    "SAPNetWeaverPass": {
+                        "Ref": "HANAMasterPass"
+                    },
+                    "HostedZoneID": {
+                        "Fn::GetAtt": [
+                            "SAPASCSStackSplitandEFS",
+                            "Outputs.HostedZoneID"
+                        ]
+                    },
+                    "HostedZoneName": {
+                        "Fn::GetAtt": [
+                            "SAPASCSStackSplitandEFS",
+                            "Outputs.HostedZoneName"
+                        ]
+                    },
+                    "InstallRDPInstance": {
+                        "Ref": "InstallRDPAndBastionInstance"
+                    },
+                    "InstallSAPAAS": {
+                        "Ref": "InstallSAPAAS"
+                    },
+                    "InstallSAP": {
+                        "Ref": "InstallSAP"
+                    },
+                    "InstallSAPVersion": {
+                        "Ref": "InstallSAPVersion"
+                    },
+                    "KeyName": {
+                        "Ref": "KeyName"
+                    },
+                    "MyInstanceType": {
+                        "Ref": "MyInstanceType"
+                    },
+                    "MyOS": {
+                        "Ref": "MyOS"
+                    },
+                    "MyOSHANA": {
+                        "Ref": "MyOSHANA"
+                    },
+                    "PrivateSubnetID": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.PrivateSubnet1AID"
+                        ]
+                    },
+                    "PrivateSubnet1CIDR": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.PrivateSubnet1ACIDR"
+                        ]
+                    },
+                    "PrivateSubnet2CIDR": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.PrivateSubnet2ACIDR"
+                        ]
+                    },
+                    "PublicSubnet1CIDR": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.PublicSubnet1CIDR"
+                        ]
+                    },
+                    "PublicSubnet2CIDR": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.PublicSubnet2CIDR"
+                        ]
+                    },
+                    "PublicSubnet1ID": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.PublicSubnet1ID"
+                        ]
+                    },
+                    "QSS3BucketName": {
+                        "Ref": "QSS3BucketName"
+                    },
+                    "QSS3KeyPrefix": {
+                        "Ref": "QSS3KeyPrefix"
+                    },
+                    "RDPInstanceType": {
+                        "Ref": "RDPInstanceType"
+                    },
+                    "SAPAASHostname": {
+                        "Ref": "SAPAASHostname"
+                    },
+                    "SAPHANAHostname": {
+                        "Ref": "SAPHANAHostname"
+                    },
+                    "SAPInstallMediaBucket": {
+                        "Ref": "SAPInstallMediaBucket"
+                    },
+                    "SAPInstallMediaKeyPrefix": {
+                        "Ref": "SAPInstallMediaKeyPrefix"
+                    },
+                    "SAPPASHostname": {
+                        "Ref": "SAPPASHostname"
+                    },
+                    "SAPInstanceNum": {
+                        "Ref": "SAPInstanceNum"
+                    },
+                    "SAPTZ": {
+                        "Ref": "SAPTZ"
+                    },
+                    "SAPSchemaName": {
+                        "Ref": "SAPSchemaName"
+                    },
+                    "SID": {
+                        "Ref": "SID"
+                    },
+                    "SIDadmUID": {
+                        "Ref": "SIDadmUID"
+                    },
+                    "SLESBYOSRegCode": {
+                        "Ref": "SLESBYOSRegCode"
+                    },
+                    "VolumeTypeHanaData": {
+                        "Ref": "VolumeTypeHanaData"
+                    },
+                    "VolumeTypeHanaLog": {
+                        "Ref": "VolumeTypeHanaLog"
+                    },
+                    "VPCID": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.VPCID"
+                        ]
+                    }
+                }
+            }
+        },
+        "SAPPASStackSplitNoEFS": {
+            "DependsOn": "SAPASCSStackSplitNoEFS",
+            "Condition": "SplitandNoEFS",
+            "Type": "AWS::CloudFormation::Stack",
+            "Properties": {
+                "TemplateURL": {
+                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}templates/sap-netweaver-abap-pas.template"
+                },
+                "Parameters": {
+                    "AutoRecoveryAAS": {
+                        "Ref": "AutoRecoveryAAS"
+                    },
+                    "AutoRecoveryPAS": {
+                        "Ref": "AutoRecoveryPAS"
+                    },
+                    "AASMyInstanceType": {
+                        "Ref": "AASMyInstanceType"
+                    },
+                    "CloudTrailS3Bucket": {
+                        "Ref": "CloudTrailS3Bucket"
+                    },
+                    "EFSSapmnt": {
+                        "Fn::GetAtt": [
+                            "SAPASCSStackSplitNoEFS",
+                            "Outputs.EFSSapmnt"
+                        ]
+                    },
+                    "EnableLogging": {
+                        "Ref": "EnableLogging"
+                    },
+                    "Encryption": {
+                        "Ref": "Encryption"
+                    },
+                    "HANAHostCount": {
+                        "Ref": "HANAHostCount"
+                    },
+                    "HANAInstallMedia": {
+                        "Ref": "HANAInstallMedia"
+                    },
+                    "HANAInstanceType": {
+                        "Ref": "HANAInstanceType"
+                    },
+                    "SAPNetWeaverPass": {
+                        "Ref": "HANAMasterPass"
+                    },
+                    "HostedZoneID": {
+                        "Fn::GetAtt": [
+                            "SAPASCSStackSplitNoEFS",
+                            "Outputs.HostedZoneID"
+                        ]
+                    },
+                    "HostedZoneName": {
+                        "Fn::GetAtt": [
+                            "SAPASCSStackSplitNoEFS",
+                            "Outputs.HostedZoneName"
+                        ]
+                    },
+                    "InstallRDPInstance": {
+                        "Ref": "InstallRDPAndBastionInstance"
+                    },
+                    "InstallSAPAAS": {
+                        "Ref": "InstallSAPAAS"
+                    },
+                    "InstallSAP": {
+                        "Ref": "InstallSAP"
+                    },
+                    "InstallSAPVersion": {
+                        "Ref": "InstallSAPVersion"
+                    },
+                    "KeyName": {
+                        "Ref": "KeyName"
+                    },
+                    "MyInstanceType": {
+                        "Ref": "MyInstanceType"
+                    },
+                    "MyOS": {
+                        "Ref": "MyOS"
+                    },
+                    "MyOSHANA": {
+                        "Ref": "MyOSHANA"
+                    },
+                    "PrivateSubnetID": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.PrivateSubnet1AID"
+                        ]
+                    },
+                    "PrivateSubnet1CIDR": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.PrivateSubnet1ACIDR"
+                        ]
+                    },
+                    "PrivateSubnet2CIDR": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.PrivateSubnet2ACIDR"
+                        ]
+                    },
+                    "PublicSubnet1CIDR": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.PublicSubnet1CIDR"
+                        ]
+                    },
+                    "PublicSubnet2CIDR": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.PublicSubnet2CIDR"
+                        ]
+                    },
+                    "PublicSubnet1ID": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.PublicSubnet1ID"
+                        ]
+                    },
+                    "QSS3BucketName": {
+                        "Ref": "QSS3BucketName"
+                    },
+                    "QSS3KeyPrefix": {
+                        "Ref": "QSS3KeyPrefix"
+                    },
+                    "RDPInstanceType": {
+                        "Ref": "RDPInstanceType"
+                    },
+                    "SAPAASHostname": {
+                        "Ref": "SAPAASHostname"
+                    },
+                    "SAPHANAHostname": {
+                        "Ref": "SAPHANAHostname"
+                    },
+                    "SAPInstallMediaBucket": {
+                        "Ref": "SAPInstallMediaBucket"
+                    },
+                    "SAPInstallMediaKeyPrefix": {
+                        "Ref": "SAPInstallMediaKeyPrefix"
+                    },
+                    "SAPPASHostname": {
+                        "Ref": "SAPPASHostname"
+                    },
+                    "SAPInstanceNum": {
+                        "Ref": "SAPInstanceNum"
+                    },
+                    "SAPTZ": {
+                        "Ref": "SAPTZ"
+                    },
+                    "SAPSchemaName": {
+                        "Ref": "SAPSchemaName"
+                    },
+                    "SID": {
+                        "Ref": "SID"
+                    },
+                    "SIDadmUID": {
+                        "Ref": "SIDadmUID"
+                    },
+                    "SLESBYOSRegCode": {
+                        "Ref": "SLESBYOSRegCode"
+                    },
+                    "VolumeTypeHanaData": {
+                        "Ref": "VolumeTypeHanaData"
+                    },
+                    "VolumeTypeHanaLog": {
+                        "Ref": "VolumeTypeHanaLog"
+                    },
+                    "VPCID": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.VPCID"
+                        ]
+                    }
+                }
+            }
+        },
+        "SAPHANAPASStackNoSplitNoEFS": {
+            "DependsOn": "VPCStack",
+            "Condition": "NoSplitandNoEFS",
+            "Type": "AWS::CloudFormation::Stack",
+            "Properties": {
+                "TemplateURL": {
+                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}templates/sap-netweaver-hana-abap.template"
+                },
+                "Parameters": {
+                    "AutoRecoveryAAS": {
+                        "Ref": "AutoRecoveryAAS"
+                    },
+                    "AutoRecoveryPAS": {
+                        "Ref": "AutoRecoveryPAS"
+                    },
+                    "AASMyInstanceType": {
+                        "Ref": "AASMyInstanceType"
+                    },
+                    "CloudTrailS3Bucket": {
+                        "Ref": "CloudTrailS3Bucket"
+                    },
+                    "EnableLogging": {
+                        "Ref": "EnableLogging"
+                    },
+                    "Encryption": {
+                        "Ref": "Encryption"
+                    },
+                    "HANAHostCount": {
+                        "Ref": "HANAHostCount"
+                    },
+                    "HANAInstallMedia": {
+                        "Ref": "HANAInstallMedia"
+                    },
+                    "HANAInstanceType": {
+                        "Ref": "HANAInstanceType"
+                    },
+                    "HANAMasterPass": {
+                        "Ref": "HANAMasterPass"
+                    },
+                    "HostedZoneName": {
+                        "Ref": "HostedZoneName"
+                    },
+                    "InstallRDPInstance": {
+                        "Ref": "InstallRDPAndBastionInstance"
+                    },
+                    "InstallSAPAAS": {
+                        "Ref": "InstallSAPAAS"
+                    },
+                    "InstallSAP": {
+                        "Ref": "InstallSAP"
+                    },
+                    "InstallSAPVersion": {
+                        "Ref": "InstallSAPVersion"
+                    },
+                    "KeyName": {
+                        "Ref": "KeyName"
+                    },
+                    "MyInstanceType": {
+                        "Ref": "MyInstanceType"
+                    },
+                    "MyOS": {
+                        "Ref": "MyOS"
+                    },
+                    "MyOSHANA": {
+                        "Ref": "MyOSHANA"
+                    },
+                    "ApplicationCIDR": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.PrivateSubnet2AID"
+                        ]
+                    },
+                    "PrivateSubnetID": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.PrivateSubnet1AID"
+                        ]
+                    },
+                    "PrivateSubnet1CIDR": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.PrivateSubnet1ACIDR"
+                        ]
+                    },
+                    "PrivateSubnet2CIDR": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.PrivateSubnet2ACIDR"
+                        ]
+                    },
+                    "PrivateSubnet1AID": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.PrivateSubnet1AID"
+                        ]
+                    },
+                    "PublicSubnet1CIDR": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.PublicSubnet1CIDR"
+                        ]
+                    },
+                    "PublicSubnet2CIDR": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.PublicSubnet2CIDR"
+                        ]
+                    },
+                    "PublicSubnet1ID": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.PublicSubnet1ID"
+                        ]
+                    },
+                    "QSS3BucketName": {
+                        "Ref": "QSS3BucketName"
+                    },
+                    "QSS3KeyPrefix": {
+                        "Ref": "QSS3KeyPrefix"
+                    },
+                    "RDPInstanceType": {
+                        "Ref": "RDPInstanceType"
+                    },
+                    "SAPAASHostname": {
+                        "Ref": "SAPAASHostname"
+                    },
+                    "SAPHANAHostname": {
+                        "Ref": "SAPHANAHostname"
+                    },
+                    "SAPInstallMediaBucket": {
+                        "Ref": "SAPInstallMediaBucket"
+                    },
+                    "SAPInstallMediaKeyPrefix": {
+                        "Ref": "SAPInstallMediaKeyPrefix"
+                    },
+                    "SAPPASHostname": {
+                        "Ref": "SAPPASHostname"
+                    },
+                    "SAPInstanceNum": {
+                        "Ref": "SAPInstanceNum"
+                    },
+                    "SAPTZ": {
+                        "Ref": "SAPTZ"
+                    },
+                    "SAPSchemaName": {
+                        "Ref": "SAPSchemaName"
+                    },
+                    "SID": {
+                        "Ref": "SID"
+                    },
+                    "SIDadmUID": {
+                        "Ref": "SIDadmUID"
+                    },
+                    "SLESBYOSRegCode": {
+                        "Ref": "SLESBYOSRegCode"
+                    },
+                    "VolumeTypeHanaData": {
+                        "Ref": "VolumeTypeHanaData"
+                    },
+                    "VolumeTypeHanaLog": {
+                        "Ref": "VolumeTypeHanaLog"
+                    },
+                    "VPCID": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.VPCID"
+                        ]
+                    }
+                }
+            }
+        },
+        "SAPHANAPASStackNoSplitEFS": {
+            "DependsOn": "VPCStack",
+            "Condition": "NoSplitandEFS",
+            "Type": "AWS::CloudFormation::Stack",
+            "Properties": {
+                "TemplateURL": {
+                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}templates/sap-netweaver-hana-abap.template"
+                },
+                "Parameters": {
+                    "AutoRecoveryAAS": {
+                        "Ref": "AutoRecoveryAAS"
+                    },
+                    "AutoRecoveryPAS": {
+                        "Ref": "AutoRecoveryPAS"
+                    },
+                    "AASMyInstanceType": {
+                        "Ref": "AASMyInstanceType"
+                    },
+                    "CloudTrailS3Bucket": {
+                        "Ref": "CloudTrailS3Bucket"
+                    },
+                    "EFSSapmnt": {
+                            "Ref": "EFSSapmnt"
+                    },
+                    "EnableLogging": {
+                        "Ref": "EnableLogging"
+                    },
+                    "Encryption": {
+                        "Ref": "Encryption"
+                    },
+                    "HANAHostCount": {
+                        "Ref": "HANAHostCount"
+                    },
+                    "HANAInstallMedia": {
+                        "Ref": "HANAInstallMedia"
+                    },
+                    "HANAInstanceType": {
+                        "Ref": "HANAInstanceType"
+                    },
+                    "HANAMasterPass": {
+                        "Ref": "HANAMasterPass"
+                    },
+                    "HostedZoneName": {
+                        "Ref": "HostedZoneName"
+                    },
+                    "InstallRDPInstance": {
+                        "Ref": "InstallRDPAndBastionInstance"
+                    },
+                    "InstallSAPAAS": {
+                        "Ref": "InstallSAPAAS"
+                    },
+                    "InstallSAP": {
+                        "Ref": "InstallSAP"
+                    },
+                    "InstallSAPVersion": {
+                        "Ref": "InstallSAPVersion"
+                    },
+                    "KeyName": {
+                        "Ref": "KeyName"
+                    },
+                    "MyInstanceType": {
+                        "Ref": "MyInstanceType"
+                    },
+                    "MyOS": {
+                        "Ref": "MyOS"
+                    },
+                    "MyOSHANA": {
+                        "Ref": "MyOSHANA"
+                    },
+                    "ApplicationCIDR": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.PrivateSubnet2AID"
+                        ]
+                    },
+                    "PrivateSubnetID": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.PrivateSubnet1AID"
+                        ]
+                    },
+                    "PrivateSubnet1CIDR": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.PrivateSubnet1ACIDR"
+                        ]
+                    },
+                    "PrivateSubnet2CIDR": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.PrivateSubnet2ACIDR"
+                        ]
+                    },
+                    "PrivateSubnet1AID": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.PrivateSubnet1AID"
+                        ]
+                    },
+                    "PublicSubnet1CIDR": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.PublicSubnet1CIDR"
+                        ]
+                    },
+                    "PublicSubnet2CIDR": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.PublicSubnet2CIDR"
+                        ]
+                    },
+                    "PublicSubnet1ID": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.PublicSubnet1ID"
+                        ]
+                    },
+                    "QSS3BucketName": {
+                        "Ref": "QSS3BucketName"
+                    },
+                    "QSS3KeyPrefix": {
+                        "Ref": "QSS3KeyPrefix"
+                    },
+                    "RDPInstanceType": {
+                        "Ref": "RDPInstanceType"
+                    },
+                    "SAPAASHostname": {
+                        "Ref": "SAPAASHostname"
+                    },
+                    "SAPHANAHostname": {
+                        "Ref": "SAPHANAHostname"
+                    },
+                    "SAPInstallMediaBucket": {
+                        "Ref": "SAPInstallMediaBucket"
+                    },
+                    "SAPInstallMediaKeyPrefix": {
+                        "Ref": "SAPInstallMediaKeyPrefix"
+                    },
+                    "SAPPASHostname": {
+                        "Ref": "SAPPASHostname"
+                    },
+                    "SAPInstanceNum": {
+                        "Ref": "SAPInstanceNum"
+                    },
+                    "SAPTZ": {
+                        "Ref": "SAPTZ"
+                    },
+                    "SAPSchemaName": {
+                        "Ref": "SAPSchemaName"
+                    },
+                    "SID": {
+                        "Ref": "SID"
+                    },
+                    "SIDadmUID": {
+                        "Ref": "SIDadmUID"
+                    },
+                    "SLESBYOSRegCode": {
+                        "Ref": "SLESBYOSRegCode"
+                    },
+                    "VolumeTypeHanaData": {
+                        "Ref": "VolumeTypeHanaData"
+                    },
+                    "VolumeTypeHanaLog": {
+                        "Ref": "VolumeTypeHanaLog"
+                    },
+                    "VPCID": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.VPCID"
+                        ]
+                    }
+                }
+            }
+        }
+    },
+  "Rules": {
+    "EFSSupport": {
+    "RuleCondition" : {
+         "Fn::Equals": [
+                {
+                    "Ref": "EFSSapmnt"
+                },
+                "Yes"
+            ]
+        },
+      "Assertions": [
+        {
+          "Assert" : {"Fn::Contains": [["us-east-1", "us-east-2", "us-west-1", "us-west-2", "eu-west-1", "eu-central-1", "ap-southeast-2"], {"Ref": "AWS::Region"}]},
+          "AssertDescription": "!!ALERT: This is *not* an AWS Region that supports EFS!!"
+        }
+      ]
+    }
+  }
+}

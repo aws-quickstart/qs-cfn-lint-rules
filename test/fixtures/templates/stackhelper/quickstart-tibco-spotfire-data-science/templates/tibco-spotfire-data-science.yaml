@@ -1,0 +1,822 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: >-
+  This CF template creates a VPC infrastructure for a multi-AZ, multi-tier
+  deployment of TIBCO Spotfire Data Science 6.4 on AWS. It deploys a VPC with
+  bastions. **WARNING** This template creates EC2 instances and related
+  resources. You will be billed for the AWS resources used if you create a stack
+  from this template. (qs-1p2ma2up5)
+Metadata:
+  'AWS::CloudFormation::Interface':
+    ParameterGroups:
+    - Label:
+        default: Network configuration
+      Parameters:
+      - VPCID
+      - PrivateSubnet1ID
+      - PrivateSubnet2ID
+      - PublicSubnet1ID
+      - PublicSubnet2ID
+      - AdminConsoleAccessCIDR
+    - Label:
+        default: Bastion configuration
+      Parameters:
+      - BastionSecurityGroupID
+    - Label:
+        default: TIBCO Spotfire DS configuration
+      Parameters:
+      - KeyPairName
+      - TSDSowner
+      - TSDSInstanceName
+      - TSDSInstanceType
+      - TSDSInstancePassword
+    - Label:
+        default: Amazon RDS configuration
+      Parameters:
+      - RDSPassword
+      - DBMultiAZ
+    - Label:
+        default: Amazon EMR configuration
+      Parameters:
+      - EMRMasterInstanceType
+      - EMRCoreInstanceType
+      - EMRClusterName
+      - EMRCoreNodes
+      - EMRLogBucket
+    - Label:
+        default: '(Optional) TIBCO Spotfire Site Domain configuration'
+      Parameters:
+      - TSDSSiteDomain
+      - ALBSSLCertificateARN
+      - Route53HostedZoneId
+    - Label:
+        default: AWS Quick Start configuration
+      Parameters:
+      - QSS3BucketName
+      - QSS3KeyPrefix
+    ParameterLabels:
+      RDSPassword:
+        default: RDS database password
+      DBMultiAZ:
+        default: Multi-AZ database
+      QSS3BucketName:
+        default: Quick Start S3 bucket name
+      QSS3KeyPrefix:
+        default: Quick Start S3 key prefix
+      EMRClusterName:
+        default: EMR cluster name
+      EMRCoreInstanceType:
+        default: EMR core instance type
+      EMRCoreNodes:
+        default: EMR core nodes
+      EMRLogBucket:
+        default: EMR logs bucket name
+      EMRMasterInstanceType:
+        default: EMR master instance type
+      AdminConsoleAccessCIDR:
+        default: Allowed external access CIDR
+      BastionSecurityGroupID:
+        default: Bastion Security Group ID
+      KeyPairName:
+        default: Key pair name
+      TSDSowner:
+        default: TSDS instance owner
+      TSDSInstanceName:
+        default: TSDS instance name
+      TSDSInstanceType:
+        default: TSDS instance type
+      TSDSInstancePassword:
+        default: TSDS siteadmin password
+      PrivateSubnet1ID:
+        default: Private subnet 1 ID
+      PrivateSubnet2ID:
+        default: Private subnet 2 ID
+      PublicSubnet1ID:
+        default: Public subnet 1 ID
+      PublicSubnet2ID:
+        default: Public subnet 2 ID
+      VPCID:
+        default: VPC ID
+      TSDSSiteDomain:
+        default: TSDS Site domain
+      ALBSSLCertificateARN:
+        default: ALB SSL certificate ARN
+      Route53HostedZoneId:
+        default: Route 53 hosted zone ID
+Parameters:
+  ALBSSLCertificateARN:
+    Default: ''
+    Description: '(Optional) The ARN of the SSL certificate to be used for the Application Load Balancer.'
+    Type: String
+  Route53HostedZoneId:
+    Description: '(Optional) The Route53 hosted zone ID where the DNS record for the TIBCO Spotfire Data Science site domain will be added.'
+    Type: String
+    Default: ''
+  TSDSSiteDomain:
+    Description: '(Optional) The domain name of the TIBCO Spotfire Data Science site; e.g, example.com. A valid Fully Qualified Domain Name is required when using SSL.'
+    AllowedPattern: (?!-)[a-zA-Z0-9-.]*(?<!-)
+    ConstraintDescription: Must be a valid fully-qualified domain name.
+    Type: String
+    Default: ''
+  QSS3BucketName:
+    AllowedPattern: '^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$'
+    ConstraintDescription: >-
+      Quick Start bucket name can include numbers, lowercase letters, uppercase
+      letters, and hyphens (-). It cannot start or end with a hyphen (-).
+    Default: aws-quickstart
+    Description: >-
+      Do not change: S3 bucket name for the Quick Start assets. Quick Start
+      bucket name can include numbers, lowercase letters, uppercase letters, and
+      hyphens (-). It cannot start or end with a hyphen (-).
+    Type: String
+  QSS3KeyPrefix:
+    AllowedPattern: '^[0-9a-zA-Z-][0-9a-zA-Z-/]*/$'
+    ConstraintDescription: >-
+      Quick Start key prefix can include numbers, lowercase letters, uppercase
+      letters, hyphens (-), and forward slash (/).
+    Default: quickstart-tibco-spotfire-data-science/
+    Description: >-
+      S3 key prefix for the Quick Start assets. Quick Start key prefix can
+      include numbers, lowercase letters, uppercase letters, hyphens (-), and
+      forward slash (/).
+    Type: String
+  EMRClusterName:
+    Description: The name for your EMR cluster.
+    Type: String
+  EMRCoreInstanceType:
+    AllowedValues:
+      - m4.xlarge
+      - m4.2xlarge
+      - m4.4xlarge
+      - m4.10xlarge
+    Default: m4.xlarge
+    Description: The instance type for the EMR core nodes.
+    Type: String
+  EMRCoreNodes:
+    Description: The number of core nodes. The minimum is 1; the maximum is 500.
+    Default: '1'
+    MaxValue: '500'
+    MinValue: '1'
+    Type: Number
+  EMRLogBucket:
+    Description: (Optional) The name of the pre-existing S3 bucket for the EMR logs.
+    Default: ''
+    Type: String
+  EMRMasterInstanceType:
+    AllowedValues:
+      - m4.large
+      - m4.xlarge
+      - m4.2xlarge
+      - m4.4xlarge
+      - m4.10xlarge
+    Default: m4.xlarge
+    Description: The instance type for the EMR master node.
+    Type: String
+  RDSPassword:
+    AllowedPattern: >-
+      (?=^.{6,255}$)((?=.*\d)(?=.*[A-Z])(?=.*[a-z])|(?=.*\d)(?=.*[^A-Za-z0-9])(?=.*[a-z])|(?=.*[^A-Za-z0-9])(?=.*[A-Z])(?=.*[a-z])|(?=.*\d)(?=.*[A-Z])(?=.*[^A-Za-z0-9]))^.*
+    ConstraintDescription: >-
+      Must be 8 characters or more containing at least one uppercase letter, one
+      lowercase letter, and one number.
+    Description: >-
+      DB Password for RDS, Redshift and Portal access. Must be 8 characters or
+      more containing at least one uppercase letter, one lowercase letter and
+      one number. It can use any printable ASCII characters (ASCII code 33 to
+      126) except ' (single quote), " (double quote) , \, /, @, or space.
+    MaxLength: '16'
+    MinLength: '8'
+    NoEcho: 'true'
+    Type: String
+  DBMultiAZ:
+    AllowedValues:
+      - 'true'
+      - 'false'
+    Default: 'true'
+    Description: Specifies that the database instance is a multiple Availability Zone deployment.
+    Type: String
+  AdminConsoleAccessCIDR:
+    AllowedPattern: ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/([0-9]|[1-2][0-9]|3[0-2]))$
+    ConstraintDescription: CIDR block parameter must be in the form x.x.x.x/x
+    Description: The CIDR IP range that is permitted to access the TIBCO Spotfire Data Science web console via the Application Load Balancer.
+      We recommend that you set this value to a trusted IP range.
+    Type: String
+  BastionSecurityGroupID:
+    Description: ID of the bastion host security group to enable SSH connections (e.g.,
+      sg-7f16e910).
+    Type: AWS::EC2::SecurityGroup::Id
+  TSDSInstancePassword:
+    AllowedPattern: >-
+      (?=^.{6,255}$)((?=.*\d)(?=.*[A-Z])(?=.*[a-z])|(?=.*\d)(?=.*[^A-Za-z0-9])(?=.*[a-z])|(?=.*[^A-Za-z0-9])(?=.*[A-Z])(?=.*[a-z])|(?=.*\d)(?=.*[A-Z])(?=.*[^A-Za-z0-9]))^.*
+    ConstraintDescription: >-
+      Must be 8 characters or more containing at least one uppercase letter, one
+      lowercase letter, and one number.
+    Description: >-
+      The password for the siteadmin user to access the TIBCO Spotfire Data Science web console.
+      Must be 8 characters or more containing at least one uppercase letter, one lowercase letter and one number.
+      It can use any printable ASCII characters (ASCII code 33 to 126) except ' (single quote), " (double quote) , \, /, @, or space.
+    MaxLength: '16'
+    MinLength: '8'
+    NoEcho: 'true'
+    Type: String
+  TSDSInstanceName:
+    Description: Name for the TSDS instance that is deployed to EC2.
+    Type: String
+    Default: tsds
+  TSDSInstanceType:
+    AllowedValues:
+      - m5.2xlarge
+      - m5.4xlarge
+    ConstraintDescription: Must contain valid instance type
+    Default: m5.2xlarge
+    Description: Type of EC2 instance for TIBCO Spotfire DS 6.4 AMI.
+    Type: String
+  KeyPairName:
+    Description: Name of an existing EC2 key pair. All instances will launch with
+      this key pair.
+    Type: AWS::EC2::KeyPair::KeyName
+  TSDSowner:
+    Description: The Owner tag for the TIBCO Spotfire Data Science instance.
+    Default: tsds-owner
+    Type: String
+  PrivateSubnet1ID:
+    Description: The ID of the private subnet in Availability Zone 1 for the TSDS instances (e.g., subnet-a0246dcd).
+    Type: AWS::EC2::Subnet::Id
+  PrivateSubnet2ID:
+    Description: The ID of the private subnet in Availability Zone 2 for the TSDS instances (e.g., subnet-b1f432cd).
+    Type: AWS::EC2::Subnet::Id
+  PublicSubnet1ID:
+    Description: The ID of the public subnet in Availability Zone 1 for the Application Load Balancer (e.g., subnet-9bc642ac).
+    Type: AWS::EC2::Subnet::Id
+  PublicSubnet2ID:
+    Description: The ID of the private subnet in Availability Zone 2 for the Application Load Balancer. (e.g., subnet-e3246d8e).
+    Type: AWS::EC2::Subnet::Id
+  VPCID:
+    Description: The ID of your existing VPC (e.g., vpc-0343606e).
+    Type: AWS::EC2::VPC::Id
+Conditions:
+  UseALBSSL: !Not [!Equals [!Ref 'ALBSSLCertificateARN', '']]
+  CreateReadReplica: !Equals [!Ref 'DBMultiAZ', 'true']
+  EMRBucketProvided: !Not [!Equals [!Ref EMRLogBucket, '']]
+  TSDSSiteDomainRoute53Condition: !And [!Not [!Equals [!Ref 'TSDSSiteDomain', '']],
+    !Not [!Equals [!Ref 'Route53HostedZoneId', '']]]
+Rules:
+  EFSSupportedRegionRule:
+    Assertions:
+    - Assert:
+        Fn::Contains:
+        - - us-east-1
+          - us-east-2
+          - us-west-2
+          - us-west-1
+          - eu-west-1
+          - ap-southeast-2
+          - ap-southeast-1
+          - ap-northeast-1
+          - ap-northeast-2
+          - eu-central-1
+        - !Ref AWS::Region
+      AssertDescription: This Quick Start utilizes Amazon EFS which is only available
+        in the us-east-1 (N. Virginia), us-east-2 (Ohio), us-west-1 (N. California), us-west-2 (Oregon), eu-west-1 (Ireland),
+        eu-central-1 (Frankfurt), ap-northeast-1 (Tokyo), ap-northeast-2 (Seoul), and ap-southeast-2 (Sydney) regions. Please launch the stack in
+        one of these regions
+Mappings:
+  AWSAMIRegionMap:
+    ap-northeast-1:
+      '64': ami-004079861b0430d09
+    ap-northeast-2:
+      '64': ami-054d362c489876db0
+    ap-southeast-1:
+      '64': ami-0cdd6ededcbdabd24
+    ap-southeast-2:
+      '64': ami-06b184a965638d7c3
+    eu-central-1:
+      '64': ami-0c1cdf700645ac5f7
+    eu-west-1:
+      '64': ami-0066a3487aa6170a4
+    us-east-1:
+      '64': ami-073a4c1ff56737312
+    us-east-2:
+      '64': ami-0332955c4fc096b2a
+    us-west-1:
+      '64': ami-07de2387d1592110d
+    us-west-2:
+      '64': ami-0726fbfc2277ecdcb
+Resources:
+  InstanceRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - ec2.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Path: /
+      Policies:
+        - PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Action:
+                  - 's3:GetObject'
+                Resource: !Sub 'arn:aws:s3:::${QSS3BucketName}/${QSS3KeyPrefix}*'
+                Effect: Allow
+          PolicyName: aws-quick-start-s3-policy
+  InstanceRolePolicy:
+    Type: 'AWS::IAM::Policy'
+    Properties:
+      PolicyName: ReportHealthPolicy
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+        - Effect: Allow
+          Action: autoscaling:SetInstanceHealth
+          Resource:
+            Fn::Sub: arn:aws:autoscaling:${AWS::Region}:${AWS::AccountId}:autoScalingGroup:*:autoScalingGroupName/${AutoScalingGroup}
+      Roles:
+        - !Ref InstanceRole
+  InstanceProfile:
+    Type: 'AWS::IAM::InstanceProfile'
+    Properties:
+      Path: /
+      Roles:
+        - !Ref InstanceRole
+  DatabaseSubnetGroup:
+    Type: 'AWS::RDS::DBSubnetGroup'
+    Properties:
+      DBSubnetGroupDescription: CloudFormation managed DB subnet group.
+      SubnetIds:
+        - !Ref PrivateSubnet1ID
+        - !Ref PrivateSubnet2ID
+  TSDSDBCluster:
+    Type: 'AWS::RDS::DBCluster'
+    Properties:
+      Engine: aurora-postgresql
+      DBClusterParameterGroupName: default.aurora-postgresql9.6
+      DatabaseName: chorus
+      MasterUsername: postgres_chorus
+      MasterUserPassword: !Ref RDSPassword
+      Port: 8543
+      DBSubnetGroupName: !Ref DatabaseSubnetGroup
+      VpcSecurityGroupIds:
+        - !Ref DBSecurityGroup
+  TSDSDB:
+    Type: 'AWS::RDS::DBInstance'
+    Properties:
+      Engine: aurora-postgresql
+      DBClusterIdentifier: !Ref TSDSDBCluster
+      DBSubnetGroupName: !Ref DatabaseSubnetGroup
+      DBInstanceClass: db.r4.large
+      Tags:
+        - Key: Name
+          Value: TSDS-Aurora-PrimaryDB
+  TSDSDBSecondary:
+    Type: 'AWS::RDS::DBInstance'
+    Condition: CreateReadReplica
+    Properties:
+      Engine: aurora-postgresql
+      DBClusterIdentifier: !Ref TSDSDBCluster
+      DBSubnetGroupName: !Ref DatabaseSubnetGroup
+      DBInstanceClass: db.r4.large
+      Tags:
+        - Key: Name
+          Value: TSDS-Aurora-SecondaryDB
+  DBSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      VpcId: !Ref VPCID
+      GroupDescription: Enable DB port 8543
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: '8543'
+        ToPort: '8543'
+        SourceSecurityGroupId: !Ref TSDSSecurityGroup
+  TSDSSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      VpcId: !Ref VPCID
+      GroupDescription: Enable TSDS UI access via port 8080 through ALB and port 22 through Bastion
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: '8080'
+        ToPort: '8080'
+        SourceSecurityGroupId: !Ref TSDSELBSecurityGroup
+      - IpProtocol: tcp
+        FromPort: '22'
+        ToPort: '22'
+        SourceSecurityGroupId: !Ref BastionSecurityGroupID
+  TCPFromEMRSlaveSecurityGroupIngress:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    DependsOn: EMRClusterStack
+    Properties:
+      GroupId: !Ref TSDSSecurityGroup
+      FromPort: '0'
+      ToPort: '65535'
+      IpProtocol: tcp
+      SourceSecurityGroupId: !GetAtt EMRClusterStack.Outputs.EmrSlavePrivateSecurityGroup
+  TCPFromEMRMasterSecurityGroupIngress:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    DependsOn: EMRClusterStack
+    Properties:
+      GroupId: !Ref TSDSSecurityGroup
+      FromPort: '0'
+      ToPort: '65535'
+      IpProtocol: tcp
+      SourceSecurityGroupId: !GetAtt EMRClusterStack.Outputs.EmrMasterPrivateSecurityGroup
+  TSDSELBSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      VpcId: !Ref VPCID
+      GroupDescription: Enable access via port 8080 for HTTP or port 443 for HTTPS
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: !If [UseALBSSL, 443, 8080]
+        ToPort: !If [UseALBSSL, 443, 8080]
+        CidrIp: !Ref AdminConsoleAccessCIDR
+  MountTargetSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      VpcId: !Ref VPCID
+      GroupDescription: Security group for mount target
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: '2049'
+        ToPort: '2049'
+        SourceSecurityGroupId: !Ref TSDSSecurityGroup
+  LaunchConfiguration:
+    Type: 'AWS::AutoScaling::LaunchConfiguration'
+    DependsOn:
+      - TSDSFileSystem
+    Properties:
+      ImageId:
+         Fn::FindInMap:
+         - AWSAMIRegionMap
+         - !Ref AWS::Region
+         - '64'
+      InstanceType: !Ref TSDSInstanceType
+      KeyName: !Ref KeyPairName
+      EbsOptimized: true
+      SecurityGroups:
+        - !Ref TSDSSecurityGroup
+      IamInstanceProfile: !Ref InstanceProfile
+      UserData: !Base64
+        'Fn::Sub': |
+            #!/bin/bash
+
+            # first_run Function initializes the cluster and copies all necessary files to EFS and RDS.
+            # This only needs to happen on first node.  All nodes that are auto-created should use second_run function
+
+            # This is the check to determin if file exists.
+            # if file does not exists, start first_run
+            # if file exists, start second_run
+            logfile=/tmp/cf.log
+
+            # Script to configure Node 1 of TSDS 6.4
+            # Create directory to mount EFS DIR
+            echo "# Create directory to mount EFS DIR..." >> $logfile 2>&1
+            mkdir /tsds_efs
+
+
+            # Mount EFS and add mount to fstab to restore on reboot
+            echo "# Mount EFS..." >> $logfile 2>&1
+            mount -t nfs4 -o nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2,noresvport ${TSDSFileSystem}.efs.${AWS::Region}.amazonaws.com:/ /tsds_efs >> $logfile 2>&1
+
+            # Configure Alpine.conf to use EMR agent
+            echo "# Configure Alpine.conf to use EMR agent..." >> $logfile 2>&1
+            sed -i '/hadoop.version.cdh54.agents/c\    hadoop.version.cdh54.agents.9.enabled=false' /usr/local/tsds/shared/ALPINE_DATA_REPOSITORY/configuration/alpine.conf
+            sed -i '/hadoop.version.emr5.agents.10.enabled=false/c\    hadoop.version.emr5.agents.10.enabled=true' /usr/local/tsds/shared/ALPINE_DATA_REPOSITORY/configuration/alpine.conf
+
+            # Remove Alpine as Superuser for Hive
+            echo "# Remove Alpine as Superuser for Hive" >> $logfile 2>&1
+            echo "alpine.principalIsSuperUser=false" >> /usr/local/tsds/shared/ALPINE_DATA_REPOSITORY/configuration/alpine.conf
+
+            # Script to change password to user input
+            echo "# Run script to change password to user input" >> $logfile 2>&1
+            su -c "source /usr/local/tsds/chorus_path.sh && /usr/local/tsds/chorus_control.sh restart" - tsds >> $logfile 2>&1
+            su -c "source /usr/local/tsds/chorus_path.sh && /usr/local/tsds/chorus_control.sh stop" - tsds >> $logfile 2>&1
+            su -c "source /usr/local/tsds/chorus_path.sh && /usr/local/tsds/chorus_control.sh start" - tsds >> $logfile 2>&1
+            su -c "/tmp/pas.sh ${TSDSInstancePassword}" - tsds >> $logfile 2>&1
+            su -c "source /usr/local/tsds/chorus_path.sh && /usr/local/tsds/chorus_control.sh stop" - tsds >> $logfile 2>&1
+            rm /tmp/pas.sh
+
+            # Nginx Configuration specific to Quickstart
+            echo "# Configure nginx.erb.conf for quickstart..." >> $logfile 2>&1
+            echo "# Is HTTPS selected?" >> $logfile 2>&1
+            if [ -z ${ALBSSLCertificateARN} ]; then
+              echo "# - NO. HTTP will be configured..." >> $logfile 2>&1
+            else
+              echo "# HTTPS is enabled. Configuring HTTPS..." >> $logfile 2>&1
+              cp usr/local/tsds/current/vendor/nginx/nginx.conf.erb usr/local/tsds/current/vendor/nginx/nginx.conf.erb.bak
+              sed -i '155,159d' /usr/local/tsds/current/vendor/nginx/nginx.conf.erb
+              sed -i '155i \            proxy_redirect  http:// https://;' /usr/local/tsds/current/vendor/nginx/nginx.conf.erb
+              sed -i '161s/.*/            proxy_set_header    Host $host;/' /usr/local/tsds/current/vendor/nginx/nginx.conf.erb
+
+              sed -i '197,201d' /usr/local/tsds/current/vendor/nginx/nginx.conf.erb
+              sed -i '197i \            proxy_redirect  http:// https://;' /usr/local/tsds/current/vendor/nginx/nginx.conf.erb
+              sed -i '203s/.*/            proxy_set_header    Host $host;/' /usr/local/tsds/current/vendor/nginx/nginx.conf.erb
+            fi
+
+            # Rename old install DIR and replace with soft link to new EFS DIR
+            echo "# Rename old install DIR and replace with soft link to new EFS DIR..." >> $logfile 2>&1
+            mv /usr/local/tsds /usr/local/tsds_old
+            mv /data/tsds/public /data/tsds/public_old
+            mv /data/tsds/system /data/tsds/system_old
+            ln -s /tsds_efs/local/tsds /usr/local/tsds
+            ln -s /tsds_efs/data/tsds/public /data/tsds/public
+            ln -s /tsds_efs/data/tsds/system /data/tsds/system
+
+            # Rename rconnector to r_connector
+            mv /data/rconnector /data/r_connector
+            chown -R tsds:tsds /data/r_connector
+
+            # Run updatehosts.sh to update internal ip address
+            echo "# Run updatehosts.sh to update internal ip address" >> $logfile 2>$1
+            /root/updatehost.sh >> $logfile 2>$1
+
+            # Make R Service start
+            echo "# Make RService start" >> $logfile 2>&1
+            su -c "/data/r_connector/start_services_mod.sh" - tsds >> $logfile 2>&1
+            su -c "source /usr/local/tsds/chorus_path.sh && /usr/local/tsds/chorus_control.sh stop" - tsds >> $logfile 2>&1
+
+
+            # Run python notebooks
+            echo "# Run python notebooks" >> $logfile 2>&1
+            systemctl restart docker
+            sleep 30s
+            cd /data/notebooks
+            docker-compose stop
+            sleep 30s
+            docker-compose up -d
+
+            # Copy items to updatehost.sh
+            # Copy Python notebooks autostart
+            echo "Setting Python notebooks to Autostart to update.sh..." >> $logfile 2>&1
+            echo "systemctl restart docker" >> /root/updatehost.sh
+            echo "sleep 1m" >> /root/updatehost.sh
+            echo "cd /data/notebooks" >> /root/updatehost.sh
+            echo "docker-compose stop" >> /root/updatehost.sh
+            echo "sleep 30s" >> /root/updatehost.sh
+            echo "docker-compose up -d" >> /root/updatehost.sh
+
+            # Copy R Service Autostart
+            echo "Setting R Service Autostart to update.sh..." >> $logfile 2>&1
+            echo "su -c \"/data/r_connector/start_services_mod.sh\" - tsds" >> /root/updatehost.sh
+
+            # Copy Start scripts to Automatically start on reboot
+            echo "su -c \"source /usr/local/tsds/chorus_path.sh && /usr/local/tsds/chorus_control.sh restart\" - tsds" >> /root/updatehost.sh
+            echo "su -c \"source /usr/local/tsds/chorus_path.sh && /usr/local/tsds/chorus_control.sh stop\" - tsds" >> /root/updatehost.sh
+            echo "su -c \"source /usr/local/tsds/chorus_path.sh && /usr/local/tsds/chorus_control.sh start\" - tsds" >> /root/updatehost.sh
+
+            # Copy Mount command to automount
+            echo "Setting Mount config to automount to update.sh..." >> $logfile 2>&1
+            echo "${TSDSFileSystem}.efs.${AWS::Region}.amazonaws.com:/ /tsds_efs nfs4 defaults,_netdev  0 0" >> /etc/fstab
+
+            # make updatehost.sh executable
+            echo "# make updatehost.sh executable" >> $logfile 2>&1
+            chmod +x /etc/rc.d/rc.local
+
+            echo "# Loading first_run function..." >> $logfile 2>&1
+            first_run() {
+              echo "# Running first_run..." >> $logfile 2>&1
+
+              # Create shared directory structure
+              echo "# Creating INSTALL and DATA DIR on Amazon EFS..." >> $logfile 2>&1
+              mkdir --parents /tsds_efs/local/
+              mkdir --parents /tsds_efs/data/tsds/
+
+              # Change owners to tsds
+              echo "# Change Owners to tsds"
+              chown tsds:tsds -R /tsds_efs
+
+              # Copy install DIR to EFS Shared DIR
+              echo "# Copy INSTALL and DATA DIR to EFS Shared DIR..." >> $logfile 2>&1
+              echo "# Copy INSTALL to EFS Shared DIR..." >> $logfile 2>&1
+              su -c "cp -a /usr/local/tsds_old/ /tsds_efs/local/tsds" - tsds >> $logfile 2>&1
+
+              echo "# Copy DATA to EFS Shared DIR..." >> $logfile 2>&1
+              su -c "cp -a /data/tsds/public_old/ /tsds_efs/data/tsds/public" - tsds >> $logfile 2>&1
+              su -c "cp -a /data/tsds/system_old/ /tsds_efs/data/tsds/system" - tsds >> $logfile 2>&1
+
+              # Change ownership to tsds
+              echo "# Change ownership to tsds..." >> $logfile 2>&1
+              chown tsds:tsds -R /tsds_efs
+
+              # start postgres service to perform backup
+              echo "# Starting Internal Postgres..." >> $logfile 2>&1
+              su -c "source /usr/local/tsds/chorus_path.sh && /usr/local/tsds/chorus_control.sh start postgres" - tsds >> $logfile 2>&1
+
+              # backup postgres and shutdown postgres
+              echo "# Backup Internal Postgres..." >> $logfile 2>&1
+              su -c "source /usr/local/tsds/chorus_path.sh && /usr/local/tsds/current/postgres/bin/pg_dump -Fc -p 8543 -U postgres_chorus chorus > /tmp/chorusdb.dump" - tsds >> $logfile 2>&1
+              echo "# Stop Internal Postgres..." >> $logfile 2>&1
+              su -c "source /usr/local/tsds/chorus_path.sh && /usr/local/tsds/chorus_control.sh stop postgres" - tsds >> $logfile 2>&1
+
+              #Backup database.yml
+              echo "# Backup database.yml to database.yml.old..." >> $logfile 2>&1
+              su -c "mv /usr/local/tsds/shared/database.yml /usr/local/tsds/shared/database.yml.old" - tsds
+              su -c "touch /usr/local/tsds/shared/database.yml" - tsds
+              su -c "chmod 644 /usr/local/tsds/shared/database.yml"
+
+              # Reconfigure database.yml to point to Amazon RDS
+              echo "# Creating new database.yml with RDS information..." >> $logfile 2>&1
+              cat >> /usr/local/tsds/shared/database.yml <<EOF
+              production:
+                adapter: jdbcpostgresql
+                encoding: unicode
+                database: chorus
+                username: postgres_chorus
+                password: "${RDSPassword}"
+                min_messages: warning
+                host: ${TSDSDBCluster.Endpoint.Address}
+                port: '8543'
+                pool: 40
+            EOF
+
+              #update .pgpass
+              echo "# Updaing .pgpass with RDS information..." >> $logfile 2>&1
+              su -c "mv /usr/local/tsds/.pgpass /usr/local/tsds/.pgpass_old" - tsds
+              su -c "touch /usr/local/tsds/.pgpass" - tsds
+              echo "*:*:*:postgres_chorus:${RDSPassword}" >> /usr/local/tsds/.pgpass
+              su -c "chmod 400 /usr/local/tsds/.pgpass" - tsds
+
+              # restore postgres
+              echo "# Restore Internal Postgres to RDS..." >> $logfile 2>&1
+              su -c "/usr/local/tsds/current/postgres/bin/createdb chorus -p 8543 -h ${TSDSDBCluster.Endpoint.Address} -U postgres_chorus" - tsds >> $logfile 2>&1
+              su -c "source /usr/local/tsds/chorus_path.sh && /usr/local/tsds/current/postgres/bin/pg_restore -d chorus -p 8543 -h ${TSDSDBCluster.Endpoint.Address} -U postgres_chorus /tmp/chorusdb.dump" >> $logfile 2>&1
+
+              # Start TSDS
+              echo "# Start TIBCO SDS..." >> $logfile 2>&1
+              su -c "source /usr/local/tsds/chorus_path.sh && /usr/local/tsds/chorus_control.sh restart" - tsds >> $logfile 2>&1
+              su -c "source /usr/local/tsds/chorus_path.sh && /usr/local/tsds/chorus_control.sh stop postgres" - tsds >> $logfile 2>&1
+
+              # Create a file to signal first node has been created
+              echo "# Marking this as first node..." >> $logfile 2>&1
+              su -c "touch /usr/local/tsds/.nodenum" - tsds
+              echo "1" >> /usr/local/tsds/.nodenum
+              su -c "chmod 777 /usr/local/tsds/.nodenum" - tsds
+
+              # Sends signal back to CF for completion
+              echo "# Sending signal back to CF..." >> $logfile 2>&1
+              curl -X PUT -H 'Content-Type:' --data-binary '{"Status" : "SUCCESS","Reason" : "Configuration Complete","UniqueId" : "ID1234","Data" : "Application has completed configuration."}' "${TSDSInstanceWaitHandle}" >> $logfile 2>&1
+            }
+
+            echo "# Loading second_run function..." >> $logfile 2>&1
+            second_run() {
+              # Start TSDS
+              echo "# File Found.  Identified as additional node. Running second_run" >> $logfile 2>&1
+              echo "# Starting TIBCO SDS..." >> $logfile 2>&1
+              sleep 3m
+              su -c "source /usr/local/tsds/chorus_path.sh && /usr/local/tsds/chorus_control.sh restart" - tsds >> $logfile 2>&1
+            }
+
+            echo "# Entering Conditional Statement..." >> $logfile 2>&1
+            if [ ! -f /usr/local/tsds/.nodenum ]; then
+              echo "# Entering First Run Fucntion..." >> $logfile 2>&1
+              first_run
+            else
+              echo "# Entering Second Run Function...">> $logfile 2>&1
+              second_run
+            fi
+
+            echo "# Done: Configuration Successful" >> $logfile 2>&1
+  TSDSInstanceWaitHandle:
+    Type: 'AWS::CloudFormation::WaitConditionHandle'
+    Properties: {}
+  TSDSInitWaitCondition:
+    Type: 'AWS::CloudFormation::WaitCondition'
+    Properties:
+      Handle: !Ref TSDSInstanceWaitHandle
+      Timeout: '7200'
+  AutoScalingGroup:
+    Type: 'AWS::AutoScaling::AutoScalingGroup'
+    DependsOn:
+    - MountTarget1
+    - MountTarget2
+    - ApplicationLoadBalancer
+    Properties:
+      VPCZoneIdentifier:
+      - !Ref PrivateSubnet1ID
+      - !Ref PrivateSubnet2ID
+      TargetGroupARNs:
+        - !Ref ALBTargetGroupTSDSUI
+      HealthCheckType: EC2
+      HealthCheckGracePeriod: 90
+      LaunchConfigurationName: !Ref LaunchConfiguration
+      MinSize: '1'
+      MaxSize: '1'
+      DesiredCapacity: '1'
+      Tags:
+      - Key: Name
+        Value: !Ref TSDSInstanceName
+        PropagateAtLaunch: 'true'
+      - Key: Owner
+        Value: !Ref TSDSowner
+        PropagateAtLaunch: 'true'
+    UpdatePolicy:
+      AutoScalingRollingUpdate:
+        MinInstancesInService: '0'
+        MaxBatchSize: '1'
+  TSDSFileSystem:
+    Type: 'AWS::EFS::FileSystem'
+    Properties:
+      FileSystemTags:
+      - Key: Name
+        Value: TSDSFileSystem
+  MountTarget1:
+    Type: 'AWS::EFS::MountTarget'
+    Properties:
+      FileSystemId: !Ref TSDSFileSystem
+      SubnetId: !Ref PrivateSubnet1ID
+      SecurityGroups:
+      - !Ref MountTargetSecurityGroup
+  MountTarget2:
+    Type: 'AWS::EFS::MountTarget'
+    Properties:
+      FileSystemId: !Ref TSDSFileSystem
+      SubnetId: !Ref PrivateSubnet2ID
+      SecurityGroups:
+      - !Ref MountTargetSecurityGroup
+  ApplicationLoadBalancer:
+    Type: 'AWS::ElasticLoadBalancingV2::LoadBalancer'
+    Properties:
+      Scheme: internet-facing
+      Subnets:
+        - !Ref PublicSubnet1ID
+        - !Ref PublicSubnet2ID
+      SecurityGroups:
+        - Ref: TSDSELBSecurityGroup
+  ALBTargetGroupTSDSUI:
+    Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
+    Properties:
+      HealthCheckIntervalSeconds: 30
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      Port: 8080
+      Protocol: HTTP
+      UnhealthyThresholdCount: 5
+      VpcId: !Ref 'VPCID'
+      TargetGroupAttributes:
+        - Key: stickiness.enabled
+          Value: 'true'
+        - Key: stickiness.type
+          Value: lb_cookie
+        - Key: stickiness.lb_cookie.duration_seconds
+          Value: '30'
+  ALBListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref 'ALBTargetGroupTSDSUI'
+      LoadBalancerArn: !Ref 'ApplicationLoadBalancer'
+      Port: !If [UseALBSSL, 443, 8080]
+      Protocol: !If [UseALBSSL, HTTPS, HTTP]
+      Certificates:
+        - !If [UseALBSSL, {CertificateArn: !Ref 'ALBSSLCertificateARN'}, !Ref 'AWS::NoValue']
+  TSDSSiteDomainRoute53Record:
+    Type: AWS::Route53::RecordSet
+    Condition: TSDSSiteDomainRoute53Condition
+    Properties:
+      Name: !Ref 'TSDSSiteDomain'
+      Type: A
+      HostedZoneId: !Ref 'Route53HostedZoneId'
+      AliasTarget:
+        DNSName: !GetAtt 'ApplicationLoadBalancer.DNSName'
+        EvaluateTargetHealth: 'True'
+        HostedZoneId: !GetAtt 'ApplicationLoadBalancer.CanonicalHostedZoneID'
+  EMRClusterStack:
+    Type: 'AWS::CloudFormation::Stack'
+    Properties:
+      TemplateURL: !Sub >-
+        https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}templates/emr-cluster.yaml
+      Parameters:
+        EMRCoreInstanceType: !Ref EMRCoreInstanceType
+        EMRLogBucket: !Ref EMRLogBucket
+        AdminConsoleAccessCIDR: !Ref AdminConsoleAccessCIDR
+        EMRClusterName: !Ref EMRClusterName
+        VPCID: !Ref VPCID
+        TSDSSecurityGroupId: !Ref TSDSSecurityGroup
+        InstanceProfile: !Ref InstanceProfile
+        EMRCoreNodes: !Ref EMRCoreNodes
+        PrivateSubnet1ID: !Ref PrivateSubnet1ID
+        EMRMasterInstanceType: !Ref EMRMasterInstanceType
+        KeyPairName: !Ref KeyPairName
+Outputs:
+  TIBCOSDSUIURL:
+    Description: URL for Elastic Load Balancer to connect to TSDS 6.4
+    Value: !Sub
+      - '${AppScheme}://${AppDomain}:${AppPort}'
+      - {
+          AppScheme: !If [UseALBSSL, https, http],
+          AppDomain: !If [TSDSSiteDomainRoute53Condition, !Ref 'TSDSSiteDomain', !GetAtt 'ApplicationLoadBalancer.DNSName'],
+          AppPort: !If [UseALBSSL, 443, 8080]
+        }
+  TSDSConfigurationLogs:
+    Description: TSDS Configuration Log Location
+    Value: /tmp/cf.log
+  EMRPublicDNS:
+    Description: EMR Resource Manager
+    Value: !GetAtt EMRClusterStack.Outputs.EMRPublicDNS
+  EMRHiveURL:
+    Description: EMR Hive thrift URL
+    Value: !GetAtt EMRClusterStack.Outputs.EMRHiveURL

@@ -1,0 +1,49 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Creates AWS Glue resources.  **WARNING**  You will be billed for the
+  AWS resources used if you create a stack from this template.
+Parameters:
+  AWSGlueJobRoleName:
+    Type: String
+  DatalakeSubmissionsDatabaseName:
+    Type: String
+  CuratedDatasetsDatabaseName:
+    Type: String
+  CuratedBucketName:
+    Type: String
+  QSS3BucketName:
+    Type: String
+  QSS3KeyPrefix:
+    Type: String
+  AWSGlueCuratedDatasetsCrawlerRoleName:
+    Type: String
+Resources:
+  CuratedDatasetsJob:
+    Type: AWS::Glue::Job
+    Properties:
+      Command:
+        Name: glueetl
+        ScriptLocation: !Sub 's3://${QSS3BucketName}/${QSS3KeyPrefix}assets/glue/curated-datasets-job.py'
+      MaxRetries: 0
+      DefaultArguments:
+        --datalake_submissions_database_name: !Ref 'DatalakeSubmissionsDatabaseName'
+        --datalake_curated_datasets_database_name: !Ref 'CuratedDatasetsDatabaseName'
+        --datalake_curated_datasets_bucket_name: !Ref 'CuratedBucketName'
+        --job-bookmark-option: job-bookmark-disable
+      Role: !Ref 'AWSGlueJobRoleName'
+  CuratedDatasetsCrawler:
+    Type: AWS::Glue::Crawler
+    Properties:
+      Role: !Ref 'AWSGlueCuratedDatasetsCrawlerRoleName'
+      DatabaseName: !Ref 'CuratedDatasetsDatabaseName'
+      Targets:
+        S3Targets:
+        - Path: !Sub 's3://${CuratedBucketName}/'
+          Exclusions:
+          - orders_stream/manifests/**
+          - '**_common_metadata'
+          - '**_metadata'
+Outputs:
+  CuratedDatasetsJobName:
+    Value: !Ref 'CuratedDatasetsJob'
+  CuratedDatasetsCrawlerName:
+    Value: !Ref 'CuratedDatasetsCrawler'

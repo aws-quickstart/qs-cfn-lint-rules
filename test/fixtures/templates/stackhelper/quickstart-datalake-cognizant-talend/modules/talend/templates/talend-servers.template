@@ -1,0 +1,697 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Parameters": {
+        "QSS3URL": {
+            "Description": "Encapsulate variation in s3 root url for commercial or gov-cloud",
+            "Type": "String",
+            "Default": "s3.amazonaws.com",
+            "AllowedValues": [ "s3.amazonaws.com", "s3-us-gov-west-1.amazonaws.com" ]
+        },
+        "QSS3BucketName": {
+            "AllowedPattern": "^[0-9a-zA-Z]+([0-9a-zA-Z-.]*[0-9a-zA-Z])*$",
+            "ConstraintDescription": "Quick Start bucket name can include numbers, lowercase letters, uppercase letters, periods (.), and hyphens (-). It cannot start or end with a hyphen (-).",
+            "Default": "baseline.quickstart.talend",
+            "Description": "S3 bucket name for the Quick Start assets. Quick Start bucket name can include numbers, lowercase letters, uppercase letters, periods (.), and hyphens (-). It cannot start or end with a hyphen (-).",
+            "Type": "String"
+        },
+        "QSS3KeyPrefix": {
+            "AllowedPattern": "^[0-9a-zA-Z-/]*$",
+            "ConstraintDescription": "Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).  Prefix cannot start with a slash but must end with a slash unless it is the empty string.",
+            "Default": "",
+            "Description": "S3 key prefix for the Quick Start assets. Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).  Prefix cannot start with a slash but must end with a slash unless it is the empty string.",
+            "Type": "String"
+        },
+        "InstanceRole": {
+            "Description": "Talend Server EC2 IAM Role",
+            "Type": "String"
+        },
+        "InstanceProfile": {
+            "Description": "Talend Server EC2 Instance Profile",
+            "Type": "String"
+        },
+        "PublicSubnetId1": {
+        	"Description": "Public Subnet 1",
+        	"Type": "AWS::EC2::Subnet::Id"
+        },
+        "PublicSubnetId2": {
+        	"Description": "Public Subnet 2",
+        	"Type": "AWS::EC2::Subnet::Id"
+        },
+        "PrivateSubnetId1": {
+        	"Description": "Private Subnet 1",
+        	"Type": "AWS::EC2::Subnet::Id"
+        },
+        "PrivateSubnetId2": {
+        	"Description": "Private Subnet 2",
+        	"Type": "AWS::EC2::Subnet::Id"
+        },
+        "NexusSecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup::Id",
+            "Description": "Nexus Security Group"
+        },
+        "LogserverSecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup::Id",
+            "Description": "Logserver Security Group"
+        },
+        "TacSecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup::Id",
+            "Description": "TAC Security Group"
+        },
+        "JobserverSecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup::Id",
+            "Description": "Jobserver Security Group"
+        },
+        "DistantRunSecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup::Id",
+            "Description": "DistantRun Jobserver Security Group"
+        },
+        "GitSecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup::Id",
+            "Description": "Git Security Group"
+        },
+        "JobserverAutoscaleMinSize": {
+            "Description": "Talend Jobserver autoscale minimum size",
+            "Type": "Number",
+            "MinValue": "1",
+            "MaxValue": "10",
+            "Default": "1"
+        },
+        "JobserverAutoscaleMaxSize": {
+            "Description": "Talend Jobserver autoscale maximum size",
+            "Type": "Number",
+            "MinValue": "1",
+            "MaxValue": "10",
+            "Default": "5"
+        },
+        "JobserverAutoscaleDesiredCapacity": {
+            "Description": "Talend Jobserver autoscale maximum size",
+            "Type": "Number",
+            "MinValue": "1",
+            "MaxValue": "10",
+            "Default": "2"
+        },
+        "DistantRunAutoscaleMinSize": {
+            "Description": "Talend DistantRun autoscale minimum size",
+            "Type": "Number",
+            "MinValue": "1",
+            "MaxValue": "10",
+            "Default": "1"
+        },
+        "DistantRunAutoscaleMaxSize": {
+            "Description": "Talend DistantRun autoscale maximum size",
+            "Type": "Number",
+            "MinValue": "1",
+            "MaxValue": "10",
+            "Default": "5"
+        },
+        "DistantRunAutoscaleDesiredCapacity": {
+            "Description": "Talend DistantRun autoscale maximum size",
+            "Type": "Number",
+            "MinValue": "1",
+            "MaxValue": "10",
+            "Default": "2"
+        },
+        "TacInstanceType": {
+            "Description": "TAC EC2 instance type",
+            "Type": "String",
+            "Default": "t2.medium",
+            "AllowedValues": [
+                "t2.medium",
+                "t2.large",
+                "t2.xlarge",
+                "t2.2xlarge",
+                "m4.large",
+                "m4.xlarge",
+                "m4.2xlarge",
+                "m4.4xlarge",
+                "m4.10xlarge",
+                "m4.16xlarge",
+                "c4.large",
+                "c4.xlarge",
+                "c4.2xlarge",
+                "c4.4xlarge",
+                "c4.8xlarge",
+                "x1.16xlarge",
+                "x1.32xlarge",
+                "x1e.32xlarge",
+                "r4.large",
+                "r4.xlarge",
+                "r4.2xlarge",
+                "r4.4xlarge",
+                "r4.8xlarge",
+                "r4.16xlarge",
+                "d2.xlarge",
+                "d2.2xlarge",
+                "d2.4xlarge",
+                "d2.8xlarge",
+                "i3.large",
+                "i3.xlarge",
+                "i3.2xlarge",
+                "i3.4xlarge",
+                "i3.8xlarge",
+                "i3.16xlarge"
+            ],
+            "ConstraintDescription": "must be a valid EC2 instance type."
+        },
+        "GitInstanceType": {
+            "Description": "Git EC2 instance type",
+            "Type": "String",
+            "Default": "m4.large",
+            "AllowedValues": [
+                "m4.large",
+                "m4.xlarge",
+                "m4.2xlarge",
+                "m4.4xlarge",
+                "c4.large",
+                "c4.xlarge",
+                "c4.2xlarge",
+                "c4.4xlarge",
+                "c4.8xlarge",
+                "i3.large",
+                "i3.xlarge",
+                "i3.2xlarge"
+            ],
+            "ConstraintDescription": "must be a valid EC2 instance type."
+        },
+        "NexusInstanceType": {
+            "Description": "Nexus EC2 instance type",
+            "Type": "String",
+            "Default": "t2.medium",
+            "AllowedValues": [
+                "t2.medium",
+                "t2.large",
+                "t2.xlarge",
+                "t2.2xlarge",
+                "m4.large",
+                "m4.xlarge"
+            ],
+            "ConstraintDescription": "must be a valid EC2 instance type."
+        },
+        "LogserverInstanceType": {
+            "Description": "Logserver EC2 instance type",
+            "Type": "String",
+            "Default": "t2.medium",
+            "AllowedValues": [
+                "t2.medium",
+                "t2.large",
+                "t2.xlarge",
+                "t2.2xlarge",
+                "m4.large",
+                "m4.xlarge",
+                "m4.2xlarge",
+                "m4.4xlarge",
+                "d2.xlarge",
+                "d2.2xlarge",
+                "i3.large",
+                "i3.xlarge",
+                "i3.2xlarge",
+                "i3.4xlarge"
+            ],
+            "ConstraintDescription": "must be a valid EC2 instance type."
+        },
+        "JobserverInstanceType": {
+            "Description": "Jobserver EC2 instance type",
+            "Type": "String",
+            "Default": "t2.large",
+            "AllowedValues": [
+                "t2.medium",
+                "t2.large",
+                "t2.xlarge",
+                "t2.2xlarge",
+                "m4.large",
+                "m4.xlarge",
+                "m4.2xlarge",
+                "m4.4xlarge",
+                "m4.10xlarge",
+                "m4.16xlarge",
+                "c4.large",
+                "c4.xlarge",
+                "c4.2xlarge",
+                "c4.4xlarge",
+                "c4.8xlarge",
+                "x1.16xlarge",
+                "x1.32xlarge",
+                "x1e.32xlarge",
+                "r4.large",
+                "r4.xlarge",
+                "r4.2xlarge",
+                "r4.4xlarge",
+                "r4.8xlarge",
+                "r4.16xlarge",
+                "d2.xlarge",
+                "d2.2xlarge",
+                "d2.4xlarge",
+                "d2.8xlarge",
+                "i3.large",
+                "i3.xlarge",
+                "i3.2xlarge",
+                "i3.4xlarge",
+                "i3.8xlarge",
+                "i3.16xlarge"
+            ],
+            "ConstraintDescription": "must be a valid EC2 instance type."
+        },
+        "KeyName": {
+            "Description": "Name of an EC2 KeyPair to enable SSH access to the TAC instance.",
+            "Type": "AWS::EC2::KeyPair::KeyName",
+            "ConstraintDescription": "must be the name of an existing EC2 KeyPair.",
+            "Default": "eost-aws-quickstart"
+        },
+        "TalendLicenseBucket": {
+            "Description": "Bucket holding Talend license",
+            "Type": "String",
+            "AllowedPattern": "^[0-9a-zA-Z]+([0-9a-zA-Z-.]*[0-9a-zA-Z])*$",
+            "ConstraintDescription": "Quick Start bucket name can include numbers, lowercase letters, uppercase letters, periods (.), and hyphens (-). It cannot start or end with a hyphen (-) or period (.)."
+        },
+        "TalendResourceBucket": {
+            "Description": "Talend S3 resources bucket.",
+            "Type": "String",
+            "Default": "repo-quickstart-talend"
+        },
+        "TalendSourceBucket": {
+            "Description": "Talend source bucket for demo jobs.",
+            "Type": "String",
+            "Default": ""
+        },          
+        "NexusPort": {
+            "Description": "Nexus port.",
+            "Type": "Number",
+            "Default": "8081",
+            "MinValue": "1",
+            "MaxValue": "65535"
+        },
+        "NexusAdminUserid": {
+            "Description": "Nexus administrator userid.",
+            "Type": "String",
+            "Default": "admin"
+        },
+        "NexusAdminPassword": {
+            "Description": "Nexus password.",
+            "Type": "String",
+            "NoEcho": "true"
+        },
+        "TacDbHost": {
+            "Description": "TAC database hostname.",
+            "Type": "String",
+            "Default": "eost-rds-mysql-2.cfcij7o8rjxs.us-east-1.rds.amazonaws.com"
+        },
+        "CreateTacDatabase": {
+            "Description": "Create TAC Database (true) or use an existing TAC database (false)",
+            "Type": "String",
+            "AllowedValues": [ "true", "false" ],
+            "Default": "true"
+        },
+        "CreateAmcDatabase": {
+            "Description": "Create AMC Database (true) or use an existing AMC database (false)",
+            "Type": "String",
+            "AllowedValues": [ "true", "false" ],
+            "Default": "true"
+        },
+        "TacPassword": {
+            "Description": "TAC application password for tadmin account.",
+            "Type": "String",
+            "NoEcho": "true"
+        },
+        "MasterDbUser": {
+            "Description": "The master or root user used to create TAC and AMC databases and the TAC user.  Only needed if creating the TAC or AMC databases.",
+            "Type": "String",
+            "Default": ""
+        },
+        "MasterDbPassword": {
+            "Description": "Master user database password.  Only needed if creating the TAC or AMC databases.",
+            "Type": "String",
+            "NoEcho": "true"
+        },
+        "TacDbSchema": {
+            "Description": "TAC database schema.",
+            "Type": "String",
+            "Default": "tac_quickstart"
+        },
+        "TacDbUser": {
+            "Description": "TAC database user.",
+            "Type": "String",
+            "Default": "tac_admin"
+        },
+        "TacDbPassword": {
+            "Description": "TAC database password.",
+            "Type": "String",
+            "NoEcho": "true"
+        },
+        "AmcDbUser": {
+            "Description": "AMC database user.",
+            "Type": "String",
+            "Default": "amc"
+        },
+        "AmcDbPassword": {
+            "Description": "AMC database password.",
+            "Type": "String",
+            "NoEcho": "true"
+        },
+        "GitProtocol": {
+            "Description": "Git protocol.",
+            "Type": "String",
+            "Default": "http"
+        },
+        "GitHost": {
+            "Description": "Git host.",
+            "Type": "String",
+            "Default": ""
+        },
+        "GitPort": {
+            "Description": "Git port.",
+            "Type": "Number",
+            "Default": "80",
+            "MinValue": "1",
+            "MaxValue": "65535"
+        },
+        "GitRepo": {
+            "Description": "Git repository.",
+            "Type": "String",
+            "Default": ""
+        },
+        "GitAdminUserid": {
+            "Description": "Git user.",
+            "Type": "String",
+            "Default": "tadmin"
+        },
+        "GitAdminPassword": {
+            "Description": "Git password.",
+            "Type": "String",
+            "NoEcho": "true"
+        },
+        "GitAdminEmail": {
+            "Description": "Git admin contact email.",
+            "Type": "String",
+            "Default": ""
+        },
+        "GitTacUserid": {
+            "Description": "Git TAC userid.",
+            "Type": "String",
+            "Default": "tac"
+        },
+        "GitTacPassword": {
+            "Description": "Git TAC password.",
+            "Type": "String",
+            "NoEcho": "true"
+        },
+        "GitTacEmail": {
+            "Description": "TAC contact email.",
+            "Type": "String",
+            "Default": ""
+        },
+        "CreateDistantRunStack": {
+            "Description": "Create Jobserver stack in public subnet for use by Studio Distant Run capability.",
+            "Type": "String",
+			"Default": "true",
+            "AllowedValues": [ "true", "false" ]
+        },
+        "CreateGitStack": {
+            "Description": "Create Git stack.",
+            "Type": "String",
+			"Default": "true",
+            "AllowedValues": [ "true", "false" ]
+        }
+    },
+    "Mappings": {
+    },
+    "Conditions": {
+        "CreateDistantRunStackCondition": {
+            "Fn::Equals": [
+                { "Ref": "CreateDistantRunStack" },
+                "true"
+            ]
+        },
+        "CreateGitStackCondition": {
+            "Fn::Equals": [ "", { "Ref": "GitHost" } ]
+        }
+    },
+    "Resources": {
+        "GitStack": {
+            "Type": "AWS::CloudFormation::Stack",
+            "Condition": "CreateGitStackCondition",
+            "Properties": {
+                "TemplateURL": { "Fn::Sub": "http://${QSS3BucketName}.${QSS3URL}/${QSS3KeyPrefix}templates/gitlab.template" },
+                "TimeoutInMinutes": 30,
+                "Parameters": {
+                    "QSS3BucketName": { "Ref": "QSS3BucketName" },
+                    "QSS3KeyPrefix": { "Fn::Sub": "${QSS3KeyPrefix}" },
+                    "InstanceType": { "Ref": "GitInstanceType" },
+                    "InstanceRole": { "Ref": "InstanceRole" },
+                    "InstanceProfile": { "Ref": "InstanceProfile" },
+                    "GitSecurityGroupID": { "Ref": "GitSecurityGroup" },
+                    "KeyPairName": { "Ref": "KeyName" },
+                    "PrivateSubnet": "public",
+                    "VolumeSize": "100",
+                    "VolumeType": "gp2",
+                    "SubnetId": { "Ref": "PublicSubnetId1" },
+                    "GitAdminUserid": { "Ref": "GitAdminUserid" },
+                    "GitAdminPassword": { "Ref": "GitAdminPassword" },
+                    "GitAdminEmail": { "Ref": "GitAdminEmail" },
+                    "GitTacUserid": { "Ref": "GitTacUserid" },
+                    "GitTacPassword": { "Ref": "GitTacPassword" },
+                    "GitTacEmail": { "Ref": "GitTacEmail" },
+                    "GitRepo": { "Ref": "GitRepo" }
+                }
+            }
+        },
+		"NexusStack": {
+			"Type" : "AWS::CloudFormation::Stack",
+			"Properties" : {
+                "TemplateURL": { "Fn::Sub": "http://${QSS3BucketName}.${QSS3URL}/${QSS3KeyPrefix}templates/talend-nexus.template" },
+				"Parameters" : {
+                    "QSS3BucketName": { "Ref": "QSS3BucketName" },
+                    "QSS3KeyPrefix": { "Fn::Sub": "${QSS3KeyPrefix}" },
+					"TalendLicenseBucket":  { "Ref": "TalendLicenseBucket" },
+                    "TalendResourceBucket": { "Ref": "TalendResourceBucket" },
+                    "InstanceRole": { "Ref": "InstanceRole" },
+                    "InstanceProfile": { "Ref": "InstanceProfile" },
+					"InstanceType": { "Ref": "NexusInstanceType" },
+					"KeyName": { "Ref": "KeyName" },
+					"SubnetId": { "Ref": "PublicSubnetId1" },
+                    "PrivateSubnet": "public",
+					"SecurityGroupIds": { "Ref": "NexusSecurityGroup" },
+                    "NexusPort": { "Ref": "NexusPort" },
+                    "NexusAdminUserid": { "Ref": "NexusAdminUserid" },
+                    "NexusAdminPassword": { "Ref": "NexusAdminPassword" }
+				},
+				"TimeoutInMinutes" : "10"
+			}
+		},
+		"LogserverStack": {
+			"Type" : "AWS::CloudFormation::Stack",
+			"Properties" : {
+                "TemplateURL": { "Fn::Sub": "http://${QSS3BucketName}.${QSS3URL}/${QSS3KeyPrefix}templates/talend-logserver.template" },
+				"Parameters" : {
+                    "QSS3BucketName": { "Ref": "QSS3BucketName" },
+                    "QSS3KeyPrefix": { "Fn::Sub": "${QSS3KeyPrefix}" },
+					"TalendLicenseBucket":  { "Ref": "TalendLicenseBucket" },
+                    "TalendResourceBucket": { "Ref": "TalendResourceBucket" },
+                    "InstanceRole": { "Ref": "InstanceRole" },
+                    "InstanceProfile": { "Ref": "InstanceProfile" },
+					"InstanceType": { "Ref": "LogserverInstanceType" },
+					"KeyName": { "Ref": "KeyName" },
+					"SubnetId": { "Ref": "PublicSubnetId1" },
+                    "PrivateSubnet": "public",
+					"SecurityGroupIds": { "Ref": "LogserverSecurityGroup" }
+				},
+				"TimeoutInMinutes" : "10"
+			}
+		},
+		"TacStack": {
+			"Type" : "AWS::CloudFormation::Stack",
+			"DependsOn": [ "NexusStack", "LogserverStack" ],
+			"Properties" : {
+                "TemplateURL": { "Fn::Sub": "http://${QSS3BucketName}.${QSS3URL}/${QSS3KeyPrefix}templates/talend-tac.template" },
+				"Parameters" : {
+                    "QSS3BucketName": { "Ref": "QSS3BucketName" },
+                    "QSS3KeyPrefix": { "Fn::Sub": "${QSS3KeyPrefix}" },
+					"TalendLicenseBucket":  { "Ref": "TalendLicenseBucket" },
+                    "TalendResourceBucket": { "Ref": "TalendResourceBucket" },
+                    "TalendSourceBucket": { "Ref": "TalendSourceBucket" },
+                    "InstanceRole": { "Ref": "InstanceRole" },
+                    "InstanceProfile": { "Ref": "InstanceProfile" },
+					"InstanceType": { "Ref": "TacInstanceType" },
+					"KeyName": { "Ref": "KeyName" },
+					"SubnetId": { "Ref": "PublicSubnetId1" },
+                    "PrivateSubnet": "public",
+					"SecurityGroupIds": { "Ref": "TacSecurityGroup" },
+                    "TacDbHost": { "Ref": "TacDbHost" },
+                    "AmcDbHost": { "Ref": "TacDbHost" },
+                    "TacPassword": { "Ref": "TacPassword" },
+                    "MasterDbUser": { "Ref": "MasterDbUser" },
+                    "MasterDbPassword": { "Ref": "MasterDbPassword" },
+                    "TacDbSchema": { "Ref": "TacDbSchema" },
+                    "TacDbUser": { "Ref": "TacDbUser" },
+                    "TacDbPassword": { "Ref": "TacDbPassword" },
+                    "AmcDbUser": { "Ref": "AmcDbUser" },
+                    "AmcDbPassword": { "Ref": "AmcDbPassword" },
+                    "CreateTacDatabase": { "Ref": "CreateTacDatabase" },
+                    "CreateAmcDatabase": { "Ref": "CreateAmcDatabase" },
+                    "NexusHost": { "Fn::GetAtt": [ "NexusStack", "Outputs.privateDnsName" ] },
+                    "NexusPort": { "Ref": "NexusPort" },
+                    "NexusAdminUserid": { "Ref": "NexusAdminUserid" },
+                    "NexusAdminPassword": { "Ref": "NexusAdminPassword" },
+                    "LoggingHost": { "Fn::GetAtt": [ "LogserverStack", "Outputs.publicDnsName" ] },
+                    "LoggingTacPort": { "Fn::GetAtt": [ "LogserverStack", "Outputs.loggingTacPort" ] },
+                    "LoggingKibanaPort": { "Fn::GetAtt": [ "LogserverStack", "Outputs.loggingKibanaPort" ] },
+                    "GitHost": {
+                        "Fn::If": [
+                            "CreateGitStackCondition",
+                            { "Fn::GetAtt": [ "GitStack", "Outputs.privateDnsName" ] },
+                            { "Ref": "GitHost" } 
+                        ]
+                    },
+                    "GitProtocol": { "Ref": "GitProtocol" },
+                    "GitPort": { "Ref": "GitPort" },
+                    "GitRepo": { "Ref": "GitRepo" },
+                    "GitAdminUserid": { "Ref": "GitAdminUserid" },
+                    "GitAdminPassword": { "Ref": "GitAdminPassword" },
+                    "GitStack": {
+                        "Fn::If": [
+                            "CreateGitStackCondition",
+                            { "Ref": "GitStack" },
+                            { "Ref" : "AWS::NoValue"} 
+                        ]
+                    }
+				},
+				"TimeoutInMinutes" : "10"
+			}
+		},
+		"JobserverAutoscaleStack": {
+			"Type" : "AWS::CloudFormation::Stack",
+			"DependsOn": [ "TacStack", "LogserverStack" ],
+			"Properties" : {
+                "TemplateURL": { "Fn::Sub": "http://${QSS3BucketName}.${QSS3URL}/${QSS3KeyPrefix}templates/talend-jobserver-autoscale.template" },
+				"Parameters" : {
+                    "QSS3BucketName": { "Ref": "QSS3BucketName" },
+                    "QSS3KeyPrefix": { "Fn::Sub": "${QSS3KeyPrefix}" },
+					"TalendLicenseBucket":  { "Ref": "TalendLicenseBucket" },
+                    "TalendResourceBucket": { "Ref": "TalendResourceBucket" },
+                    "InstanceRole": { "Ref": "InstanceRole" },
+                    "InstanceProfile": { "Ref": "InstanceProfile" },
+					"InstanceType": { "Ref": "JobserverInstanceType" },
+					"KeyName": { "Ref": "KeyName" },
+					"SubnetId1": { "Ref": "PrivateSubnetId1" },
+					"SubnetId2": { "Ref": "PrivateSubnetId2" },
+                    "PrivateSubnet": "private",
+					"SecurityGroupIds": { "Ref": "JobserverSecurityGroup" },
+                    "JobserverAutoscaleMinSize": { "Ref": "JobserverAutoscaleMinSize" },
+                    "JobserverAutoscaleMaxSize": { "Ref": "JobserverAutoscaleMaxSize" },
+                    "JobserverAutoscaleDesiredCapacity": { "Ref": "JobserverAutoscaleDesiredCapacity" },
+					"TacHost": { "Fn::GetAtt": [ "TacStack", "Outputs.privateDnsName" ] },
+                    "LoggingHost": { "Fn::GetAtt": [ "LogserverStack", "Outputs.privateDnsName" ] },
+                    "LoggingJobserverPort": { "Fn::GetAtt": [ "LogserverStack", "Outputs.loggingJobserverPort" ] },
+                    "TacStack": { "Ref": "TacStack" }
+				},
+				"TimeoutInMinutes" : "10"
+			}
+		},
+		"DistantRunStack": {
+			"Type" : "AWS::CloudFormation::Stack",
+            "Condition" : "CreateDistantRunStackCondition",
+			"DependsOn": [ "LogserverStack" ],
+			"Properties" : {
+                "TemplateURL": { "Fn::Sub": "http://${QSS3BucketName}.${QSS3URL}/${QSS3KeyPrefix}templates/talend-jobserver-autoscale.template" },
+				"Parameters" : {
+                    "QSS3BucketName": { "Ref": "QSS3BucketName" },
+                    "QSS3KeyPrefix": { "Fn::Sub": "${QSS3KeyPrefix}" },
+					"TalendLicenseBucket":  { "Ref": "TalendLicenseBucket" },
+                    "TalendResourceBucket": { "Ref": "TalendResourceBucket" },
+                    "InstanceRole": { "Ref": "InstanceRole" },
+                    "InstanceProfile": { "Ref": "InstanceProfile" },
+					"InstanceType": { "Ref": "JobserverInstanceType" },
+					"KeyName": { "Ref": "KeyName" },
+					"SubnetId1": { "Ref": "PublicSubnetId1" },
+					"SubnetId2": { "Ref": "PublicSubnetId2" },
+                    "PrivateSubnet": "public",
+					"SecurityGroupIds": { "Ref": "DistantRunSecurityGroup" },
+                    "JobserverAutoscaleMinSize": { "Ref": "DistantRunAutoscaleMinSize" },
+                    "JobserverAutoscaleMaxSize": { "Ref": "DistantRunAutoscaleMaxSize" },
+                    "JobserverAutoscaleDesiredCapacity": { "Ref": "DistantRunAutoscaleDesiredCapacity" },
+					"TacHost": "",
+                    "LoggingHost": { "Fn::GetAtt": [ "LogserverStack", "Outputs.privateDnsName" ] },
+                    "LoggingJobserverPort": { "Fn::GetAtt": [ "LogserverStack", "Outputs.loggingJobserverPort" ] }
+				},
+				"TimeoutInMinutes" : "10"
+			}
+		}
+    },
+    "Outputs": {
+        "NexusStack": {
+            "Value": { "Ref": "NexusStack" },
+            "Description": "Nested Nexus stack",
+			"Export": {
+				"Name": { "Fn::Sub": "${AWS::StackName}:Nexus" } 
+				} 
+        },
+        "LogserverStack": {
+            "Value": { "Ref": "LogserverStack" },
+            "Description": "Nested Logserver stack",
+			"Export": {
+				"Name": { "Fn::Sub": "${AWS::StackName}:Logserver" } 
+			}
+        },
+        "TacStack": {
+            "Value": { "Ref": "TacStack" },
+            "Description": "Nested TAC stack",
+			"Export": {
+				"Name": { "Fn::Sub": "${AWS::StackName}:Tac" } 
+			}
+        },
+        "JobserverAutoscaleStack": {
+            "Value": { "Ref": "JobserverAutoscaleStack" },
+            "Description": "Nested JobserverAutoscale stack",
+			"Export": {
+				"Name": { "Fn::Sub": "${AWS::StackName}:JobserverAutoscale" } 
+			}
+        },
+        "GitStack": {
+            "Condition": "CreateGitStackCondition",
+            "Value": { "Ref": "GitStack" },
+            "Description": "Nested Git stack",
+			"Export": {
+				"Name": { "Fn::Sub": "${AWS::StackName}:GitStack" } 
+				} 
+        },
+        "NexusDnsName": {
+            "Value": { "Fn::GetAtt": [ "NexusStack", "Outputs.publicDnsName" ] },
+            "Description": "Nexus DNS name",
+			"Export": {
+				"Name": {
+					"Fn::Sub": "${AWS::StackName}:NexusDnsName"
+				}
+			}
+        },
+        "LogserverDnsName": {
+            "Value": { "Fn::GetAtt": [ "LogserverStack", "Outputs.publicDnsName" ] },
+            "Description": "Logserver DNS name",
+			"Export": {
+				"Name": {
+					"Fn::Sub": "${AWS::StackName}:LogserverDnsName"
+				}
+			}
+        },
+        "GitDnsName": {
+		    "Condition": "CreateGitStackCondition",				
+            "Value": { "Fn::GetAtt": [ "GitStack", "Outputs.publicDnsName"] },
+            "Description": "Git DNS name",
+			"Export": {
+				"Name": { "Fn::Sub": "${AWS::StackName}:GitDnsName" } 
+			}
+        },
+        "TacDnsName": {
+            "Value": { "Fn::GetAtt": [ "TacStack", "Outputs.publicDnsName"] },
+            "Description": "TAC DNS name",
+			"Export": {
+				"Name": { "Fn::Sub": "${AWS::StackName}:TacDnsName" } 
+			}
+        },
+        "TacIp": {
+            "Value": { "Fn::GetAtt": [ "TacStack", "Outputs.privateIp"] },
+            "Description": "TAC IP address",
+			"Export": {
+				"Name": { "Fn::Sub": "${AWS::StackName}:TacIp" } 
+			}
+        }
+    }
+}

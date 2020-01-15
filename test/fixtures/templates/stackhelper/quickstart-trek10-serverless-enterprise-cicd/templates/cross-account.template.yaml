@@ -1,0 +1,115 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  (qs-1ph8neha8) 
+  Serverless CICD Quick Start
+  Resources for the child accounts
+
+Parameters:
+  AwsAccountId:
+    Description: Child AWS account ID
+    Type: String
+    AllowedPattern: (\d{12}|^$)
+    ConstraintDescription: Must be an AWS account ID
+  QuickStartStackMakerLambda:
+    Description: Lambda function to create stack in child account
+    Type: String
+  Stage:
+    Description: Child stage
+    Type: String
+  ChildAccountRoleName:
+    Description: Name of role created by ChildAccountRole template
+    Type: String
+    Default: ChildAccountRole
+
+Resources:
+  CrossAccountStack:
+    Type: "AWS::CloudFormation::CustomResource"
+    Version: '1.0'
+    Properties:
+      ServiceToken: !Ref QuickStartStackMakerLambda
+      RoleArn: !Sub arn:aws:iam::${AwsAccountId}:role/${ChildAccountRoleName}
+      StackName: !Sub ${AWS::StackName}-${Stage}
+      Region: !Ref AWS::Region
+      CfnParameters:
+        SharedServiceAccountID: !Ref AWS::AccountId
+        Stage: !Ref Stage
+      Capabilities:
+        - CAPABILITY_NAMED_IAM
+      TemplateBody: |
+        AWSTemplateFormatVersion: '2010-09-09'
+
+        Parameters:
+          SharedServiceAccountID:
+            Description: The AWS Account ID for the shared services account
+            Type: String
+            AllowedPattern: (\d{12}|^$)
+            ConstraintDescription: must be an AWS account id
+            Default: '491142528373'
+          Stage:
+            Description: Environment
+            Type: String
+
+        Resources:
+          ServiceRole:
+            Type: AWS::IAM::Role
+            Properties:
+              RoleName: !Sub CodePipelineServiceRole-${AWS::Region}-${AWS::AccountId}-${Stage}
+              Path: /
+              AssumeRolePolicyDocument:
+                Version: '2012-10-17'
+                Statement:
+                  - Effect: Allow
+                    Principal:
+                      AWS: !Ref SharedServiceAccountID
+                      Service:
+                        - codepipeline.amazonaws.com
+                    Action: sts:AssumeRole
+              Policies:
+                - PolicyName: CloudFormationAdminAccess
+                  PolicyDocument:
+                    Version: '2012-10-17'
+                    Statement:
+                      - Resource: "*"
+                        Effect: Allow
+                        Action:
+                          - cloudformation:*
+                      - Resource: "*"
+                        Effect: Allow
+                        Action:
+                          - s3:GetObject
+                      - Resource: !Sub arn:aws:kms:${AWS::Region}:${SharedServiceAccountID}:*
+                        Effect: Allow
+                        Action:
+                          - kms:Decrypt
+                      - Resource: !GetAtt DeploymentRole.Arn
+                        Effect: Allow
+                        Action:
+                          - iam:PassRole
+          DeploymentRole:
+            Type: AWS::IAM::Role
+            Properties:
+              RoleName: !Sub CodePipelineDeploymentRole-${AWS::Region}-${AWS::AccountId}-${Stage}
+              Path: /
+              AssumeRolePolicyDocument:
+                Version: '2012-10-17'
+                Statement:
+                  - Effect: Allow
+                    Principal:
+                      Service:
+                        - cloudformation.amazonaws.com
+                    Action: sts:AssumeRole
+              ManagedPolicyArns:
+                - arn:aws:iam::aws:policy/AdministratorAccess
+          SampleLambdaRole: # This must be attached to the sample lambda in addition to any policies defined in the SAM template
+            Type: AWS::IAM::Role
+            Properties:
+              Path: /
+              RoleName: !Sub SampleLambdaRole-${AWS::Region}-${AWS::AccountId}-${Stage}
+              AssumeRolePolicyDocument:
+                Version: '2012-10-17'
+                Statement:
+                  - Effect: Allow
+                    Principal:
+                      Service:
+                        - lambda.amazonaws.com
+                    Action: sts:AssumeRole

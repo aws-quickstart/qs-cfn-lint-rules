@@ -1,0 +1,1119 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "Create the Amazon EC2 instances for the Chef Automate Quick Start. QS(0015)",
+    "Metadata": {
+        "AWSAMIRegionMap": {
+            "Filters": {
+                "CHEFAUTOMATE": {
+                    "name": "public_automate_*-f29f8c30-b390-4c14-92f6-e2f4fe7bc4c1-*",
+                    "owner-alias": "aws-marketplace",
+                    "product-code.type": "marketplace"
+                }
+            }
+        },
+        "AWS::CloudFormation::Interface": {
+            "ParameterGroups": [
+                {
+                    "Label": {
+                        "default": "Network Configuration"
+                    },
+                    "Parameters": [
+                        "RemoteAdminCIDR",
+                        "SubnetId",
+                        "VPC",
+                        "VPCCIDR"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "Chef Automate Configuration"
+                    },
+                    "Parameters": [
+                        "AdminPassword",
+                        "ChefAutomateInstanceType",
+                        "ChefNodes",
+                        "IncludeDemoInstances",
+                        "KeyPairName"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "AWS Quick Start Configuration"
+                    },
+                    "Parameters": [
+                        "QSS3BucketName",
+                        "QSS3KeyPrefix"
+                    ]
+                }
+            ],
+            "ParameterLabels": {
+                "AdminPassword": {
+                    "default": "Chef Administrator password."
+                },
+                "ChefAutomateInstanceType": {
+                    "default": "Chef Automate Instance Type"
+                },
+                "IncludeDemoInstances": {
+                    "default": "Enable and Launch Demo Instances."
+                },
+                "QSS3BucketName": {
+                    "default": "Quick Start S3 Bucket Name"
+                },
+                "QSS3KeyPrefix": {
+                    "default": "Quick Start S3 Key Prefix"
+                },
+                "SubnetId": {
+                    "default": "Public Subnet ID"
+                },
+                "VPCCIDR": {
+                    "default": "VPC CIDR"
+                }
+            }
+        }
+    },
+    "Parameters": {
+        "AdminPassword": {
+            "Description": "Password for the 'chefadmin' account used to sign into the Chef Management Console",
+            "Type": "String",
+            "NoEcho": "True"
+        },
+        "ChefAutomateInstanceType": {
+            "Default": "t2.xlarge",
+            "AllowedValues": [
+                "t2.xlarge",
+                "m4.xlarge",
+                "m4.2xlarge",
+                "m4.4xlarge",
+                "m4.10xlarge",
+                "c4.large",
+                "c4.xlarge",
+                "c4.2xlarge",
+                "c4.4xlarge",
+                "c4.8xlarge"
+            ],
+            "ConstraintDescription": "Must contain valid instance type",
+            "Description": "Type of EC2 instance for the Master instances",
+            "Type": "String"
+        },
+        "ChefNodes": {
+            "Description": "Select the number of nodes you want to support.",
+            "Default": 1,
+            "MinValue": 1,
+            "MaxValue": 10,
+            "Type": "Number",
+            "ConstraintDescription": "Must be a number between 1 and 10."
+        },
+        "IncludeDemoInstances": {
+            "Description": "Set this value to 'true' to include a Chef workstation and demo node. For Chef Automate only, set to 'false'",
+            "AllowedValues": [
+                "true",
+                "false"
+            ],
+            "Type": "String",
+            "Default": "false"
+        },
+        "KeyPairName": {
+            "Description": "Public/private key pair",
+            "Type": "AWS::EC2::KeyPair::KeyName"
+        },
+        "QSS3BucketName": {
+            "AllowedPattern": "^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$",
+            "ConstraintDescription": "Quick Start bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-).",
+            "Default": "aws-quickstart",
+            "Description": "S3 bucket name for the Quick Start assets. Quick Start bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-).",
+            "Type": "String"
+        },
+        "QSS3KeyPrefix": {
+            "AllowedPattern": "^[0-9a-zA-Z-/]*$",
+            "ConstraintDescription": "Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).",
+            "Default": "quickstart-chef-automate/",
+            "Description": "S3 key prefix for the Quick Start assets. Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).",
+            "Type": "String"
+        },
+        "RemoteAdminCIDR": {
+            "ConstraintDescription": "CIDR block parameter must be in the form x.x.x.x/x",
+            "Description": "CIDR Block or IP for SSH and RDP access",
+            "Type": "String",
+            "AllowedPattern": "^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\\/([0-9]|[1-2][0-9]|3[0-2]))$"
+        },
+        "SubnetId": {
+            "Description": "VPC Subnet ID for EC2 Instances",
+            "Type": "AWS::EC2::Subnet::Id"
+        },
+        "VPC": {
+            "Description": "VPC Id",
+            "Type": "AWS::EC2::VPC::Id"
+        },
+        "VPCCIDR": {
+            "Description": "CIDR Block for the VPC",
+            "Type": "String",
+            "Default": "10.0.0.0/16",
+            "AllowedPattern": "[a-zA-Z0-9]+\\..+"
+        }
+    },
+    "Rules": {
+        "CheckSupportedRegions": {
+            "Assertions": [
+                {
+                    "Assert": {
+                        "Fn::Not": [
+                            {
+                                "Fn::Contains": [
+                                    [
+                                        "eu-west-3"
+                                    ],
+                                    {
+                                        "Ref": "AWS::Region"
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    "AssertDescription": "Chef does not currently support the Paris region"
+                }
+            ]
+        }
+    },
+    "Conditions": {
+        "DemoInstances": {
+            "Fn::Equals": [
+                {
+                    "Ref": "IncludeDemoInstances"
+                },
+                "true"
+            ]
+        },
+        "GovCloudCondition": {
+            "Fn::Equals": [
+                {
+                    "Ref": "AWS::Region"
+                },
+                "us-gov-west-1"
+            ]
+        }
+    },
+    "Mappings": {
+        "AWSAMIRegionMap": {
+            "AMI": {
+                "CHEFAUTOMATE": "public_automate_2018_07_16_19_28_49-f29f8c30-b390-4c14-92f6-e2f4fe7bc4c1-ami-ca0e30b5.4",
+                "US1404HVM": "ubuntu/images/hvm-ssd/ubuntu-trusty-14.04-amd64-server-20190514",
+                "WS2012R2": "Windows_Server-2012-R2_RTM-English-64Bit-Base-2019.06.12"
+            },
+            "ap-northeast-1": {
+                "CHEFAUTOMATE": "ami-f674021b",
+                "US1404HVM": "ami-019f92b9a431da6ed",
+                "WS2012R2": "ami-0a7f0aeadc4d0fbfe"
+            },
+            "ap-northeast-2": {
+                "CHEFAUTOMATE": "ami-e342f58d",
+                "US1404HVM": "ami-0d4d670cc80f5ffcb",
+                "WS2012R2": "ami-053df08898d96e587"
+            },
+            "ap-south-1": {
+                "CHEFAUTOMATE": "ami-f7ac9e98",
+                "US1404HVM": "ami-04242e05c1ebface0",
+                "WS2012R2": "ami-0773dc0299ece2df6"
+            },
+            "ap-southeast-1": {
+                "CHEFAUTOMATE": "ami-e33e7f09",
+                "US1404HVM": "ami-0e820d9e86a7efa3c",
+                "WS2012R2": "ami-003bcb0466a4c1ee8"
+            },
+            "ap-southeast-2": {
+                "CHEFAUTOMATE": "ami-cd46e0af",
+                "US1404HVM": "ami-07e6faad15db3b345",
+                "WS2012R2": "ami-061e7ecf5eb3633e2"
+            },
+            "ca-central-1": {
+                "CHEFAUTOMATE": "ami-74b13c10",
+                "US1404HVM": "ami-08e88818d065cbc38",
+                "WS2012R2": "ami-0c2b4ed63c22f1ea9"
+            },
+            "eu-central-1": {
+                "CHEFAUTOMATE": "ami-6f898b84",
+                "US1404HVM": "ami-067ee10914e74ffee",
+                "WS2012R2": "ami-09a023d2317d65420"
+            },
+            "eu-west-1": {
+                "CHEFAUTOMATE": "ami-bf6c8952",
+                "US1404HVM": "ami-0e52b5f0b50d5c811",
+                "WS2012R2": "ami-0c43411b5fd2c1129"
+            },
+            "eu-west-2": {
+                "CHEFAUTOMATE": "ami-fa31db9d",
+                "US1404HVM": "ami-082f73b60cd9b99b2",
+                "WS2012R2": "ami-010ae2c4ae830c4dd"
+            },
+            "sa-east-1": {
+                "CHEFAUTOMATE": "ami-9fd9f8f3",
+                "US1404HVM": "ami-0e2e39cc84e09ff83",
+                "WS2012R2": "ami-041a00620190a86f9"
+            },
+            "us-east-1": {
+                "CHEFAUTOMATE": "ami-db4e46a4",
+                "US1404HVM": "ami-00d4e9ff62bc40e03",
+                "WS2012R2": "ami-05ad3e9ea4dcd9863"
+            },
+            "us-east-2": {
+                "CHEFAUTOMATE": "ami-10d0ea75",
+                "US1404HVM": "ami-0c929bde1796e1484",
+                "WS2012R2": "ami-06d29c77f7ab40cf2"
+            },
+            "us-west-1": {
+                "CHEFAUTOMATE": "ami-cbbd51a8",
+                "US1404HVM": "ami-026e9e583bf07479b",
+                "WS2012R2": "ami-05cd4c9c42e255074"
+            },
+            "us-west-2": {
+                "CHEFAUTOMATE": "ami-45df873d",
+                "US1404HVM": "ami-027386b91d3c0bf78",
+                "WS2012R2": "ami-083ae6bd726521e4a"
+            }
+        }
+    },
+    "Resources": {
+        "ChefAutomateEIP": {
+            "Type": "AWS::EC2::EIP",
+            "Properties": {
+                "Domain": "vpc"
+            }
+        },
+        "ChefQSRole": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "Policies": [
+                    {
+                        "PolicyDocument": {
+                            "Version": "2012-10-17",
+                            "Statement": [
+                                {
+                                    "Action": [
+                                        "ec2:AssociateAddress",
+                                        "ec2:DescribeAddresses"
+                                    ],
+                                    "Resource": [
+                                        "*"
+                                    ],
+                                    "Effect": "Allow"
+                                }
+                            ]
+                        },
+                        "PolicyName": "aws-chef-eip-policy"
+                    },
+                    {
+                        "PolicyDocument": {
+                            "Version": "2012-10-17",
+                            "Statement": [
+                                {
+                                    "Action": [
+                                        "s3:GetObject"
+                                    ],
+                                    "Resource": {
+                                        "Fn::Sub": [
+                                            "arn:${Partition}:s3:::${QSS3BucketName}/${QSS3KeyPrefix}*",
+                                            {
+                                                "Partition": {
+                                                    "Fn::If": [
+                                                        "GovCloudCondition",
+                                                        "aws-us-gov",
+                                                        "aws"
+                                                    ]
+                                                }
+                                            }
+                                        ]
+                                    },
+                                    "Effect": "Allow"
+                                }
+                            ]
+                        },
+                        "PolicyName": "aws-quick-start-s3-policy"
+                    }
+                ],
+                "Path": "/",
+                "AssumeRolePolicyDocument": {
+                    "Statement": [
+                        {
+                            "Action": [
+                                "sts:AssumeRole"
+                            ],
+                            "Principal": {
+                                "Service": [
+                                    "ec2.amazonaws.com"
+                                ]
+                            },
+                            "Effect": "Allow"
+                        }
+                    ],
+                    "Version": "2012-10-17"
+                }
+            }
+        },
+        "ChefInstanceProfile": {
+            "Type": "AWS::IAM::InstanceProfile",
+            "Properties": {
+                "Path": "/",
+                "Roles": [
+                    {
+                        "Ref": "ChefQSRole"
+                    }
+                ]
+            }
+        },
+        "EC2Instances": {
+            "Type": "Custom::EC2Instances",
+            "Condition": "DemoInstances",
+            "Properties": {
+                "ServiceToken": {
+                    "Fn::GetAtt": [
+                        "ChefNodeInstancesFunction",
+                        "Arn"
+                    ]
+                },
+                "ImageId": {
+                    "Fn::FindInMap": [
+                        "AWSAMIRegionMap",
+                        {
+                            "Ref": "AWS::Region"
+                        },
+                        "US1404HVM"
+                    ]
+                },
+                "InstanceType": "t2.medium",
+                "MinCount": {
+                    "Ref": "ChefNodes"
+                },
+                "MaxCount": {
+                    "Ref": "ChefNodes"
+                },
+                "SecurityGroupIds": [
+                    {
+                        "Fn::GetAtt": [
+                            "ChefNodeSecurityGroup",
+                            "GroupId"
+                        ]
+                    }
+                ],
+                "SubnetId": {
+                    "Ref": "SubnetId"
+                },
+                "TagSpecifications": [
+                    {
+                        "ResourceType": "instance",
+                        "Tags": [
+                            {
+                                "Key": "Name",
+                                "Value": "Node"
+                            }
+                        ]
+                    }
+                ],
+                "KeyName": {
+                    "Ref": "KeyPairName"
+                }
+            }
+        },
+        "ChefNodeInstancesFunction": {
+            "Type": "AWS::Lambda::Function",
+            "Condition": "DemoInstances",
+            "Properties": {
+                "Handler": "index.handler",
+                "Role": {
+                    "Fn::GetAtt": [
+                        "LambdaExecutionRole",
+                        "Arn"
+                    ]
+                },
+                "Code": {
+                    "ZipFile": {
+                        "Fn::Sub": "var response = require('cfn-response');\nvar AWS = require('aws-sdk');\nexports.handler = function(event, context) {\n  var physicalId = event.PhysicalResourceId || 'none';\n  function success(data) {\n    return response.send(event, context, response.SUCCESS, data, physicalId);\n  }\n  function failed(e) {\n    return response.send(event, context, response.FAILED, e, physicalId);\n  }\n  var ec2 = new AWS.EC2();\n  var instances;\n  if (event.RequestType == 'Create') {\n    var launchParams = event.ResourceProperties;\n    delete launchParams.ServiceToken;\n    ec2.runInstances(launchParams).promise().then((data)=> {\n      instances = data.Instances.map((data)=> data.InstanceId);\n      physicalId = instances.join(':');\n      return ec2.waitFor('instanceRunning', {InstanceIds: instances}).promise();\n    }).then((data)=> success({Instances: instances})\n    ).catch((e)=> failed(e));\n  } else if (event.RequestType == 'Delete') {\n    if (physicalId == 'none') {return success({});}\n    var deleteParams = {InstanceIds: physicalId.split(':')};\n    ec2.terminateInstances(deleteParams).promise().then((data)=>\n      ec2.waitFor('instanceTerminated', deleteParams).promise()\n    ).then((data)=>success({})\n    ).catch((e)=>failed(e));\n  } else {\n    return failed({Error: \"In-place updates not supported.\"});\n  }\n};\n"
+                    }
+                },
+                "Runtime": "nodejs8.10",
+                "Timeout": 300
+            }
+        },
+        "LambdaExecutionRole": {
+            "Type": "AWS::IAM::Role",
+            "Condition": "DemoInstances",
+            "Properties": {
+                "AssumeRolePolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Principal": {
+                                "Service": [
+                                    "lambda.amazonaws.com"
+                                ]
+                            },
+                            "Action": [
+                                "sts:AssumeRole"
+                            ]
+                        }
+                    ]
+                },
+                "Path": "/",
+                "ManagedPolicyArns": [
+                    "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+                ],
+                "Policies": [
+                    {
+                        "PolicyName": "EC2Policy",
+                        "PolicyDocument": {
+                            "Version": "2012-10-17",
+                            "Statement": [
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "ec2:RunInstances",
+                                        "ec2:DescribeInstances",
+                                        "ec2:DescribeInstanceStatus",
+                                        "ec2:CreateTags",
+                                        "ec2:TerminateInstances"
+                                    ],
+                                    "Resource": [
+                                        "*"
+                                    ]
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        "ChefAutomateSecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "GroupDescription": "Enables SSH and HTTPS access to the Chef Automate",
+                "VpcId": {
+                    "Ref": "VPC"
+                },
+                "SecurityGroupIngress": [
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": 22,
+                        "ToPort": 22,
+                        "CidrIp": {
+                            "Ref": "RemoteAdminCIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": 80,
+                        "ToPort": 80,
+                        "CidrIp": "0.0.0.0/0"
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": 443,
+                        "ToPort": 443,
+                        "CidrIp": "0.0.0.0/0"
+                    }
+                ]
+            }
+        },
+        "ChefWorkStationSecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Condition": "DemoInstances",
+            "Properties": {
+                "GroupDescription": "Enables RDP Access to the Chef WorkStation",
+                "VpcId": {
+                    "Ref": "VPC"
+                },
+                "SecurityGroupIngress": [
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": 3389,
+                        "ToPort": 3389,
+                        "CidrIp": {
+                            "Ref": "RemoteAdminCIDR"
+                        }
+                    }
+                ]
+            }
+        },
+        "ChefNodeSecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Condition": "DemoInstances",
+            "Properties": {
+                "GroupDescription": "Enables SSH and HTTP Access to the Chef Node",
+                "VpcId": {
+                    "Ref": "VPC"
+                },
+                "SecurityGroupIngress": [
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": 22,
+                        "ToPort": 22,
+                        "CidrIp": {
+                            "Ref": "RemoteAdminCIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": 22,
+                        "ToPort": 22,
+                        "CidrIp": {
+                            "Ref": "VPCCIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": 80,
+                        "ToPort": 80,
+                        "CidrIp": "0.0.0.0/0"
+                    }
+                ]
+            }
+        },
+        "ChefAutomateCloudWatchAlarmInstanceRecovery": {
+            "Type": "AWS::CloudWatch::Alarm",
+            "Properties": {
+                "AlarmDescription": "Trigger a recovery when instance status check fails for 10 consecutive minutes.",
+                "Namespace": "AWS/EC2",
+                "MetricName": "StatusCheckFailed_System",
+                "Statistic": "Minimum",
+                "Period": 60,
+                "EvaluationPeriods": 10,
+                "ComparisonOperator": "GreaterThanThreshold",
+                "Threshold": 0.0,
+                "AlarmActions": [
+                    {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "arn:aws:automate:",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                ":ec2:recover"
+                            ]
+                        ]
+                    }
+                ],
+                "Dimensions": [
+                    {
+                        "Name": "InstanceId",
+                        "Value": {
+                            "Ref": "ChefAutomate"
+                        }
+                    }
+                ]
+            }
+        },
+        "ChefAutomate": {
+            "Type": "AWS::EC2::Instance",
+            "Metadata": {
+                "AWS::CloudFormation::Authentication": {
+                    "S3AccessCreds": {
+                        "type": "S3",
+                        "roleName": {
+                            "Ref": "ChefQSRole"
+                        },
+                        "buckets": [
+                            {
+                                "Ref": "QSS3BucketName"
+                            }
+                        ]
+                    }
+                },
+                "AWS::CloudFormation::Interface": {
+                    "config": {
+                        "files": {
+                            "/tmp/chefautomate-bootstrap.sh": {
+                                "source": {
+                                    "Fn::Sub": [
+                                        "https://${QSS3BucketName}.${QSS3Region}.amazonaws.com/${QSS3KeyPrefix}scripts/chefautomate-bootstrap.sh",
+                                        {
+                                            "QSS3Region": {
+                                                "Fn::If": [
+                                                    "GovCloudCondition",
+                                                    "s3-us-gov-west-1",
+                                                    "s3"
+                                                ]
+                                            }
+                                        }
+                                    ]
+                                },
+                                "mode": "000550",
+                                "owner": "root",
+                                "group": "root",
+                                "authentication": "S3AccessCreds"
+                            }
+                        }
+                    }
+                }
+            },
+            "Properties": {
+                "ImageId": {
+                    "Fn::FindInMap": [
+                        "AWSAMIRegionMap",
+                        {
+                            "Ref": "AWS::Region"
+                        },
+                        "CHEFAUTOMATE"
+                    ]
+                },
+                "InstanceType": "t2.medium",
+                "SubnetId": {
+                    "Ref": "SubnetId"
+                },
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": "ChefAutomate"
+                    }
+                ],
+                "BlockDeviceMappings": [
+                    {
+                        "DeviceName": "/dev/sda1",
+                        "Ebs": {
+                            "VolumeSize": 50,
+                            "VolumeType": "gp2"
+                        }
+                    }
+                ],
+                "IamInstanceProfile": {
+                    "Ref": "ChefInstanceProfile"
+                },
+                "SecurityGroupIds": [
+                    {
+                        "Ref": "ChefAutomateSecurityGroup"
+                    }
+                ],
+                "KeyName": {
+                    "Ref": "KeyPairName"
+                },
+                "UserData": {
+                    "Fn::Base64": {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "#!/bin/bash -x\n",
+                                "set -x\n",
+                                "exec > >(tee /var/log/user-data.log |logger -t user-data) 2>&1\n",
+                                "echo BEGIN\n",
+                                "date '+%Y-%m-%d %H:%M:%S'\n",
+                                "yum install -y wget nscd\n",
+                                "wget https://pypi.python.org/packages/source/s/setuptools/setuptools-7.0.tar.gz --no-check-certificate\n",
+                                "tar xzf setuptools-7.0.tar.gz\n",
+                                "cd setuptools-7.0\n",
+                                "python setup.py install\n",
+                                "wget https://bootstrap.pypa.io/get-pip.py\n",
+                                "python get-pip.py\n",
+                                "pip install awscli\n",
+                                "easy_install https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-latest.tar.gz\n",
+                                "cfn-init -v ",
+                                " --stack ",
+                                {
+                                    "Ref": "AWS::StackName"
+                                },
+                                " --resource ChefAutomate ",
+                                " --configsets quickstart ",
+                                " --region ",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                "\n",
+                                {
+                                    "Fn::Sub": "aws s3 cp s3://${QSS3BucketName}/${QSS3KeyPrefix}scripts/chefautomate-bootstrap.sh /tmp/chefautomate-bootstrap.sh\n"
+                                },
+                                "chmod 755 /tmp/chefautomate-bootstrap.sh\n",
+                                "/tmp/chefautomate-bootstrap.sh\n",
+                                "QSS3BucketName=\"",
+                                {
+                                    "Ref": "QSS3BucketName"
+                                },
+                                "\"",
+                                "\n",
+                                "QSS3KeyPrefix=\"",
+                                {
+                                    "Ref": "QSS3KeyPrefix"
+                                },
+                                "\"",
+                                "\n",
+                                "EIP=\"",
+                                {
+                                    "Ref": "ChefAutomateEIP"
+                                },
+                                ",\"",
+                                "\n",
+                                "cfn-signal -e $? --stack ",
+                                {
+                                    "Ref": "AWS::StackName"
+                                },
+                                " --resource ChefAutomate --region ",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                "\n"
+                            ]
+                        ]
+                    }
+                }
+            },
+            "CreationPolicy": {
+                "ResourceSignal": {
+                    "Count": "1",
+                    "Timeout": "PT30M"
+                }
+            }
+        },
+        "ChefWorkStation": {
+            "Type": "AWS::EC2::Instance",
+            "Condition": "DemoInstances",
+            "Metadata": {
+                "AWS::CloudFormation::Authentication": {
+                    "S3AccessCreds": {
+                        "type": "S3",
+                        "roleName": {
+                            "Ref": "ChefQSRole"
+                        },
+                        "buckets": [
+                            {
+                                "Ref": "QSS3BucketName"
+                            }
+                        ]
+                    }
+                },
+                "AWS::CloudFormation::Init": {
+                    "configSets": {
+                        "config": [
+                            "setup"
+                        ]
+                    },
+                    "setup": {
+                        "files": {
+                            "c:\\cfn\\cfn-hup.conf": {
+                                "content": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "[main]\n",
+                                            "stack=",
+                                            {
+                                                "Ref": "AWS::StackId"
+                                            },
+                                            "\n",
+                                            "region=",
+                                            {
+                                                "Ref": "AWS::Region"
+                                            },
+                                            "\n"
+                                        ]
+                                    ]
+                                }
+                            },
+                            "c:\\cfn\\hooks.d\\cfn-auto-reloader.conf": {
+                                "content": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "[cfn-auto-reloader-hook]\n",
+                                            "triggers=post.update\n",
+                                            "path=Resources.ChefWorkStation.Metadata.AWS::CloudFormation::Init\n",
+                                            "action=cfn-init.exe -v -s ",
+                                            {
+                                                "Ref": "AWS::StackId"
+                                            },
+                                            " -r ChefWorkStation",
+                                            " --region ",
+                                            {
+                                                "Ref": "AWS::Region"
+                                            },
+                                            "\n"
+                                        ]
+                                    ]
+                                }
+                            },
+                            "c:\\cfn\\scripts\\Unzip-Archive.ps1": {
+                                "source": {
+                                    "Fn::Sub": [
+                                        "https://${QSS3BucketName}.${QSS3Region}.amazonaws.com/${QSS3KeyPrefix}submodules/quickstart-microsoft-utilities/scripts/Unzip-Archive.ps1",
+                                        {
+                                            "QSS3Region": {
+                                                "Fn::If": [
+                                                    "GovCloudCondition",
+                                                    "s3-us-gov-west-1",
+                                                    "s3"
+                                                ]
+                                            }
+                                        }
+                                    ]
+                                },
+                                "authentication": "S3AccessCreds"
+                            },
+                            "c:\\cfn\\modules\\AWSQuickStart.zip": {
+                                "source": {
+                                    "Fn::Sub": [
+                                        "https://${QSS3BucketName}.${QSS3Region}.amazonaws.com/${QSS3KeyPrefix}submodules/quickstart-microsoft-utilities/modules/AWSQuickStart.zip",
+                                        {
+                                            "QSS3Region": {
+                                                "Fn::If": [
+                                                    "GovCloudCondition",
+                                                    "s3-us-gov-west-1",
+                                                    "s3"
+                                                ]
+                                            }
+                                        }
+                                    ]
+                                },
+                                "authentication": "S3AccessCreds"
+                            },
+                            "c:\\cfn\\downloads\\chefdk-0.9.0-1-x86.msi": {
+                                "source": "https://opscode-omnibus-packages.s3.amazonaws.com/windows/2008r2/i386/chefdk-0.9.0-1-x86.msi"
+                            },
+                            "c:\\cfn\\downloads\\Git-2.6.2-64-bit.exe": {
+                                "source": "https://github.com/git-for-windows/git/releases/download/v2.6.2.windows.1/Git-2.6.2-64-bit.exe"
+                            },
+                            "c:\\cfn\\scripts\\git.inf": {
+                                "source": {
+                                    "Fn::Sub": [
+                                        "https://${QSS3BucketName}.${QSS3Region}.amazonaws.com/${QSS3KeyPrefix}scripts/git.inf",
+                                        {
+                                            "QSS3Region": {
+                                                "Fn::If": [
+                                                    "GovCloudCondition",
+                                                    "s3-us-gov-west-1",
+                                                    "s3"
+                                                ]
+                                            }
+                                        }
+                                    ]
+                                },
+                                "authentication": "S3AccessCreds"
+                            },
+                            "c:\\cfn\\downloads\\default.rb": {
+                                "source": {
+                                    "Fn::Sub": [
+                                        "https://${QSS3BucketName}.${QSS3Region}.amazonaws.com/${QSS3KeyPrefix}scripts/default.rb",
+                                        {
+                                            "QSS3Region": {
+                                                "Fn::If": [
+                                                    "GovCloudCondition",
+                                                    "s3-us-gov-west-1",
+                                                    "s3"
+                                                ]
+                                            }
+                                        }
+                                    ]
+                                },
+                                "authentication": "S3AccessCreds"
+                            },
+                            "c:\\cfn\\scripts\\New-LocalAdministrator.ps1": {
+                                "source": {
+                                    "Fn::Sub": [
+                                        "https://${QSS3BucketName}.${QSS3Region}.amazonaws.com/${QSS3KeyPrefix}submodules/quickstart-microsoft-utilities/scripts/New-LocalAdministrator.ps1",
+                                        {
+                                            "QSS3Region": {
+                                                "Fn::If": [
+                                                    "GovCloudCondition",
+                                                    "s3-us-gov-west-1",
+                                                    "s3"
+                                                ]
+                                            }
+                                        }
+                                    ]
+                                },
+                                "authentication": "S3AccessCreds"
+                            },
+                            "c:\\cfn\\downloads\\index.html": {
+                                "source": {
+                                    "Fn::Sub": [
+                                        "https://${QSS3BucketName}.${QSS3Region}.amazonaws.com/${QSS3KeyPrefix}scripts/index.html",
+                                        {
+                                            "QSS3Region": {
+                                                "Fn::If": [
+                                                    "GovCloudCondition",
+                                                    "s3-us-gov-west-1",
+                                                    "s3"
+                                                ]
+                                            }
+                                        }
+                                    ]
+                                },
+                                "authentication": "S3AccessCreds"
+                            },
+                            "c:\\cfn\\downloads\\Win8.1AndW2K12R2-KB3134758-x64.msu": {
+                                "source": "https://download.microsoft.com/download/2/C/6/2C6E1B4A-EBE5-48A6-B225-2D2058A9CEFB/Win8.1AndW2K12R2-KB3134758-x64.msu"
+                            },
+                            "c:/tools/ewmp.cmd": {
+                                "content": "@ECHO OFF\nFOR /F \"tokens=3,*\" %%a IN ('REG QUERY \"HKLM\\System\\CurrentControlSet\\Control\\Session Manager\\Environment\" /v PATH') DO PATH %%a%%b\n%*"
+                            }
+                        },
+                        "commands": {
+                            "a-set-execution-policy": {
+                                "command": "powershell.exe -command Set-ExecutionPolicy RemoteSigned -Force",
+                                "waitAfterCompletion": "0"
+                            },
+                            "b-unpack-quickstart-module": {
+                                "command": "powershell.exe -command c:\\cfn\\scripts\\Unzip-Archive.ps1 -Source c:\\cfn\\modules\\AWSQuickStart.zip -Destination C:\\Windows\\system32\\WindowsPowerShell\\v1.0\\Modules\\",
+                                "waitAfterCompletion": "0"
+                            },
+                            "c-init-quickstart-module": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "powershell.exe -Command \"",
+                                            "New-AWSQuickStartResourceSignal -Stack '",
+                                            {
+                                                "Ref": "AWS::StackName"
+                                            },
+                                            "' -Resource ChefWorkStation -Region '",
+                                            {
+                                                "Ref": "AWS::Region"
+                                            },
+                                            "'\""
+                                        ]
+                                    ]
+                                },
+                                "waitAfterCompletion": "0"
+                            },
+                            "d-install-chefdk": {
+                                "command": "powershell.exe -command Start-Process msiexec.exe '/i C:\\cfn\\downloads\\chefdk-0.9.0-1-x86.msi /qn' -NoNewWindow -Wait",
+                                "waitAfterCompletion": "0"
+                            },
+                            "e-install-git": {
+                                "command": "powershell.exe -command Start-Process c:\\cfn\\downloads\\Git-2.6.2-64-bit.exe '/VERYSILENT /LOADINF=c:\\cfn\\scripts\\git.inf' -NoNewWindow -Wait",
+                                "waitAfterCompletion": "0"
+                            },
+                            "f-install-wmf5": {
+                                "command": "wusa.exe c:\\cfn\\downloads\\Win8.1AndW2K12R2-KB3134758-x64.msu /quiet /forcerestart",
+                                "waitAfterCompletion": "forever"
+                            },
+                            "g-install-chocolatey": {
+                                "command": "powershell -Command \"Invoke-Expression ((New-Object Net.WebClient).DownloadString('https://chocolatey.org/install.ps1'))\""
+                            },
+                            "h-install-notepad": {
+                                "command": "c:\\tools\\ewmp.cmd choco install notepadplusplus.install --force -y"
+                            },
+                            "i-install-chrome": {
+                                "command": "c:\\tools\\ewmp.cmd choco install googlechrome --ignore-checksums --force -y"
+                            },
+                            "j-new-admin": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "powershell.exe -command c:\\cfn\\scripts\\New-LocalAdministrator.ps1 -Name chefadmin -Password ",
+                                            {
+                                                "Ref": "AdminPassword"
+                                            }
+                                        ]
+                                    ]
+                                },
+                                "waitAfterCompletion": "0"
+                            },
+                            "k-send-signal": {
+                                "command": "powershell.exe -command \"Write-AWSQuickStartStatus\"",
+                                "waitAfterCompletion": "0"
+                            }
+                        },
+                        "services": {
+                            "windows": {
+                                "cfn-hup": {
+                                    "enabled": "true",
+                                    "ensureRunning": "true",
+                                    "files": [
+                                        "c:\\cfn\\cfn-hup.conf",
+                                        "c:\\cfn\\hooks.d\\cfn-auto-reloader.conf"
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "Properties": {
+                "ImageId": {
+                    "Fn::FindInMap": [
+                        "AWSAMIRegionMap",
+                        {
+                            "Ref": "AWS::Region"
+                        },
+                        "WS2012R2"
+                    ]
+                },
+                "IamInstanceProfile": {
+                    "Ref": "ChefInstanceProfile"
+                },
+                "InstanceType": "t2.medium",
+                "SubnetId": {
+                    "Ref": "SubnetId"
+                },
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": "ChefWorkStation"
+                    }
+                ],
+                "BlockDeviceMappings": [
+                    {
+                        "DeviceName": "/dev/sda1",
+                        "Ebs": {
+                            "VolumeSize": 50,
+                            "VolumeType": "gp2"
+                        }
+                    }
+                ],
+                "SecurityGroupIds": [
+                    {
+                        "Ref": "ChefWorkStationSecurityGroup"
+                    }
+                ],
+                "KeyName": {
+                    "Ref": "KeyPairName"
+                },
+                "UserData": {
+                    "Fn::Base64": {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "<script>\n",
+                                "cfn-init.exe -v -c config -s ",
+                                {
+                                    "Ref": "AWS::StackId"
+                                },
+                                " -r ChefWorkStation",
+                                " --region ",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                "\n",
+                                "</script>\n"
+                            ]
+                        ]
+                    }
+                }
+            },
+            "CreationPolicy": {
+                "ResourceSignal": {
+                    "Count": "1",
+                    "Timeout": "PT30M"
+                }
+            }
+        }
+    },
+    "Outputs": {
+        "ChefAutomateDnsName": {
+            "Value": {
+                "Fn::GetAtt": [
+                    "ChefAutomate",
+                    "PublicDnsName"
+                ]
+            },
+            "Description": "Public DNS Name for the Chef Automate"
+        },
+        "ChefWorkStationDnsName": {
+            "Condition": "DemoInstances",
+            "Value": {
+                "Fn::GetAtt": [
+                    "ChefWorkStation",
+                    "PublicDnsName"
+                ]
+            },
+            "Description": "Public DNS Name for the Chef WorkStation"
+        }
+    }
+}

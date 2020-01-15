@@ -1,0 +1,860 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "CloudFormation template to create a Fusion instances for AWS Marketplace.(qs-1nmjm7285)",
+    "Parameters": {
+        "AdminSecurityGroupId": {
+            "Description": "The Id of the Security Group to use for administration access. This Security Group will be used by the EC2 instance in which Fusion runs.",
+            "Type": "AWS::EC2::SecurityGroup::Id"
+        },
+        "ClusterInstanceCount": {
+            "Default": "1",
+            "Description": "Size of Fusion Server cluster",
+            "Type": "Number"
+        },
+        "ClusterName": {
+            "AllowedPattern": "[0-9A-z]+",
+            "ConstraintDescription": "The ClusterName value must be alphanumeric",
+            "Default": "awsfs",
+            "Description": "Fusion CF ID",
+            "Type": "String"
+        },
+        "ClusterNodeType": {
+            "AllowedValues": [
+                "m4.xlarge",
+                "m4.2xlarge",
+                "m4.4xlarge",
+                "m4.10xlarge",
+                "m4.16xlarge",
+                "c4.2xlarge",
+                "c4.4xlarge",
+                "c4.8xlarge",
+                "r4.large",
+                "r4.2xlarge",
+                "r4.4xlarge",
+                "r4.8xlarge",
+                "r4.16xlarge",
+                "i3.large",
+                "i3.xlarge",
+                "i3.2xlarge",
+                "i3.4xlarge",
+                "i3.8xlarge",
+                "i3.16xlarge"
+            ],
+            "ConstraintDescription": "Must be a valid EC2 instance type.",
+            "Default": "m4.2xlarge",
+            "Description": "Instance Type for Fusion  nodes",
+            "Type": "String"
+        },
+        "EMRVersion": {
+            "AllowedValues": [
+                "5.3.0",
+                "5.4.0"
+            ],
+            "ConstraintDescription": "Supported versions of EMR backend",
+            "Default": "5.4.0",
+            "Description": "EMR Version",
+            "Type": "String"
+        },
+        "FusionLicense": {
+            "AllowedPattern": "(^s3://[^/]+/.+)|(.*amazonaws.com/.*)|(^$)",
+            "ConstraintDescription": "FusionLicense must be a valid S3 Path (format: s3://bucket-name/path), URL, or blank",
+            "Description": "S3 Path (format: s3://bucket-name/path) or URL of Fusion License (leave blank for a trial license)",
+            "Type": "String"
+        },
+        "FusionVersion": {
+            "AllowedValues": [
+                "2.10.3.1"
+            ],
+            "ConstraintDescription": "Supported versions of Fusion within AWS Marketplace",
+            "Default": "2.10.3.1",
+            "Description": "Fusion Version",
+            "Type": "String"
+        },
+        "InductorNodeIP": {
+            "AllowedPattern": ".*",
+            "ConstraintDescription": "Must be a valid Hostname or IP",
+            "Default": "",
+            "Description": "Hostname or IP of other Fusion Server node (leave blank to skip automatic node induction)",
+            "Type": "String"
+        },
+        "KMSKey": {
+            "AllowedPattern": ".*",
+            "ConstraintDescription": "Must be a valid ARN",
+            "Default": "",
+            "Description": "ARN for KMS Encryption Key ID (leave blank to disable KMS encryption)",
+            "Type": "String"
+        },
+        "KeyName": {
+            "ConstraintDescription": "Must be the name of an existing EC2 KeyPair.",
+            "Description": "Name of an existing EC2 KeyPair within the AWS account; all instances will launch with this KeyPair",
+            "MinLength": "1",
+            "Type": "AWS::EC2::KeyPair::KeyName"
+        },
+        "Password": {
+            "AllowedPattern": "[!@#$&*0-9A-z]+",
+            "ConstraintDescription": "The password value must be alphanumeric",
+            "Default": "admin",
+            "Description": "The password for the WD Fusion admin.  By default it is admin",
+            "NoEcho": "true",
+            "Type": "String"
+        },
+        "PersistentStorage": {
+            "ConstraintDescription": "No more than 1024 GB per device (4 TB per node).",
+            "Default": "0",
+            "Description": "Allocated EBS storage for each block device (in GB; 4 devs per node); 0 indicates ephemeral storage only",
+            "MaxValue": "1024",
+            "MinValue": "0",
+            "Type": "Number"
+        },
+        "QSS3BucketName": {
+            "AllowedPattern": "^[0-9a-zA-Z-]+(/[0-9a-zA-Z-]+)*$",
+            "ConstraintDescription": "must be a valid s3 bucket name",
+            "Default": "wandisco-public-files",
+            "Description": "Quick Start S3 bucket name",
+            "Type": "String"
+        },
+        "QSS3KeyPrefix": {
+            "AllowedPattern": "^[0-9a-zA-Z-/]*$",
+            "ConstraintDescription": "Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).",
+            "Default": "/",
+            "Description": "S3 key prefix for the Quick Start assets. Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).",
+            "Type": "String"
+        },
+        "S3Bucket": {
+            "AllowedPattern": ".+",
+            "ConstraintDescription": "Must provide S3 Bucket value",
+            "Description": "The name of an existing S3 bucket to synchronize with.",
+            "Type": "String"
+        },
+        "S3ServerEncryption": {
+            "AllowedValues": [
+                "Yes",
+                "No"
+            ],
+            "ConstraintDescription": "Must respond \"Yes\" or \"No\"",
+            "Default": "Yes",
+            "Description": "Enable server-side encryption on S3",
+            "Type": "String"
+        },
+        "SecurityGroupId": {
+            "Description": "The Id of the Security Group to use. This Security Group will be used by the EC2 instance in which Fusion runs. You must ensure that it allows inbound and outbound communication on all the ports required for Fusion's operation. Please refer to the quickstart guide for details: http://docs.wandisco.com/bigdata/wdfusion/quickstart_alt.html#cf",
+            "Type": "AWS::EC2::SecurityGroup::Id"
+        },
+        "SubnetIdA": {
+            "Description": "The Id of the Subnet to use for the 1st availability zone. Fusion will be launched in this subnet associated with your chosen VPC. You must ensure that the IP address range of this subnet is routable from your other Fusion servers so that they can communicate directly with an IP address in this subnet. You must also ensure that the subnet has a route table defined that allows hosts within it to communicate with all other Fusion servers. Please refer to the quickstart guide for details: http://docs.wandisco.com/bigdata/wdfusion/quickstart_alt.html#cf",
+            "Type": "AWS::EC2::Subnet::Id"
+        },
+        "SubnetIdB": {
+            "Description": "The Id of the Subnet to use for the 2nd availability zone. Fusion will be launched in this subnet associated with your chosen VPC. You must ensure that the IP address range of this subnet is routable from your other Fusion servers so that they can communicate directly with an IP address in this subnet. You must also ensure that the subnet has a route table defined that allows hosts within it to communicate with all other Fusion servers. Please refer to the quickstart guide for details: http://docs.wandisco.com/bigdata/wdfusion/quickstart_alt.html#cf",
+            "Type": "AWS::EC2::Subnet::Id"
+        },
+        "SubscribeARN": {
+            "Description": "ARN Code of topic to email.",
+            "Type": "String"
+        },
+        "UserName": {
+            "AllowedPattern": "[0-9A-z]+",
+            "ConstraintDescription": "The User Name value must be alphanumeric",
+            "Default": "admin",
+            "Description": "The name of the default admin user for WD Fusion",
+            "Type": "String"
+        },
+        "VpcId": {
+            "Description": "The Id of the VPC to use. Your Fusion instance will be launched in this Virtual Private Cloud. You need to select an existing VPC, and you must ensure that you have configured that VPC previously in a way that allows bi-directional network connectivity with all your other Fusion servers. The VPC must have an appropriate IP address range, associated subnet, route table, network gateway, and security settings. Please refer to the quickstart guide for details: http://docs.wandisco.com/bigdata/wdfusion/quickstart_alt.html#cf",
+            "Type": "AWS::EC2::VPC::Id"
+        },
+        "ZoneName": {
+            "AllowedPattern": "^[^ ].+",
+            "ConstraintDescription": "ZoneName should not start with a space",
+            "Default": "AWSCloud",
+            "Description": "Name of Fusion Zone",
+            "Type": "String"
+        }
+    },
+    "Mappings": {
+        "FusionVersionInstaller": {
+            "2.10.3.1": {
+                "FileURI": "s3://wandisco-public-files/fusion/fusion-ui-server-emr_rpm_installer_2.10.3.1.sh"
+            }
+        },
+        "AWSAMIRegionMap": {
+            "AMI": {
+                "WDFUSIONHVM": "WANdisco Fusion - 2016 08 02-06c7435b-4ea4-4bd3-bfaa-fc58c3e0f5a6-ami-dc0375cb.4"
+            },
+            "ap-northeast-1": {
+                "WDFUSIONHVM": "ami-1dfaba7b"
+            },
+            "ap-northeast-2": {
+                "WDFUSIONHVM": "ami-c45ff2aa"
+            },
+            "ap-south-1": {
+                "WDFUSIONHVM": "ami-d5c996ba"
+            },
+            "ap-southeast-1": {
+                "WDFUSIONHVM": "ami-3c9cd640"
+            },
+            "ap-southeast-2": {
+                "WDFUSIONHVM": "ami-be9455dc"
+            },
+            "eu-central-1": {
+                "WDFUSIONHVM": "ami-a5f69aca"
+            },
+            "eu-west-1": {
+                "WDFUSIONHVM": "ami-178dcb6e"
+            },
+            "sa-east-1": {
+                "WDFUSIONHVM": "ami-9183c8fd"
+            },
+            "us-east-1": {
+                "WDFUSIONHVM": "ami-b4798fc9"
+            },
+            "us-east-2": {
+                "WDFUSIONHVM": "ami-1bb6817e"
+            },
+            "us-west-1": {
+                "WDFUSIONHVM": "ami-9f767cff"
+            },
+            "us-west-2": {
+                "WDFUSIONHVM": "ami-c5ef65bd"
+            }
+        }
+    },
+    "Conditions": {
+        "EnableWaitConditions": {
+            "Fn::Equals": [
+                "1",
+                "1"
+            ]
+        },
+        "EphemeralStorage": {
+            "Fn::Equals": [
+                {
+                    "Ref": "PersistentStorage"
+                },
+                "0"
+            ]
+        }
+    },
+    "Resources": {
+        "ClusterCompleteCondition": {
+            "Condition": "EnableWaitConditions",
+            "DependsOn": "FusionInstalledCondition",
+            "Properties": {
+                "Count": {
+                    "Ref": "ClusterInstanceCount"
+                },
+                "Handle": {
+                    "Ref": "ClusterCompleteHandle"
+                },
+                "Timeout": "1800"
+            },
+            "Type": "AWS::CloudFormation::WaitCondition"
+        },
+        "ClusterCompleteHandle": {
+            "Type": "AWS::CloudFormation::WaitConditionHandle"
+        },
+        "ClusterNodeLaunchConfig": {
+            "Metadata": {
+                "AWS::CloudFormation::Authentication": {
+                    "S3AccessCreds": {
+                        "buckets": [
+                            {
+                                "Ref": "QSS3BucketName"
+                            }
+                        ],
+                        "roleName": {
+                            "Ref": "InstanceIAMRole"
+                        },
+                        "type": "S3"
+                    }
+                },
+                "AWS::CloudFormation::Init": {
+                    "config": {
+                        "commands": {
+                            "setup": {
+                                "command": "/tmp/amazonCompanionScript-2_10_3_1.sh >> /var/log/cloud-init-output.log",
+                                "cwd": "/tmp"
+                            }
+                        },
+                        "files": {
+                            "/tmp/amazonCompanionScript-2_10_3_1.sh": {
+                                "authentication": "S3AccessCreds",
+                                "group": "root",
+                                "mode": "000700",
+                                "owner": "root",
+                                "source": {
+                                    "Fn::Sub": "https://s3.amazonaws.com/${QSS3BucketName}/${QSS3KeyPrefix}scripts/amazonCompanionScript-2_10_3_1.sh"
+                                }
+                            },
+                            "/tmp/amazonProperties.properties": {
+                                "content": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "AWS_STACKNAME='",
+                                            {
+                                                "Ref": "AWS::StackName"
+                                            },
+                                            "'\n",
+                                            "AWS_STACKID='",
+                                            {
+                                                "Ref": "AWS::StackId"
+                                            },
+                                            "'\n",
+                                            "AWS_REGION='",
+                                            {
+                                                "Ref": "AWS::Region"
+                                            },
+                                            "'\n",
+                                            "AWS_CLUSTER_NAME='",
+                                            {
+                                                "Ref": "ClusterName"
+                                            },
+                                            "'\n",
+                                            "FUSION_VERSION='",
+                                            {
+                                                "Ref": "FusionVersion"
+                                            },
+                                            "'\n",
+                                            "FUSION_INSTALLER='",
+                                            {
+                                                "Fn::FindInMap": [
+                                                    "FusionVersionInstaller",
+                                                    {
+                                                        "Ref": "FusionVersion"
+                                                    },
+                                                    "FileURI"
+                                                ]
+                                            },
+                                            "'\n",
+                                            "ZONE_NAME='",
+                                            {
+                                                "Ref": "ZoneName"
+                                            },
+                                            "'\n",
+                                            "USERNAME='",
+                                            {
+                                                "Ref": "UserName"
+                                            },
+                                            "'\n",
+                                            "PASSWORD='",
+                                            {
+                                                "Ref": "Password"
+                                            },
+                                            "'\n",
+                                            "BUCKET_NAME='",
+                                            {
+                                                "Ref": "S3Bucket"
+                                            },
+                                            "'\n",
+                                            "INDUCTOR_IP='",
+                                            {
+                                                "Ref": "InductorNodeIP"
+                                            },
+                                            "'\n",
+                                            "SERVER_ENCRYPTION='",
+                                            {
+                                                "Ref": "S3ServerEncryption"
+                                            },
+                                            "'\n",
+                                            "SERVER_ENCRYPTION_ALGORITHM='AES256'\n",
+                                            "KMS_KEY='",
+                                            {
+                                                "Ref": "KMSKey"
+                                            },
+                                            "'\n",
+                                            "BACKEND_VERSION='emr-",
+                                            {
+                                                "Ref": "EMRVersion"
+                                            },
+                                            "'\n",
+                                            "LICENSE_URL='",
+                                            {
+                                                "Ref": "FusionLicense"
+                                            },
+                                            "'\n",
+                                            "CLUSTER_COMPLETE_HANDLE='",
+                                            {
+                                                "Ref": "ClusterCompleteHandle"
+                                            },
+                                            "'\n",
+                                            "FUSION_INSTALLED_HANDLER='",
+                                            {
+                                                "Ref": "FusionInstalledHandler"
+                                            },
+                                            "'\n",
+                                            "CLUSTER_INSTANCE_COUNT='",
+                                            {
+                                                "Ref": "ClusterInstanceCount"
+                                            },
+                                            "'\n",
+                                            "SECURITY_GROUP_ID='",
+                                            {
+                                                "Ref": "SecurityGroupId"
+                                            },
+                                            "'\n",
+                                            "SUBSCRIBE_EMAIL_ARN='",
+                                            {
+                                                "Ref": "SubscribeARN"
+                                            },
+                                            "'\n"
+                                        ]
+                                    ]
+                                },
+                                "group": "root",
+                                "mode": "000600",
+                                "owner": "root"
+                            },
+                            "/tmp/common-2_10_3_1.sh": {
+                                "authentication": "S3AccessCreds",
+                                "group": "root",
+                                "mode": "000700",
+                                "owner": "root",
+                                "source": {
+                                    "Fn::Sub": "https://s3.amazonaws.com/${QSS3BucketName}/${QSS3KeyPrefix}scripts/common-2_10_3_1.sh"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "Properties": {
+                "AssociatePublicIpAddress": "true",
+                "BlockDeviceMappings": {
+                    "Fn::If": [
+                        "EphemeralStorage",
+                        [
+                            {
+                                "DeviceName": "/dev/sdb",
+                                "VirtualName": "ephemeral0"
+                            },
+                            {
+                                "DeviceName": "/dev/sdc",
+                                "VirtualName": "ephemeral1"
+                            },
+                            {
+                                "DeviceName": "/dev/sdd",
+                                "VirtualName": "ephemeral2"
+                            },
+                            {
+                                "DeviceName": "/dev/sde",
+                                "VirtualName": "ephemeral3"
+                            }
+                        ],
+                        [
+                            {
+                                "DeviceName": "/dev/sdb",
+                                "Ebs": {
+                                    "DeleteOnTermination": "True",
+                                    "VolumeSize": {
+                                        "Ref": "PersistentStorage"
+                                    }
+                                }
+                            },
+                            {
+                                "DeviceName": "/dev/sdc",
+                                "Ebs": {
+                                    "DeleteOnTermination": "True",
+                                    "VolumeSize": {
+                                        "Ref": "PersistentStorage"
+                                    }
+                                }
+                            },
+                            {
+                                "DeviceName": "/dev/sdd",
+                                "Ebs": {
+                                    "DeleteOnTermination": "True",
+                                    "VolumeSize": {
+                                        "Ref": "PersistentStorage"
+                                    }
+                                }
+                            },
+                            {
+                                "DeviceName": "/dev/sde",
+                                "Ebs": {
+                                    "DeleteOnTermination": "True",
+                                    "VolumeSize": {
+                                        "Ref": "PersistentStorage"
+                                    }
+                                }
+                            }
+                        ]
+                    ]
+                },
+                "IamInstanceProfile": {
+                    "Ref": "InstanceProfile"
+                },
+                "ImageId": {
+                    "Fn::FindInMap": [
+                        "AWSAMIRegionMap",
+                        {
+                            "Ref": "AWS::Region"
+                        },
+                        "WDFUSIONHVM"
+                    ]
+                },
+                "InstanceType": {
+                    "Ref": "ClusterNodeType"
+                },
+                "KeyName": {
+                    "Ref": "KeyName"
+                },
+                "SecurityGroups": [
+                    {
+                        "Ref": "SecurityGroupId"
+                    },
+                    {
+                        "Ref": "AdminSecurityGroupId"
+                    }
+                ],
+                "UserData": {
+                    "Fn::Base64": {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "#!/bin/bash\n",
+                                "/opt/aws/bin/cfn-init -s ",
+                                {
+                                    "Ref": "AWS::StackId"
+                                },
+                                " -r ClusterNodeLaunchConfig --region ",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                " || error_exit 'Failed to run cfn-init'\n"
+                            ]
+                        ]
+                    }
+                }
+            },
+            "Type": "AWS::AutoScaling::LaunchConfiguration"
+        },
+        "ClusterNodes": {
+            "Properties": {
+                "DesiredCapacity": {
+                    "Ref": "ClusterInstanceCount"
+                },
+                "LaunchConfigurationName": {
+                    "Ref": "ClusterNodeLaunchConfig"
+                },
+                "MaxSize": {
+                    "Ref": "ClusterInstanceCount"
+                },
+                "MinSize": 0,
+                "VPCZoneIdentifier": [
+                    {
+                        "Ref": "SubnetIdA"
+                    },
+                    {
+                        "Ref": "SubnetIdB"
+                    }
+                ]
+            },
+            "Type": "AWS::AutoScaling::AutoScalingGroup"
+        },
+        "FusionInstalledCondition": {
+            "Condition": "EnableWaitConditions",
+            "DependsOn": "ClusterNodes",
+            "Properties": {
+                "Count": {
+                    "Ref": "ClusterInstanceCount"
+                },
+                "Handle": {
+                    "Ref": "FusionInstalledHandler"
+                },
+                "Timeout": "1800"
+            },
+            "Type": "AWS::CloudFormation::WaitCondition"
+        },
+        "FusionInstalledHandler": {
+            "Type": "AWS::CloudFormation::WaitConditionHandle"
+        },
+        "InstanceIAMRole": {
+            "Properties": {
+                "AssumeRolePolicyDocument": {
+                    "Statement": [
+                        {
+                            "Action": [
+                                "sts:AssumeRole"
+                            ],
+                            "Effect": "Allow",
+                            "Principal": {
+                                "Service": [
+                                    "ec2.amazonaws.com"
+                                ]
+                            }
+                        }
+                    ],
+                    "Version": "2012-10-17"
+                },
+                "Path": "/",
+                "Policies": [
+                    {
+                        "PolicyDocument": {
+                            "Statement": [
+                                {
+                                    "Action": [
+                                        "autoscaling:DetachInstances",
+                                        "autoscaling:DescribeAutoScalingInstances",
+                                        "autoscaling:DescribeAutoScalingGroups"
+                                    ],
+                                    "Effect": "Allow",
+                                    "Resource": "*"
+                                },
+                                {
+                                    "Action": [
+                                        "ec2:CreateTags",
+                                        "ec2:DescribeInstances",
+                                        "ec2:ModifyInstanceAttribute",
+                                        "ec2:DescribeHosts",
+                                        "ec2:DescribeTags",
+                                        "ec2:DescribeSecurityGroups",
+                                        "cloudformation:DescribeStackResources"
+                                    ],
+                                    "Effect": "Allow",
+                                    "Resource": "*"
+                                },
+                                {
+                                    "Action": [
+                                        "sns:Publish",
+                                        "sns:Subscribe"
+                                    ],
+                                    "Effect": "Allow",
+                                    "Resource": "*"
+                                },
+                                {
+                                    "Action": [
+                                        "s3:ListAllMyBuckets"
+                                    ],
+                                    "Effect": "Allow",
+                                    "Resource": "*"
+                                },
+                                {
+                                    "Action": [
+                                        "s3:ListBucket",
+                                        "s3:GetBucketLocation",
+                                        "s3:ListBucketMultipartUploads"
+                                    ],
+                                    "Effect": "Allow",
+                                    "Resource": {
+                                        "Fn::Join": [
+                                            "",
+                                            [
+                                                "arn:aws:s3:::",
+                                                {
+                                                    "Ref": "S3Bucket"
+                                                },
+                                                ""
+                                            ]
+                                        ]
+                                    }
+                                },
+                                {
+                                    "Action": [
+                                        "s3:GetObject",
+                                        "s3:PutObject",
+                                        "s3:DeleteObject",
+                                        "s3:GetBucketLocation"
+                                    ],
+                                    "Effect": "Allow",
+                                    "Resource": {
+                                        "Fn::Join": [
+                                            "",
+                                            [
+                                                "arn:aws:s3:::",
+                                                {
+                                                    "Ref": "S3Bucket"
+                                                },
+                                                "/*"
+                                            ]
+                                        ]
+                                    }
+                                },
+                                {
+                                    "Action": [
+                                        "s3:GetObject"
+                                    ],
+                                    "Effect": "Allow",
+                                    "Resource": [
+                                        "arn:aws:s3:::wandisco-public-files/*",
+                                        {
+                                            "Fn::Sub": "arn:aws:s3:::${QSS3BucketName}/${QSS3KeyPrefix}*"
+                                        }
+                                    ]
+                                }
+                            ]
+                        },
+                        "PolicyName": "DescribeAccessEC2andCFN"
+                    }
+                ]
+            },
+            "Type": "AWS::IAM::Role"
+        },
+        "InstanceProfile": {
+            "Properties": {
+                "Path": "/",
+                "Roles": [
+                    {
+                        "Ref": "InstanceIAMRole"
+                    }
+                ]
+            },
+            "Type": "AWS::IAM::InstanceProfile"
+        }
+    },
+    "Outputs": {
+        "SubnetZone1": {
+            "Value": {
+                "Ref": "SubnetIdA"
+            }
+        },
+        "SubnetZone2": {
+            "Value": {
+                "Ref": "SubnetIdB"
+            }
+        },
+        "VPC": {
+            "Value": {
+                "Ref": "VpcId"
+            }
+        },
+        "SecurityGroup": {
+            "Value": {
+                "Ref": "SecurityGroupId"
+            }
+        }
+    },
+    "Metadata": {
+        "AWS::CloudFormation::Interface": {
+            "ParameterGroups": [
+                {
+                    "Label": {
+                        "default": "AWS configuration"
+                    },
+                    "Parameters": [
+                        "ClusterNodeType",
+                        "VpcId",
+                        "SecurityGroupId",
+                        "AdminSecurityGroupId",
+                        "SubnetIdA",
+                        "SubnetIdB",
+                        "S3Bucket",
+                        "PersistentStorage",
+                        "KeyName",
+                        "ClusterName"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "WD Fusion configuration"
+                    },
+                    "Parameters": [
+                        "ClusterInstanceCount",
+                        "ZoneName",
+                        "UserName",
+                        "Password",
+                        "InductorNodeIP",
+                        "FusionVersion",
+                        "SubscribeARN",
+                        "EMRVersion",
+                        "FusionLicense"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "S3 Security configuration for WD Fusion"
+                    },
+                    "Parameters": [
+                        "KMSKey",
+                        "S3ServerEncryption"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "* Required Field"
+                    }
+                },
+                {
+                    "Label": {
+                        "default": "AWS Quick Start Configuration"
+                    },
+                    "Parameters": [
+                        "QSS3BucketName",
+                        "QSS3KeyPrefix"
+                    ]
+                }
+            ],
+            "ParameterLabels": {
+                "AdminSecurityGroupId": {
+                    "default": "Admin Access Security Group ID"
+                },
+                "ClusterInstanceCount": {
+                    "default": "Cluster Instance Count*"
+                },
+                "ClusterName": {
+                    "default": "Cluster Name*"
+                },
+                "ClusterNodeType": {
+                    "default": "EC2 Instance Type*"
+                },
+                "EMRVersion": {
+                    "default": "EMR Version*"
+                },
+                "FusionLicense": {
+                    "default": "Fusion License"
+                },
+                "FusionVersion": {
+                    "default": "Fusion Version*"
+                },
+                "InductorNodeIP": {
+                    "default": "Inductor Node IP"
+                },
+                "KMSKey": {
+                    "default": "KMS Key"
+                },
+                "KeyName": {
+                    "default": "Key Name*"
+                },
+                "Password": {
+                    "default": "Password*"
+                },
+                "PersistentStorage": {
+                    "default": "Persistent Storage*"
+                },
+                "QSS3BucketName": {
+                    "default": "AWS Quick Start Bucket Name"
+                },
+                "QSS3KeyPrefix": {
+                    "default": "AWS Quick Start Version"
+                },
+                "S3Bucket": {
+                    "default": "S3 Bucket*"
+                },
+                "S3ServerEncryption": {
+                    "default": "Enable S3 Server-side Encryption"
+                },
+                "SecurityGroupId": {
+                    "default": "Security Group ID"
+                },
+                "SubnetIdA": {
+                    "default": "VPC Subnet ID for Zone 1"
+                },
+                "SubnetIdB": {
+                    "default": "VPC Subnet ID for Zone 2"
+                },
+                "SubscribeARN": {
+                    "default": "ARN Topic code to publish messages to"
+                },
+                "UserName": {
+                    "default": "User Name*"
+                },
+                "VpcId": {
+                    "default": "VPC ID"
+                },
+                "ZoneName": {
+                    "default": "Zone Name*"
+                }
+            }
+        }
+    }
+}

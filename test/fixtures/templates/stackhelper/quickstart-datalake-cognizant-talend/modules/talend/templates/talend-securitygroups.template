@@ -1,0 +1,821 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "Create Talend Security Groups",
+    "Parameters": {
+        "VpcId": {
+            "Description": "VPC to which security groups belong",
+            "Type": "AWS::EC2::VPC::Id"
+        },
+        "RemoteAccessCIDR": {
+            "Description": "The IP address range that can be used to access the Talend servers using SSH.",
+            "Type": "String",
+            "MinLength": "9",
+            "MaxLength": "18",
+            "AllowedPattern": "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})",
+            "ConstraintDescription": "must be a valid IP CIDR range of the form x.x.x.x/x."
+        }
+    },
+    "Mappings": {
+    },
+    "Conditions": {
+    },
+    "Resources": {
+        "DatabaseSecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "VpcId": { "Ref": "VpcId" },
+                "GroupDescription": "Allow access to Database from TAC, Studio, and external CIDR on 3306.",
+                "SecurityGroupIngress": [
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "3306",
+                        "ToPort": "3306",
+                        "CidrIp": {
+                            "Ref": "RemoteAccessCIDR"
+                        }
+                    }
+                ]
+            }
+        },
+        "DatabaseIngressDatabase": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "Properties": {
+                "GroupId": {
+                    "Ref": "DatabaseSecurityGroup"
+                },
+                "IpProtocol": "tcp",
+                "FromPort": "3306",
+                "ToPort": "3306",
+                "SourceSecurityGroupId": {
+                    "Ref": "DatabaseSecurityGroup"
+                }
+            }
+        },
+        "DatabaseIngressTac": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "Properties": {
+                "GroupId": {
+                    "Ref": "DatabaseSecurityGroup"
+                },
+                "IpProtocol": "tcp",
+                "FromPort": "3306",
+                "ToPort": "3306",
+                "SourceSecurityGroupId": {
+                    "Ref": "TacSecurityGroup"
+                }
+            }
+        },
+        "DatabaseIngressStudio": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "Properties": {
+                "GroupId": {
+                    "Ref": "DatabaseSecurityGroup"
+                },
+                "IpProtocol": "tcp",
+                "FromPort": "3306",
+                "ToPort": "3306",
+                "SourceSecurityGroupId": {
+                    "Ref": "StudioSecurityGroup"
+                }
+            }
+        },
+        "TacSecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "VpcId": { "Ref": "VpcId" },
+                "GroupDescription": "Allow access to TAC using 8080 and SSH from remote access CIDR IP addresses, 8080 from Jobservers for self-registration",
+                "SecurityGroupIngress": [
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "80",
+                        "ToPort": "80",
+                        "CidrIp": {
+                            "Ref": "RemoteAccessCIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "8080",
+                        "ToPort": "8080",
+                        "CidrIp": {
+                            "Ref": "RemoteAccessCIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "8081",
+                        "ToPort": "8081",
+                        "CidrIp": {
+                            "Ref": "RemoteAccessCIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "9200",
+                        "ToPort": "9200",
+                        "CidrIp": {
+                            "Ref": "RemoteAccessCIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "5601",
+                        "ToPort": "5601",
+                        "CidrIp": {
+                            "Ref": "RemoteAccessCIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "8085",
+                        "ToPort": "8085",
+                        "CidrIp": {
+                            "Ref": "RemoteAccessCIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "22",
+                        "ToPort": "22",
+                        "CidrIp": {
+                            "Ref": "RemoteAccessCIDR"
+                        }
+                    }
+                ]
+            }
+        },
+        "TacIngressTac": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "DependsOn": "TacSecurityGroup",
+            "Properties": {
+                "GroupId": {
+                    "Ref": "TacSecurityGroup"
+                },
+                "IpProtocol": "tcp",
+                "FromPort": "0",
+                "ToPort": "65535",
+                "SourceSecurityGroupId": {
+                    "Ref": "TacSecurityGroup"
+                }
+            }
+        },
+        "TacIngressJobserver": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "DependsOn": "TacSecurityGroup",
+            "Properties": {
+                "GroupId": {
+                    "Ref": "TacSecurityGroup"
+                },
+                "IpProtocol": "tcp",
+                "FromPort": "8080",
+                "ToPort": "8080",
+                "SourceSecurityGroupId": {
+                    "Ref": "JobserverSecurityGroup"
+                }
+            }
+        },
+        "TacIngressDistantRun": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "DependsOn": "TacSecurityGroup",
+            "Properties": {
+                "GroupId": {
+                    "Ref": "TacSecurityGroup"
+                },
+                "IpProtocol": "tcp",
+                "FromPort": "8080",
+                "ToPort": "8080",
+                "SourceSecurityGroupId": {
+                    "Ref": "DistantRunSecurityGroup"
+                }
+            }
+        },
+        "TacIngressStudio": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "DependsOn": "TacSecurityGroup",
+            "Properties": {
+                "GroupId": {
+                    "Ref": "TacSecurityGroup"
+                },
+                "IpProtocol": "tcp",
+                "FromPort": "8080",
+                "ToPort": "8080",
+                "SourceSecurityGroupId": {
+                    "Ref": "StudioSecurityGroup"
+                }
+            }
+        },
+        "TacIngressTacICMP": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "DependsOn": "TacSecurityGroup",
+            "Properties": {
+                "GroupId": {
+                    "Ref": "TacSecurityGroup"
+                },
+                "IpProtocol": "icmp",
+                "FromPort": "-1",
+                "ToPort": "-1",
+                "SourceSecurityGroupId": {
+                    "Ref": "TacSecurityGroup"
+                }
+            }
+        },
+        "JobserverSecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "VpcId": { "Ref": "VpcId" },
+                "GroupDescription": "Allow access to Jobserver from TAC on 8000 (command), 8001 (file), and 8888 (monitoring), and ssh from remote access",
+                "SecurityGroupIngress": [
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "22",
+                        "ToPort": "22",
+                        "CidrIp": {
+                            "Ref": "RemoteAccessCIDR"
+                        }
+                    }
+                ]
+            }
+        },
+        "JobserverIngressJobserver": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "DependsOn": "JobserverSecurityGroup",
+            "Properties": {
+                "GroupId": {
+                    "Ref": "JobserverSecurityGroup"
+                },
+                "IpProtocol": "tcp",
+                "FromPort": "0",
+                "ToPort": "65535",
+                "SourceSecurityGroupId": {
+                    "Ref": "JobserverSecurityGroup"
+                }
+            }
+        },
+        "JobserverIngressTacCommandFile": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "DependsOn": "JobserverSecurityGroup",
+            "Properties": {
+                "GroupId": {
+                    "Ref": "JobserverSecurityGroup"
+                },
+                "IpProtocol": "tcp",
+                "FromPort": "8000",
+                "ToPort": "8001",
+                "SourceSecurityGroupId": {
+                    "Ref": "TacSecurityGroup"
+                }
+            }
+        },
+        "JobserverIngressTacMonitoring": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "DependsOn": "JobserverSecurityGroup",
+            "Properties": {
+                "GroupId": {
+                    "Ref": "JobserverSecurityGroup"
+                },
+                "IpProtocol": "tcp",
+                "FromPort": "8888",
+                "ToPort": "8888",
+                "SourceSecurityGroupId": {
+                    "Ref": "TacSecurityGroup"
+                }
+            }
+        },
+        "JobserverIngressTacSsh": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "DependsOn": "JobserverSecurityGroup",
+            "Properties": {
+                "GroupId": {
+                    "Ref": "JobserverSecurityGroup"
+                },
+                "IpProtocol": "tcp",
+                "FromPort": "22",
+                "ToPort": "22",
+                "SourceSecurityGroupId": {
+                    "Ref": "TacSecurityGroup"
+                }
+            }
+        },
+        "JobserverIngressJobserverICMP": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "DependsOn": "JobserverSecurityGroup",
+            "Properties": {
+                "GroupId": {
+                    "Ref": "JobserverSecurityGroup"
+                },
+                "IpProtocol": "icmp",
+                "FromPort": "-1",
+                "ToPort": "-1",
+                "SourceSecurityGroupId": {
+                    "Ref": "JobserverSecurityGroup"
+                }
+            }
+        },
+        "DistantRunSecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "VpcId": { "Ref": "VpcId" },
+                "GroupDescription": "Allow access to DistantRun from TAC on 8000 (command), 8001 (file), and 8888 (monitoring), and ssh from remote access",
+                "SecurityGroupIngress": [
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "22",
+                        "ToPort": "22",
+                        "CidrIp": {
+                            "Ref": "RemoteAccessCIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "8000",
+                        "ToPort": "8000",
+                        "CidrIp": {
+                            "Ref": "RemoteAccessCIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "8001",
+                        "ToPort": "8001",
+                        "CidrIp": {
+                            "Ref": "RemoteAccessCIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "8888",
+                        "ToPort": "8888",
+                        "CidrIp": {
+                            "Ref": "RemoteAccessCIDR"
+                        }
+                    }
+                ]
+            }
+        },
+        "DistantRunIngressDistantRun": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "DependsOn": "DistantRunSecurityGroup",
+            "Properties": {
+                "GroupId": { "Ref": "DistantRunSecurityGroup" },
+                "SourceSecurityGroupId": { "Ref": "DistantRunSecurityGroup" },
+                "IpProtocol": "tcp",
+                "FromPort": "0",
+                "ToPort": "65535"
+            }
+        },
+        "DistantRunIngressStudioCommandFile": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "DependsOn": "DistantRunSecurityGroup",
+            "Properties": {
+                "GroupId": { "Ref": "DistantRunSecurityGroup" },
+                "SourceSecurityGroupId": { "Ref": "StudioSecurityGroup" },
+                "IpProtocol": "tcp",
+                "FromPort": "8000",
+                "ToPort": "8001"
+            }
+        },
+        "DistantRunIngressStudioMonitoring": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "DependsOn": "DistantRunSecurityGroup",
+            "Properties": {
+                "GroupId": { "Ref": "DistantRunSecurityGroup" },
+                "SourceSecurityGroupId": { "Ref": "StudioSecurityGroup" },
+                "IpProtocol": "tcp",
+                "FromPort": "8888",
+                "ToPort": "8888"
+            }
+        },
+        "DistantRunIngressStudioSsh": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "DependsOn": "DistantRunSecurityGroup",
+            "Properties": {
+                "GroupId": { "Ref": "DistantRunSecurityGroup" },
+                "SourceSecurityGroupId": { "Ref": "StudioSecurityGroup" },
+                "IpProtocol": "tcp",
+                "FromPort": "22",
+                "ToPort": "22"
+            }
+        },
+        "DistantRunIngressDistanRunICMP": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "DependsOn": "DistantRunSecurityGroup",
+            "Properties": {
+                "GroupId": { "Ref": "DistantRunSecurityGroup" },
+                "SourceSecurityGroupId": { "Ref": "DistantRunSecurityGroup" },
+                "IpProtocol": "icmp",
+                "FromPort": "-1",
+                "ToPort": "-1"
+            }
+        },
+        "NexusSecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "VpcId": { "Ref": "VpcId" },
+                "GroupDescription": "Allow access to Nexus using HTTP on 8081 from Studio, TAC, Jobserver, and remote access.  Also allow ssh from remote access.",
+                "SecurityGroupIngress": [
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "22",
+                        "ToPort": "22",
+                        "CidrIp": {
+                            "Ref": "RemoteAccessCIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "8081",
+                        "ToPort": "8081",
+                        "CidrIp": {
+                            "Ref": "RemoteAccessCIDR"
+                        }
+                    }
+                ]
+            }
+        },
+        "NexusIngressTac": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "DependsOn": "NexusSecurityGroup",
+            "Properties": {
+                "GroupId": { "Ref": "NexusSecurityGroup" },
+                "SourceSecurityGroupId": { "Ref": "TacSecurityGroup" },
+                "IpProtocol": "tcp",
+                "FromPort": "8081",
+                "ToPort": "8081"
+            }
+        },
+        "NexusIngressJobserver": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "DependsOn": "NexusSecurityGroup",
+            "Properties": {
+                "GroupId": { "Ref": "NexusSecurityGroup" },
+                "SourceSecurityGroupId": { "Ref": "JobserverSecurityGroup" },
+                "IpProtocol": "tcp",
+                "FromPort": "8081",
+                "ToPort": "8081"
+            }
+        },
+        "NexusIngressStudio": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "DependsOn": "NexusSecurityGroup",
+            "Properties": {
+                "GroupId": { "Ref": "NexusSecurityGroup" },
+                "SourceSecurityGroupId": { "Ref": "StudioSecurityGroup" },
+                "IpProtocol": "tcp",
+                "FromPort": "8081",
+                "ToPort": "8081"
+            }
+        },
+        "LogserverSecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "VpcId": { "Ref": "VpcId" },
+                "GroupDescription": "Allow access to Logserver on 9200 (elastic search), 5601 (Kibana), and SSH from selected external IP addresses and Bastion servers, server access from 8050(TAC), 8055 (jobserver), 8056 (cmdline)",
+                "SecurityGroupIngress": [
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "9200",
+                        "ToPort": "9200",
+                        "CidrIp": {
+                            "Ref": "RemoteAccessCIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "5601",
+                        "ToPort": "5601",
+                        "CidrIp": {
+                            "Ref": "RemoteAccessCIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "22",
+                        "ToPort": "22",
+                        "CidrIp": {
+                            "Ref": "RemoteAccessCIDR"
+                        }
+                    }
+                ]
+            }
+        },
+        "LogserverIngressStudioElastic": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "DependsOn": "LogserverSecurityGroup",
+            "Properties": {
+                "GroupId": { "Ref": "LogserverSecurityGroup" },
+                "SourceSecurityGroupId": { "Ref": "StudioSecurityGroup" },
+                "IpProtocol": "tcp",
+                "FromPort": "9200",
+                "ToPort": "9200"
+            }
+        },
+        "LogserverIngressStudioKibana": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "DependsOn": "LogserverSecurityGroup",
+            "Properties": {
+                "GroupId": { "Ref": "LogserverSecurityGroup" },
+                "SourceSecurityGroupId": { "Ref": "StudioSecurityGroup" },
+                "IpProtocol": "tcp",
+                "FromPort": "5601",
+                "ToPort": "5601"
+            }
+        },
+        "LogserverIngressTac": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "DependsOn": "LogserverSecurityGroup",
+            "Properties": {
+                "GroupId": { "Ref": "LogserverSecurityGroup" },
+                "SourceSecurityGroupId": { "Ref": "TacSecurityGroup" },
+                "IpProtocol": "tcp",
+                "FromPort": "8050",
+                "ToPort": "8050"
+            }
+        },
+        "LogserverIngressJobserver": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "DependsOn": "LogserverSecurityGroup",
+            "Properties": {
+                "GroupId": { "Ref": "LogserverSecurityGroup" },
+                "SourceSecurityGroupId": { "Ref": "JobserverSecurityGroup" },
+                "IpProtocol": "tcp",
+                "FromPort": "8055",
+                "ToPort": "8055"
+            }
+        },
+        "LogserverIngressCommandline": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "DependsOn": "LogserverSecurityGroup",
+            "Properties": {
+                "GroupId": { "Ref": "LogserverSecurityGroup" },
+                "SourceSecurityGroupId": { "Ref": "CommandlineSecurityGroup" },
+                "IpProtocol": "tcp",
+                "FromPort": "8056",
+                "ToPort": "8056"
+            }
+        },
+        "CommandlineSecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "VpcId": { "Ref": "VpcId" },
+                "GroupDescription": "Allow access to Commandline on 8002 from TAC and Bastion, SSH from Bastion",
+                "SecurityGroupIngress": [
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "8002",
+                        "ToPort": "8002",
+                        "CidrIp": {
+                            "Ref": "RemoteAccessCIDR"
+                        }
+                    }
+                ]
+            }
+        },
+        "CommandlineIngressCommandline": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "DependsOn": "CommandlineSecurityGroup",
+            "Properties": {
+                "GroupId": { "Ref": "CommandlineSecurityGroup" },
+                "SourceSecurityGroupId": { "Ref": "CommandlineSecurityGroup" },
+                "IpProtocol": "tcp",
+                "FromPort": "0",
+                "ToPort": "65535"
+            }
+        },
+        "CommandlineIngressCmdShell": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "DependsOn": "CommandlineSecurityGroup",
+            "Properties": {
+                "GroupId": { "Ref": "CommandlineSecurityGroup" },
+                "SourceSecurityGroupId": { "Ref": "TacSecurityGroup" },
+                "IpProtocol": "tcp",
+                "FromPort": "8002",
+                "ToPort": "8002"
+            }
+        },
+        "CommandlineIngressStatistics": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "DependsOn": "CommandlineSecurityGroup",
+            "Properties": {
+                "GroupId": { "Ref": "CommandlineSecurityGroup" },
+                "SourceSecurityGroupId": { "Ref": "TacSecurityGroup" },
+                "IpProtocol": "tcp",
+                "FromPort": "3334",
+                "ToPort": "4333"
+            }
+        },
+        "CommandlineIngressTrace": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "DependsOn": "CommandlineSecurityGroup",
+            "Properties": {
+                "GroupId": { "Ref": "CommandlineSecurityGroup" },
+                "SourceSecurityGroupId": { "Ref": "TacSecurityGroup" },
+                "IpProtocol": "tcp",
+                "FromPort": "4334",
+                "ToPort": "5333"
+            }
+        },
+        "CommandlineIngressCommandlineICMP": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "DependsOn": "CommandlineSecurityGroup",
+            "Properties": {
+                "GroupId": { "Ref": "CommandlineSecurityGroup" },
+                "IpProtocol": "icmp",
+                "FromPort": "-1",
+                "ToPort": "-1",
+                "SourceSecurityGroupId": { "Ref": "CommandlineSecurityGroup" }
+            }
+        },
+        "GitSecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "VpcId": { "Ref": "VpcId" },
+                "GroupDescription": "Ports needed for GitLab CE",
+                "SecurityGroupIngress": [
+                    {
+                        "CidrIp": { "Ref": "RemoteAccessCIDR" },
+                        "IpProtocol": "tcp",
+                        "FromPort": "22",
+                        "ToPort": "22"
+                    },
+                    {
+                        "CidrIp": { "Ref": "RemoteAccessCIDR" },
+                        "IpProtocol": "tcp",
+                        "FromPort": "443",
+                        "ToPort": "443"
+                    },
+                    {
+                        "CidrIp": { "Ref": "RemoteAccessCIDR" },
+                        "IpProtocol": "tcp",
+                        "FromPort": "80",
+                        "ToPort": "80"
+                    },
+                    {
+                        "CidrIp": { "Ref": "RemoteAccessCIDR" },
+                        "IpProtocol": "tcp",
+                        "FromPort": "8080",
+                        "ToPort": "8080"
+                    },
+                    {
+                        "CidrIp": { "Ref": "RemoteAccessCIDR" },
+                        "IpProtocol": "tcp",
+                        "FromPort": "9418",
+                        "ToPort": "9418"
+                    },
+                    {
+                        "CidrIp": { "Ref": "RemoteAccessCIDR" },
+                        "IpProtocol": "tcp",
+                        "FromPort": "25",
+                        "ToPort": "25"
+                    },
+                    {
+                        "CidrIp": { "Ref": "RemoteAccessCIDR" },
+                        "IpProtocol": "tcp",
+                        "FromPort": "8443",
+                        "ToPort": "8443"
+                    }
+                ]
+            }
+        },
+        "GitIngressGit": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "DependsOn": "GitSecurityGroup",
+            "Properties": {
+                "GroupId": { "Ref": "GitSecurityGroup" },
+                "SourceSecurityGroupId": { "Ref": "GitSecurityGroup" },
+                "IpProtocol": "tcp",
+                "FromPort": "0",
+                "ToPort": "65535"
+            }
+        },
+        "GitIngressTacHttp": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "DependsOn": "GitSecurityGroup",
+            "Properties": {
+                "GroupId": { "Ref": "GitSecurityGroup" },
+                "SourceSecurityGroupId": { "Ref": "TacSecurityGroup" },
+                "IpProtocol": "tcp",
+                "FromPort": "80",
+                "ToPort": "80"
+            }
+        },
+        "GitIngressTacHttps": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "DependsOn": "GitSecurityGroup",
+            "Properties": {
+                "GroupId": { "Ref": "GitSecurityGroup" },
+                "SourceSecurityGroupId": { "Ref": "TacSecurityGroup" },
+                "IpProtocol": "tcp",
+                "FromPort": "443",
+                "ToPort": "443"
+            }
+        },
+        "GitIngressTacSsh": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "DependsOn": "GitSecurityGroup",
+            "Properties": {
+                "GroupId": { "Ref": "GitSecurityGroup" },
+                "SourceSecurityGroupId": { "Ref": "TacSecurityGroup" },
+                "IpProtocol": "tcp",
+                "FromPort": "22",
+                "ToPort": "22"
+            }
+        },
+        "GitIngressStudioHttp": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "DependsOn": "GitSecurityGroup",
+            "Properties": {
+                "GroupId": { "Ref": "GitSecurityGroup" },
+                "SourceSecurityGroupId": { "Ref": "StudioSecurityGroup" },
+                "IpProtocol": "tcp",
+                "FromPort": "80",
+                "ToPort": "80"
+            }
+        },
+        "GitIngressStudioHttps": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "DependsOn": "GitSecurityGroup",
+            "Properties": {
+                "GroupId": { "Ref": "GitSecurityGroup" },
+                "SourceSecurityGroupId": { "Ref": "StudioSecurityGroup" },
+                "IpProtocol": "tcp",
+                "FromPort": "443",
+                "ToPort": "443"
+            }
+        },
+        "StudioSecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "VpcId": { "Ref": "VpcId" },
+                "GroupDescription": "Allow access to Studio using X2Go with SSH",
+                "SecurityGroupIngress": [
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "22",
+                        "ToPort": "22",
+                        "CidrIp": {
+                            "Ref": "RemoteAccessCIDR"
+                        }
+                    }
+                ]
+            }
+        },
+        "StudioIngressStudio": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "DependsOn": "StudioSecurityGroup",
+            "Properties": {
+                "GroupId": { "Ref": "StudioSecurityGroup" },
+                "SourceSecurityGroupId": { "Ref": "StudioSecurityGroup" },
+                "IpProtocol": "tcp",
+                "FromPort": "0",
+                "ToPort": "65535"
+            }
+        }
+    },
+    "Outputs": {
+        "DatabaseSecurityGroupID": {
+            "Description": "Database server security group.",
+            "Value": { "Ref": "DatabaseSecurityGroup" },
+            "Export": { "Name": { "Fn::Sub": "${AWS::StackName}:DatabaseSecurityGroupID" } }
+        },
+        "TacSecurityGroupID": {
+            "Description": "TAC security group.",
+            "Value": { "Ref": "TacSecurityGroup" },
+            "Export": { "Name": { "Fn::Sub": "${AWS::StackName}:TacSecurityGroupID" } }
+        },
+        "JobserverSecurityGroupID": {
+            "Description": "Jobserver security group.",
+            "Value": { "Ref": "JobserverSecurityGroup" },
+            "Export": { "Name": { "Fn::Sub": "${AWS::StackName}:JobserverSecurityGroupID" } }
+        },
+        "DistantRunSecurityGroupID": {
+            "Description": "DistantRun security group.",
+            "Value": { "Ref": "DistantRunSecurityGroup" },
+            "Export": { "Name": { "Fn::Sub": "${AWS::StackName}:DistantRunSecurityGroupID" } }
+        },
+        "NexusSecurityGroupID": {
+            "Description": "Nexus security group.",
+            "Value": { "Ref": "NexusSecurityGroup" },
+            "Export": { "Name": { "Fn::Sub": "${AWS::StackName}:NexusSecurityGroupID" } }
+        },
+        "LogserverSecurityGroupID": {
+            "Description": "Logserver security group.",
+            "Value": { "Ref": "LogserverSecurityGroup" },
+            "Export": { "Name": { "Fn::Sub": "${AWS::StackName}:LogserverSecurityGroupID" } }
+        },
+        "CommandlineSecurityGroupID": {
+            "Description": "Commandline security group.",
+            "Value": { "Ref": "CommandlineSecurityGroup" },
+            "Export": { "Name": { "Fn::Sub": "${AWS::StackName}:CommandlineSecurityGroupID" } }
+        },
+        "GitSecurityGroupID": {
+            "Description": "Gitlab security group.",
+            "Value": { "Ref": "GitSecurityGroup" },
+            "Export": { "Name": { "Fn::Sub": "${AWS::StackName}:GitSecurityGroupID" } }
+        },
+        "StudioSecurityGroupID": {
+            "Description": "Studio security group.",
+            "Value": { "Ref": "StudioSecurityGroup" },
+            "Export": { "Name": { "Fn::Sub": "${AWS::StackName}:StudioSecurityGroupID" } }
+        }
+    }
+}

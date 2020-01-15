@@ -1,0 +1,556 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "Creates the serverless infrastructure to communicates with Cherwell.",
+  "Metadata": {
+    "AWS::CloudFormation::Interface": {
+      "ParameterGroups": [
+        {
+          "Label": {
+            "default": "Cherwell Configuration"
+          },
+          "Parameters": [
+            "Url",
+            "Username",
+            "Password",
+            "Grant",
+            "ClientID"
+          ]
+        },
+        {
+          "Label": {
+            "default": "AWS Quick Start Configuration"
+          },
+          "Parameters": [
+            "QSS3BucketName",
+            "QSS3KeyPrefix"
+          ]
+        }
+      ]
+    },
+    "ParameterLabels": {
+      "QSS3BucketName": {
+        "default": "Quick Start S3 Bucket Name"
+      },
+      "QSS3KeyPrefix": {
+        "default": "Quick Start S3 Key Prefix"
+      },
+      "Username": {
+        "default": "Cherwell Username"
+      },
+      "Password": {
+        "default": "Cherwell Password"
+      },
+      "Url": {
+        "default": "Cherwell URL"
+      },
+      "Grant": {
+        "default": "Cherwell Grant"
+      },
+      "ClientID": {
+        "default": "ClientID"
+      }
+    }
+  },
+  "Parameters": {
+    "QSS3BucketName": {
+      "AllowedPattern": "^[0-9a-zA-Z]+([0-9a-zA-Z\\-]*[0-9a-zA-Z])*$",
+      "ConstraintDescription": "Quick Start bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-).",
+      "Description": "S3 bucket name for the Quick Start assets. Quick Start bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-)",
+      "Type": "String"
+    },
+    "QSS3KeyPrefix": {
+      "AllowedPattern": "^[0-9a-zA-Z-/]*$",
+      "ConstraintDescription": "Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).",
+      "Default": "quickstart-cherwell-intergration/",
+      "Description": "S3 key prefix for the Quick Start assets. Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).",
+      "Type": "String"
+    },
+    "Username": {
+      "Description": "Username for the authorized user on the Cherwell instance with permission to make REST request.",
+      "Type": "String"
+    },
+    "Password": {
+      "Description": "Password for the authorized user on the Cherwell instance with permission to make REST request.",
+      "Type": "String"
+    },
+    "Url": {
+      "AllowedPattern": "^https?:\\/\\/(?!.*:\\/\\/)\\S+",
+      "ConstraintDescription": "The URL must start with https.",
+      "Description": "Url of the Cherwell instance.",
+      "Type": "String"
+    },
+    "Grant": {
+      "Description": "The type of Grant needed to make a REST request to your Cherwell instance. For most customers \"password\" is the default.",
+      "Type": "String",
+      "Default": "password"
+    },
+    "ClientID": {
+      "Description": "The type of Client ID needed to make a REST request to your Cherwell instance.",
+      "Type": "String",
+      "Default": "password"
+    }
+  },
+  "Resources": {
+    "UsernameParameter": {
+      "Type": "AWS::SSM::Parameter",
+      "Properties": {
+        "Type": "String",
+        "Value": {
+          "Ref": "Username"
+        },
+        "Description": "Username for the authorized user on the Cherwell instance with permission to make REST request."
+      }
+    },
+    "PasswordParameter": {
+      "Type": "AWS::SSM::Parameter",
+      "Properties": {
+        "Type": "String",
+        "Value": {
+          "Ref": "Password"
+        },
+        "Description": "Password for the authorized user on the Cherwell instance with permission to make REST request."
+      }
+    },
+    "UrlParameter": {
+      "Type": "AWS::SSM::Parameter",
+      "Properties": {
+        "Type": "String",
+        "Value": {
+          "Ref": "Url"
+        },
+        "Description": "Url of the Cherwell instance."
+      }
+    },
+    "GrantParameter": {
+      "Type": "AWS::SSM::Parameter",
+      "Properties": {
+        "Type": "String",
+        "Value": {
+          "Ref": "Grant"
+        },
+        "Description": "The type of Grant needed to make a REST request to your Cherwell instance."
+      }
+    },
+    "ClientParameter": {
+      "Type": "AWS::SSM::Parameter",
+      "Properties": {
+        "Type": "String",
+        "Value": {
+          "Ref": "ClientID"
+        },
+        "Description": "The type of Client ID needed to make a REST request to your Cherwell instance."
+      }
+    },
+    "IamRoleLambdaExecution": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": [
+                  "lambda.amazonaws.com"
+                ]
+              },
+              "Action": [
+                "sts:AssumeRole"
+              ]
+            }
+          ]
+        },
+        "Policies": [
+          {
+            "PolicyName": {
+              "Fn::Join": [
+                "-",
+                [
+                  "cherdwell-service",
+                  "lambda",
+                  {
+                    "Ref": "AWS::StackName"
+                  }
+                ]
+              ]
+            },
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "logs:CreateLogGroup",
+                    "logs:CreateLogStream",
+                    "logs:PutLogEvents"
+                  ],
+                  "Resource": "arn:aws:logs:*:*:*"
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "cloudformation:EstimateTemplateCost"
+                  ],
+                  "Resource": "*"
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "servicecatalog:DescribeProvisioningArtifact"
+                  ],
+                  "Resource": "*"
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "ssm:GetParameters"
+                  ],
+                  "Resource": "*"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "LambdaZipsBucket": {
+      "Type": "AWS::S3::Bucket",
+      "Properties": {
+        "Tags": []
+      }
+    },
+    "CopyZips": {
+      "Type": "Custom::CopyZips",
+      "Properties": {
+        "ServiceToken": {
+          "Fn::GetAtt": [
+            "CopyZipsFunction",
+            "Arn"
+          ]
+        },
+        "DestBucket": {
+          "Ref": "LambdaZipsBucket"
+        },
+        "SourceBucket": {
+          "Ref": "QSS3BucketName"
+        },
+        "Prefix": {
+          "Ref": "QSS3KeyPrefix"
+        },
+        "Objects": [
+          "functions/package/cherwell-service.zip"
+        ]
+      }
+    },
+    "CopyZipsRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": [
+                  "lambda.amazonaws.com"
+                ]
+              },
+              "Action": [
+                "sts:AssumeRole"
+              ]
+            }
+          ]
+        },
+        "ManagedPolicyArns": [
+          "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+        ],
+        "Policies": [
+          {
+            "PolicyName": "lambda-copier",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "s3:GetObject"
+                  ],
+                  "Resource": [
+                    {
+                      "Fn::Sub": "arn:aws:s3:::${QSS3BucketName}/${QSS3KeyPrefix}*"
+                    }
+                  ]
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "s3:PutObject",
+                    "s3:DeleteObject"
+                  ],
+                  "Resource": [
+                    {
+                      "Fn::Sub": "arn:aws:s3:::${LambdaZipsBucket}/${QSS3KeyPrefix}*"
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "CopyZipsFunction": {
+      "Type": "AWS::Lambda::Function",
+      "Properties": {
+        "Description": "Copies objects from a source S3 bucket to a destination",
+        "Handler": "index.handler",
+        "Runtime": "python2.7",
+        "Role": {
+          "Fn::GetAtt": [
+            "CopyZipsRole",
+            "Arn"
+          ]
+        },
+        "Timeout": 240,
+        "Code": {
+          "ZipFile": {
+            "Fn::Join": [
+              "",
+              [
+                "import json\n",
+                "import logging\n",
+                "import threading\n",
+                "import boto3\n",
+                "import cfnresponse\n",
+                "def copy_objects(source_bucket, dest_bucket, prefix, objects):\n",
+                "    s3 = boto3.client('s3')\n",
+                "    for o in objects:\n",
+                "        key = prefix + o\n",
+                "        copy_source = {\n",
+                "            'Bucket': source_bucket,\n",
+                "            'Key': key\n",
+                "        }\n",
+                "        print('copy_source: %s' % copy_source)\n",
+                "        print('dest_bucket = %s'%dest_bucket)\n",
+                "        print('key = %s' %key)\n",
+                "        s3.copy_object(CopySource=copy_source, Bucket=dest_bucket,\n",
+                "              Key=key)\n",
+                "def delete_objects(bucket, prefix, objects):\n",
+                "    s3 = boto3.client('s3')\n",
+                "    objects = {'Objects': [{'Key': prefix + o} for o in objects]}\n",
+                "    s3.delete_objects(Bucket=bucket, Delete=objects)\n",
+                "def timeout(event, context):\n",
+                "    logging.error('Execution is about to time out, sending failure response to CloudFormation')\n",
+                "    cfnresponse.send(event, context, cfnresponse.FAILED, {}, None)\n",
+                "def handler(event, context):\n",
+                "    # make sure we send a failure to CloudFormation if the function\n",
+                "    # is going to timeout\n",
+                "    timer = threading.Timer((context.get_remaining_time_in_millis()\n",
+                "              / 1000.00) - 0.5, timeout, args=[event, context])\n",
+                "    timer.start()\n",
+                "    print('Received event: %s' % json.dumps(event))\n",
+                "    status = cfnresponse.SUCCESS\n",
+                "    try:\n",
+                "        source_bucket = event['ResourceProperties']['SourceBucket']\n",
+                "        dest_bucket = event['ResourceProperties']['DestBucket']\n",
+                "        prefix = event['ResourceProperties']['Prefix']\n",
+                "        objects = event['ResourceProperties']['Objects']\n",
+                "        if event['RequestType'] == 'Delete':\n",
+                "            delete_objects(dest_bucket, prefix, objects)\n",
+                "        else:\n",
+                "            copy_objects(source_bucket, dest_bucket, prefix, objects)\n",
+                "    except Exception as e:\n",
+                "        logging.error('Exception: %s' % e, exc_info=True)\n",
+                "        status = cfnresponse.FAILED\n",
+                "    finally:\n",
+                "        timer.cancel()\n",
+                "        cfnresponse.send(event, context, status, {}, None)"
+              ]
+            ]
+          }
+        }
+      }
+    },
+    "CmdbLambdaFunction": {
+      "Type": "AWS::Lambda::Function",
+      "Properties": {
+        "Description": "Updates the Cherwell CMDB.",
+        "Environment": {
+          "Variables": {
+            "URL": {
+              "Ref": "UrlParameter"
+            },
+            "USER": {
+              "Ref": "UsernameParameter"
+            },
+            "PASSWORD": {
+              "Ref": "PasswordParameter"
+            },
+            "CLIENT_ID": {
+              "Ref": "ClientParameter"
+            },
+            "GRANT": {
+              "Ref": "GrantParameter"
+            }
+          }
+        },
+        "Code": {
+          "S3Bucket": {
+            "Ref": "LambdaZipsBucket"
+          },
+          "S3Key": {
+            "Fn::Sub": "${QSS3KeyPrefix}functions/package/cherwell-service.zip"
+          }
+        },
+        "Handler": "bin/cmdb",
+        "MemorySize": 1024,
+        "Role": {
+          "Fn::GetAtt": [
+            "IamRoleLambdaExecution",
+            "Arn"
+          ]
+        },
+        "Runtime": "go1.x",
+        "Timeout": 300
+      },
+      "DependsOn": [
+        "CopyZips",
+        "IamRoleLambdaExecution"
+      ]
+    },
+    "IncidentLambdaFunction": {
+      "Type": "AWS::Lambda::Function",
+      "Properties": {
+        "Description": "Sends Cloudwatch alarms information to Cherwell incident panel.",
+        "Environment": {
+          "Variables": {
+            "URL": {
+              "Ref": "UrlParameter"
+            },
+            "USER": {
+              "Ref": "UsernameParameter"
+            },
+            "PASSWORD": {
+              "Ref": "PasswordParameter"
+            },
+            "CLIENT_ID": {
+              "Ref": "ClientParameter"
+            },
+            "GRANT": {
+              "Ref": "GrantParameter"
+            }
+          }
+        },
+        "Code": {
+          "S3Bucket": {
+            "Ref": "LambdaZipsBucket"
+          },
+          "S3Key": {
+            "Fn::Sub": "${QSS3KeyPrefix}functions/package/cherwell-service.zip"
+          }
+        },
+        "Handler": "bin/incident",
+        "MemorySize": 1024,
+        "Role": {
+          "Fn::GetAtt": [
+            "IamRoleLambdaExecution",
+            "Arn"
+          ]
+        },
+        "Runtime": "go1.x",
+        "Timeout": 300
+      },
+      "DependsOn": [
+        "CopyZips",
+        "IamRoleLambdaExecution"
+      ]
+    },
+    "EstimateLambdaFunction": {
+      "Type": "AWS::Lambda::Function",
+      "Properties": {
+        "Description": "Estimates the cost of a Service Catalog product.",
+        "Code": {
+          "S3Bucket": {
+            "Ref": "LambdaZipsBucket"
+          },
+          "S3Key": {
+            "Fn::Sub": "${QSS3KeyPrefix}functions/package/cherwell-service.zip"
+          }
+        },
+        "Handler": "bin/estimate",
+        "MemorySize": 1024,
+        "Role": {
+          "Fn::GetAtt": [
+            "IamRoleLambdaExecution",
+            "Arn"
+          ]
+        },
+        "Runtime": "go1.x",
+        "Timeout": 300
+      },
+      "DependsOn": [
+        "CopyZips",
+        "IamRoleLambdaExecution"
+      ]
+    }
+  },
+  "Outputs": {
+    "usernameParameterName": {
+      "Description": "SSM username parameter name.",
+      "Value": {
+        "Ref": "UsernameParameter"
+      }
+    },
+    "passwordParameterName": {
+      "Description": "SSM password parameter name.",
+      "Value": {
+        "Ref": "PasswordParameter"
+      }
+    },
+    "UrlParameterName": {
+      "Description": "SSM URL Parameter name.",
+      "Value": {
+        "Ref": "UrlParameter"
+      }
+    },
+    "GrantParameterName": {
+      "Description": "SSM grant parameter name.",
+      "Value": {
+        "Ref": "GrantParameter"
+      }
+    },
+    "ClientParameterName": {
+      "Description": "SSM client parameter name",
+      "Value": {
+        "Ref": "ClientParameter"
+      }
+    },
+    "CmdbLambdaFunctionQualifiedArn": {
+      "Description": "Cmdb Lambda function arn.",
+      "Value": {
+        "Fn::GetAtt": [
+          "CmdbLambdaFunction",
+          "Arn"
+        ]
+      }
+    },
+    "incidentLambdaFunctionQualifiedArn": {
+      "Description": "Incident Lambda function arn.",
+      "Value": {
+        "Fn::GetAtt": [
+          "IncidentLambdaFunction",
+          "Arn"
+        ]
+      }
+    },
+    "estimateLambdaFunctionQualifiedArn": {
+      "Description": "Estimate Lambda function arn.",
+      "Value": {
+        "Fn::GetAtt": [
+          "EstimateLambdaFunction",
+          "Arn"
+        ]
+      }
+    }
+  }
+}

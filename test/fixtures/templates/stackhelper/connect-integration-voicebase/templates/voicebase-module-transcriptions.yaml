@@ -1,0 +1,345 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: VoiceBase integration for Amazon Connect - Transcription Requests
+Parameters:
+  QSS3BucketName:
+    Type: String
+    Default: aws-quickstart
+    Description: >-
+      S3 bucket name for the Quick Start assets. This string can include
+      numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot
+      start or end with a hyphen (-)
+    AllowedPattern: '^[0-9a-zA-Z]+([0-9a-zA-Z-.]*[0-9a-zA-Z])*$'
+    ConstraintDescription: >-
+      Quick Start bucket name can include numbers, lowercase letters, uppercase
+      letters, and hyphens (-). It cannot start or end with a hyphen (-)
+  QSS3KeyPrefix:
+    Type: String
+    Default: connect-integration-voicebase/
+    Description: >-
+      S3 key prefix for the Quick Start assets. Quick Start key prefix can
+      include numbers, lowercase letters, uppercase letters, hyphens (-), and
+      forward slash (/)
+    AllowedPattern: '^[0-9a-zA-Z-/]*$'
+    ConstraintDescription: >-
+      Quick Start key prefix can include numbers, lowercase letters, uppercase
+      letters, hyphens (-), and forward slash (/)
+  VoicebaseApiUrl:
+      Type: String
+      Default: 'https://apis.voicebase.com/v3'
+      Description: Base-URL of the VoiceBase API
+  VoicebaseApiToken:
+    Type: String
+    Description: Bearer token used for API authorization to your VoiceBase account
+    NoEcho: 'true'
+  VoicebaseEnableKnowledgeDiscovery:
+    AllowedValues:
+      - 'no'
+      - 'yes'
+    Type: String
+    Default: 'no'
+    Description: Enable keyword/topic extraction when processing media files by default
+  VoicebaseCallbackUrl:
+      Type: String
+      Default: ''
+      Description: URL VoiceBase will call back when processing is finished. Leave empty for no callbacks.
+  ConnectS3BucketName:
+      Type: String
+      AllowedPattern: '^[0-9a-zA-Z]+([0-9a-zA-Z-.]*[0-9a-zA-Z])*$'
+      Description: >-
+        Enter the name of the Amazon S3 Bucket where your Amazon Connect instance
+        stores call recordings.
+  ConnectKinesisStreamArn:
+      Type: String
+      Description: >-
+        Enter the ARN of your Amazon Connect instance's CTR output Amazon Kinesis
+        Data Stream.
+  EnableEncryption:
+    AllowedValues:
+      - 'yes'
+      - 'no'
+    Type: String
+    Default: 'yes'
+    Description: >-
+      Enables server-side encryption using an AWS KMS key              
+  EnableMetrics:
+      AllowedValues:
+        - 'yes'
+        - 'no'
+      Type: String
+      Default: 'yes'
+      Description: >-
+        Enables CloudWatch metrics
+Conditions:
+  knowledgeDiscoveryEnabled: !Equals 
+    - !Ref VoicebaseEnableKnowledgeDiscovery
+    - 'yes'
+  encryptionEnabled: !Equals
+    - !Ref EnableEncryption
+    - 'yes'
+  metricsEnabled: !Equals
+    - !Ref EnableMetrics
+    - 'yes'
+Resources:
+  ConnectToVoicebaseRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action:
+              - 'sts:AssumeRole'
+            Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+        Version: 2012-10-17
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+      Policies:
+        - PolicyName: ConnectToVoicebaseKinesisPolicy
+          PolicyDocument:
+            Statement:
+              - Action:
+                  - 'kinesis:DescribeStream'
+                  - 'kinesis:ListStreams'
+                  - 'kinesis:GetShardIterator'
+                  - 'kinesis:GetRecords'
+                  - 'kinesis:GetRecord'
+                Effect: Allow
+                Resource:
+                  - !Ref ConnectKinesisStreamArn
+            Version: 2012-10-17
+        - PolicyName: ConnectToVoicebaseS3Policy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 's3:GetObject'
+                  - 's3:GetObjectAcl'
+                Resource:
+                  - !Join 
+                    - ''
+                    - - 'arn:aws:s3:::'
+                      - !Ref ConnectS3BucketName
+                      - /*
+              - Effect: Allow
+                Action:
+                  - 's3:GetBucketLocation'
+                  - 's3:GetBucketAcl'
+                Resource:
+                  - !Join 
+                    - ''
+                    - - 'arn:aws:s3:::'
+                      - !Ref ConnectS3BucketName            
+        - PolicyName: ConnectToVoicebaseSQSPolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'sqs:GetQueueAttributes'
+                  - 'sqs:GetQueueUrl'
+                  - 'sqs:DeleteMessage'
+                  - 'sqs:SendMessage'
+                  - 'sqs:ReceiveMessage'
+                  - 'sqs:ChangeMessageVisibility'
+                Resource:
+                  - !GetAtt 
+                    - ConnectDelayedQueue
+                    - Arn
+                  - !GetAtt 
+                    - ConnectDeadLetterQueue
+                    - Arn     
+        - PolicyName: ConnectToVoicebaseKMSPolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'kms:Decrypt'
+                Resource: '*'
+        - PolicyName: ConnectToVoicebaseMetricsPolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'cloudwatch:PutMetricData'
+                Resource: '*'                
+  ConnectToVoicebaseLogPolicy:
+    Type: 'AWS::IAM::Policy'
+    Properties:
+      PolicyName: ConnectToVoicebaseLogPolicy
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action: 'logs:CreateLogGroup'
+            Resource: !Join 
+              - ''
+              - - 'arn:aws:logs:'
+                - !Ref 'AWS::Region'
+                - ':'
+                - !Ref 'AWS::AccountId'
+                - ':*'
+          - Effect: Allow
+            Action:
+              - 'logs:CreateLogStream'
+              - 'logs:PutLogEvents'
+            Resource:
+              - !Join 
+                - ''
+                - - 'arn:aws:logs:'
+                  - !Ref 'AWS::Region'
+                  - ':'
+                  - !Ref 'AWS::AccountId'
+                  - ':log-group:/aws/lambda/'
+                  - !Select 
+                    - '6'
+                    - !Split 
+                      - ':'
+                      - !GetAtt 
+                        - ConnectToVoicebaseLambda
+                        - Arn
+                  - ':*'
+      Roles: 
+        - !Ref ConnectToVoicebaseRole          
+  ConnectDelayedQueue:
+    Type: 'AWS::SQS::Queue'
+    Properties:
+      KmsMasterKeyId: !If
+        - encryptionEnabled
+        - 'alias/aws/sqs'
+        - !Ref AWS::NoValue
+      VisibilityTimeout: 120
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt 
+          - ConnectDeadLetterQueue
+          - Arn
+        maxReceiveCount: 10
+  ConnectDeadLetterQueue:
+    Type: 'AWS::SQS::Queue'
+    Properties:
+      KmsMasterKeyId: !If
+        - encryptionEnabled
+        - 'alias/aws/sqs'
+        - !Ref AWS::NoValue        
+  VoicebaseTokenValidationLambda:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      MemorySize: 256
+      Handler: >-
+        com.voicebase.gateways.lambda.LambdaVoicebaseApiTokenValidator::handleRequest
+      Role: !GetAtt 
+        - ConnectToVoicebaseRole
+        - Arn
+      Code:
+        S3Bucket: !Ref QSS3BucketName
+        S3Key: !Join 
+          - ''
+          - - !Ref QSS3KeyPrefix
+            - functions/packages/voicebase-lambda-auth-validation/lambda.jar
+      Environment:
+        Variables:
+          VOICEBASE_API_URL: !Ref VoicebaseApiUrl
+          VOICEBASE_API_TOKEN: !Ref VoicebaseApiToken
+          VOICEBASE_MONITORING_ENABLE: 'false'
+      Runtime: java8
+      Timeout: '60'
+  VoicebaseTokenValidation:
+    Type: 'Custom::VoicebaseTokenValidation'
+    Properties:
+      ServiceToken: !GetAtt 
+        - VoicebaseTokenValidationLambda
+        - Arn
+  ConnectToVoicebaseLambda:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      MemorySize: 256
+      Handler: >-
+        com.voicebase.gateways.awsconnect.forward.LambdaRecordProcessor::handleRequest
+      Role: !GetAtt 
+        - ConnectToVoicebaseRole
+        - Arn
+      Code:
+        S3Bucket: !Ref QSS3BucketName
+        S3Key: !Join 
+          - ''
+          - - !Ref QSS3KeyPrefix
+            - functions/packages/awsconnect-lambda-voicebase-forward/lambda.jar
+      Environment:
+        Variables:
+          VOICEBASE_API_URL: !Ref VoicebaseApiUrl
+          VOICEBASE_API_TOKEN: !Ref VoicebaseApiToken
+          VOICEBASE_CALLBACK_URL: !Ref VoicebaseCallbackUrl
+          VOICEBASE_DELAYED_QUEUE_SQS_URL: !Ref ConnectDelayedQueue
+          VOICEBASE_DEAD_LETTER_QUEUE_SQS_URL: !Ref ConnectDeadLetterQueue
+          VOICEBASE_KNOWLEDGE_DISCOVERY_ENABLE: !If 
+            - knowledgeDiscoveryEnabled
+            - 'true'
+            - 'false'
+          VOICEBASE_MONITORING_ENABLE: !If 
+            - metricsEnabled
+            - 'true'
+            - 'false'
+      Runtime: java8
+      Timeout: '90'
+  ConnectToVoicebaseSQSLambda:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      MemorySize: 256
+      Handler: >-
+        com.voicebase.gateways.awsconnect.forward.LambdaSQSRecordProcessor::handleRequest
+      Role: !GetAtt 
+        - ConnectToVoicebaseRole
+        - Arn
+      Code:
+        S3Bucket: !Ref QSS3BucketName
+        S3Key: !Join 
+          - ''
+          - - !Ref QSS3KeyPrefix
+            - functions/packages/awsconnect-lambda-voicebase-forward/lambda.jar
+      Environment:
+        Variables:
+          VOICEBASE_API_TOKEN: !Ref VoicebaseApiToken
+          VOICEBASE_CALLBACK_URL: !Ref VoicebaseCallbackUrl
+          VOICEBASE_DELAYED_QUEUE_SQS_URL: !Ref ConnectDelayedQueue
+          VOICEBASE_DEAD_LETTER_QUEUE_SQS_URL: !Ref ConnectDeadLetterQueue
+          VOICEBASE_KNOWLEDGE_DISCOVERY_ENABLE: !If 
+            - knowledgeDiscoveryEnabled
+            - 'true'
+            - 'false'
+          VOICEBASE_MONITORING_ENABLE: !If 
+            - metricsEnabled
+            - 'true'
+            - 'false'
+      Runtime: java8
+      Timeout: '90'
+  ConnectToVoicebaseLambdaKinesisMapping:
+    Type: 'AWS::Lambda::EventSourceMapping'
+    Properties:
+      BatchSize: 10
+      Enabled: true
+      EventSourceArn: !Ref ConnectKinesisStreamArn
+      FunctionName: !Ref ConnectToVoicebaseLambda
+      StartingPosition: LATEST
+  ConnectToVoicebaseLambdaSQSMapping:
+    Type: 'AWS::Lambda::EventSourceMapping'
+    Properties:
+      BatchSize: 10
+      Enabled: true
+      EventSourceArn: !GetAtt 
+        - ConnectDelayedQueue
+        - Arn
+      FunctionName: !Ref ConnectToVoicebaseSQSLambda
+Outputs:
+  VoicebaseTokenValidationLambda:
+    Description: VoiceBase token validation Lambda function.
+    Value: !GetAtt VoicebaseTokenValidationLambda.Arn
+  ConnectToVoicebaseLambda:
+    Description: VoiceBase integration Lambda function.
+    Value: !GetAtt ConnectToVoicebaseLambda.Arn
+  ConnectDeadLetterQueue:
+    Description: Dead letter SQS queue URL.
+    Value: !Ref ConnectDeadLetterQueue
+  

@@ -1,0 +1,814 @@
+#
+#
+# Copyright 2018 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy of this
+# software and associated documentation files (the "Software"), to deal in the Software
+# without restriction, including without limitation the rights to use, copy, modify,
+# merge, publish, distribute, sublicense, and/or sell copies of the Software, and to
+# permit persons to whom the Software is furnished to do so.
+# 
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+# INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+# PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+# HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+# OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+# SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+# 
+# ===========================
+# NO CHANGE SHOULD BE REQUIRED
+# ===========================
+#
+#
+
+AWSTemplateFormatVersion: 2010-09-09
+Description: Components for IPSec mesh, certificate generation, EC2 configration, metrics and cert renew. (qs-1p4acj1id)
+Metadata:
+  'AWS::CloudFormation::Interface':
+    ParameterGroups:
+    - Label:
+        default: IPSec Mesh configuration
+      Parameters:
+      - VpcId
+      - S3UserCertsBucket
+      - UseLocalShellScript
+      - ExistingEC2RoleArn
+      - S3CaBucket
+    - Label:
+        default: AWS Quick Start configuration
+      Parameters:
+      - QSS3BucketName
+      - QSS3KeyPrefix
+
+    ParameterLabels:
+      ExistingEC2RoleArn:
+        default: Amazon EC2 role ARN
+      VpcId:
+        default: VPC ID
+      QSS3BucketName:
+        default: Quick Start S3 bucket name
+      QSS3KeyPrefix:
+        default: Quick Start S3 key prefix
+      S3CaBucket:
+        default: CA S3 bucket
+      S3UserCertsBucket:
+        default: Host certificate S3 bucket
+      UseLocalShellScript:
+        default: Use setup shell script
+
+Parameters:
+
+  S3CaBucket:
+    Type: String
+    Description: (Optional) An existing S3 bucket for the CA certificate and key. If you leave this parameter empty, the Quick Start will generate a CA key and certificate and will place them in a new S3 bucket. If you specify an existing bucket name, you must configure CA manually and name your certificate as ca.cert.pem and encrypted key as ca.key.encrypted.pem. You must provide the password and encrypt it in Lambda environment variables.
+    Default: ''
+
+  S3UserCertsBucket:
+    Type: String
+    Description: (Optional) An existing S3 bucket where the hosts certificate for EC2 instances will be published. If you leave this parameter empty, the Quick Start will create a new S3 bucket for this purpose.
+    Default: ''
+
+  UseLocalShellScript:
+    Type: String
+    Description: Choose yes to deploy this architecture by using the provided script aws_setup.py instead of launching the CloudFormation stack directly. You might choose to use the script for advanced configuration such as generating a CA key on your machine using a local crypto engine, performing backup of the key, and controlling the S3 bucket names.
+    Default: 'no'
+    AllowedValues: 
+      - 'yes'
+      - 'no'
+
+  QSS3BucketName:
+    AllowedPattern: '^[0-9a-zA-Z]+([0-9a-zA-Z-\.]*[0-9a-zA-Z])*$'
+    ConstraintDescription: >-
+      Quick Start bucket name can include numbers, lowercase letters, uppercase
+      letters, and hyphens (-). It cannot start or end with a hyphen (-).
+    Default: aws-quickstart
+    Description: >-
+      S3 bucket name for the Quick Start assets.
+      Only change this value if you customize or extend the Quick Start for your own use.
+      This string can include numbers, lowercase letters, uppercase letters, and hyphens (-).
+      It cannot start or end with a hyphen (-).
+    Type: String
+
+  QSS3KeyPrefix:
+    AllowedPattern: '^[0-9a-zA-Z-/]*[/]$'
+    ConstraintDescription: >-
+      Quick Start key prefix can include numbers, lowercase letters, uppercase
+      letters, hyphens (-), and forward slash (/) and must terminate in a forward slash.
+    Default: quickstart-ec2-ipsec-mesh/
+    Description: >-
+      S3 key prefix for the Quick Start assets.
+      Only change this value if you customize or extend the Quick Start for your own use.
+      Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-),
+      and forward slash (/) and must terminate in a forward slash.
+    Type: String
+
+  VpcId:
+    Type: String
+    Description: (Optional) The ID of your existing VPC that the IPsec setup should be restricted to. By default, the Quick Start will attempt to configure IPsec across all Amazon EC2 instances in your account. If you are not using the default VPC, then we recommend that you specify this value to limit the scope of the Quick Start to your target VPC where the EC2 IPsec mesh will be provisioned.
+    Default: 'any'
+
+  ExistingEC2RoleArn:
+    Type: String
+    Description: (Optional) The existing Amazon Resource Name (ARN) of the EC2 role that will be allowed to decrypt the host certificate with CMK.
+    Default: ''
+
+Conditions:
+
+  CreateCaS3Bucket: 
+    !Equals
+        - ''
+        - !Ref 'S3CaBucket'
+
+  CreateUserCertsS3Bucket:  
+    !Equals
+        - ''
+        - !Ref 'S3UserCertsBucket'
+
+  CreateQSHelpers:
+    !Equals
+        - !Ref 'UseLocalShellScript'
+        - 'no'
+
+  UseExistingEC2Role: !Not
+     - !Equals
+        - ''
+        - !Ref 'ExistingEC2RoleArn'
+
+  GenerateCA: !And
+    - !Equals
+        - ''
+        - !Ref 'S3CaBucket'
+    - !Equals
+        - !Ref 'UseLocalShellScript'
+        - 'no'
+Resources:
+
+  ResS3ConfigsBucket:
+    Condition: CreateQSHelpers
+    Type: AWS::S3::Bucket
+    Properties:
+      Tags: []
+      BucketEncryption:  
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256            
+    DeletionPolicy: Delete
+
+  CaBucket:
+    Condition: CreateCaS3Bucket
+    Type: AWS::S3::Bucket
+    Properties:
+      Tags: []
+      BucketEncryption:  
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256            
+    DeletionPolicy: Delete
+
+  UserCertsBucket:
+    Condition: CreateUserCertsS3Bucket
+    Type: AWS::S3::Bucket
+    Properties:
+      Tags: []
+      BucketEncryption:  
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256            
+    DeletionPolicy: Delete
+
+  CopyZips:
+    Type: AWS::CloudFormation::CustomResource
+    Properties:
+      ServiceToken: !GetAtt 'CopyZipsFunction.Arn'
+      DestBucket: !If [CreateQSHelpers, !Ref 'ResS3ConfigsBucket', !Ref 'QSS3BucketName']
+      SourceBucket: !Ref 'QSS3BucketName'
+      Prefix: !Ref 'QSS3KeyPrefix'
+      Objects:
+        - functions/packages/enroll_cert_lambda_function/enroll_cert_lambda_function.zip
+        - functions/packages/generate_certifcate_lambda_function/generate_certifcate_lambda_function.zip
+        - functions/packages/ipsec_setup_lambda_function/ipsec_setup_lambda_function.zip
+        - functions/packages/ca_initialize_lambda_function/ca_initialize_lambda_function.zip
+        - config/clear
+        - config/clear-or-private
+        - config/oe-cert.conf
+        - config/private
+        - config/private-or-clear
+        - sources/cron.txt
+        - sources/cronIPSecStats.sh
+        - sources/setup_ipsec.sh  
+
+  CopyZipsRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "CopyZipsRole-${AWS::StackName}"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Path: /
+      Policies:
+        - PolicyName: lambda-copier
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                Resource:
+                  - !Sub 'arn:aws:s3:::${QSS3BucketName}/${QSS3KeyPrefix}*'
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:DeleteObject
+                Resource: !If
+                   - CreateQSHelpers
+                   - !Sub 'arn:aws:s3:::${ResS3ConfigsBucket}/${QSS3KeyPrefix}*' 
+                   - !Sub 'arn:aws:s3:::${QSS3BucketName}/${QSS3KeyPrefix}*'                       
+
+  CopyZipsFunction:
+    DependsOn: 
+        - CopyZipsRole
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "CopyZipsFunction-${AWS::StackName}"
+      Description: Copies objects from a source S3 bucket to a destination
+      Handler: index.handler
+      Runtime: python2.7
+      #      Role: !GetAtt 'CopyZipsRole.Arn'
+      Role: !Join
+         - ''
+         - - !Sub "arn:aws:iam::${AWS::AccountId}:role/" 
+           - !Sub "CopyZipsRole-${AWS::StackName}"
+      Timeout: 240
+      Code:
+        ZipFile: |
+          import json
+          import logging
+          import threading
+          import boto3
+          import cfnresponse
+
+          def copy_objects(source_bucket, dest_bucket, prefix, objects):
+              s3 = boto3.client('s3')
+              for o in objects:
+                  key = prefix + o
+                  copy_source = {
+                      'Bucket': source_bucket,
+                      'Key': key
+                  }
+                  s3.copy_object(CopySource=copy_source, Bucket=dest_bucket, Key=key)
+
+          def delete_objects(bucket, prefix, objects):
+              s3 = boto3.client('s3')
+              objects = {'Objects': [{'Key': prefix + o} for o in objects]}
+              s3.delete_objects(Bucket=bucket, Delete=objects)
+
+          def timeout(event, context):
+              logging.error('Execution is about to time out, sending failure response to CloudFormation')
+              cfnresponse.send(event, context, cfnresponse.FAILED, {}, None)
+
+          def handler(event, context):
+              # make sure we send a failure to CloudFormation if the function is going to timeout
+              timer = threading.Timer((context.get_remaining_time_in_millis() / 1000.00) - 0.5, timeout, args=[event, context])
+              timer.start()
+
+              print('Received event: %s' % json.dumps(event))
+              status = cfnresponse.SUCCESS
+              try:
+                  source_bucket = event['ResourceProperties']['SourceBucket']
+                  dest_bucket = event['ResourceProperties']['DestBucket']
+                  if source_bucket == dest_bucket:
+                    return 
+                  prefix = event['ResourceProperties']['Prefix']
+                  objects = event['ResourceProperties']['Objects']
+                  if event['RequestType'] == 'Delete':
+                      delete_objects(dest_bucket, prefix, objects)
+                  else:
+                      copy_objects(source_bucket, dest_bucket, prefix, objects)
+              except Exception as e:
+                  logging.error('Exception: %s' % e, exc_info=True)
+                  status = cfnresponse.FAILED
+              finally:
+                  timer.cancel()
+                  cfnresponse.send(event, context, status, {}, None)
+
+  CaGenerateRole:
+    Condition: GenerateCA 
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Path: /
+      Policies:
+        - PolicyName: lambda-cagenerate
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                Resource:
+                  - Fn::If:
+                      - CreateCaS3Bucket
+                      - !Sub 'arn:aws:s3:::${CaBucket}/*'
+                      - !Sub 'arn:aws:s3:::${S3CaBucket}/*'
+              - Effect: Allow
+                Action:
+                  - lambda:UpdateFunctionConfiguration
+                  - lambda:GetFunctionConfiguration 
+                Resource:
+                  - !GetAtt generateCertificateBundle.Arn
+              - Effect: Allow
+                Action:
+                  - kms:Encrypt
+                  - kms:Get*
+                  - kms:*Policy  
+                Resource:
+                  - !GetAtt CaKmsKey.Arn
+              - Effect: Allow
+                Action:
+                  - kms:GenerateRandom
+                Resource: '*'
+
+  CaGenerateFunction:
+    Condition: GenerateCA 
+    DependsOn:
+      - CaKmsKey
+      - generateCertificateBundle 
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "CA-initialize-${AWS::StackName}"
+      Description: Generates CA keys 
+      Handler: ca_initialize_lambda_function.lambda_handler
+      Runtime: python3.6
+      Role: !GetAtt CaGenerateRole.Arn
+      Timeout: 60
+      Code:
+        S3Bucket: !If [CreateQSHelpers, !Ref 'ResS3ConfigsBucket', !Ref 'QSS3BucketName']
+        S3Key: !Sub '${QSS3KeyPrefix}functions/packages/ca_initialize_lambda_function/ca_initialize_lambda_function.zip'
+
+  CaGenerate:
+    Condition: GenerateCA
+    Type: AWS::CloudFormation::CustomResource
+    Properties:
+      ServiceToken: !GetAtt 'CaGenerateFunction.Arn'
+      region: !Sub '${AWS::Region}'
+      cacrypto_bucket:
+        Fn::If:
+          - CreateCaS3Bucket
+          - !Ref CaBucket
+          - !Ref S3CaBucket
+      caCmkKey:  !GetAtt CaKmsKey.Arn
+      certEnrollLamnda: !GetAtt generateCertificateBundle.Arn
+
+
+  DecryptCaKeyEncryptUserP12Policy:
+    Type: "AWS::IAM::ManagedPolicy"
+    Properties:
+      ManagedPolicyName: !Sub "DecryptCaKeyEncryptP12Pwd-${AWS::StackName}"
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          -
+            Action:
+              - 'kms:Decrypt'
+            Effect: 'Allow'
+            Resource:
+                    - !Sub "arn:aws:kms:${AWS::Region}:${AWS::AccountId}:alias/${AWS::StackName}-CA"
+          -
+            Action:
+              - 'kms:Encrypt'
+            Effect: 'Allow'
+            Resource:
+                    - !Sub "arn:aws:kms:${AWS::Region}:${AWS::AccountId}:alias/${AWS::StackName}-USER"
+          -
+            Action:
+              - 'kms:GenerateRandom'
+            Effect: 'Allow'
+            Resource: '*'
+          -
+            Action:
+              - 'ec2:DescribeInstances'
+            Effect: 'Allow'
+            Resource:  '*'
+                    
+
+  Ec2IPSecInstancePolicy:
+    DependsOn:
+        - generateCertificateBundle 
+    Type: "AWS::IAM::ManagedPolicy"
+    Properties:
+      ManagedPolicyName: !Sub "Ec2IPsec-${AWS::StackName}Instance"
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          -
+            Action:
+            - 'kms:Decrypt'
+            Effect: 'Allow'
+            Resource:
+              - !Sub "arn:aws:kms:${AWS::Region}:${AWS::AccountId}:alias/${AWS::StackName}-USER"
+          -
+            Action:
+                    - 'cloudwatch:PutMetricData'
+            Effect: 'Allow'
+            Resource: '*'
+  
+  LambdaIPSecPolicy:
+    Type: "AWS::IAM::ManagedPolicy"
+    Properties:
+      ManagedPolicyName: !Sub "LambdaIPSec-${AWS::StackName}"
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          -
+            Action:
+                - 'ssm:SendCommand'
+                - 's3:GetObject'
+                - 'ssm:ListCommands'
+                - 'ssm:DescribeInstanceInformation'
+                - 'lambda:InvokeFunction' 
+                - 'ec2:DescribeInstances'
+            Effect: 'Allow'
+            Resource:  '*'
+          -
+            Action:
+                - 'ec2:DeleteTags'
+                - 'ec2:CreateTags'
+            Effect: 'Allow'
+            Resource:  'arn:aws:ec2:*:*:instance/*'
+
+  Ec2Role:
+    DependsOn:
+      - Ec2IPSecInstancePolicy 
+    Type: 'AWS::IAM::Role'
+    Properties:
+      RoleName: !Sub "Ec2IPsec-${AWS::StackName}"
+      Path: /
+      AssumeRolePolicyDocument:
+         Version: "2012-10-17"
+         Statement:
+              Effect: Allow
+              Principal:
+                 Service: "ec2.amazonaws.com"
+              Action: "sts:AssumeRole"
+      ManagedPolicyArns:
+        - Ref: Ec2IPSecInstancePolicy
+        - "arn:aws:iam::aws:policy/service-role/AmazonEC2RoleforSSM"
+
+  RootInstanceProfile: 
+    Type: "AWS::IAM::InstanceProfile"
+    Properties: 
+       Path: "/"
+       Roles: 
+          - Ref: Ec2Role
+       InstanceProfileName: !Sub "Ec2IPsec-${AWS::StackName}"      
+
+  CaLambdaRole:
+    DependsOn:
+      - DecryptCaKeyEncryptUserP12Policy
+    Type: 'AWS::IAM::Role'
+    Properties:
+      RoleName: !Sub "GenerateCertificate-${AWS::StackName}"
+      Path: /
+      AssumeRolePolicyDocument:
+         Version: "2012-10-17"
+         Statement:
+              Effect: Allow
+              Principal:
+                Service: "lambda.amazonaws.com"
+              Action: "sts:AssumeRole"
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/AWSLambdaExecute'
+        - Ref: DecryptCaKeyEncryptUserP12Policy
+
+  IPSecLambdaRole:
+    DependsOn:
+      - LambdaIPSecPolicy
+    Type: 'AWS::IAM::Role'
+    Properties:
+      RoleName: !Sub "IPSecLambda-${AWS::StackName}"
+      Path: /
+      AssumeRolePolicyDocument:
+         Version: "2012-10-17"
+         Statement:
+              Effect: Allow
+              Principal:
+                Service: "lambda.amazonaws.com"
+              Action: "sts:AssumeRole"
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/AmazonEC2ReadOnlyAccess'
+        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+        - Ref: LambdaIPSecPolicy
+
+  CaKmsKey:
+    DependsOn:
+      - CaLambdaRole
+    Type: "AWS::KMS::Key"
+    Properties:
+      Description: Protects the CA key
+      Enabled: true
+      EnableKeyRotation: false
+      KeyPolicy:
+        Version: '2012-10-17'
+        Id: key-10
+        Statement:
+        - Sid: Allow administration of the key
+          Effect: Allow
+          Principal:
+            AWS: !Sub "arn:aws:iam::${AWS::AccountId}:root"
+          Action: ['kms:Create*', 'kms:Describe*', 'kms:Enable*', 'kms:List*', 'kms:Put*',
+            'kms:Update*', 'kms:Revoke*', 'kms:Disable*', 'kms:Get*', 'kms:Delete*',
+            'kms:ScheduleKeyDeletion', 'kms:CancelKeyDeletion']
+          Resource: '*'
+        - Sid: Use of the key
+          Effect: Allow
+          Principal: 
+            AWS: !Join
+              - ''
+              - - !Sub "arn:aws:iam::${AWS::AccountId}:role/" 
+                - !Sub "GenerateCertificate-${AWS::StackName}"
+          Action: [ 'kms:Decrypt', 'kms:GenerateDataKey*', 'kms:DescribeKey']
+          Resource: '*'
+        - Sid: Allow initialization use 
+          Effect: Allow
+          Principal:
+            AWS: !Sub "arn:aws:iam::${AWS::AccountId}:root"
+          Action: ['kms:Encrypt', 'kms:GenerateDataKey*', 'kms:DescribeKey']
+          Resource: '*'
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}"
+
+  CaKeyAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: !Sub "alias/${AWS::StackName}-CA"
+      TargetKeyId: !Ref CaKmsKey
+
+  UserKmsKey:
+    Type: "AWS::KMS::Key"
+    DependsOn:
+      - CaLambdaRole
+      - Ec2Role
+    Properties:
+      Description: Protects the User key
+      Enabled: true
+      EnableKeyRotation: false
+      KeyPolicy:
+        Version: '2012-10-17'
+        Id: key-10
+        Statement:
+        - Sid: Allow administration of the key
+          Effect: Allow
+          Principal:
+            AWS: !Sub "arn:aws:iam::${AWS::AccountId}:root"
+          Action: ['kms:Create*', 'kms:Describe*', 'kms:Enable*', 'kms:List*', 'kms:Put*',
+            'kms:Update*', 'kms:Revoke*', 'kms:Disable*', 'kms:Get*', 'kms:Delete*',
+            'kms:ScheduleKeyDeletion', 'kms:CancelKeyDeletion']
+          Resource: '*'
+        - Sid: Use of the key by EC2
+          Effect: Allow
+          Principal:
+            AWS: !If [ UseExistingEC2Role, [ !Ref ExistingEC2RoleArn, !GetAtt Ec2Role.Arn], !GetAtt Ec2Role.Arn ]
+          Action: ['kms:Decrypt' ]
+          Resource: '*'
+        - Sid: Use of the key ID Lambda cert issuer
+          Effect: Allow
+          Principal:
+            AWS: !GetAtt CaLambdaRole.Arn
+          Action: ['kms:Encrypt', 'kms:GenerateRandom' ]
+          Resource: '*'
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}"
+
+  UserKeyAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: !Sub "alias/${AWS::StackName}-USER"
+      TargetKeyId: !Ref UserKmsKey
+
+  generateCertificateBundle:
+    Type: 'AWS::Lambda::Function'
+    DependsOn:
+      - CaLambdaRole
+      - CaKmsKey
+      - CopyZips
+    Properties:
+      FunctionName: !Sub "GenerateCertificate-${AWS::StackName}"
+      Handler: generate_certifcate_lambda_function.lambda_handler
+      Runtime: python3.6
+      Code:
+        S3Bucket: !If [CreateQSHelpers, !Ref 'ResS3ConfigsBucket', !Ref 'QSS3BucketName']
+        S3Key: !Sub '${QSS3KeyPrefix}functions/packages/generate_certifcate_lambda_function/generate_certifcate_lambda_function.zip'
+      Description: 'Generates certificates'
+      MemorySize:  256
+      Timeout: 30
+      Role: !GetAtt CaLambdaRole.Arn
+      Environment:
+        Variables:
+          CA_BUCKET:
+            Fn::If:
+              - CreateCaS3Bucket
+              - !Ref CaBucket
+              - !Ref S3CaBucket
+          CA_FILE: ca.cert.pem
+          CA_KEY_FILE: ca.key.encrypted.pem
+          CA_PWD: "Put yourCA key password here"
+          CERTS_BUCKET:
+            Fn::If:
+              - CreateUserCertsS3Bucket
+              - !Ref UserCertsBucket
+              - !Ref S3UserCertsBucket
+          P12_CMS_KEYID: !Sub "alias/${AWS::StackName}-USER"
+
+  IPSecSetupLambda:
+    Type: 'AWS::Lambda::Function'
+    DependsOn:
+      - IPSecLambdaRole
+      - CopyZips
+    Properties:
+      FunctionName: !Sub "IPSecSetup-${AWS::StackName}"
+      Handler: ipsec_setup_lambda_function.lambda_handler
+      Runtime: python3.6
+      Code:
+        S3Bucket:  !If [CreateQSHelpers, !Ref 'ResS3ConfigsBucket', !Ref 'QSS3BucketName']
+        S3Key: !Sub '${QSS3KeyPrefix}functions/packages/ipsec_setup_lambda_function/ipsec_setup_lambda_function.zip'
+      Description: 'Configures IPSec and certificate on EC2 over SSM'
+      MemorySize:  320
+      Timeout: 180
+      Role: !GetAtt IPSecLambdaRole.Arn
+      Environment:
+        Variables:
+          CertificateEnrollLambda: !Sub "GenerateCertificate-${AWS::StackName}"
+          IPSecSetUpScript: setup_ipsec.sh
+          ResultTagValue: enabled
+          SelectorTagName: IPSec
+          SelectorTagValue: todo
+          VpcId:
+            Ref: VpcId
+          SourceBucket: !If [CreateQSHelpers, !Ref 'ResS3ConfigsBucket', !Ref 'QSS3BucketName']
+          SourcePrefix:
+            Ref: QSS3KeyPrefix 
+
+  enrollCertLambda:
+    Type: 'AWS::Lambda::Function'
+    DependsOn:
+      - IPSecLambdaRole
+      - CopyZips
+    Properties:
+      FunctionName: !Sub "ReenrollCertificate-${AWS::StackName}"
+      Handler: enroll_cert_lambda_function.lambda_handler
+      Runtime: python3.6
+      Code:
+        S3Bucket:  !If [CreateQSHelpers, !Ref 'ResS3ConfigsBucket', !Ref 'QSS3BucketName']
+        S3Key: !Sub '${QSS3KeyPrefix}functions/packages/enroll_cert_lambda_function/enroll_cert_lambda_function.zip'
+      Description: 'Enrolls certifcate on EC2 over SSM'
+      MemorySize:  320
+      Timeout: 300
+      Role: !GetAtt IPSecLambdaRole.Arn
+      Environment:
+        Variables:
+          IPSecSetupLambda: !Sub "IPSecSetup-${AWS::StackName}"
+          SelectorTagName: IPSec
+          SelectorTagValue: enabled
+          SourceBucket: !If [CreateQSHelpers, !Ref 'ResS3ConfigsBucket', !Ref 'QSS3BucketName']
+
+  eventIPSecSetup:
+     DependsOn:
+        - IPSecSetupLambda
+     Type: "AWS::Events::Rule"
+     Properties:
+       Description: Instance moved to state running trigger IPSec setup 
+       Name: !Sub "SetupIPSecOnEC2-${AWS::StackName}"       
+       EventPattern: 
+         detail-type:
+            - EC2 Instance State-change Notification
+         source:
+            - aws.ec2
+         detail:
+           state:
+            - running
+       State: "ENABLED"
+       Targets: 
+           - 
+             Arn: 
+               !GetAtt IPSecSetupLambda.Arn
+             Id: 'IPSecSetup'    
+
+  PermissionForEventsIPSecSetup: 
+     Type: "AWS::Lambda::Permission"
+     Properties: 
+        FunctionName: !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:IPSecSetup-${AWS::StackName}"
+        Action: "lambda:InvokeFunction"
+        Principal: "events.amazonaws.com"
+        SourceArn:  !GetAtt eventIPSecSetup.Arn
+
+  eventCertEnroll:
+     DependsOn:
+             - enrollCertLambda
+     Type: "AWS::Events::Rule"
+     Properties:
+       Description: Schadule re-renollment of certificate
+       Name: !Sub "ReenrollCertificate-${AWS::StackName}"
+       ScheduleExpression: cron(2 * ? * 4 *)
+       State: "ENABLED"
+       Targets: 
+           - 
+            Arn: !GetAtt enrollCertLambda.Arn
+            Id: 'enrollCertLambda'    
+    
+  PermissionForEventsEnrollCert: 
+     Type: "AWS::Lambda::Permission"
+     Properties: 
+        FunctionName: !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:ReenrollCertificate-${AWS::StackName}"
+        Action: "lambda:InvokeFunction"
+        Principal: "events.amazonaws.com"
+        SourceArn:  !GetAtt eventCertEnroll.Arn
+
+  Alerts: 
+     Type: "AWS::SNS::Topic"
+     Properties: 
+       TopicName: !Sub "IPSec_Config_Alarms_${AWS::StackName}"
+
+  IPSecConfAlarm:
+     Type: AWS::CloudWatch::Alarm
+     Properties:
+        AlarmDescription: "Alarm if IPSec confguration fails"
+        AlarmName: !Sub "IPSec configuration (${AWS::StackName})"
+        Namespace: AWS/Lambda
+        MetricName: Errors
+        Dimensions:
+         - Name: FunctionName
+           Value: !Ref IPSecSetupLambda
+        Statistic: Sum
+        Period: 3600
+        EvaluationPeriods: 1
+        Threshold: 1
+        ComparisonOperator: GreaterThanOrEqualToThreshold
+        TreatMissingData: notBreaching
+        AlarmActions:           
+         - !Ref Alerts
+
+  CertEnrollConfAlarm:
+     Type: AWS::CloudWatch::Alarm
+     Properties:
+        AlarmDescription: "Alarm if cert reenrollment fails"
+        Namespace: AWS/Lambda
+        AlarmName: !Sub "Cert reenrollment (${AWS::StackName})"
+        MetricName: Errors
+        Dimensions:
+         - Name: FunctionName
+           Value: !Ref enrollCertLambda
+        Statistic: Sum
+        Period: 3600
+        EvaluationPeriods: 1
+        Threshold: 1
+        ComparisonOperator: GreaterThanOrEqualToThreshold
+        TreatMissingData: notBreaching
+        AlarmActions:           
+         - !Ref Alerts
+
+Outputs:
+    IPsecSetupLambda:
+       Description: Name of the IPsec setup Lambda function
+       Value: !Ref IPSecSetupLambda
+    IssueCertificateLambda:
+       Description: Name of the Issue certificate Lambda function
+       Value: !Ref generateCertificateBundle
+    ReEnrollLambda:
+       Description: Name of the re-enroll certificate Lambda function
+       Value: !Ref enrollCertLambda
+    GenerateCALambda:
+       Condition: GenerateCA
+       Description: Name of the Generate CA certificates Lambda function
+       Value: !Ref CaGenerateFunction
+    IssueCertificateLambdaARN:
+       Description: ARN of Lambda for certificate generation 
+       Value: !GetAtt generateCertificateBundle.Arn
+    CaKmsKey:
+       Description: CA CMS Crypto key 
+       Value: !GetAtt CaKmsKey.Arn
+    CaS3Bucket:
+       Description: S3 CA Bucket
+       Value: !If [CreateCaS3Bucket, !Ref CaBucket, !Ref S3CaBucket]
+    CertsS3Bucket:
+       Description: S3 Bucket with published certificates 
+       Value: !If [CreateUserCertsS3Bucket, !Ref UserCertsBucket, !Ref S3UserCertsBucket]
+    ConfigSourcesS3Bucket:
+       Description: S3 Bucket with IPSec configs and sources
+       Value: !If [CreateQSHelpers, !Ref 'ResS3ConfigsBucket', !Ref 'QSS3BucketName']
+

@@ -1,0 +1,131 @@
+---
+AWSTemplateFormatVersion: 2010-09-09
+Description: Provides the VPC endpoints for SSM to allow SSM Session Manager to be used on private subnets with no internet access.
+Parameters:
+  pProductionVPC:
+    Description: Production VPC to create end point in
+    Type: AWS::EC2::VPC::Id
+
+  pProductionVpcCIDR:
+    Description: CIDR of Production VPC
+    AllowedPattern: ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/([0-9]|[1-2][0-9]|3[0-2]))$
+    ConstraintDescription: CIDR block parameter must be in the form x.x.x.x/16-28
+    Type: String
+
+  pRouteTableProdPrivateA:
+    Description: Route Table ID for Prod VPC Private A
+    Type: String
+
+  pRouteTableProdPrivateB:
+    Description: Route Table ID for Prod VPC Private B
+    Type: String
+
+  pProdAppPrivateSubnetA:
+    Description: Production Application Subnet A (private)
+    Type: AWS::EC2::Subnet::Id
+
+  pProdAppPrivateSubnetB:
+    Description: Production Application Subnet B (private)
+    Type: AWS::EC2::Subnet::Id
+
+Resources:
+  VpcEndpointSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref pProductionVPC
+      GroupDescription: Allow traffic from within VPC
+      SecurityGroupIngress:
+        - IpProtocol: '-1'
+          CidrIp: !Ref pProductionVpcCIDR
+
+  SsmVpcEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref pProductionVPC
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.ssm
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds:
+        - !Ref pProdAppPrivateSubnetA
+        - !Ref pProdAppPrivateSubnetB
+      SecurityGroupIds:
+        - !Ref VpcEndpointSecurityGroup
+
+  SsmMessagesVpcEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref pProductionVPC
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.ssmmessages
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds:
+        - !Ref pProdAppPrivateSubnetA
+        - !Ref pProdAppPrivateSubnetB
+      SecurityGroupIds:
+        - !Ref VpcEndpointSecurityGroup
+
+  Ec2VpcEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref pProductionVPC
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.ec2
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds:
+        - !Ref pProdAppPrivateSubnetA
+        - !Ref pProdAppPrivateSubnetB
+      SecurityGroupIds:
+        - !Ref VpcEndpointSecurityGroup
+
+  Ec2MessagesVpcEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref pProductionVPC
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.ec2messages
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds:
+        - !Ref pProdAppPrivateSubnetA
+        - !Ref pProdAppPrivateSubnetB
+      SecurityGroupIds:
+        - !Ref VpcEndpointSecurityGroup
+
+  CfnVpcEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref pProductionVPC
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.cloudformation
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds:
+        - !Ref pProdAppPrivateSubnetA
+        - !Ref pProdAppPrivateSubnetB
+      SecurityGroupIds:
+        - !Ref VpcEndpointSecurityGroup
+
+  CloudwatchLogsVpcEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref pProductionVPC
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.logs
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds:
+        - !Ref pProdAppPrivateSubnetA
+        - !Ref pProdAppPrivateSubnetB
+      SecurityGroupIds:
+        - !Ref VpcEndpointSecurityGroup
+
+  S3VpcEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref pProductionVPC
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.s3
+      VpcEndpointType: Gateway
+      RouteTableIds:
+        - !Ref pRouteTableProdPrivateA
+        - !Ref pRouteTableProdPrivateB
+
+Outputs:
+  VpcEndpointSecurityGroup:
+    Value: !Ref VpcEndpointSecurityGroup

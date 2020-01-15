@@ -1,0 +1,1143 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "Acqueon Engagement Cloud (Worker Template) for Amazon Connect (qs-1onqkqsbj)",
+    "Metadata": {
+        "AWS::CloudFormation::Interface": {
+            "ParameterGroups": [
+                {
+                    "Label": {
+                        "default": "Amazon EC2 Configuration"
+                    },
+                    "Parameters": [
+                        "AECType",
+						"EC2InstanceType",
+                        "KeyPairName",
+                        "AECVPC",
+                        "AECSubnetPublic1",
+                        "AECSubnetPublic2",
+                        "AECSubnetPrivate1",
+                        "AECSubnetPrivate2"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "SecurityGroup Configuration"
+                    },
+                    "Parameters": [
+                        "AECWeb",
+                        "AECPrivateGroup",
+                        "AECRDP"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "Amazon RDS Configuration"
+                    },
+                    "Parameters": [
+                        "RDSDB",
+                        "DBMasterUser",
+                        "DBMasterPassword"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "SSL Configuration"
+                    },
+                    "Parameters": [
+                        "DomainHostedZone",
+                        "CFDomainName",
+                        "CFCertificate",
+                        "ELBCertificate"
+                    ]
+                }
+            ],
+            "ParameterLabels": {
+                "EC2InstanceType": {
+                    "default": "Instance Type"
+                },
+                "KeyPairName": {
+                    "default": "Key Name"
+                },
+                "AECVPC": {
+                    "default": "VPC"
+                },
+                "AECSubnetPublic1": {
+                    "default": "Public Subnet 1"
+                },
+                "AECSubnetPublic2": {
+                    "default": "Public Subnet 2"
+                },
+                "AECSubnetPrivate1": {
+                    "default": "Private Subnet 1"
+                },
+                "AECSubnetPrivate2": {
+                    "default": "Private Subnet 2"
+                },
+                "AECWeb": {
+                    "default": "Public ELB SecurityGroup"
+                },
+                "AECPrivateGroup": {
+                    "default": "Private ELB SecurityGroup"
+                },
+                "AECRDP": {
+                    "default": "RDP SecurityGroup"
+                },
+                "RDSDB": {
+                    "default": "DB Instance Name"
+                },
+                "DBMasterUser": {
+                    "default": "DB Master User"
+                },
+                "DBMasterPassword": {
+                    "default": "DB Master Password"
+                },
+                "DomainHostedZone": {
+                    "default": "Hosted Zone"
+                },
+                "CFDomainName": {
+                    "default": "CF DomainName"
+                },
+                "CFCertificate": {
+                    "default": "CF Certificate ARN"
+                },
+                "ELBCertificate": {
+                    "default": "ELB Certificate ARN"
+                },
+				"AECType": {
+				    "default": "AECType"
+				}
+            }
+        }
+    },
+    "Parameters": {
+        "EC2InstanceType": {
+            "Type": "String",
+            "Default": "Option-1a",
+            "AllowedValues": [
+                "Option-1a",
+                "Option-1b",
+                "Option-2a",
+                "Option-2b",
+                "Option-3"
+            ],
+            "Description": "Refer 'AEC Capacity and Sizing section' of 'AEC Installation Guide' to select appropriate EC2 InstanceType"
+        },
+        "KeyPairName": {
+            "Description": "Name of an existing EC2 KeyPair to enable SSH access to the instance",
+            "Type": "AWS::EC2::KeyPair::KeyName",
+            "ConstraintDescription": "must be the name of an existing EC2 KeyPair."
+        },
+        "AECWeb": {
+            "Type": "AWS::EC2::SecurityGroup::Id",
+            "Description": "SecurityGroup for Public ELB"
+        },
+        "AECPrivateGroup": {
+            "Type": "AWS::EC2::SecurityGroup::Id",
+            "Description": "SecurityGroup for Private ELB"
+        },
+        "AECRDP": {
+            "Type": "AWS::EC2::SecurityGroup::Id",
+            "Description": "SecurityGroup for BastionHost RDP"
+        },
+        "AECSubnetPublic1": {
+            "Type": "AWS::EC2::Subnet::Id"
+        },
+        "AECSubnetPublic2": {
+            "Type": "AWS::EC2::Subnet::Id"
+        },
+        "AECSubnetPrivate1": {
+            "Type": "AWS::EC2::Subnet::Id"
+        },
+        "AECSubnetPrivate2": {
+            "Type": "AWS::EC2::Subnet::Id"
+        },
+        "AECVPC": {
+            "Type": "AWS::EC2::VPC::Id"
+        },
+        "RDSDB": {
+            "Description": "RDS DB Instance Name",
+            "Type": "String"
+        },
+        "DBMasterUser": {
+            "Description": "RDS Master UserName",
+            "Type": "String",
+            "MinLength": "2",
+            "MaxLength": "25"
+        },
+        "DBMasterPassword": {
+            "Description": "RDS Master Password",
+            "Type": "String",
+            "MinLength": "3",
+            "MaxLength": "25",
+            "NoEcho": true
+        },
+        "CFDomainName": {
+            "Description": "Alternate domain name for CloudFront",
+            "Type": "String"
+        },
+        "CFCertificate": {
+            "Description": "Certificate ARN for CloudFront. (Need to be created/imported in us-east-1 region)",
+            "Type": "String"
+        },
+        "ELBCertificate": {
+            "Description": "Certificate ARN for ELB. (Need to be created/imported in stack region )",
+            "Type": "String"
+        },
+        "DomainHostedZone": {
+            "Description": "Hosted Zone of the Domain",
+            "Type": "AWS::Route53::HostedZone::Id"
+        },
+		"AECType": {
+		    "Description": "AEC installation type",
+		    "Type": "String"
+		}
+    },
+    "Mappings": {
+        "EC2VolumeMap": {
+            "Option-1a": {
+                "ec2instancetype": "t2.xlarge",
+                "west3ec2instancetype": "t2.xlarge",
+                "volumesize": "200",
+                "rdsinstancetype": "db.m4.xlarge",
+                "rdsvolumesize": "200",
+                "west3rdsinstancetype": "db.r4.xlarge"
+            },
+            "Option-1b": {
+                "ec2instancetype": "t2.2xlarge",
+                "west3ec2instancetype": "t2.2xlarge",
+                "volumesize": "500",
+                "rdsinstancetype": "db.m4.2xlarge",
+                "rdsvolumesize": "1200",
+                "west3rdsinstancetype": "db.r4.2xlarge"
+            },
+            "Option-2a": {
+                "ec2instancetype": "m4.xlarge",
+                "west3ec2instancetype": "m5.xlarge",
+                "volumesize": "200",
+                "rdsinstancetype": "db.m4.xlarge",
+                "rdsvolumesize": "200",
+                "west3rdsinstancetype": "db.r4.xlarge"
+            },
+            "Option-2b": {
+                "ec2instancetype": "m4.2xlarge",
+                "west3ec2instancetype": "m5.2xlarge",
+                "volumesize": "500",
+                "rdsinstancetype": "db.m4.2xlarge",
+                "rdsvolumesize": "1200",
+                "west3rdsinstancetype": "db.r4.2xlarge"
+            },
+            "Option-3": {
+                "ec2instancetype": "m4.4xlarge",
+                "west3ec2instancetype": "m5.4xlarge",
+                "volumesize": "800",
+                "rdsinstancetype": "db.m4.2xlarge",
+                "rdsvolumesize": "2000",
+                "west3rdsinstancetype": "db.r4.2xlarge"
+            }
+        },
+        "RegionMap": {
+            "us-east-1": {
+                "voiceimg": "ami-0c51b16b6147f9de9",
+				"omnichannelimg": "ami-00e77d12b3ffcf5da"
+            },
+            "us-east-2": {
+                "voiceimg": "ami-0c819ea43fd0f2f47",
+				"omnichannelimg": "ami-01bf0174714e4d303"
+            },
+            "us-west-1": {
+                "voiceimg": "ami-0397e55c5afd84705",
+				"omnichannelimg": "ami-0caa0ae6a4afaac14"
+            },
+            "us-west-2": {
+                "voiceimg": "ami-073116e752fe0ffce",
+				"omnichannelimg": "ami-0810b600906d524d6"
+            },
+            "ap-south-1": {
+                "voiceimg": "ami-0ca071cd66462a43a",
+				"omnichannelimg": "ami-0accb3d9937aa0640"
+            },
+            "ap-northeast-2": {
+                "voiceimg": "ami-0b3fc160c3d515d94",
+				"omnichannelimg": "ami-0be0f4b41928a04a5"
+            },
+            "ap-southeast-1": {
+                "voiceimg": "ami-072fe78eb4744711e",
+				"omnichannelimg": "ami-0a3737c5936d2b155"
+            },
+            "ap-southeast-2": {
+                "voiceimg": "ami-0c0c9bc456c78765c",
+				"omnichannelimg": "ami-0f630662cd9befbed"
+            },
+            "ap-northeast-1": {
+                "voiceimg": "ami-0cf84885c98ffc46b",
+				"omnichannelimg": "ami-074b781e4bd8a441d"
+            },
+            "ca-central-1": {
+                "voiceimg": "ami-036167cbb2eee0a23",
+				"omnichannelimg": "ami-03c904e0158bf0d26"
+            },
+            "eu-central-1": {
+                "voiceimg": "ami-0a429fa96854aba8b",
+				"omnichannelimg": "ami-0da84335cd72e58d0"
+            },
+            "eu-west-1": {
+                "voiceimg": "ami-00ff9e9600ed88e65",
+				"omnichannelimg": "ami-0841d1bae1991dbe3"
+            },
+            "eu-west-2": {
+                "voiceimg": "ami-024f3e78eac42c508",
+				"omnichannelimg": "ami-04e6443e7516db527"
+            },
+            "eu-west-3": {
+                "voiceimg": "ami-0852e8aa120eeb048",
+				"omnichannelimg": "ami-0791ca60077e9fd53"
+            },
+            "sa-east-1": {
+                "voiceimg": "ami-0424904305c665842",
+				"omnichannelimg": "ami-00039c259c0889599"
+            }
+        }
+    },
+    "Conditions": {
+        "West3Region": {
+            "Fn::Equals": [
+                "eu-west-3",
+                {
+                    "Ref": "AWS::Region"
+                }
+            ]
+        },
+		"IsOmnichannel": {
+		    "Fn::Equals": [
+			    "Omnichannel",
+				{
+				    "Ref": "AECType"
+				}
+			]
+		}	
+    },
+    "Resources": {
+        "AECLB": {
+            "Type": "AWS::ElasticLoadBalancingV2::LoadBalancer",
+            "Properties": {
+                "Name": {
+                    "Fn::Join": [
+                        "-",
+                        [
+                            "AEC",
+                            {
+                                "Fn::Select": [
+                                    0,
+                                    {
+                                        "Fn::Split": [
+                                            "-",
+                                            {
+                                                "Ref": "AWS::StackName"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "Fn::Select": [
+                                    1,
+                                    {
+                                        "Fn::Split": [
+                                            "-",
+                                            {
+                                                "Ref": "AWS::StackName"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    ]
+                },
+                "Subnets": [
+                    {
+                        "Ref": "AECSubnetPublic1"
+                    },
+                    {
+                        "Ref": "AECSubnetPublic2"
+                    }
+                ],
+                "SecurityGroups": [
+                    {
+                        "Ref": "AECWeb"
+                    }
+                ]
+            }
+        },
+        "ServiceLB": {
+            "Type": "AWS::ElasticLoadBalancingV2::LoadBalancer",
+            "Properties": {
+                "Name": {
+                    "Fn::Join": [
+                        "-",
+                        [
+                            "AEC-Service",
+                            {
+                                "Fn::Select": [
+                                    0,
+                                    {
+                                        "Fn::Split": [
+                                            "-",
+                                            {
+                                                "Ref": "AWS::StackName"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "Fn::Select": [
+                                    1,
+                                    {
+                                        "Fn::Split": [
+                                            "-",
+                                            {
+                                                "Ref": "AWS::StackName"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    ]
+                },
+                "Scheme": "internal",
+                "Subnets": [
+                    {
+                        "Ref": "AECSubnetPrivate1"
+                    },
+                    {
+                        "Ref": "AECSubnetPrivate2"
+                    }
+                ],
+                "SecurityGroups": [
+                    {
+                        "Ref": "AECPrivateGroup"
+                    }
+                ]
+            }
+        },
+        "LCMTargetGroup": {
+            "Type": "AWS::ElasticLoadBalancingV2::TargetGroup",
+            "Properties": {
+                "HealthCheckIntervalSeconds": 10,
+                "UnhealthyThresholdCount": 2,
+                "HealthyThresholdCount": 2,
+                "HealthCheckProtocol": "HTTP",
+                "HealthCheckTimeoutSeconds": 5,
+                "HealthCheckPath": "/status",
+                "Name": {
+                    "Fn::Join": [
+                        "-",
+                        [
+                            "AEC-LCM",
+                            {
+                                "Fn::Select": [
+                                    0,
+                                    {
+                                        "Fn::Split": [
+                                            "-",
+                                            {
+                                                "Ref": "AWS::StackName"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "Fn::Select": [
+                                    1,
+                                    {
+                                        "Fn::Split": [
+                                            "-",
+                                            {
+                                                "Ref": "AWS::StackName"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    ]
+                },
+                "Port": 80,
+                "Protocol": "HTTP",
+                "Matcher": {
+                    "HttpCode": "200,301"
+                },
+                "VpcId": {
+                    "Ref": "AECVPC"
+                },
+                "TargetGroupAttributes": [
+                    {
+                        "Value": "true",
+                        "Key": "stickiness.enabled"
+                    },
+                    {
+                        "Value": "300",
+                        "Key": "deregistration_delay.timeout_seconds"
+                    },
+                    {
+                        "Value": "lb_cookie",
+                        "Key": "stickiness.type"
+                    },
+                    {
+                        "Value": "86400",
+                        "Key": "stickiness.lb_cookie.duration_seconds"
+                    }
+                ]
+            }
+        },
+        "ScriptEngineTargetGroup": {
+            "Type": "AWS::ElasticLoadBalancingV2::TargetGroup",
+            "Properties": {
+                "HealthCheckIntervalSeconds": 10,
+                "UnhealthyThresholdCount": 2,
+                "HealthyThresholdCount": 2,
+                "HealthCheckProtocol": "HTTP",
+                "HealthCheckTimeoutSeconds": 5,
+                "HealthCheckPath": "/LCMScriptEngine/ScriptEngine",
+                "Name": {
+                    "Fn::Join": [
+                        "-",
+                        [
+                            "AEC-SE",
+                            {
+                                "Fn::Select": [
+                                    0,
+                                    {
+                                        "Fn::Split": [
+                                            "-",
+                                            {
+                                                "Ref": "AWS::StackName"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "Fn::Select": [
+                                    1,
+                                    {
+                                        "Fn::Split": [
+                                            "-",
+                                            {
+                                                "Ref": "AWS::StackName"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    ]
+                },
+                "Port": 80,
+                "Protocol": "HTTP",
+                "Matcher": {
+                    "HttpCode": "200"
+                },
+                "VpcId": {
+                    "Ref": "AECVPC"
+                },
+                "TargetGroupAttributes": [
+                    {
+                        "Value": "true",
+                        "Key": "stickiness.enabled"
+                    },
+                    {
+                        "Value": "300",
+                        "Key": "deregistration_delay.timeout_seconds"
+                    },
+                    {
+                        "Value": "lb_cookie",
+                        "Key": "stickiness.type"
+                    },
+                    {
+                        "Value": "86400",
+                        "Key": "stickiness.lb_cookie.duration_seconds"
+                    }
+                ]
+            }
+        },
+        "LicenseManagerTargetGroup": {
+            "Type": "AWS::ElasticLoadBalancingV2::TargetGroup",
+            "Properties": {
+                "HealthCheckIntervalSeconds": 10,
+                "UnhealthyThresholdCount": 2,
+                "HealthyThresholdCount": 2,
+                "HealthCheckProtocol": "HTTP",
+                "HealthCheckTimeoutSeconds": 5,
+                "HealthCheckPath": "/LCMLicenseManager/Service",
+                "Name": {
+                    "Fn::Join": [
+                        "-",
+                        [
+                            "AEC-LM",
+                            {
+                                "Fn::Select": [
+                                    0,
+                                    {
+                                        "Fn::Split": [
+                                            "-",
+                                            {
+                                                "Ref": "AWS::StackName"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "Fn::Select": [
+                                    1,
+                                    {
+                                        "Fn::Split": [
+                                            "-",
+                                            {
+                                                "Ref": "AWS::StackName"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    ]
+                },
+                "Port": 80,
+                "Protocol": "HTTP",
+                "Matcher": {
+                    "HttpCode": "200"
+                },
+                "VpcId": {
+                    "Ref": "AECVPC"
+                },
+                "TargetGroupAttributes": [
+                    {
+                        "Value": "true",
+                        "Key": "stickiness.enabled"
+                    },
+                    {
+                        "Value": "300",
+                        "Key": "deregistration_delay.timeout_seconds"
+                    },
+                    {
+                        "Value": "lb_cookie",
+                        "Key": "stickiness.type"
+                    },
+                    {
+                        "Value": "86400",
+                        "Key": "stickiness.lb_cookie.duration_seconds"
+                    }
+                ]
+            }
+        },
+        "Instance1GenericServiceTargetGroup": {
+            "Type": "AWS::ElasticLoadBalancingV2::TargetGroup",
+            "Properties": {
+                "HealthCheckIntervalSeconds": 10,
+                "UnhealthyThresholdCount": 2,
+                "HealthyThresholdCount": 2,
+                "HealthCheckProtocol": "HTTP",
+                "HealthCheckTimeoutSeconds": 5,
+                "HealthCheckPath": "/instance1LCMGenericService/Service1",
+                "Name": {
+                    "Fn::Join": [
+                        "-",
+                        [
+                            "AEC-GS",
+                            {
+                                "Fn::Select": [
+                                    0,
+                                    {
+                                        "Fn::Split": [
+                                            "-",
+                                            {
+                                                "Ref": "AWS::StackName"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "Fn::Select": [
+                                    1,
+                                    {
+                                        "Fn::Split": [
+                                            "-",
+                                            {
+                                                "Ref": "AWS::StackName"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    ]
+                },
+                "Port": 80,
+                "Protocol": "HTTP",
+                "Matcher": {
+                    "HttpCode": "200"
+                },
+                "VpcId": {
+                    "Ref": "AECVPC"
+                },
+                "TargetGroupAttributes": [
+                    {
+                        "Value": "true",
+                        "Key": "stickiness.enabled"
+                    },
+                    {
+                        "Value": "300",
+                        "Key": "deregistration_delay.timeout_seconds"
+                    },
+                    {
+                        "Value": "lb_cookie",
+                        "Key": "stickiness.type"
+                    },
+                    {
+                        "Value": "86400",
+                        "Key": "stickiness.lb_cookie.duration_seconds"
+                    }
+                ]
+            }
+        },
+        "AECLBListener": {
+            "Type": "AWS::ElasticLoadBalancingV2::Listener",
+            "Properties": {
+                "DefaultActions": [
+                    {
+                        "Type": "forward",
+                        "TargetGroupArn": {
+                            "Ref": "LCMTargetGroup"
+                        }
+                    }
+                ],
+                "LoadBalancerArn": {
+                    "Ref": "AECLB"
+                },
+                "Port": "443",
+                "Protocol": "HTTPS",
+                "Certificates": [
+					{
+						"CertificateArn": {
+							"Ref": "ELBCertificate"
+						}
+					}
+				]
+            }
+        },
+        "ServiceLBListener": {
+            "Type": "AWS::ElasticLoadBalancingV2::Listener",
+            "Properties": {
+                "DefaultActions": [
+                    {
+                        "Type": "forward",
+                        "TargetGroupArn": {
+                            "Ref": "ScriptEngineTargetGroup"
+                        }
+                    }
+                ],
+                "LoadBalancerArn": {
+                    "Ref": "ServiceLB"
+                },
+                "Port": "80",
+                "Protocol": "HTTP"
+            }
+        },
+        "ScriptEngineListenerRule": {
+            "Type": "AWS::ElasticLoadBalancingV2::ListenerRule",
+            "Properties": {
+                "Actions": [
+                    {
+                        "Type": "forward",
+                        "TargetGroupArn": {
+                            "Ref": "ScriptEngineTargetGroup"
+                        }
+                    }
+                ],
+                "Conditions": [
+                    {
+                        "Field": "path-pattern",
+                        "Values": [
+                            "/LCMScriptEngine/ScriptEngine"
+                        ]
+                    }
+                ],
+                "ListenerArn": {
+                    "Ref": "ServiceLBListener"
+                },
+                "Priority": 1
+            }
+        },
+        "LicenseManagerListenerRule": {
+            "Type": "AWS::ElasticLoadBalancingV2::ListenerRule",
+            "Properties": {
+                "Actions": [
+                    {
+                        "Type": "forward",
+                        "TargetGroupArn": {
+                            "Ref": "LicenseManagerTargetGroup"
+                        }
+                    }
+                ],
+                "Conditions": [
+                    {
+                        "Field": "path-pattern",
+                        "Values": [
+                            "/LCMLicenseManager/Service"
+                        ]
+                    }
+                ],
+                "ListenerArn": {
+                    "Ref": "ServiceLBListener"
+                },
+                "Priority": 2
+            }
+        },
+        "Instance1GenericServiceListenerRule": {
+            "Type": "AWS::ElasticLoadBalancingV2::ListenerRule",
+            "Properties": {
+                "Actions": [
+                    {
+                        "Type": "forward",
+                        "TargetGroupArn": {
+                            "Ref": "Instance1GenericServiceTargetGroup"
+                        }
+                    }
+                ],
+                "Conditions": [
+                    {
+                        "Field": "path-pattern",
+                        "Values": [
+                            "/instance1LCMGenericService/Service1"
+                        ]
+                    }
+                ],
+                "ListenerArn": {
+                    "Ref": "ServiceLBListener"
+                },
+                "Priority": 3
+            }
+        },
+        "ASLaunchConfig": {
+            "Type": "AWS::AutoScaling::LaunchConfiguration",
+            "Properties": {
+                "ImageId": {
+				    "Fn::If": [
+                        "IsOmnichannel",
+						{
+						    "Fn::FindInMap": [
+							    "RegionMap",
+								{
+								    "Ref": "AWS::Region"
+								},
+								"omnichannelimg"
+							]
+						},
+						{
+						    "Fn::FindInMap": [
+							    "RegionMap",
+								{
+								    "Ref": "AWS::Region"
+								},
+								"voiceimg"
+							]
+						}
+					]
+                },
+                "InstanceType": {
+                    "Fn::If": [
+                        "West3Region",
+                        {
+                            "Fn::FindInMap": [
+                                "EC2VolumeMap",
+                                {
+                                    "Ref": "EC2InstanceType"
+                                },
+                                "west3ec2instancetype"
+                            ]
+                        },
+                        {
+                            "Fn::FindInMap": [
+                                "EC2VolumeMap",
+                                {
+                                    "Ref": "EC2InstanceType"
+                                },
+                                "ec2instancetype"
+                            ]
+                        }
+                    ]
+                },
+                "SecurityGroups": [
+                    {
+                        "Ref": "AECPrivateGroup"
+                    }
+                ],
+                "BlockDeviceMappings": [
+                    {
+                        "DeviceName": "/dev/sda1",
+                        "Ebs": {
+                            "VolumeSize": {
+                                "Fn::FindInMap": [
+                                    "EC2VolumeMap",
+                                    {
+                                        "Ref": "EC2InstanceType"
+                                    },
+                                    "volumesize"
+                                ]
+                            }
+                        }
+                    }
+                ],
+                "KeyName": {
+                    "Ref": "KeyPairName"
+                },
+                "UserData": {
+                    "Fn::Base64": {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "<powershell>\n",
+                                "$text = '{",
+                                "\"PUBLIC_ELB_DNS\":\"",
+                                {
+									"Ref": "CFDomainName"
+								},
+                                "\",",
+                                "\"PUBLIC_ELB_PROTOCOL\":\"",
+                                "https",
+                                "\",",
+                                "\"PRIVATE_ELB_DNS\":\"",
+                                {
+                                    "Fn::GetAtt": [
+                                        "ServiceLB",
+                                        "DNSName"
+                                    ]
+                                },
+                                "\",",
+                                "\"RDS_ENDPOINT\":\"",
+                                {
+                                    "Ref": "RDSDB"
+                                },
+                                "\",",
+                                "\"RDS_USERNAME\":\"",
+                                {
+                                    "Ref": "DBMasterUser"
+                                },
+                                "\",",
+                                "\"RDS_PASSWORD\":\"",
+                                {
+                                    "Ref": "DBMasterPassword"
+                                },
+                                "\"",
+                                "}'",
+                                "\n",
+                                "New-Item -Force -Path 'C:\\Program Files\\LCM\\Acqueon Services\\Data\\serverdetails.json' -value $text -ItemType file",
+                                "\n</powershell>\n",
+                                "<persist>true</persist>"
+                            ]
+                        ]
+                    }
+                }
+            }
+        },
+        "ASGroup": {
+            "Type": "AWS::AutoScaling::AutoScalingGroup",
+            "Properties": {
+                "LaunchConfigurationName": {
+                    "Ref": "ASLaunchConfig"
+                },
+                "MinSize": "2",
+                "MaxSize": "2",
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": {
+                            "Fn::Join": [
+                                "-",
+                                [
+                                    "AEC",
+                                    {
+                                        "Fn::Select": [
+                                            0,
+                                            {
+                                                "Fn::Split": [
+                                                    "-",
+                                                    {
+                                                        "Ref": "AWS::StackName"
+                                                    }
+                                                ]
+                                            }
+                                        ]
+                                    },
+                                    {
+                                        "Fn::Select": [
+                                            1,
+                                            {
+                                                "Fn::Split": [
+                                                    "-",
+                                                    {
+                                                        "Ref": "AWS::StackName"
+                                                    }
+                                                ]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            ]
+                        },
+                        "PropagateAtLaunch": "true"
+                    }
+                ],
+                "TargetGroupARNs": [
+                    {
+                        "Ref": "LCMTargetGroup"
+                    },
+                    {
+                        "Ref": "ScriptEngineTargetGroup"
+                    },
+                    {
+                        "Ref": "LicenseManagerTargetGroup"
+                    },
+                    {
+                        "Ref": "Instance1GenericServiceTargetGroup"
+                    }
+                ],
+                "VPCZoneIdentifier": [
+                    {
+                        "Ref": "AECSubnetPrivate1"
+                    },
+                    {
+                        "Ref": "AECSubnetPrivate2"
+                    }
+                ]
+            }
+        },
+        "cfdistribution": {
+            "Type": "AWS::CloudFront::Distribution",
+            "Properties": {
+                "DistributionConfig": {
+                    "Aliases": [
+						{
+							"Ref": "CFDomainName"
+						}
+					],
+                    "ViewerCertificate": {
+                        "AcmCertificateArn": {
+							"Ref": "CFCertificate"
+						},
+						"SslSupportMethod": "sni-only"
+                    },
+                    "Enabled": "true",
+                    "Origins": [
+                        {
+                            "DomainName": {
+                                "Ref": "AECLBARecord"
+                            },
+                            "Id": "AECOrigin",
+                            "CustomOriginConfig": {
+                                "HTTPPort": "80",
+                                "HTTPSPort": "443",
+                                "OriginProtocolPolicy": "match-viewer"
+                            }
+                        }
+                    ],
+                    "DefaultCacheBehavior": {
+                        "AllowedMethods": [
+                            "DELETE",
+                            "GET",
+                            "HEAD",
+                            "OPTIONS",
+                            "PATCH",
+                            "POST",
+                            "PUT"
+                        ],
+                        "CachedMethods": [
+                            "GET",
+                            "HEAD",
+                            "OPTIONS"
+                        ],
+                        "ForwardedValues": {
+                            "QueryString": "true",
+                            "Cookies": {
+                                "Forward": "all"
+                            }
+                        },
+                        "TargetOriginId": "AECOrigin",
+                        "ViewerProtocolPolicy": "redirect-to-https"
+                    }
+                }
+            }
+        },
+        "AECLBARecord": {
+            "Type": "AWS::Route53::RecordSet",
+            "Properties": {
+                "AliasTarget": {
+                    "DNSName": {
+                        "Fn::GetAtt": [
+                            "AECLB",
+                            "DNSName"
+                        ]
+                    },
+                    "HostedZoneId": {
+                        "Fn::GetAtt": [
+                            "AECLB",
+                            "CanonicalHostedZoneID"
+                        ]
+                    }
+                },
+                "HostedZoneId": {
+                    "Ref": "DomainHostedZone"
+                },
+                "Name": {
+                    "Fn::Join": [
+                        "",
+                        [
+                            "ELB",
+                            {
+                                "Ref": "CFDomainName"
+                            }
+                        ]
+                    ]
+                },
+                "Type": "A"
+            }
+        },
+        "CFARecord": {
+            "Type": "AWS::Route53::RecordSet",
+            "Properties": {
+                "AliasTarget": {
+                    "DNSName": {
+                        "Fn::GetAtt": [
+                            "cfdistribution",
+                            "DomainName"
+                        ]
+                    },
+                    "HostedZoneId": "Z2FDTNDATAQYW2"
+                },
+                "HostedZoneId": {
+                    "Ref": "DomainHostedZone"
+                },
+                "Name": {
+                    "Ref": "CFDomainName"
+                },
+                "Type": "A"
+            }
+        }
+    },
+    "Outputs": {
+        "cfdistributionDomainName": {
+            "Value": {
+                "Fn::GetAtt": [
+                    "cfdistribution",
+                    "DomainName"
+                ]
+            }
+        }
+    }
+}

@@ -1,0 +1,78 @@
+Description: >
+  This template contains the security groups required by our entire stack.
+
+Parameters:
+  EnvironmentName:
+    AllowedPattern: ^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$
+    Description: An environment name that will be prefixed to resource names.
+    Type: String
+  VPCID:
+    Type: AWS::EC2::VPC::Id
+    Description: The VPC ID the Security Groups should be deployed to
+  BastionSecurityGroup:
+    Type: AWS::EC2::SecurityGroup::Id
+    Description: The Bastion Host security group for SSH into the ECS machines 
+Resources:
+
+  ECSHostSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties: 
+      VpcId: !Ref VPCID
+      GroupDescription: Access to the ECS hosts and the tasks/containers that run on them
+      SecurityGroupIngress:
+      # Only allow inbound access to ECS from the ELB
+      - SourceSecurityGroupId: !Ref LoadBalancerSecurityGroup 
+        IpProtocol: '-1'
+      - SourceSecurityGroupId: !Ref BastionSecurityGroup
+        IpProtocol: 'tcp'
+        FromPort: 22
+        ToPort: 22
+      Tags: 
+      - Key: Name
+        Value: !Sub ${EnvironmentName}-ECS-Hosts
+
+  RDSSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Secure access to the RDS database by allowing only the ECS cluster
+      VpcId: !Ref VPCID
+      SecurityGroupIngress:
+      - SourceSecurityGroupId: !Ref ECSHostSecurityGroup
+        IpProtocol: '-1'
+      Tags:
+      - Key: Name
+        Value: !Sub ${EnvironmentName}-RDS
+
+  RDSIngressSelf:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref RDSSecurityGroup
+      SourceSecurityGroupId: !Ref RDSSecurityGroup
+      IpProtocol: '-1'
+
+
+  # This security group defines who/where is allowed to access the Application Load Balancer.
+  # The Ingress rules will be added to this Security Group by the subtemplates of this stack.
+  LoadBalancerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties: 
+      VpcId: !Ref VPCID
+      GroupDescription: Access to the load balancer that sits in front of ECS
+      Tags: 
+      - Key: Name
+        Value: !Sub ${EnvironmentName}-LoadBalancers
+
+Outputs:
+
+  ECSHostSecurityGroup: 
+    Description: A reference to the security group for ECS hosts
+    Value: !Ref ECSHostSecurityGroup
+
+  RDSSecurityGroup: 
+    Description: A reference to the security group for RDS
+    Value: !Ref RDSSecurityGroup
+
+  LoadBalancerSecurityGroup:
+    Description: A reference to the security group for load balancers
+    Value: !Ref LoadBalancerSecurityGroup
+

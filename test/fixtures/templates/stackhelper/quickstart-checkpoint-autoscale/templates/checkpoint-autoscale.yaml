@@ -1,0 +1,522 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Deploy a Check Point CloudGuard IaaS Security Gateway Auto Scaling Group, an external ALB/NLB, and optionally a Security Management Server and a web server Auto Scaling Group. (qs-1ofn34qmm)
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+    - Label:
+        default: General Settings
+      Parameters:
+      - VPC
+      - KeyPairName
+      - Tag
+      - AdminEmail
+      - AllowUploadDownload
+      - ExternalLoadBalancerType
+      - Protocol
+      - Certificate
+      - ServicePort
+    - Label:
+        default: Check Point CloudGuard IaaS Security Gateways Auto Scaling Group Configuration
+      Parameters:
+      - GatewaysSubnets
+      - GatewaysInstanceType
+      - GatewaysMinSize
+      - GatewaysMaxSize
+      - GatewaysLicense
+      - GatewaysPasswordHash
+      - GatewaysSIC
+    - Label:
+        default: Check Point CloudGuard IaaS Security Management Server Configuration
+      Parameters:
+      - ManagementDeploy
+      - ManagementInstanceType
+      - ManagementLicense
+      - ManagementPasswordHash
+      - GatewaysPolicy
+      - GatewaysBlades
+      - AdminAddressCIDR
+      - GatewaysAddresses
+    - Label:
+        default: Web Servers Auto Scaling Group Configuration
+      Parameters:
+      - ServersDeploy
+      - ServersSubnets
+      - ServersInstanceType
+      - ServersAMI
+    ParameterLabels:
+      Tag:
+        default: Auto Provision tag
+      VPC:
+        default: VPC
+      Protocol:
+        default: Protocol
+      Certificate:
+        default: HTTPS certificate
+      ServicePort:
+        default: Custom service port
+      ExternalLoadBalancerType:
+        default: External Load Balancer
+      AdminEmail:
+        default: Email address
+      KeyPairName:
+        default: Key name
+      ManagementDeploy:
+        default: Deploy Management Server
+      ServersDeploy:
+        default: Deploy servers
+      GatewaysSubnets:
+        default: Subnets
+      GatewaysInstanceType:
+        default: Instance type
+      GatewaysMinSize:
+        default: Minimum group size
+      GatewaysMaxSize:
+        default: Maximum group size
+      GatewaysLicense: 
+        default: License
+      GatewaysPasswordHash:
+        default: Password hash
+      GatewaysSIC:
+        default: SIC key
+      AllowUploadDownload:
+        default: Allow upload & download
+      ManagementInstanceType:
+        default: Instance type
+      ManagementLicense:
+        default: License
+      ManagementPasswordHash:
+        default: Password hash
+      AdminAddressCIDR:
+        default: Administrator addresses
+      GatewaysAddresses:
+        default: Gateways addresses
+      GatewaysPolicy:
+        default: Security Policy
+      GatewaysBlades:
+        default: Default Blades
+      ServersSubnets:
+        default: Subnet IDs
+      ServersInstanceType:
+        default: Instance type
+      ServersAMI:
+        default: AMI ID
+Parameters:
+  Tag:
+    Description: The tag is used by the Security Management Server to automatically provision the Security Gateways. Must be up to 12 alphanumeric characters and unique for each Quick Start deployment
+    Type: String
+    Default: QuickStart
+    AllowedPattern: "^[a-zA-Z0-9-]*$"
+    MinLength: 1
+    MaxLength: 12
+    ConstraintDescription: The tag must be up to 12 alphanumeric character
+  VPC:
+    Description: Select an existing VPC
+    Type: AWS::EC2::VPC::Id
+    MinLength: 1
+    ConstraintDescription: You must select a VPC
+  Protocol:
+    Description: The protocol to use
+    Type: String
+    Default: HTTP
+    AllowedValues:
+    - HTTP
+    - HTTPS
+  Certificate:
+    Description: Amazon Resource Name (ARN) of an HTTPS Certificate, ignored if the selected protocol is HTTP
+    Type: String
+    AllowedPattern: "(|arn:aws:[a-z]+::[0-9]{12}:server-certificate/[a-zA-Z0-9-]*)"
+    ConstraintDescription: 'Must be a valid Amazon Resource Name (ARN), for example: arn:aws:iam::123456789012:server-certificate/web-server-certificate'
+  ExternalLoadBalancerType:
+    Description: Use Network Load Balancer if you wish to preserve the source IP address and Application Load Balancer if you wish to perform SSL Offloading
+    Default: Network Load Balancer
+    Type: String
+    AllowedValues:
+    - Network Load Balancer
+    - Application Load Balancer
+  ServicePort:
+    Description: 'The external Load Balancer listens to this port. Leave this field blank to use default ports: 80 for HTTP and 443 for HTTPS'
+    Type: String
+    AllowedPattern: ^([0-9]{1,4}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5])?$
+    ConstraintDescription: Custom service port must be a number between 0 and 65535
+  AdminEmail:
+    Description: Notifications about scaling events will be sent to this email address (optional)
+    Type: String
+    Default: ''
+    AllowedPattern: "(|([a-zA-Z0-9_\\-\\.]+)@((\\[[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}\\.)|(([a-zA-Z0-9\\-]+\\.)+))([a-zA-Z]{2,4}|[0-9]{1,3})(\\]?))"
+    ConstraintDescription: Must be a valid email address
+  KeyPairName:
+    Description: The EC2 Key Pair to allow SSH access to the instances created by this stack
+    Type: AWS::EC2::KeyPair::KeyName
+    MinLength: 1
+    ConstraintDescription: Must be the name of an existing EC2 KeyPair
+  ManagementDeploy:
+    Description: Select 'No' to use an existing Security Management Server or to deploy one later and to ignore the other parameters of this section
+    Type: String
+    Default: 'Yes'
+    AllowedValues:
+    - 'Yes'
+    - 'No'
+  ServersDeploy:
+    Description: Select 'Yes' to deploy web servers and an internal Application Load Balancer. If you select 'No' the other parameters of this section will be ignored
+    Type: String
+    Default: 'No'
+    AllowedValues:
+    - 'Yes'
+    - 'No'
+  GatewaysSubnets:
+    Description: Select at least 2 public subnets in the VPC. If you choose to deploy a Security Management Server it will be deployed in the first subnet
+    Type: List<AWS::EC2::Subnet::Id>
+    MinLength: 1
+  GatewaysInstanceType:
+    Description: The EC2 instance type for the Security Gateways
+    Type: String
+    Default: c5.xlarge
+    AllowedValues:
+    - c5.large
+    - c5.xlarge
+    - c5.2xlarge
+    - c5.4xlarge
+    - c5.9xlarge
+    - c5.18xlarge
+    ConstraintDescription: Must be a valid EC2 instance type
+  GatewaysMinSize:
+    Description: The minimal number of Security Gateways
+    Default: 2
+    Type: Number
+    MinValue: 1
+  GatewaysMaxSize:
+    Description: The maximal number of Security Gateways
+    Default: 5
+    Type: Number
+    MinValue: 1
+  GatewaysLicense:
+    Description: The license to install on the Security Gateways
+    Type: String
+    Default: R80.30-PAYG-NGTX
+    AllowedValues:
+    - R80.30-BYOL
+    - R80.30-PAYG-NGTP
+    - R80.30-PAYG-NGTX
+  GatewaysPasswordHash:
+    Description: Admin user's password hash (use command "openssl passwd -1 PASSWORD" to get the PASSWORD's hash) (optional)
+    Type: String
+    Default: ''
+    AllowedPattern: "[\\$\\./a-zA-Z0-9]*"  
+    NoEcho: true
+  GatewaysSIC:
+    Description: The Secure Internal Communication key creates trusted connections between Check Point components. Choose a random string consisting of at least 8 alphanumeric characters
+    NoEcho: true
+    MinLength: 8
+    Type: String
+    AllowedPattern: "[a-zA-Z0-9]*"
+    ConstraintDescription: Secure Internal Communication activation key should contain only alpha numeric characters and be at least 8 characters long
+  AllowUploadDownload:
+    Description: Automatically download Blade Contracts and other important data. Improve product experience by sending data to Check Point
+    Type: String
+    Default: 'No'
+    AllowedValues:
+    - 'Yes'
+    - 'No'
+  ManagementInstanceType:
+    Description: The EC2 instance type of the Security Management Server
+    Type: String
+    Default: m5.xlarge
+    AllowedValues:
+    - m5.large
+    - m5.xlarge
+    - m5.2xlarge
+    - m5.4xlarge
+    - m5.12xlarge
+    - m5.24xlarge
+    ConstraintDescription: Must be a valid EC2 instance type
+  ManagementLicense:
+    Description: The license to install on the Security Management Server
+    Type: String
+    Default: R80.30-PAYG-MGMT
+    AllowedValues:
+    - R80.30-BYOL
+    - R80.30-PAYG-MGMT
+  ManagementPasswordHash:
+    Description: Admin user's password hash (use command "openssl passwd -1 PASSWORD" to get the PASSWORD's hash) (optional)
+    Type: String
+    Default: ''
+    AllowedPattern: "[\\$\\./a-zA-Z0-9]*"
+    NoEcho: true
+  AdminAddressCIDR:
+    Description: Allow web, SSH, and graphical clients only from this network to communicate with the Security Management Server
+    Type: String
+    AllowedPattern: "^(([0-9]{1,3}\\.){3}[0-9]{1,3}/([0-9]|[1-2][0-9]|3[0-2]))?$"
+  GatewaysAddresses:
+    Description: Allow gateways only from this network to communicate with the Security Management Server
+    Type: String
+    Default: 10.0.0.0/16
+    AllowedPattern: "^([0-9]{1,3}\\.){3}[0-9]{1,3}/([0-9]|[1-2][0-9]|3[0-2])$"
+  GatewaysPolicy:
+    Description: The name of the Security Policy package to be installed on the gateways in the Security Gateways Auto Scaling group
+    Type: String
+    Default: Standard
+    MinLength: 1
+  GatewaysBlades:
+    Description: Turn on/off the Intrusion Prevention System, Application Control, Anti-Virus and Anti-Bot Blades (additional Blades can be manually turned on later)
+    Type: String
+    AllowedValues:
+    - 'On'
+    - 'Off'
+    Default: 'On'
+  ServersSubnets:
+    Description: Provide at least 2 private subnet IDs in the chosen VPC, separated by commas (e.g. subnet-0d72417c,subnet-1f61306f,subnet-1061d06f)
+    Type: String
+    AllowedPattern: "^((subnet-(([0-9a-f]{8})|([0-9a-f]{17})),)*(subnet-(([0-9a-f]{8})|([0-9a-f]{17})))+)$|^$"
+    ConstraintDescription: Subnet IDs must be in the form subnet-xxxxxxxx or subnet-xxxxxxxxxxxxxxxxx, separated by commas without spaces
+  ServersInstanceType:
+    Description: The EC2 instance type for the web servers
+    Type: String
+    Default: t2.micro
+    AllowedValues:
+    - t2.nano
+    - t2.micro
+    - t2.small
+    - t2.medium
+    - t2.large
+    - t2.xlarge
+    - t2.2xlarge
+    ConstraintDescription: Must be a valid EC2 instance type
+  ServersAMI:
+    Description: The Amazon Machine Image ID of a preconfigured web server (e.g. ami-0dc7dc63)
+    Type: String
+    AllowedPattern: "^(ami-(([0-9a-f]{8})|([0-9a-f]{17})))?$"
+    ConstraintDescription: Amazon Machine Image ID must be in the form ami-xxxxxxxx or ami-xxxxxxxxxxxxxxxxx
+Conditions:
+  GovCloudCondition: !Equals [!Ref "AWS::Region", us-gov-west-1]
+  EnableBlades: !Equals [!Ref GatewaysBlades, 'On']
+  DeployManagement: !Equals [!Ref ManagementDeploy, 'Yes']
+  DeployServers: !Equals [!Ref ServersDeploy, 'Yes']
+  DeployHTTPServers: !And [!Equals [!Ref ServersDeploy, 'Yes'], !Equals [!Ref Protocol, HTTP]]
+  DeployHTTPSServers: !And [!Equals [!Ref ServersDeploy, 'Yes'], !Equals [!Ref Protocol, HTTPS]]
+  HTTP: !Equals [!Ref Protocol, HTTP]
+  HTTPS: !Equals [!Ref Protocol, HTTPS]
+  HTTPListener: !And [!Equals [!Ref ExternalLoadBalancerType, Application Load Balancer], !Equals [!Ref Protocol, HTTP]]
+  HTTPSListener: !And [!Equals [!Ref ExternalLoadBalancerType, Application Load Balancer], !Equals [!Ref Protocol, HTTPS]]
+  ALB: !Equals [!Ref ExternalLoadBalancerType, Application Load Balancer]
+  NLB: !Equals [!Ref ExternalLoadBalancerType, Network Load Balancer]
+  AllowUploadDownload: !Equals [!Ref AllowUploadDownload, 'Yes']
+  ProvidedPort: !Not [!Equals [!Ref ServicePort, '']]
+Resources:
+  ManagementStack:
+    Type: AWS::CloudFormation::Stack
+    Condition: DeployManagement
+    Properties:
+      TemplateURL: https://s3.amazonaws.com/CloudFormationTemplate/QuickStart/AutoScaling/management.json
+      Parameters:
+        VPC: !Ref VPC
+        Subnet: !Select
+        - 0
+        - !Ref GatewaysSubnets
+        Version: !Ref ManagementLicense
+        InstanceType: !Ref ManagementInstanceType
+        Name: !Sub ${Tag}-management
+        KeyName: !Ref KeyPairName
+        PasswordHash: !Ref ManagementPasswordHash
+        BootstrapScript: !Join
+        - ','
+        - - "sed -i '/template_name/c\\template_name: quickstart-management' /etc/cloud-version"
+          - !Sub
+            - 'autoprov-cfg -f init AWS -mn ${Tag}-management -tn ${Tag}-template -cn ${Tag}-controller -po ${GatewaysPolicy} -otp ${GatewaysSIC} -r ${AWS::Region} -ver ${Version} -iam'
+            - {Version: !Select [0, !Split ['-', !Ref GatewaysLicense]]}
+          - !If
+            - EnableBlades
+            - !Sub autoprov-cfg -f set template -tn ${Tag}-template -ips -appi -av -ab
+            - !Ref AWS::NoValue
+        AdminSubnet: !Ref AdminAddressCIDR
+        GatewaysAddresses: !Ref GatewaysAddresses
+        AllowUploadDownload: !If [AllowUploadDownload, 'true', 'false']
+  ExternalALBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Condition: ALB
+    Properties:
+      GroupDescription: External ALB security group
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: !If [ProvidedPort, !Ref ServicePort, !If [HTTP, '80', '443']]
+        ToPort: !If [ProvidedPort, !Ref ServicePort, !If [HTTP, '80', '443']]
+        CidrIp: 0.0.0.0/0
+  ExternalApplicationLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Condition: ALB
+    Properties:
+      Subnets: !Ref GatewaysSubnets
+      Scheme: internet-facing
+      SecurityGroups: 
+      - !Ref ExternalALBSecurityGroup
+      Type: application
+  ExternalNetworkLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Condition: NLB
+    Properties:
+      Subnets: !Ref GatewaysSubnets
+      Scheme: internet-facing
+      Type: network
+  ExternalLBTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Port: 8081
+      VpcId: !Ref VPC
+      Protocol: !If [NLB, TCP, !Ref Protocol] 
+  ExternalTCPListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Condition: NLB
+    Properties:
+      DefaultActions:
+      - Type: forward
+        TargetGroupArn: !Ref ExternalLBTargetGroup
+      LoadBalancerArn: !Ref ExternalNetworkLoadBalancer
+      Port: !If [ProvidedPort, !Ref ServicePort, !If [HTTP, '80', '443']]
+      Protocol: TCP
+  ExternalHTTPListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Condition: HTTPListener
+    Properties:
+      DefaultActions:
+      - Type: forward
+        TargetGroupArn: !Ref ExternalLBTargetGroup
+      LoadBalancerArn: !Ref ExternalApplicationLoadBalancer
+      Port: !If [ProvidedPort, !Ref ServicePort, !If [HTTP, '80', '443']]
+      Protocol: HTTP
+  ExternalHTTPSListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Condition: HTTPSListener
+    Properties:
+      DefaultActions:
+      - Type: forward
+        TargetGroupArn: !Ref ExternalLBTargetGroup
+      LoadBalancerArn: !Ref ExternalApplicationLoadBalancer
+      Port: !If [ProvidedPort, !Ref ServicePort, !If [HTTP, '80', '443']]
+      Protocol: HTTPS
+      Certificates:
+      - CertificateArn: !Ref Certificate 
+  SecurityGatewaysStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: https://s3.amazonaws.com/CloudFormationTemplate/QuickStart/AutoScaling/autoscale.json
+      Parameters:
+        VPC: !Ref VPC
+        Subnets: !Join
+        - ','
+        - !Ref GatewaysSubnets
+        MinSize: !Ref GatewaysMinSize
+        MaxSize: !Ref GatewaysMaxSize
+        ManagementServer: !Sub ${Tag}-management
+        ConfigurationTemplate: !Sub ${Tag}-template
+        Name: !Sub ${Tag}-security-gateway
+        InstanceType: !Ref GatewaysInstanceType
+        AdminEmail: !Ref AdminEmail
+        KeyName: !Ref KeyPairName
+        PasswordHash: !Ref GatewaysPasswordHash
+        SICKey: !Ref GatewaysSIC
+        License: !Ref GatewaysLicense
+        TargetGroups: !Ref ExternalLBTargetGroup
+        AllowUploadDownload: !If [AllowUploadDownload, 'true', 'false']
+        BootstrapScript: "sed -i '/template_name/c\\template_name: quickstart-autoscale' /etc/cloud-version"
+  InternalALBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Condition: DeployServers
+    Properties:
+      GroupDescription: Internal ALB security group
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 8081
+        ToPort: 8081
+        SourceSecurityGroupId: !GetAtt [SecurityGatewaysStack, Outputs.SecurityGroup]
+      - IpProtocol: icmp
+        FromPort: -1
+        ToPort: -1
+        SourceSecurityGroupId: !GetAtt [SecurityGatewaysStack, Outputs.SecurityGroup]
+  InternalALBTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Condition: DeployServers
+    Properties: 
+      Port: !If [ProvidedPort, !Ref ServicePort, !If [HTTP, '80', '443']]
+      VpcId: !Ref VPC
+      Protocol: !Ref Protocol
+  InternalALB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Condition: DeployServers
+    Properties:
+      IpAddressType: ipv4
+      Subnets: !Split
+      - ','
+      - !Ref ServersSubnets
+      Scheme: internal
+      SecurityGroups:
+      - !Ref InternalALBSecurityGroup
+      Tags:
+      - Key: x-chkp-management
+        Value: !Sub ${Tag}-management
+      - Key: x-chkp-template
+        Value: !Sub ${Tag}-template
+  InternalHTTPListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Condition: DeployHTTPServers
+    Properties:
+      DefaultActions:
+      - Type: forward
+        TargetGroupArn: !Ref InternalALBTargetGroup
+      LoadBalancerArn: !Ref InternalALB
+      Port: 8081
+      Protocol: HTTP
+  InternalHTTPSListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Condition: DeployHTTPSServers
+    Properties:
+      DefaultActions:
+      - Type: forward
+        TargetGroupArn: !Ref InternalALBTargetGroup
+      LoadBalancerArn: !Ref InternalALB
+      Port: 8081
+      Protocol: HTTPS
+      Certificates:
+      - CertificateArn: !Ref Certificate
+  ServersStack:
+    Type: AWS::CloudFormation::Stack
+    Condition: DeployServers
+    Properties:
+      TemplateURL: https://s3.amazonaws.com/CloudFormationTemplate/QuickStart/AutoScaling/autoscale-custom.yaml
+      Parameters:
+        VPC: !Ref VPC
+        Subnets: !Ref ServersSubnets
+        Name: !Sub ${Tag}-server
+        ImageId: !Ref ServersAMI
+        InstanceType: !Ref ServersInstanceType
+        TargetGroups: !Ref InternalALBTargetGroup
+        KeyName: !Ref KeyPairName
+        MinSize: !Ref GatewaysMinSize
+        MaxSize: !Ref GatewaysMaxSize
+        AdminEmail: !Ref AdminEmail
+        SecurityGroup: !Ref InternalALBSecurityGroup
+Outputs:
+  InternalPort:
+    Description: The internal Load Balancer should listen to this port
+    Value: 8081
+  ManagementName:
+    Description: The name that represents the Security Management Server
+    Value: !Sub ${Tag}-management
+  ConfigurationTemplateName:
+    Description: The name that represents the configuration template. Configurations required to automatically provision the Gateways in the Auto Scaling Group, such as what Security Policy to install and which Blades to enable, will be placed under this template name
+    Value: !Sub ${Tag}-template
+  ControllerName:
+    Description: The name that represents the controller. Configurations required to connect to your AWS environment, such as credentials and regions, will be placed under this controller name
+    Value: !Sub ${Tag}-controller
+  ALBURL:
+    Description: The URL of the external Application Load Balancer
+    Condition: ALB
+    Value: !GetAtt
+    - ExternalApplicationLoadBalancer
+    - DNSName
+  NLBURL:
+    Description: The URL of the external Network Load Balancer
+    Condition: NLB
+    Value: !GetAtt
+    - ExternalNetworkLoadBalancer
+    - DNSName

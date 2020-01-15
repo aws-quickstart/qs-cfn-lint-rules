@@ -1,0 +1,1694 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Sophos Outbound Proxy Stack - **WARNING** Scalable UTM CloudFormation template.
+  You will be billed for the AWS resources used if you create a stack from this template.
+  **NOTICE** Copyright 2017 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+  Licensed under the Apache License, Version 2.0 (the "License").
+  You may not use this file except in compliance with the License.
+  A copy of the License is located at http://www.apache.org/licenses/LICENSE-2.0 or in the "license" file accompanying this file.
+  This file is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND,
+  either express or implied. See the License for the specific language governing permissions and limitations under the License (qs-1nnclpo52).
+
+Parameters:
+  ApplicationVPCRange:
+    Description: Please provide a CIDR block to be used by the Application VPC.  The Application VPC will host your application servers and Sophos OGW instances.
+    Type: String
+    Default: 10.100.0.0/16
+    AllowedPattern: ^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?).){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)(/([0-9]|[1-2][0-9]|3[0-2]))$
+    ConstraintDescription: 'Must be IPv4 CIDR notation: X.X.X.X/X'
+  ApplicationPublicSubnet1:
+    Description: CIDR block for a public subnet in the first availability zone
+    Type: String
+    Default: 10.100.1.0/24
+    AllowedPattern: ^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?).){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)(/([0-9]|[1-2][0-9]|3[0-2]))$
+    ConstraintDescription: 'Must be IPv4 CIDR notation: X.X.X.X/X'
+  ApplicationPublicSubnet2:
+    Description: CIDR block for a public subnet in the second availability zone
+    Type: String
+    Default: 10.100.2.0/24
+    AllowedPattern: ^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?).){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)(/([0-9]|[1-2][0-9]|3[0-2]))$
+    ConstraintDescription: 'Must be IPv4 CIDR notation: X.X.X.X/X'
+  ApplicationPrivateSubnet1:
+    Description: CIDR block for a private subnet in the first availability zone
+    Type: String
+    Default: 10.100.101.0/24
+    AllowedPattern: ^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?).){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)(/([0-9]|[1-2][0-9]|3[0-2]))$
+    ConstraintDescription: 'Must be IPv4 CIDR notation: X.X.X.X/X'
+  ApplicationPrivateSubnet2:
+    Description: CIDR block for a private subnet in the second availability zone
+    Type: String
+    Default: 10.100.102.0/24
+    AllowedPattern: ^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?).){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)(/([0-9]|[1-2][0-9]|3[0-2]))$
+    ConstraintDescription: 'Must be IPv4 CIDR notation: X.X.X.X/X'
+  OGWInstanceSize:
+    Type: String
+    AllowedValues:
+      - t2.nano
+      - t2.micro
+      - t2.small
+      - t2.medium
+      - t2.large
+      - t2.xlarge
+      - t2.2xlarge
+      - m4.large
+      - m4.xlarge
+      - m4.2xlarge
+      - m4.4xlarge
+      - m4.10xlarge
+      - m4.16xlarge
+      - c4.large
+      - c4.xlarge
+      - c4.2xlarge
+      - c4.4xlarge
+      - c4.8xlarge
+      - g3.4xlarge
+      - g3.8xlarge
+      - g3.16xlarge
+      - g2.2xlarge
+      - g2.8xlarge
+      - r4.large
+      - r4.xlarge
+      - r4.2xlarge
+      - r4.4xlarge
+      - r4.8xlarge
+      - r4.16xlarge
+      - d2.xlarge
+      - d2.2xlarge
+      - d2.4xlarge
+      - d2.8xlarge
+      - i2.xlarge
+      - i2.2xlarge
+      - i2.4xlarge
+      - i2.8xlarge
+      - i3.large
+      - i3.xlarge
+      - i3.2xlarge
+      - i3.4xlarge
+      - i3.8xlarge
+      - i3.16xlarge
+      - default
+    Default: default
+    Description: EC2 instance type for OGWs, outbound Gateways launched in application VPCs.  Default is c4.large.  If c4.large is not available in your region, a similar EC2 instance type will be used.
+  AuthToken:
+    Description: AuthToken for API access. This token would be used as a shared secret for API
+      communication between Outbound Gateways and the UTMs.  Alphunumeric value, 8 characters miniumum.
+    Type: String
+    NoEcho: 'True'
+    MinLength: 8
+    MaxLength: 64
+    AllowedPattern: ^[a-zA-Z0-9]*$
+    ConstraintDescription: can contain only alphanumeric characters, min. 8 characters.
+  awsAMI:
+    Description: Autodetect uses the latest AMI based on the pricing option you select.
+      Otherwise, specify an AMI ID.
+    Type: String
+    Default: autodetect
+  awsLicenseType:
+    Description: Select between Bring Your Own License (BYOL) or pay per instance-hour
+      (Hourly). This parameter does not take effect if you manually enter an AMI ID.
+    Type: String
+    AllowedValues:
+      - Hourly
+      - BYOL
+    Default: Hourly
+  utmControllerInstanceSize:
+    Description: The default EC2 instance type is m4.large. If m4.large is not available
+      in your region, a similar EC2 instance type will be used.
+    Type: String
+    AllowedValues:
+      - c3.2xlarge
+      - c3.4xlarge
+      - c3.8xlarge
+      - c3.large
+      - c3.xlarge
+      - c4.2xlarge
+      - c4.4xlarge
+      - c4.8xlarge
+      - c4.large
+      - c4.xlarge
+      - m3.2xlarge
+      - m3.large
+      - m3.medium
+      - m3.xlarge
+      - m4.2xlarge
+      - m4.large
+      - m4.xlarge
+      - t2.small
+      - default
+    Default: default
+  utmWorkerInstanceSize:
+    Description: The default EC2 instance type is m4.large. If m4.large is not available
+      in your region, a similar EC2 instance type will be used.
+    Type: String
+    AllowedValues:
+      - c3.2xlarge
+      - c3.4xlarge
+      - c3.8xlarge
+      - c3.large
+      - c3.xlarge
+      - c4.2xlarge
+      - c4.4xlarge
+      - c4.8xlarge
+      - c4.large
+      - c4.xlarge
+      - m3.2xlarge
+      - m3.large
+      - m3.medium
+      - m3.xlarge
+      - m4.2xlarge
+      - m4.large
+      - m4.xlarge
+      - t2.small
+      - default
+    Default: default
+  AvailabilityZones:
+    Type: List<AWS::EC2::AvailabilityZone::Name>
+    Description: Provide exactly TWO Availability Zones
+  awsNetworkPrefix:
+    Description: Please provide an available /16 CIDR block to be used by the VPC.
+      Only the first two octets are required. For example for the network 10.6.0.0/16
+      you should provide 10.6
+    Type: String
+    Default: '10.15'
+    AllowedPattern: ^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?).){1}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$
+    ConstraintDescription: 'Must be only the first two octets, for example: 10.6'
+  awsTrustedNetwork:
+    Description: Only connections from this network are allowed to ports 22 and 4444.
+      E.g. 92.198.130.0/24. To allow access from anywhere use 0.0.0.0/0
+    Type: String
+    AllowedPattern: ^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?).){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)(/([0-9]|[1-2][0-9]|3[0-2]))$
+    ConstraintDescription: 'Must be IPv4 CIDR notation: X.X.X.X/X'
+  optionalExistingElasticIP:
+    Description: Elastic IP to assign to the UTM instance. If left empty a new Elastic
+      IP will be allocated automatically.
+    Type: String
+    Default: ''
+  optionalExistingS3Bucket:
+    Description: S3 Bucket to store and restore backups. If left empty a new Bucket
+      will be created automatically.
+    Type: String
+    Default: ''
+  optionalLicensePool:
+    Description: With BYOL the license is automatically fetched from the S3 bucket
+      (one license per deployment). If you leave this field empty, you can install
+      the license using WebAdmin.
+    Type: String
+    Default: ''
+  basicHostname:
+    Description: The hostname can only contain lower and uppercase letters, numbers,
+      dots(.), dashes(-) and needs to begin with a letter or a number (max. 64 characters).
+    Type: String
+    MaxLength: '64'
+    AllowedPattern: ^[0-9A-Za-z]{1}([A-Za-z0-9.-]*)$
+    ConstraintDescription: Invalid hostname. The hostname can only contain lower and
+      uppercase letters, numbers, dots(.), dashes(-) and needs to begin with a letter
+      or a number (max. 64 characters).
+  basicAdminEmail:
+    Description: The email address is only used for UTM administrative purposes.
+    Type: String
+    AllowedPattern: ^(?:[a-z0-9!#$%&'*+\/=?^_`{|}~-]+(?:\.[a-z0-9!#$%&'*+\/=?^_`{|}~-]+)*|"(?:[\x01-\x08\x0b\x0c\x0e-\x1f\x21\x23-\x5b\x5d-\x7f]|\\[\x01-\x09\x0b\x0c\x0e-\x7f])*")@(?:(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]*[a-z0-9])?|\[(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?|[a-z0-9-]*[a-z0-9]:(?:[\x01-\x08\x0b\x0c\x0e-\x1f\x21-\x5a\x53-\x7f]|\\[\x01-\x09\x0b\x0c\x0e-\x7f])+)\])$
+    ConstraintDescription: Must be a valid email address.
+  basicAdminPassword:
+    Description: Minimum 8 characters
+    Type: String
+    NoEcho: 'True'
+    MinLength: 8
+    MaxLength: 64
+    AllowedPattern: ^[-_! a-zA-Z0-9]*$
+    ConstraintDescription: can contain only alphanumeric characters, spaces, dashes, exclamations and underscores (min. 8 characters).
+  basicOrganization:
+    Description: Required for Sophos UTM licensing
+    Type: String
+    AllowedPattern: ^[0-9A-Za-z]{1}([A-Za-z0-9.-]*)$
+    MinLength: 1
+    MaxLength: 64
+    ConstraintDescription: Can only contain lower and
+      uppercase letters, numbers, dots(.), dashes(-) and needs to begin with a letter
+      or a number (max. 64 characters).
+  basicCity:
+    Description: Required for Sophos UTM licensing
+    Type: String
+    AllowedPattern: ^[0-9A-Za-z]{1}([A-Za-z0-9.-]*)$
+    MinLength: 1
+    MaxLength: 64
+    ConstraintDescription: Can only contain lower and
+      uppercase letters, numbers, dots(.), dashes(-) and needs to begin with a letter
+      or a number (max. 64 characters).
+  basicCountry:
+    Description: Required for Sophos UTM licensing
+    Type: String
+    AllowedValues:
+      - Andorra
+      - United Arab Emirates
+      - Afghanistan
+      - Antigua and Barbuda
+      - Anguilla
+      - Albania
+      - Armenia
+      - Netherlands Antilles
+      - Angola
+      - Antarctica
+      - Argentina
+      - American Samoa
+      - Austria
+      - Australia
+      - Aland Islands
+      - Aruba
+      - Azerbaidjan
+      - Bosnia and Herzegovina
+      - Barbados
+      - Bangladesh
+      - Belgium
+      - Burkina Faso
+      - Bulgaria
+      - Bahrain
+      - Burundi
+      - Benin
+      - Saint Barthelemey
+      - Bermuda
+      - Brunei Darussalam
+      - Bolivia
+      - Brazil
+      - Bahamas
+      - Bhutan
+      - Bouvet Island
+      - Botswana
+      - Belarus
+      - Belize
+      - Canada
+      - Cocos Islands
+      - Congo, Democratic Rebpulic of the
+      - Central African Republic
+      - Congo
+      - Switzerland
+      - Ivory Coast
+      - Cook Islands
+      - Chile
+      - Cameroon
+      - China
+      - Colombia
+      - Costa Rica
+      - Cuba
+      - Cape Verde
+      - Christmas Island
+      - Cyprus
+      - Czech Republic
+      - Germany
+      - Djibouti
+      - Denmark
+      - Dominica
+      - Dominican Republic
+      - Algeria
+      - Ecuador
+      - Estonia
+      - Egypt
+      - Western Sahara
+      - Eritrea
+      - Spain
+      - Ethiopia
+      - Finland
+      - Fiji
+      - Falkland Islands
+      - Micronesia
+      - Faroe Islands
+      - France
+      - Gabon
+      - Great Britain
+      - Grenada
+      - Georgia
+      - French Guyana
+      - Guernsey
+      - Ghana
+      - Gibraltar
+      - Greenland
+      - Gambia
+      - Guinea
+      - Guadeloupe
+      - Equatorial Guinea
+      - Greece
+      - S. Georgia & S. Sandwich Isls.
+      - Guatemala
+      - Guam (USA)
+      - Guinea Bissau
+      - Guyana
+      - Hong Kong
+      - Heard and McDonald Islands
+      - Honduras
+      - Croatia
+      - Haiti
+      - Hungary
+      - Indonesia
+      - Ireland
+      - Israel
+      - Isle of Man
+      - India
+      - British Indian Ocean Territory
+      - Iraq
+      - Iran
+      - Iceland
+      - Italy
+      - Jersey
+      - Jamaica
+      - Jordan
+      - Japan
+      - Kenya
+      - Kyrgyz Republic (Kyrgyzstan)
+      - Cambodia, Kingdom of
+      - Kiribati
+      - Comoros
+      - Saint Kitts & Nevis Anguilla
+      - North Korea
+      - South Korea
+      - Kuwait
+      - Cayman Islands
+      - Kazakhstan
+      - Laos
+      - Lebanon
+      - Saint Lucia
+      - Liechtenstein
+      - Sri Lanka
+      - Liberia
+      - Lesotho
+      - Lithuania
+      - Luxembourg
+      - Latvia
+      - Libya
+      - Morocco
+      - Monaco
+      - Moldavia
+      - Montenegro
+      - Saint Martin (French)
+      - Madagascar
+      - Marshall Islands
+      - Macedonia
+      - Mali
+      - Myanmar
+      - Mongolia
+      - Macau
+      - Northern Mariana Islands
+      - Martinique (French)
+      - Mauritania
+      - Montserrat
+      - Malta
+      - Mauritius
+      - Maldives
+      - Malawi
+      - Mexico
+      - Malaysia
+      - Mozambique
+      - Namibia
+      - New Caledonia (French)
+      - Niger
+      - Norfolk Island
+      - Nigeria
+      - Nicaragua
+      - Netherlands
+      - Norway
+      - Nepal
+      - Nauru
+      - Niue
+      - New Zealand
+      - Oman
+      - Panama
+      - Peru
+      - Polynesia (French)
+      - Papua New Guinea
+      - Philippines
+      - Pakistan
+      - Poland
+      - Saint Pierre and Miquelon
+      - Pitcairn Island
+      - Puerto Rico
+      - Palestinian Territory (Occupied)
+      - Portugal
+      - Palau
+      - Paraguay
+      - Qatar
+      - Reunion (French)
+      - Romania
+      - Serbia
+      - Russian Federation
+      - Rwanda
+      - Saudi Arabia
+      - Solomon Islands
+      - Seychelles
+      - Sudan
+      - Sweden
+      - Singapore
+      - Saint Helena
+      - Slovenia
+      - Svalbard Jan Mayen Islands
+      - Slovak Republic
+      - Sierra Leone
+      - San Marino
+      - Senegal
+      - Somalia
+      - Suriname
+      - Saint Tome and Principe
+      - El Salvador
+      - Syria
+      - Swaziland
+      - Turks and Caicos Islands
+      - Chad
+      - French Southern Territories
+      - Togo
+      - Thailand
+      - Tadjikistan
+      - Tokelau
+      - Timor-Leste
+      - Turkmenistan
+      - Tunisia
+      - Tonga
+      - Turkey
+      - Trinidad and Tobago
+      - Tuvalu
+      - Taiwan
+      - Tanzania
+      - Ukraine
+      - Uganda
+      - United Kingdom
+      - USA Minor Outlying Islands
+      - United States
+      - Uruguay
+      - Uzbekistan
+      - Holy See (Vatican City State)
+      - Saint Vincent & Grenadines
+      - Venezuela
+      - Virgin Islands (British)
+      - Virgin Islands (USA)
+      - Vietnam
+      - Vanuatu
+      - Wallis and Futuna Islands
+      - Samoa
+      - Yemen
+      - Mayotte
+      - South Africa
+      - Zambia
+      - Zimbabwe
+  awsKeyName:
+    Description: Name of an existing EC2 KeyPair to enable SSH access, All EC2 instances will use this keypair for SSH access
+    Type: AWS::EC2::KeyPair::KeyName
+  debugMode:
+    Description: Enable debug logging on the UTM instances ("off" to disable; "on"
+      to enable)
+    Type: String
+    AllowedValues:
+      - 'on'
+      - 'off'
+    Default: 'off'
+  QSS3BucketName:
+    AllowedPattern: ^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$
+    ConstraintDescription: Quick Start bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-).
+    Default: aws-quickstart
+    Description: S3 bucket name for the Quick Start assets. Quick Start bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-).
+    Type: String
+  QSS3KeyPrefix:
+    AllowedPattern: ^[0-9a-zA-Z-/]*$
+    ConstraintDescription: Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).
+    Default: quickstart-sophos-outboundproxy/
+    Description: S3 key prefix for the Quick Start assets. Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).
+    Type: String
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Instance Configuration
+        Parameters:
+          - awsAMI
+          - awsLicenseType
+          - utmControllerInstanceSize
+          - utmWorkerInstanceSize
+          - OGWInstanceSize
+          - AuthToken
+      - Label:
+          default: Proxy Infrastructure Configuration
+        Parameters:
+          - AvailabilityZones
+          - awsNetworkPrefix
+          - awsTrustedNetwork
+          - optionalExistingElasticIP
+          - optionalExistingS3Bucket
+          - optionalLicensePool
+      - Label:
+          default: Application VPC Configuration
+        Parameters:
+          - ApplicationVPCRange
+          - ApplicationPublicSubnet1
+          - ApplicationPublicSubnet2
+          - ApplicationPrivateSubnet1
+          - ApplicationPrivateSubnet2
+      - Label:
+          default: Settings for Initial UTM Setup
+        Parameters:
+          - basicHostname
+          - basicAdminEmail
+          - basicAdminPassword
+          - basicOrganization
+          - basicCity
+          - basicCountry
+          - awsKeyName
+      - Label:
+          default: Debug Settings
+        Parameters:
+          - debugMode
+      - Label:
+          default: AWS Quick Start Configuration
+        Parameters:
+          - QSS3BucketName
+          - QSS3KeyPrefix
+
+    ParameterLabels:
+      awsAMI:
+        default: AMI ID (required)
+      awsLicenseType:
+        default: Pricing Option (required)
+      utmControllerInstanceSize:
+        default: Instance Type of UTM Controller (required)
+      utmWorkerInstanceSize:
+        default: Instance Type of UTM Worker (required)
+      AvailabilityZones:
+        default: TWO availability zones (required)
+      awsNetworkPrefix:
+        default: Prefix for VPC CIDR Block (required)
+      awsTrustedNetwork:
+        default: Trusted Network CIDR (required)
+      optionalExistingElasticIP:
+        default: Existing Elastic IP (optional)
+      optionalExistingS3Bucket:
+        default: S3 Bucket for UTM Synchronization and Backup (optional)
+      optionalLicensePool:
+        default: S3 Bucket Containing Licenses (optional)
+      basicHostname:
+        default: Hostname (required)
+      basicAdminEmail:
+        default: Admin E-Mail Address (required)
+      basicAdminPassword:
+        default: Admin Password (required)
+      basicOrganization:
+        default: Organization (required)
+      basicCity:
+        default: City (required)
+      basicCountry:
+        default: Country (required)
+      awsKeyName:
+        default: SSH Key (required)
+      debugMode:
+        default: Debug Mode
+      OGWInstanceSize:
+        default: Instance Type for Outbound Gateway (OGW - required)
+      AuthToken:
+        default: Authentication Token (required)
+      ApplicationVPCRange:
+        default: CIDR for Application VPC (required)
+      ApplicationPublicSubnet1:
+        default: Public subnet in AZ1 (required)
+      ApplicationPublicSubnet2:
+        default: Public subnet in AZ2 (required)
+      ApplicationPrivateSubnet1:
+        default: Private subnet (Proxy client network 1) in AZ1 (required)
+      ApplicationPrivateSubnet2:
+        default: Private subnet (Proxy client network 2) in AZ2 (required)
+      QSS3BucketName:
+        default: Quick Start S3 Bucket Name
+      QSS3KeyPrefix:
+        default: Quick Start S3 Key Prefix
+
+Mappings:
+  RegionMap:
+    ap-northeast-1:
+      AmazonAMI: ami-06cd52961ce9f0d85
+      OGWAMI: ami-0189eea3a673530fe
+      Hourly: ami-051d6d388a5a789f0
+      BYOL: ami-0927f2c574618ea85
+      ARN: aws
+      QueenInstanceType: c4.large
+      SwarmInstanceType: c4.large
+    ap-northeast-2:
+      AmazonAMI: ami-0a10b2721688ce9d2
+      OGWAMI: ami-032565bddf1a879c1
+      Hourly: ami-0e51730dc0b79098a
+      BYOL: ami-0af85fc5b6e8303d8
+      ARN: aws
+      QueenInstanceType: c4.large
+      SwarmInstanceType: c4.large
+    ap-south-1:
+      AmazonAMI: ami-0912f71e06545ad88
+      OGWAMI: ami-08cbce4d5146ad7d7
+      Hourly: ami-070e846716982c64e
+      BYOL: ami-0539befa542758313
+      ARN: aws
+      QueenInstanceType: c4.large
+      SwarmInstanceType: c4.large
+    ap-southeast-1:
+      AmazonAMI: ami-08569b978cc4dfa10
+      OGWAMI: ami-008354309002142cc
+      Hourly: ami-0b72d851deee20a07
+      BYOL: ami-093e2be101135a789
+      ARN: aws
+      QueenInstanceType: c4.large
+      SwarmInstanceType: c4.large
+    ap-southeast-2:
+      AmazonAMI: ami-09b42976632b27e9b
+      OGWAMI: ami-094f46f1d48a9dec1
+      Hourly: ami-058ef66bf58423e72
+      BYOL: ami-014532b8ccf0a673c
+      ARN: aws
+      QueenInstanceType: c4.large
+      SwarmInstanceType: c4.large
+    ca-central-1:
+      AmazonAMI: ami-0b18956f
+      OGWAMI: ami-0d7d57ef88f4ea222
+      Hourly: ami-0e9294efc262bbbef
+      BYOL: ami-0277885ef01abeac4
+      ARN: aws
+      QueenInstanceType: c4.large
+      SwarmInstanceType: c4.large
+    eu-central-1:
+      AmazonAMI: ami-0233214e13e500f77
+      OGWAMI: ami-01d2476f545349abd
+      Hourly: ami-04c95b25042d680bc
+      BYOL: ami-0a244f10ac6ea610d
+      ARN: aws
+      QueenInstanceType: c4.large
+      SwarmInstanceType: c4.large
+    eu-west-1:
+      AmazonAMI: ami-047bb4163c506cd98
+      OGWAMI: ami-0fca50ef5a9fb3ec2
+      Hourly: ami-08b98abc8f00ebc7e
+      BYOL: ami-0c476d65f9bc127a2
+      ARN: aws
+      QueenInstanceType: c4.large
+      SwarmInstanceType: c4.large
+    eu-west-2:
+      AmazonAMI: ami-f976839e
+      OGWAMI: ami-05f83b31a6d1365db
+      Hourly: ami-0cf3f68ef9fa1a09a
+      BYOL: ami-025cf9a26106b991f
+      ARN: aws
+      QueenInstanceType: c4.large
+      SwarmInstanceType: c4.large
+    sa-east-1:
+      AmazonAMI: ami-07b14488da8ea02a0
+      OGWAMI: ami-0622432257bd2d416
+      Hourly: ami-05e86ccfffe8a3587
+      BYOL: ami-0a1e7ee2dcf864cec
+      ARN: aws
+      QueenInstanceType: m3.large
+      SwarmInstanceType: m3.large
+    us-east-1:
+      AmazonAMI: ami-0ff8a91507f77f867
+      OGWAMI: ami-03aff3e0eec3f4f40
+      Hourly: ami-0ebe2f382b079b0f0
+      BYOL: ami-001efe65220bb0d37
+      ARN: aws
+      QueenInstanceType: c4.large
+      SwarmInstanceType: c4.large
+    us-east-2:
+      AmazonAMI: ami-0b59bfac6be064b78
+      OGWAMI: ami-05e8e585c8c631ca6
+      Hourly: ami-0d90f785d9ec3c57c
+      BYOL: ami-0f0127a7881303086
+      ARN: aws
+      QueenInstanceType: c4.large
+      SwarmInstanceType: c4.large
+    us-gov-west-1:
+      AmazonAMI: ami-906cf0f1
+      OGWAMI: ami-6966fc08
+      Hourly: ami-939208f2
+      BYOL: ami-99900af8
+      ARN: aws-us-gov
+      QueenInstanceType: c4.large
+      SwarmInstanceType: c4.large
+    us-west-1:
+      AmazonAMI: ami-0bdb828fd58c52235
+      OGWAMI: ami-0f3cb25a6fd92201a
+      Hourly: ami-05b01290e6784b39a
+      BYOL: ami-0eeec54b31db0b0d8
+      ARN: aws
+      QueenInstanceType: c4.large
+      SwarmInstanceType: c4.large
+    us-west-2:
+      AmazonAMI: ami-a0cfeed8
+      OGWAMI: ami-0c1bfac5365dc0721
+      Hourly: ami-0e5c88803c9f44351
+      BYOL: ami-0762f3180227c7442
+      ARN: aws
+      QueenInstanceType: c4.large
+      SwarmInstanceType: c4.large
+
+Conditions:
+  DetectAMI: !Equals [!Ref 'awsAMI', autodetect]
+  DetectWorkerInstanceSize: !Equals [!Ref 'utmWorkerInstanceSize', default]
+  CreateS3Bucket: !Equals [!Ref 'optionalExistingS3Bucket', '']
+  AllocateElasticIP: !Equals [!Ref 'optionalExistingElasticIP', '']
+  EnableLicensePool: !Not [!Equals [!Ref 'optionalLicensePool', '']]
+Resources:
+  WorkerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: /
+      Policies:
+        - PolicyName: WorkerPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Action:
+                  - ec2:Describe*
+                Effect: Allow
+                Resource: '*'
+              - Resource:
+                  - !If [CreateS3Bucket, !Join ['', ['arn:', !FindInMap [RegionMap,
+                          !Ref 'AWS::Region', ARN], ':s3:::', !Ref 'S3Bucket']], !Join [
+                      '', ['arn:', !FindInMap [RegionMap, !Ref 'AWS::Region', ARN],
+                        ':s3:::', !Ref 'optionalExistingS3Bucket']]]
+                  - !If [CreateS3Bucket, !Join ['', ['arn:', !FindInMap [RegionMap,
+                          !Ref 'AWS::Region', ARN], ':s3:::', !Ref 'S3Bucket', /*]],
+                    !Join ['', ['arn:', !FindInMap [RegionMap, !Ref 'AWS::Region',
+                          ARN], ':s3:::', !Ref 'optionalExistingS3Bucket', /*]]]
+                Action:
+                  - s3:List*
+                  - s3:Get*
+                Effect: Allow
+              - Resource:
+                  - !If [CreateS3Bucket, !Join ['', ['arn:', !FindInMap [RegionMap,
+                          !Ref 'AWS::Region', ARN], ':s3:::', !Ref 'S3Bucket', /adbs]],
+                    !Join ['', ['arn:', !FindInMap [RegionMap, !Ref 'AWS::Region',
+                          ARN], ':s3:::', !Ref 'optionalExistingS3Bucket', /adbs]]]
+                  - !If [CreateS3Bucket, !Join ['', ['arn:', !FindInMap [RegionMap,
+                          !Ref 'AWS::Region', ARN], ':s3:::', !Ref 'S3Bucket', /adbs/*]],
+                    !Join ['', ['arn:', !FindInMap [RegionMap, !Ref 'AWS::Region',
+                          ARN], ':s3:::', !Ref 'optionalExistingS3Bucket', /adbs/*]]]
+                Action:
+                  - s3:List*
+                  - s3:Get*
+                  - s3:Put*
+                  - s3:Delete*
+                Effect: Allow
+  WorkerInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: /
+      Roles:
+        - !Ref 'WorkerRole'
+  QueenRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: /
+      Policies:
+        - PolicyName: UTMPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - iam:PassRole
+                  - iam:CreateRole
+                  - iam:PutRolePolicy
+                  - iam:DeleteRolePolicy
+                  - iam:CreateInstanceProfile
+                  - iam:AddRoleToInstanceProfile
+                  - iam:RemoveRoleFromInstanceProfile
+                  - iam:DeleteInstanceProfile
+                  - iam:DeleteRole
+                Resource: '*'
+              - Action: iam:AttachRolePolicy
+                Resource:
+                  - !Join ['', ['arn:', !FindInMap [RegionMap, !Ref 'AWS::Region',
+                        ARN], ':iam::*:role/actions/EC2ActionsAccess']]
+                Effect: Allow
+              - Effect: Allow
+                Action: cloudformation:*
+                Resource: '*'
+              - Effect: Allow
+                Action: ec2:*
+                Resource: '*'
+              - Effect: Allow
+                Action: autoscaling:*
+                Resource: '*'
+              - Action: cloudwatch:*
+                Resource: '*'
+                Effect: Allow
+              - Resource:
+                  - !If [CreateS3Bucket, !Join ['', ['arn:', !FindInMap [RegionMap,
+                          !Ref 'AWS::Region', ARN], ':s3:::', !Ref 'S3Bucket']], !Join [
+                      '', ['arn:', !FindInMap [RegionMap, !Ref 'AWS::Region', ARN],
+                        ':s3:::', !Ref 'optionalExistingS3Bucket']]]
+                  - !If [CreateS3Bucket, !Join ['', ['arn:', !FindInMap [RegionMap,
+                          !Ref 'AWS::Region', ARN], ':s3:::', !Ref 'S3Bucket', /*]],
+                    !Join ['', ['arn:', !FindInMap [RegionMap, !Ref 'AWS::Region',
+                          ARN], ':s3:::', !Ref 'optionalExistingS3Bucket', /*]]]
+                  - !If [EnableLicensePool, !Join ['', ['arn:', !FindInMap [RegionMap,
+                          !Ref 'AWS::Region', ARN], ':s3:::', !Ref 'optionalLicensePool']],
+                    !Ref 'AWS::NoValue']
+                  - !If [EnableLicensePool, !Join ['', ['arn:', !FindInMap [RegionMap,
+                          !Ref 'AWS::Region', ARN], ':s3:::', !Ref 'optionalLicensePool',
+                        /*]], !Ref 'AWS::NoValue']
+                Action:
+                  - s3:*
+                Effect: Allow
+              - Resource:
+                  - !Join ['', ['arn:', !FindInMap [RegionMap, !Ref 'AWS::Region',
+                        ARN], ':s3:::sophos-nsg-cf-dev']]
+                  - !Join ['', ['arn:', !FindInMap [RegionMap, !Ref 'AWS::Region',
+                        ARN], ':s3:::sophos-nsg-cf-dev/*']]
+                  - !Join ['', ['arn:', !FindInMap [RegionMap, !Ref 'AWS::Region',
+                        ARN], ':s3:::sophos-nsg-cf']]
+                  - !Join ['', ['arn:', !FindInMap [RegionMap, !Ref 'AWS::Region',
+                        ARN], ':s3:::sophos-nsg-cf/*']]
+                Action:
+                  - s3:List*
+                  - s3:Get*
+                Effect: Allow
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                  - logs:DescribeLogStreams
+                Resource:
+                  - !Join ['', ['arn:', !FindInMap [RegionMap, !Ref 'AWS::Region',
+                        ARN], ':logs:*:*:*']]
+  QueenInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: /
+      Roles:
+        - !Ref 'QueenRole'
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      EnableDnsSupport: 'true'
+      EnableDnsHostnames: 'true'
+      CidrBlock: !Join [., [!Ref 'awsNetworkPrefix', 0.0/16]]
+      Tags:
+        - Key: Application
+          Value: !Ref 'AWS::StackId'
+        - Key: Name
+          Value: !Join [" " , [!Ref 'AWS::StackName', SecurityVPC]]
+  QueenSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref 'VPC'
+      CidrBlock: !Join [., [!Ref 'awsNetworkPrefix', 1.0/24]]
+      AvailabilityZone: !Select [0, !Ref AvailabilityZones]
+      Tags:
+        - Key: Application
+          Value: !Ref 'AWS::StackId'
+        - Key: Name
+          Value: QueenSubnetAZ1
+  QueenSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref 'VPC'
+      CidrBlock: !Join [., [!Ref 'awsNetworkPrefix', 2.0/24]]
+      AvailabilityZone: !Select [1, !Ref AvailabilityZones]
+      Tags:
+        - Key: Application
+          Value: !Ref 'AWS::StackId'
+        - Key: Name
+          Value: QueenSubnetAZ2
+  SwarmSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref 'VPC'
+      CidrBlock: !Join [., [!Ref 'awsNetworkPrefix', 4.0/24]]
+      AvailabilityZone: !Select [0, !Ref AvailabilityZones]
+      Tags:
+        - Key: Application
+          Value: !Ref 'AWS::StackId'
+        - Key: Name
+          Value: SwarmSubnetAZ1
+  SwarmSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref 'VPC'
+      CidrBlock: !Join [., [!Ref 'awsNetworkPrefix', 5.0/24]]
+      AvailabilityZone: !Select [1, !Ref AvailabilityZones]
+      Tags:
+        - Key: Application
+          Value: !Ref 'AWS::StackId'
+        - Key: Name
+          Value: SwarmSubnetAZ2
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Application
+          Value: !Ref 'AWS::StackId'
+        - Key: Network
+          Value: Public
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref 'VPC'
+      InternetGatewayId: !Ref 'InternetGateway'
+  QueenRoute:
+    Type: AWS::EC2::Route
+    DependsOn: AttachGateway
+    Properties:
+      RouteTableId: !Ref 'RouteTable'
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref 'InternetGateway'
+  RouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref 'VPC'
+      Tags:
+        - Key: Application
+          Value: !Ref 'AWS::StackId'
+        - Key: Network
+          Value: Public
+        - Key: Name
+          Value: SecurityVPC Queen Route Table
+  QueenSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref 'QueenSubnet1'
+      RouteTableId: !Ref 'RouteTable'
+  QueenSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref 'QueenSubnet2'
+      RouteTableId: !Ref 'RouteTable'
+  SwarmRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref 'VPC'
+      Tags:
+        - Key: Application
+          Value: !Ref 'AWS::StackId'
+        - Key: Network
+          Value: Public
+        - Key: Name
+          Value: !Sub SecurityVPC Swarm Route Table
+  SwarmRoute:
+    Type: AWS::EC2::Route
+    DependsOn: AttachGateway
+    Properties:
+      RouteTableId: !Ref 'SwarmRouteTable'
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref 'InternetGateway'
+  SwarmSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref 'SwarmSubnet1'
+      RouteTableId: !Ref 'SwarmRouteTable'
+  SwarmSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref 'SwarmSubnet2'
+      RouteTableId: !Ref 'SwarmRouteTable'
+  IPAddress:
+    Type: AWS::EC2::EIP
+    DependsOn: AttachGateway
+    Condition: AllocateElasticIP
+    Properties:
+      Domain: vpc
+  S3Bucket:
+    Type: AWS::S3::Bucket
+    Condition: CreateS3Bucket
+    DeletionPolicy: Retain
+    Properties:
+      LifecycleConfiguration:
+        Rules:
+          - Prefix: confd_backup
+            ExpirationInDays: '3'
+            Status: Enabled
+          - Prefix: postgres_basebackup
+            ExpirationInDays: '3'
+            Status: Enabled
+          - Prefix: postgres_wal
+            ExpirationInDays: '3'
+            Status: Enabled
+          - Prefix: adbs/tmp
+            ExpirationInDays: '3'
+            Status: Enabled
+          - Prefix: adbs/new
+            ExpirationInDays: '6'
+            Status: Enabled
+          - Prefix: adbs/cur
+            ExpirationInDays: '9'
+            Status: Enabled
+  SwarmSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Metadata:
+      waf:
+        - elb-destination-security-group
+        - backend-security-group
+    Properties:
+      GroupDescription: Identifying security group
+      VpcId: !Ref 'VPC'
+  LoadBalancerReceiverSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Metadata:
+      waf:
+        - frontend-security-group
+    Properties:
+      GroupDescription: Group for the receivers of the ElasticLoadBalancer
+      VpcId: !Ref 'VPC'
+  QueenSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Identifying security group
+      SecurityGroupIngress:
+        - IpProtocol: udp
+          FromPort: '514'
+          ToPort: '514'
+          SourceSecurityGroupId: !Ref SwarmSecurityGroup
+      VpcId: !Ref 'VPC'
+  TrustedNetworkGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Enable TCP access from trusted network
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: '4444'
+          ToPort: '4444'
+          CidrIp: !Ref 'awsTrustedNetwork'
+        - IpProtocol: tcp
+          FromPort: '22'
+          ToPort: '22'
+          CidrIp: !Ref 'awsTrustedNetwork'
+      VpcId: !Ref 'VPC'
+  UntrustedGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Untrusted network restricted from accessing port 22 and 4444.
+      VpcId: !Ref 'VPC'
+  SwarmScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    DependsOn:
+      - QueenScalingGroup
+      - AttachGateway
+    CreationPolicy:
+      ResourceSignal:
+        Count: '1'
+        Timeout: PT20M
+    UpdatePolicy:
+      AutoScalingRollingUpdate:
+        MinInstancesInService: '2'
+        MaxBatchSize: '1'
+        WaitOnResourceSignals: 'true'
+        PauseTime: PT15M
+    Properties:
+      DesiredCapacity: '2'
+      MaxSize: '100'
+      MinSize: '2'
+      TerminationPolicies:
+        - Default
+      VPCZoneIdentifier:
+        - !Ref 'SwarmSubnet1'
+        - !Ref 'SwarmSubnet2'
+      AvailabilityZones:
+        - !Select [0, !Ref AvailabilityZones]
+        - !Select [1, !Ref AvailabilityZones]
+      LaunchConfigurationName: !Ref 'SwarmLaunchConfiguration'
+      Tags:
+        - Key: Name
+          Value: Worker UTM
+          PropagateAtLaunch: 'true'
+  SwarmScaleUpPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AdjustmentType: ChangeInCapacity
+      AutoScalingGroupName: !Ref 'SwarmScalingGroup'
+      Cooldown: '60'
+      ScalingAdjustment: '1'
+  SwarmScaleDownPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AdjustmentType: ChangeInCapacity
+      AutoScalingGroupName: !Ref 'SwarmScalingGroup'
+      Cooldown: '60'
+      ScalingAdjustment: '-1'
+  SwarmCPUAlarmHigh:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Scale-up if CPU > 60% for 2 minutes
+      MetricName: CPUUtilization
+      Namespace: AWS/EC2
+      Statistic: Average
+      Period: '60'
+      EvaluationPeriods: '2'
+      Threshold: '70'
+      AlarmActions:
+        - !Ref 'SwarmScaleUpPolicy'
+      Dimensions:
+        - Name: AutoScalingGroupName
+          Value: !Ref 'SwarmScalingGroup'
+      ComparisonOperator: GreaterThanThreshold
+  SwarmCPUAlarmVeryHigh:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Scale-up if CPU > 85% for 1 minute
+      MetricName: CPUUtilization
+      Namespace: AWS/EC2
+      Statistic: Average
+      Period: '60'
+      EvaluationPeriods: '1'
+      Threshold: '85'
+      AlarmActions:
+        - !Ref 'SwarmScaleUpPolicy'
+      Dimensions:
+        - Name: AutoScalingGroupName
+          Value: !Ref 'SwarmScalingGroup'
+      ComparisonOperator: GreaterThanThreshold
+  SwarmCPUAlarmLow:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Scale-down if CPU < 40% for 3 minutes
+      MetricName: CPUUtilization
+      Namespace: AWS/EC2
+      Statistic: Average
+      Period: '60'
+      EvaluationPeriods: '3'
+      Threshold: '40'
+      AlarmActions:
+        - !Ref 'SwarmScaleDownPolicy'
+      Dimensions:
+        - Name: AutoScalingGroupName
+          Value: !Ref 'SwarmScalingGroup'
+      ComparisonOperator: LessThanThreshold
+  SwarmLaunchConfiguration:
+    Type: AWS::AutoScaling::LaunchConfiguration
+    Properties:
+      AssociatePublicIpAddress: true
+      IamInstanceProfile: !Ref 'WorkerInstanceProfile'
+      ImageId: !If [DetectAMI, !FindInMap [RegionMap, !Ref 'AWS::Region', !Ref 'awsLicenseType'],
+        !Ref 'awsAMI']
+      InstanceType: !If [DetectWorkerInstanceSize, !FindInMap [RegionMap, !Ref 'AWS::Region',
+          SwarmInstanceType], !Ref 'utmWorkerInstanceSize']
+      KeyName: !Ref 'awsKeyName'
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            VolumeSize: '100'
+      SecurityGroups:
+        - !Ref 'SwarmSecurityGroup'
+        - !Ref 'TrustedNetworkGroup'
+        - !Ref 'LoadBalancerReceiverSecurityGroup'
+      UserData: !Base64
+        Fn::Join:
+          - ''
+          - - '#!/bin/bash
+
+              '
+            - 'date +''UserData start %c'' > /tmp/user_data.log
+
+              '
+            - 'sed -i ''s/^/#/'' /etc/crontab.reporting
+
+              '
+            - '/usr/local/bin/confd-client.plx trigger crontab
+
+              '
+            - 'export shared_secret=$(< /dev/urandom  tr -dc _A-Z-a-z-0-9 | head -c${1:-32})
+
+              '
+            - '/opt/aws/apitools/cfn-init/bin/cfn-init -c swarm_node -s '
+            - !Ref 'AWS::StackId'
+            - ' -r SwarmLaunchConfiguration --region '
+            - !Ref 'AWS::Region'
+            - ' >> /tmp/user_data.log 2>&1 || echo ''Failed to run cfn-init'' >> /tmp/user_data.log
+
+              '
+            - '/etc/init.d/mdw restart && sleep 10
+
+              '
+            - '/etc/init.d/httpd restart
+
+              '
+            - '/etc/init.d/worker_config_management start
+
+              '
+            - '/opt/aws/apitools/cfn-init/bin/cfn-signal -e 0 --stack '
+            - !Ref 'AWS::StackName'
+            - ' --resource SwarmScalingGroup '
+            - ' --region '
+            - !Ref 'AWS::Region'
+            - '
+
+              '
+            - 'exit 0
+
+              '
+    Metadata:
+      AWS::CloudFormation::Init:
+        configSets:
+          swarm_node:
+            - swarm_config
+        swarm_config:
+          files:
+            /etc/cloud/user_data.yml:
+              mode: '0644'
+              owner: root
+              group: root
+              content: !Join ['', ['version: 0.1.0
+
+                    ', 'instance_role: worker
+
+                    ', 'deployment_type: autoscaling
+
+                    ', 'license_pool: ', !Ref 'optionalLicensePool', '
+
+                    ', 's3_bucket: ', !If [CreateS3Bucket, !Ref 'S3Bucket', !Ref 'optionalExistingS3Bucket'],
+                  '
+
+                    ', 'config_prefix: config_management/
+
+                    ', 'confd_filter: /etc/cloud/confd_filter.ph
+
+                    ', 'region: ', !Ref 'AWS::Region', '
+
+                    ', 'aws_partition: ', !FindInMap [RegionMap, !Ref 'AWS::Region',
+                    ARN], '
+
+                    ']]
+  QueenScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    DependsOn:
+      - AttachGateway
+    CreationPolicy:
+      ResourceSignal:
+        Count: '1'
+        Timeout: PT25M
+    UpdatePolicy:
+      AutoScalingRollingUpdate:
+        MinInstancesInService: '1'
+        MaxBatchSize: '1'
+        WaitOnResourceSignals: 'true'
+        PauseTime: PT15M
+    Properties:
+      DesiredCapacity: '1'
+      MaxSize: '2'
+      MinSize: '1'
+      TerminationPolicies:
+        - NewestInstance
+      VPCZoneIdentifier:
+        - !Ref 'QueenSubnet1'
+        - !Ref 'QueenSubnet2'
+      AvailabilityZones:
+        - !Select [0, !Ref AvailabilityZones]
+        - !Select [1, !Ref AvailabilityZones]
+      LaunchConfigurationName: !Ref 'QueenLaunchConfiguration'
+      Tags:
+        - Key: Name
+          Value: Queen UTM
+          PropagateAtLaunch: 'true'
+  QueenLaunchConfiguration:
+    Type: AWS::AutoScaling::LaunchConfiguration
+    Properties:
+      AssociatePublicIpAddress: true
+      IamInstanceProfile: !Ref 'QueenInstanceProfile'
+      ImageId: !If [DetectAMI, !FindInMap [RegionMap, !Ref 'AWS::Region', !Ref 'awsLicenseType'],
+        !Ref 'awsAMI']
+      InstanceType: !If [DetectWorkerInstanceSize, !FindInMap [RegionMap, !Ref 'AWS::Region',
+          QueenInstanceType], !Ref 'utmControllerInstanceSize']
+      KeyName: !Ref 'awsKeyName'
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            VolumeSize: '100'
+      SecurityGroups:
+        - !Ref 'QueenSecurityGroup'
+        - !Ref 'TrustedNetworkGroup'
+        - !Ref 'UntrustedGroup'
+        - !Ref 'LoadBalancerReceiverSecurityGroup'
+      UserData: !Base64
+        Fn::Join:
+          - ''
+          - - '#!/bin/bash
+
+              '
+            - 'date +''UserData start %c'' > /tmp/user_data.log
+
+              '
+            - cc=`/usr/local/bin/confd-client.plx country_name_to_code "
+            - !Ref 'basicCountry'
+            - '"`
+
+              '
+            - echo "{ hostname => '
+            - !Ref 'basicHostname'
+            - ''', organization => '''
+            - !Ref 'basicOrganization'
+            - ''', city => '''
+            - !Ref 'basicCity'
+            - ''', country => ''$cc'', email => '''
+            - !Ref 'basicAdminEmail'
+            - ''', password => '''
+            - !Ref 'basicAdminPassword'
+            - ''' }" > /var/confd/var/storage/setup.ph
+
+              '
+            - '/etc/init.d/confd restart
+
+              '
+            - 'sleep 5
+
+              '
+            - '/usr/local/bin/debugmode '
+            - !Ref 'debugMode'
+            - '
+
+              '
+            - '/opt/aws/apitools/cfn-init/bin/cfn-init -c queen_node -s '
+            - !Ref 'AWS::StackId'
+            - ' -r QueenLaunchConfiguration --region '
+            - !Ref 'AWS::Region'
+            - ' >> /tmp/user_data.log 2>&1 || echo ''Failed to run cfn-init'' >> /tmp/user_data.log
+
+              '
+            - '/usr/libexec/cloud/confd_apply.sh /tmp/user_data.config >> /tmp/user_data.log
+
+              '
+            - 'date +''UserData aws deamons start %c'' >> /tmp/user_data.log
+
+              '
+            - '/etc/init.d/ha_aws start
+
+              '
+            - '/etc/init.d/queen_config_management start
+
+              '
+            - '/etc/init.d/aws_resource_management start
+
+              '
+            - 'date +''UserData aws deamons end %c'' >> /tmp/user_data.log
+
+              '
+            - '/usr/local/bin/aws_set_sd_check disable >> /tmp/user_data.log
+
+              '
+            - '/usr/local/bin/confd-client.plx trigger ha_aws
+
+              '
+            - '/opt/aws/apitools/cfn-init/bin/cfn-signal -e 0 --stack '
+            - !Ref 'AWS::StackName'
+            - ' --resource QueenScalingGroup '
+            - ' --region '
+            - !Ref 'AWS::Region'
+            - '
+
+              '
+            - '/usr/bin/sg-iaas ogw-create-cw-role >> /tmp/user_data.log 2>&1
+
+              '
+            - 'exit 0
+
+              '
+    Metadata:
+      AWS::CloudFormation::Init:
+        configSets:
+          queen_node:
+            - queen_config
+        queen_config:
+          files:
+            /etc/cloud/user_data.yml:
+              mode: '0644'
+              owner: root
+              group: root
+              content: !Join ['', ['version: 0.1.0
+
+                    ', 'instance_role: queen
+
+                    ', 'deployment_type: autoscaling
+
+                    ', 'license_pool: ', !Ref 'optionalLicensePool', '
+
+                    ', 's3_bucket: ', !If [CreateS3Bucket, !Ref 'S3Bucket', !Ref 'optionalExistingS3Bucket'],
+                  '
+
+                    ', 'config_prefix: config_management/
+
+                    ', 'elastic_ip: ', !If [AllocateElasticIP, !Ref 'IPAddress', !Ref 'optionalExistingElasticIP'],
+                  '
+
+                    ', 'stack_name: ', !Ref 'AWS::StackName', '
+
+                    ', 'region: ', !Ref 'AWS::Region', '
+
+                    ', 'aws_partition: ', !FindInMap [RegionMap, !Ref 'AWS::Region',
+                    ARN], '
+
+                    ', 'debugMode: ', !Ref 'debugMode', '
+
+                    ']]
+            /tmp/user_data.config:
+              mode: '0644'
+              owner: root
+              group: root
+              content: !Join ['', ['{
+
+                    ', '"confd" => { "backup" => 1, "backup_interval" => 300, "restore"
+                    => 1, "restore_done" => 0 },
+
+                    ', '"postgres" => { "archive_timeout" => 300, "backup" => 1, "base_backup_interval"
+                    => 3600, "restore" => 1 },
+
+                    ', '"syslog" => { "backup" => 1, "restore" => 1, "restore_period"
+                    => 8 },
+
+                    ', '"s3_bucket" => "', !If [CreateS3Bucket, !Ref 'S3Bucket', !Ref 'optionalExistingS3Bucket'],
+                  '",
+
+                    ', '"stack_name" => "', !Ref 'AWS::StackName', '",
+
+                    ', '"elastic_ip" => "', !If [AllocateElasticIP, !Ref 'IPAddress',
+                    !Ref 'optionalExistingElasticIP'], '",
+
+                    ', '"trusted_network" => "', !Ref 'awsTrustedNetwork', '"
+
+                    ', '}
+
+                    ']]
+            /etc/cloud/resource-catalog.yml:
+              mode: '0644'
+              owner: root
+              group: root
+              content: !Join ['', ['elb: ', '
+
+                    ', 'elb_security_group: ', '
+
+                    ', 'elb_destination_security_group: ', !Ref 'LoadBalancerReceiverSecurityGroup', '
+
+                    ', 'frontend_security_group: ', !Ref 'LoadBalancerReceiverSecurityGroup', '
+
+                    ', '
+
+                    ', 'infrastructure:
+
+                    ', '  security_groups:
+
+                    ', '    - ', !Ref 'TrustedNetworkGroup', '
+
+                    ', '    - ', !Ref 'UntrustedGroup', '
+
+                    ', '    - ', !Ref 'QueenSecurityGroup', '
+
+                    ', '    - ', !Ref 'SwarmSecurityGroup', '
+
+                    ', '  elbs:
+
+                    ']]
+            /etc/cloud/inf-resources.yml:
+              mode: '0644'
+              owner: root
+              group: root
+              content: !Join ['', ['security_groups:
+
+                    ', '  ', !Ref 'QueenSecurityGroup', ':
+
+                    ', '    incoming:
+
+                    ', '      - from_port: 514
+
+                    ', '        to_port: 514
+
+                    ', '        protocol: UDP
+
+                    ', '        source: ', !Ref 'SwarmSecurityGroup', '
+
+                    ', '    outgoing:
+
+                    ', '      - from_port: 0
+
+                    ', '        to_port: 65535
+
+                    ', '        protocol: ANY
+
+                    ', '        source: 0.0.0.0/0
+
+                    ', '  ', !Ref 'TrustedNetworkGroup', ':
+
+                    ', '    incoming:
+
+                    ', '      - from_port: 4444
+
+                    ', '        to_port: 4444
+
+                    ', '        protocol: TCP
+
+                    ', '        source: ', !Ref 'awsTrustedNetwork', '
+
+                    ', '      - from_port: 22
+
+                    ', '        to_port: 22
+
+                    ', '        protocol: TCP
+
+                    ', '        source: ', !Ref 'awsTrustedNetwork', '
+
+                    ', '    outgoing:
+
+                    ', '      - from_port: 0
+
+                    ', '        to_port: 65535
+
+                    ', '        protocol: ANY
+
+                    ', '        source: 0.0.0.0/0
+
+                    ', '  ', !Ref 'UntrustedGroup', ':
+
+                    ', '    outgoing:
+
+                    ', '      - from_port: 0
+
+                    ', '        to_port: 65535
+
+                    ', '        protocol: ANY
+
+                    ', '        source: 0.0.0.0/0
+
+                    ', '  ', !Ref 'SwarmSecurityGroup', ':
+
+                    ', '    outgoing:
+
+                    ', '      - from_port: 0
+
+                    ', '        to_port: 65535
+
+                    ', '        protocol: ANY
+
+                    ', '        source: 0.0.0.0/0
+
+                    ', 'elbs:
+
+                    ']]
+
+  # ApplicationVPC hosts your application servers and Outbound Gateways (OGW)
+  # Outbound traffic is routed through OGWs which proxy through Workers in the ProxyVPC
+  ApplicationVPC:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub https://s3.amazonaws.com/${QSS3BucketName}/${QSS3KeyPrefix}templates/vpc-application.template
+      Parameters:
+        EnvironmentName:    !Ref AWS::StackName
+        VpcCIDR:            !Ref ApplicationVPCRange
+        PublicSubnet1CIDR:  !Ref ApplicationPublicSubnet1
+        PublicSubnet2CIDR:  !Ref ApplicationPublicSubnet2
+        PrivateSubnet1CIDR: !Ref ApplicationPrivateSubnet1
+        PrivateSubnet2CIDR: !Ref ApplicationPrivateSubnet2
+        awsAvailabilityZone1: !Select [0, !Ref AvailabilityZones]
+        awsAvailabilityZone2: !Select [1, !Ref AvailabilityZones]
+        ProxyVPC:           !Ref VPC
+        ProxyVPCRange:      !GetAtt VPC.CidrBlock
+        SwarmRouteTable:    !Ref SwarmRouteTable
+        QueenRouteTable:    !Ref RouteTable
+
+  # Outbound Gateways setup, configures EC2 instances and updates route in private subnets in ApplicationVPC
+  OGWs:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub https://s3.amazonaws.com/${QSS3BucketName}/${QSS3KeyPrefix}templates/ogws.template
+      Parameters:
+        EnvironmentName:       !Ref AWS::StackName
+        ApplicationVPC:        !GetAtt ApplicationVPC.Outputs.VPC
+        ApplicationVPCRange:   !Ref ApplicationVPCRange
+        PrivateRouteTable1:    !GetAtt ApplicationVPC.Outputs.PrivateRouteTable1
+        PublicSubnet1:         !GetAtt ApplicationVPC.Outputs.PublicSubnet1
+        PrivateRouteTable2:    !GetAtt ApplicationVPC.Outputs.PrivateRouteTable2
+        PublicSubnet2:         !GetAtt ApplicationVPC.Outputs.PublicSubnet2
+        SwarmSecurityGroup:    !Ref SwarmSecurityGroup
+        QueenSecurityGroup:    !Ref QueenSecurityGroup
+        TrustedNetwork:        !Ref awsTrustedNetwork
+        KeyName:               !Ref awsKeyName
+        OGWInstanceSize:       !Ref OGWInstanceSize
+        AuthToken:             !Ref AuthToken
+        OGWAMI:                !FindInMap [RegionMap, !Ref 'AWS::Region', OGWAMI]
+        ARN:                   !FindInMap [RegionMap, !Ref 'AWS::Region', ARN]
+
+  Testers:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub https://s3.amazonaws.com/${QSS3BucketName}/${QSS3KeyPrefix}templates/testers.template
+      Parameters:
+        EnvironmentName:                !Ref AWS::StackName
+        ApplicationVPC:                 !GetAtt ApplicationVPC.Outputs.VPC
+        PublicSubnet:                   !GetAtt ApplicationVPC.Outputs.PublicSubnet1
+        PrivateSubnet:                  !GetAtt ApplicationVPC.Outputs.PrivateSubnet1
+        TrustedNetwork:                 !Ref awsTrustedNetwork
+        KeyName:                        !Ref awsKeyName
+        AmazonLinuxAMI:                 !FindInMap [RegionMap, !Ref 'AWS::Region', AmazonAMI]
+
+
+Outputs:
+  AdminURL:
+    Value: !If [AllocateElasticIP, !Join [ "", ["https://", !Ref 'IPAddress', ":4444/"]], !Join [ "", ["https://", !Ref 'optionalExistingElasticIP', ":4444/"]]]
+    Description: Use this URL to connect to and manage the UTM.
+  QueenPublicIP:
+    Value: !If [AllocateElasticIP, !Ref 'IPAddress', !Ref 'optionalExistingElasticIP']
+    Description: Public IP address of the UTM.
+  QueenScalingGroup:
+    Value: !Ref 'QueenScalingGroup'
+    Description: The HA Scaling group.
+  S3Bucket:
+    Value: !If [CreateS3Bucket, !Ref 'S3Bucket', !Ref 'optionalExistingS3Bucket']
+    Description: The S3 Bucket.
+  SwarmScalingGroup:
+    Value: !Ref 'SwarmScalingGroup'
+    Description: The Swarm scaling group.
+  VPCID:
+    Value: !Ref 'VPC'
+    Description: The VPC of the Swarm
+  Region:
+    Value: !Ref 'AWS::Region'
+    Description: Region of the stack
+  ProxyClients1:
+    Value: !GetAtt ApplicationVPC.Outputs.ProxyClients1Subnet
+    Description: Proxy clients subnet 1
+  ProxyClients2:
+    Value: !GetAtt ApplicationVPC.Outputs.ProxyClients2Subnet
+    Description: Proxy clients subnet 2
+  OGW1IP:
+    Value: !GetAtt OGWs.Outputs.OGW1IP
+    Description: Private IP address of the OGW1 instance
+  OGW2IP:
+    Value: !GetAtt OGWs.Outputs.OGW2IP
+    Description: Private IP address of the OGW2 instance
+  BastionHostIP:
+    Value: !GetAtt Testers.Outputs.BastionHostIP
+    Description: Public IP of the bastion host EC2 instance
+  TesterHostIP:
+    Value: !GetAtt Testers.Outputs.TesterHostIP
+    Description: Private IP of the tester host EC2 instance

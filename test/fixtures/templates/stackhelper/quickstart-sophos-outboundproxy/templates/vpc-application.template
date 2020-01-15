@@ -1,0 +1,271 @@
+Description: >
+    Sophos Outbound Proxy Stack - **WARNING** This template deploys a VPC, with a pair of public and private subnets spread across two Availabilty Zones.
+    It deploys an Internet Gateway, with a default route on the public subnets. It creates route tables for private subnets, but does not set any routes in them.
+    OGW template will add default routes to these tables. You will be billed for the AWS resources used if you create a stack from this template. **NOTICE** Copyright 2017 Amazon.com, Inc. or its affiliates.
+    All Rights Reserved. Licensed under the Apache License, Version 2.0 (the "License"). You may not use this file except in compliance with the License. A copy of the License is located at
+    http://www.apache.org/licenses/LICENSE-2.0 or in the "license" file accompanying this file. This file is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+    See the License for the specific language governing permissions and limitations under the License.
+
+Parameters:
+
+    EnvironmentName:
+        Description: An environment name that will be prefixed to resource names
+        Type: String
+
+    VpcCIDR:
+        Description: Please enter the IP range (CIDR notation) for this VPC
+        Type: String
+        Default: 10.192.0.0/16
+
+    PublicSubnet1CIDR:
+        Description: Please enter the IP range (CIDR notation) for the public subnet in the first Availability Zone
+        Type: String
+        Default: 10.192.10.0/24
+
+    PublicSubnet2CIDR:
+        Description: Please enter the IP range (CIDR notation) for the public subnet in the second Availability Zone
+        Type: String
+        Default: 10.192.11.0/24
+
+    PrivateSubnet1CIDR:
+        Description: Please enter the IP range (CIDR notation) for the private subnet in the first Availability Zone
+        Type: String
+        Default: 10.192.20.0/24
+
+    PrivateSubnet2CIDR:
+        Description: Please enter the IP range (CIDR notation) for the private subnet in the second Availability Zone
+        Type: String
+        Default: 10.192.21.0/24
+
+    ProxyVPCRange:
+        Description: IP CIDR block assigned to ProxyVPC with Queen and Workers
+        Type: String
+
+    ProxyVPC:
+        Description: reference to ProxyVPC
+        Type: String
+
+    SwarmRouteTable:
+        Description: reference to route table for Workers subnets
+        Type: String
+
+    QueenRouteTable:
+        Description: reference to route table attached to Queen subnets
+        Type: String
+
+    awsAvailabilityZone1:
+      Description: Please provide an Availability Zone.
+      Type: String
+
+    awsAvailabilityZone2:
+      Description: Please provide another (different) Availability Zone.
+      Type: String
+
+Resources:
+
+    VPC:
+        Type: AWS::EC2::VPC
+        Properties:
+            CidrBlock: !Ref VpcCIDR
+            Tags:
+                - Key: Name
+                  Value: !Sub ${EnvironmentName} ApplicationVPC
+
+    InternetGateway:
+        Type: AWS::EC2::InternetGateway
+        Properties:
+            Tags:
+                - Key: Name
+                  Value: !Sub ${EnvironmentName} ApplicationVPC IGW
+
+    InternetGatewayAttachment:
+        Type: AWS::EC2::VPCGatewayAttachment
+        Properties:
+            InternetGatewayId: !Ref InternetGateway
+            VpcId: !Ref VPC
+
+    PublicSubnet1:
+        Type: AWS::EC2::Subnet
+        Properties:
+            VpcId: !Ref VPC
+            AvailabilityZone: !Ref awsAvailabilityZone1
+            CidrBlock: !Ref PublicSubnet1CIDR
+            MapPublicIpOnLaunch: true
+            Tags:
+                - Key: Name
+                  Value: !Sub ${EnvironmentName} ApplicationVPC Public Subnet (AZ1)
+
+    PublicSubnet2:
+        Type: AWS::EC2::Subnet
+        Properties:
+            VpcId: !Ref VPC
+            AvailabilityZone: !Ref awsAvailabilityZone2
+            CidrBlock: !Ref PublicSubnet2CIDR
+            MapPublicIpOnLaunch: true
+            Tags:
+                - Key: Name
+                  Value: !Sub ${EnvironmentName} ApplicationVPC Public Subnet (AZ2)
+
+    PrivateSubnet1:
+        Type: AWS::EC2::Subnet
+        Properties:
+            VpcId: !Ref VPC
+            AvailabilityZone: !Ref awsAvailabilityZone1
+            CidrBlock: !Ref PrivateSubnet1CIDR
+            MapPublicIpOnLaunch: false
+            Tags:
+                - Key: Name
+                  Value: !Sub ${EnvironmentName} ApplicationVPC Private Subnet (AZ1)
+
+    PrivateSubnet2:
+        Type: AWS::EC2::Subnet
+        Properties:
+            VpcId: !Ref VPC
+            AvailabilityZone: !Ref awsAvailabilityZone2
+            CidrBlock: !Ref PrivateSubnet2CIDR
+            MapPublicIpOnLaunch: false
+            Tags:
+                - Key: Name
+                  Value: !Sub ${EnvironmentName} ApplicationVPC Private Subnet (AZ2)
+
+    PublicRouteTable:
+        Type: AWS::EC2::RouteTable
+        Properties:
+            VpcId: !Ref VPC
+            Tags:
+                - Key: Name
+                  Value: !Sub ${EnvironmentName} ApplicationVPC Public Routes
+
+    DefaultPublicRoute:
+        Type: AWS::EC2::Route
+        DependsOn: InternetGatewayAttachment
+        Properties:
+            RouteTableId: !Ref PublicRouteTable
+            DestinationCidrBlock: 0.0.0.0/0
+            GatewayId: !Ref InternetGateway
+
+    PublicSubnet1RouteTableAssociation:
+        Type: AWS::EC2::SubnetRouteTableAssociation
+        Properties:
+            RouteTableId: !Ref PublicRouteTable
+            SubnetId: !Ref PublicSubnet1
+
+    PublicSubnet2RouteTableAssociation:
+        Type: AWS::EC2::SubnetRouteTableAssociation
+        Properties:
+            RouteTableId: !Ref PublicRouteTable
+            SubnetId: !Ref PublicSubnet2
+
+    PrivateRouteTable1:
+        Type: AWS::EC2::RouteTable
+        Properties:
+            VpcId: !Ref VPC
+            Tags:
+                - Key: Name
+                  Value: !Sub ${EnvironmentName} ApplicationVPC Private Routes (AZ1)
+
+    PrivateSubnet1RouteTableAssociation:
+        Type: AWS::EC2::SubnetRouteTableAssociation
+        Properties:
+            RouteTableId: !Ref PrivateRouteTable1
+            SubnetId: !Ref PrivateSubnet1
+
+    PrivateRouteTable2:
+        Type: AWS::EC2::RouteTable
+        Properties:
+            VpcId: !Ref VPC
+            Tags:
+                - Key: Name
+                  Value: !Sub ${EnvironmentName} ApplicationVPC Private Routes (AZ2)
+
+    PrivateSubnet2RouteTableAssociation:
+        Type: AWS::EC2::SubnetRouteTableAssociation
+        Properties:
+            RouteTableId: !Ref PrivateRouteTable2
+            SubnetId: !Ref PrivateSubnet2
+
+    # Note that default routes for private subnets are set in OGW table
+
+    # creates peering connection between Proxy and Application VPCs
+    VPCPeeringConnection:
+        Type: AWS::EC2::VPCPeeringConnection
+        Properties:
+            VpcId: !Ref ProxyVPC
+            PeerVpcId: !Ref VPC
+            Tags:
+                - Key: Name
+                  Value: !Sub ${EnvironmentName} ProxyVPC to ApplicationVPC
+
+    # route from Swarm subnets in the proxy VPC to the application VPC
+    SwarmPeerRoute:
+        Type: AWS::EC2::Route
+        Properties:
+            RouteTableId: !Ref SwarmRouteTable
+            DestinationCidrBlock: !Ref VpcCIDR
+            VpcPeeringConnectionId: !Ref VPCPeeringConnection
+
+    # route from Queen subnets in the proxy VPC to the application VPC
+    QueenPeerRoute:
+        Type: AWS::EC2::Route
+        Properties:
+            RouteTableId: !Ref QueenRouteTable
+            DestinationCidrBlock: !Ref VpcCIDR
+            VpcPeeringConnectionId: !Ref VPCPeeringConnection
+
+    # route from public subnets in Application VPC to Proxy VPC
+    ApplicationPeerRoute:
+        Type: AWS::EC2::Route
+        Properties:
+            RouteTableId: !Ref PublicRouteTable
+            DestinationCidrBlock: !Ref ProxyVPCRange
+            VpcPeeringConnectionId: !Ref VPCPeeringConnection
+
+    # note: no route needed from private subnets in Application VPC to Proxy VPC
+    # resources in private subnets route through Outbound Gateways (OGWSs) in public subnets
+
+
+Outputs:
+
+    VPC:
+        Description: A reference to the created VPC
+        Value: !Ref VPC
+
+    PublicSubnets:
+        Description: A list of the public subnets
+        Value: !Join [ ",", [ !Ref PublicSubnet1, !Ref PublicSubnet2 ]]
+
+    PrivateSubnets:
+        Description: A list of the private subnets
+        Value: !Join [ ",", [ !Ref PrivateSubnet1, !Ref PrivateSubnet2 ]]
+
+    PublicSubnet1:
+        Description: A reference to the public subnet in the 1st Availability Zone
+        Value: !Ref PublicSubnet1
+
+    PublicSubnet2:
+        Description: A reference to the public subnet in the 2nd Availability Zone
+        Value: !Ref PublicSubnet2
+
+    PrivateSubnet1:
+        Description: A reference to the private subnet in the 1st Availability Zone
+        Value: !Ref PrivateSubnet1
+
+    PrivateSubnet2:
+        Description: A reference to the private subnet in the 2nd Availability Zone
+        Value: !Ref PrivateSubnet2
+
+    PrivateRouteTable1:
+        Description: A reference to the routing table attached to PrivateSubnet1
+        Value: !Ref PrivateRouteTable1
+
+    PrivateRouteTable2:
+        Description: A reference to the routing table attached to PrivateSubnet1
+        Value: !Ref PrivateRouteTable2
+
+    ProxyClients1Subnet:
+      Value: !Ref PrivateSubnet1CIDR
+      Description: Proxy clients subnet 1 CIDR
+
+    ProxyClients2Subnet:
+      Value: !Ref PrivateSubnet2CIDR
+      Description: Proxy clients subnet 2 CIDR

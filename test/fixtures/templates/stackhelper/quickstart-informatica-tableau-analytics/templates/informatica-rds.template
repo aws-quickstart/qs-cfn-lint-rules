@@ -1,0 +1,160 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "This template creates RDS resources. **WARNING** This template creates AWS resources. You will be billed for the AWS resources used if you create a stack from this template. ",
+
+  "Parameters": {
+    "MasterDbUser": {
+      "Default": "awsquickstart",
+      "Description": "User name for the database instance associated with Informatica domain and services (such as Model Repository Service, Data Integration Service, Content Management Service)",
+      "Type": "String"
+    },
+    "MasterDbPassword": {
+      "Description": "Password for the database instance associated with Informatica domain and services (such as Model Repository Service, Data Integration Service, Content Management Service)",
+      "Type": "String",
+      "NoEcho": "True"
+    },
+    "DBSubnetIDs": {
+      "Description": "IDs of two private subnets in the selected VPC. These must be in different Availability Zones in the selected VPC",
+      "Type": "List<AWS::EC2::Subnet::Id>"
+    },
+    "InfaDBSecurityGroup": {
+      "Description": "Security Group to which the database belongs",
+      "Type": "AWS::EC2::SecurityGroup::Id"
+    }
+  },
+
+  "Mappings":{  
+      "AWSAMIRegionMap":{  
+         "AMI":{  
+            "INFADBHVM":"RDS DB-Snapshot Identifier"
+         },
+         "ap-northeast-1":{  
+            "INFADBHVM":"arn:aws:rds:ap-northeast-1:595425154981:snapshot:infa-1021-domaindb"
+         },
+         "ap-northeast-2":{  
+            "INFADBHVM":"arn:aws:rds:ap-northeast-2:595425154981:snapshot:infa-1021-domaindb"
+         },
+         "ap-south-1":{  
+            "INFADBHVM":"arn:aws:rds:ap-south-1:595425154981:snapshot:infa-1021-domaindb"
+         },
+         "ap-southeast-1":{  
+            "INFADBHVM":"arn:aws:rds:ap-southeast-1:595425154981:snapshot:infa-1021-domaindb"
+         },
+         "ap-southeast-2":{  
+            "INFADBHVM":"arn:aws:rds:ap-southeast-2:595425154981:snapshot:infa-1021-domaindb"
+         },
+         "ca-central-1":{  
+            "INFADBHVM":"arn:aws:rds:ca-central-1:595425154981:snapshot:infa-1021-domaindb"
+         },
+         "eu-central-1":{  
+            "INFADBHVM":"arn:aws:rds:eu-central-1:595425154981:snapshot:infa-1021-domaindb"
+         },
+         "eu-west-1":{  
+            "INFADBHVM":"arn:aws:rds:eu-west-1:595425154981:snapshot:infa-1021-domaindb"
+         },
+         "eu-west-2":{  
+            "INFADBHVM":"arn:aws:rds:eu-west-2:595425154981:snapshot:infa-1021-domaindb"
+         },
+         "sa-east-1":{  
+            "INFADBHVM":"arn:aws:rds:sa-east-1:595425154981:snapshot:infa-1021-domaindb"
+         },
+         "us-east-1":{  
+            "INFADBHVM":"arn:aws:rds:us-east-1:595425154981:snapshot:infa-1021-domaindb"
+         },
+         "us-east-2":{  
+            "INFADBHVM":"arn:aws:rds:us-east-2:595425154981:snapshot:infa-1021-domaindb"
+         },
+         "us-west-1":{  
+            "INFADBHVM":"arn:aws:rds:us-west-1:595425154981:snapshot:infa-1021-domaindb"
+         },
+         "us-west-2":{  
+            "INFADBHVM":"arn:aws:rds:us-west-2:595425154981:snapshot:infa-1021-domaindb"
+         }
+      }
+   },
+
+  "Conditions": {
+
+  },
+
+  "Resources": {
+
+    "DbSubnetGroup": {
+      "Type": "AWS::RDS::DBSubnetGroup",
+      "Properties": {
+        "DBSubnetGroupDescription": "MySQL RDS Subnet Group",
+        "SubnetIds": { "Ref": "DBSubnetIDs" }
+      }
+    },
+    "InfaDB": {
+      "Type": "AWS::RDS::DBInstance",
+      "DependsOn": [ "DbSubnetGroup" ],
+      "Properties": {
+        "AllocatedStorage": "200",
+        "MultiAZ": "true",
+        "StorageType": "gp2",
+
+        "LicenseModel": "license-included",
+        "DBInstanceClass": "db.m4.2xlarge",
+        "DBSnapshotIdentifier": {
+          "Fn::FindInMap": [
+            "AWSAMIRegionMap",
+            {
+              "Ref": "AWS::Region"
+            },
+            "INFADBHVM"
+          ]
+        },
+        "DBSubnetGroupName": {
+          "Ref": "DbSubnetGroup"
+        },
+        "VPCSecurityGroups": [
+          {
+            "Ref": "InfaDBSecurityGroup"
+          }
+        ],
+        "Engine": "oracle-se2",
+        "PubliclyAccessible": "false",
+
+        "MasterUserPassword": {
+
+          "Ref": "MasterDbPassword"
+
+        },
+        "MasterUsername": {
+
+          "Ref": "MasterDbUser"
+
+        }
+      }
+
+    }
+
+
+  },
+
+  "Outputs": {
+    "InfaDB": {
+      "Value": { "Ref": "InfaDB" },
+      "Description": "RDS Instance",
+      "Export": {
+        "Name": { "Fn::Sub": "${AWS::StackName}:InfaDB" }
+      }
+    },
+    "EndpointAddress": {
+      "Value": { "Fn::GetAtt": [ "InfaDB", "Endpoint.Address" ] },
+      "Description": "Database endpoint hostname",
+      "Export": {
+        "Name": { "Fn::Sub": "${AWS::StackName}:EndpointAddress" }
+      }
+    },
+    "EndpointPort": {
+      "Value": { "Fn::GetAtt": [ "InfaDB", "Endpoint.Port" ] },
+      "Description": "Database endpoint  port",
+      "Export": {
+        "Name": { "Fn::Sub": "${AWS::StackName}:EndpointPort" }
+      }
+    }
+
+  }
+}

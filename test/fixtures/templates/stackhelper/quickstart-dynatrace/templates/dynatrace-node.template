@@ -1,0 +1,674 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "This template is intended to be deployed into existing private subnet in VPC, with ELB, security groups and parameters already preconfigured for Dynatrace Managed. It is deploying a single Dynatrace Managed node. **WARNING** This template creates Amazon EC2 instance and related resources. You will be billed for the AWS resources used if you create a stack from this template. (qs-1ordscssj)",
+    "Metadata": {
+        "AWS::CloudFormation::Interface": {
+            "ParameterGroups": [
+                {
+                    "Label": {
+                        "default": "Dynatrace Managed licensing configuration"
+                    },
+                    "Parameters": [
+                        "LicenseKey",
+                        "DownloadUrl"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "Dynatraced Managed cluster environment configuration"
+                    },
+                    "Parameters": [
+                        "AdminPassword",
+                        "AdminEmail"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "Amazon EC2 configuration"
+                    },
+                    "Parameters": [
+                        "KeyPairName",
+                        "DynatraceInstanceType",
+                        "DynatraceInstanceTenancy"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "Amazon EBS Volume sizing configuration"
+                    },
+                    "Parameters": [
+                        "BinVolumeSize",
+                        "MiscVolumeSize",
+                        "SrvVolumeSize",
+                        "CassandraVolumeSize",
+                        "ElasticSearchVolumeSize"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "AWS Quick Start configuration"
+                    },
+                    "Parameters": [
+                        "QSS3BucketName",
+                        "QSS3KeyPrefix"
+                    ]
+                }
+            ],
+            "ParameterLabels": {
+                "AdminEmail": {
+                    "default": "Contact email for the cluster."
+                },
+                "AdminPassword": {
+                    "default": "Admin password"
+                },
+                "BinVolumeSize": {
+                    "default": "EBS Volume size - installation"
+                },
+                "CassandraVolumeSize": {
+                    "default": "EBS Volume size - long term storage"
+                },
+                "DownloadUrl": {
+                    "default": "Dynatrace Managed installer download URL"
+                },
+                "DynatraceInstanceType": {
+                    "default": "Dynatrace Managed instance type"
+                },
+                "DynatraceInstanceTenancy": {
+                    "default": "Dynatrace Managed instance tenancy"
+                },
+                "ElasticSearchVolumeSize": {
+                    "default": "EBS Volume size - ElasticSearch"
+                },
+                "KeyPairName": {
+                    "default": "Key pair name"
+                },
+                "LicenseKey": {
+                    "default": "Dynatrace Managed license key"
+                },
+                "MiscVolumeSize": {
+                    "default": "EBS Volume size - logs and updates"
+                },
+                "PrivateSubnetID": {
+                    "default": "Private Subnet ID"
+                },
+                "QSS3BucketName": {
+                    "default": "Quick Start S3 bucket name"
+                },
+                "QSS3KeyPrefix": {
+                    "default": "Quick Start S3 key prefix"
+                },
+                "SrvVolumeSize": {
+                    "default": "EBS Volume size - transaction storage"
+                },
+                "VPCID": {
+                    "default": "VPC ID"
+                }
+            }
+        }
+    },
+    "Parameters": {
+        "AdminEmail": {
+            "Type": "String",
+            "Description": "Problem notifications may be sent to this address if there is an issue detected on the cluster."
+        },
+        "AdminPassword": {
+            "Type": "String",
+            "NoEcho": "true",
+            "Description": "Initial password for the 'admin' user needed for accessing the Dynatrace cluster console UI. Note: This password should be changed afterwards.",
+            "MinLength": "8"
+        },
+        "LicenseKey": {
+            "Description": "Please see the user guide for information on how to obtain a license key.",
+            "Type": "String"
+        },
+        "DownloadUrl": {
+            "Description": "Please see the user guide for information on how to obtain the download URL.",
+            "Type": "String"
+        },
+        "DynatraceInstanceType": {
+            "AllowedValues": [
+                "m4.xlarge",
+                "r4.xlarge",
+                "m4.2xlarge",
+                "m5.2xlarge",
+                "r4.2xlarge",
+                "m4.4xlarge",
+                "m5.4xlarge",
+                "r4.4xlarge",
+                "r4.8xlarge",
+                "m4.10xlarge",
+                "m5.12xlarge",
+                "r4.16xlarge",
+                "m5.24xlarge"
+            ],
+            "Default": "r4.xlarge",
+            "Description": "Amazon EC2 instance type for the Dynatrace nodes",
+            "Type": "String"
+        },
+        "DynatraceInstanceTenancy": {
+            "AllowedValues": [
+                "default",
+                "dedicated"
+            ],
+            "Default": "default",
+            "Description": "Choose whether Dynatrace nodes run on a dedicated or a multi-tenant host.",
+            "Type": "String"
+        },
+        "BinVolumeSize": {
+            "Type": "Number",
+            "Description": "Dynatrace Managed For Binaries.",
+            "Default": "50",
+            "MinValue": "20",
+            "MaxValue": "16384"
+        },
+        "MiscVolumeSize": {
+            "Type": "Number",
+            "Description": "Dynatrace Managed Data Directory For Logs and Updates.",
+            "Default": "100",
+            "MinValue": "20",
+            "MaxValue": "16384"
+        },
+        "SrvVolumeSize": {
+            "Type": "Number",
+            "Description": "Dynatrace Managed Data Directory For Transaction Storage.",
+            "Default": "500",
+            "MinValue": "20",
+            "MaxValue": "16384"
+        },
+        "CassandraVolumeSize": {
+            "Type": "Number",
+            "Description": "Dynatrace Managed Cassandra Long-term Metrics Repository.",
+            "Default": "1200",
+            "MinValue": "50",
+            "MaxValue": "16384"
+        },
+        "ElasticSearchVolumeSize": {
+            "Type": "Number",
+            "Description": "Dynatrace Managed ElasticSearch Store.",
+            "Default": "700",
+            "MinValue": "20",
+            "MaxValue": "16384"
+        },
+        "DynatraceNodeRole": {
+            "Type": "String"
+        },
+        "DynatraceNodeProfile": {
+            "Type": "String"
+        },
+        "DynatraceNodeSecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup::Id"
+        },
+        "KeyPairName": {
+            "Description": "The name of an existing public/private key pair, which allows you to securely connect to your instance after it launches.",
+            "Type": "AWS::EC2::KeyPair::KeyName"
+        },
+        "NodeIndex": {
+            "Description": "Dynatrace Managed node index",
+            "Default": "1",
+            "Type": "String"
+        },
+        "PrivateSubnetID": {
+            "Description": "ID of the private subnet you want to provision the node into (e.g., subnet-e3246d8e)",
+            "Type": "AWS::EC2::Subnet::Id"
+        },
+        "QSS3BucketName": {
+            "AllowedPattern": "^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$",
+            "ConstraintDescription": "Quick Start bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-).",
+            "Default": "quickstart-dynatrace-dev",
+            "Description": "S3 bucket name for the Quick Start assets. Quick Start bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-).",
+            "Type": "String"
+        },
+        "QSS3KeyPrefix": {
+            "AllowedPattern": "^[0-9a-zA-Z-/]*$",
+            "ConstraintDescription": "Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).",
+            "Default": "latest/",
+            "Description": "S3 key prefix for the Quick Start assets. Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).",
+            "Type": "String"
+        },
+        "SeedIpName": {
+            "Description": "SSM parameter with seed IP address",
+            "Type": "AWS::SSM::Parameter::Name"
+        },
+        "SeedTokenName": {
+            "Description": "SSM parameter with seed API token",
+            "Type": "AWS::SSM::Parameter::Name"
+        },
+        "VPCID": {
+            "Description": "ID of the VPC (e.g., vpc-0343606e)",
+            "Type": "AWS::EC2::VPC::Id"
+        }
+    },
+    "Rules": {
+        "SubnetsInVPC": {
+            "Assertions": [
+                {
+                    "Assert": {
+                        "Fn::EachMemberIn": [
+                            {
+                                "Fn::ValueOfAll": [
+                                    "AWS::EC2::Subnet::Id",
+                                    "VpcId"
+                                ]
+                            },
+                            {
+                                "Fn::RefAll": "AWS::EC2::VPC::Id"
+                            }
+                        ]
+                    },
+                    "AssertDescription": "All subnets must exist in the VPC"
+                }
+            ]
+        }
+    },
+    "Mappings": {
+        "AWSAMIRegionMap": {
+            "AMI": {
+                "AMZNLINUXHVM": "amzn-ami-hvm-2018.03.0.20181129-x86_64-gp2"
+            },
+            "ap-northeast-1": {
+                "AMZNLINUXHVM": "ami-00a5245b4816c38e6"
+            },
+            "ap-northeast-2": {
+                "AMZNLINUXHVM": "ami-00dc207f8ba6dc919"
+            },
+            "ap-south-1": {
+                "AMZNLINUXHVM": "ami-0ad42f4f66f6c1cc9"
+            },
+            "ap-southeast-1": {
+                "AMZNLINUXHVM": "ami-05b3bcf7f311194b3"
+            },
+            "ap-southeast-2": {
+                "AMZNLINUXHVM": "ami-02fd0b06f06d93dfc"
+            },
+            "ca-central-1": {
+                "AMZNLINUXHVM": "ami-07423fb63ea0a0930"
+            },
+            "eu-central-1": {
+                "AMZNLINUXHVM": "ami-0cfbf4f6db41068ac"
+            },
+            "eu-west-1": {
+                "AMZNLINUXHVM": "ami-08935252a36e25f85"
+            },
+            "eu-west-2": {
+                "AMZNLINUXHVM": "ami-01419b804382064e4"
+            },
+            "eu-west-3": {
+                "AMZNLINUXHVM": "ami-0dd7e7ed60da8fb83"
+            },
+            "sa-east-1": {
+                "AMZNLINUXHVM": "ami-05145e0b28ad8e0b2"
+            },
+            "us-east-1": {
+                "AMZNLINUXHVM": "ami-0080e4c5bc078760e"
+            },
+            "us-east-2": {
+                "AMZNLINUXHVM": "ami-0cd3dfa4e37921605"
+            },
+            "us-west-1": {
+                "AMZNLINUXHVM": "ami-0ec6517f6edbf8044"
+            },
+            "us-west-2": {
+                "AMZNLINUXHVM": "ami-01e24be29428c15b2"
+            }
+        }
+    },
+    "Conditions": {
+        "GovCloudCondition": {
+            "Fn::Equals": [
+                {
+                    "Ref": "AWS::Region"
+                },
+                "us-gov-west-1"
+            ]
+        }
+    },
+    "Resources": {
+        "DynatraceNode": {
+            "Type": "AWS::EC2::Instance",
+            "Metadata": {
+                "AWS::CloudFormation::Authentication": {
+                    "S3AccessCreds": {
+                        "type": "S3",
+                        "roleName": {
+                            "Ref": "DynatraceNodeRole"
+                        },
+                        "buckets": [
+                            {
+                                "Ref": "QSS3BucketName"
+                            }
+                        ]
+                    }
+                },
+                "AWS::CloudFormation::Init": {
+                    "config": {
+                        "files": {
+                            "/tmp/host_setup.sh": {
+                                "source": {
+                                    "Fn::Sub": [
+                                        "https://${QSS3BucketName}.${QSS3Region}.amazonaws.com/${QSS3KeyPrefix}scripts/host_setup.sh",
+                                        {
+                                            "QSS3Region": {
+                                                "Fn::If": [
+                                                    "GovCloudCondition",
+                                                    "s3-us-gov-west-1",
+                                                    "s3"
+                                                ]
+                                            }
+                                        }
+                                    ]
+                                },
+                                "mode": "000550",
+                                "owner": "root",
+                                "group": "root",
+                                "authentication": "S3AccessCreds"
+                            },
+                            "/tmp/download_installer.sh": {
+                                "source": {
+                                    "Fn::Sub": [
+                                        "https://${QSS3BucketName}.${QSS3Region}.amazonaws.com/${QSS3KeyPrefix}scripts/download_installer.sh",
+                                        {
+                                            "QSS3Region": {
+                                                "Fn::If": [
+                                                    "GovCloudCondition",
+                                                    "s3-us-gov-west-1",
+                                                    "s3"
+                                                ]
+                                            }
+                                        }
+                                    ]
+                                },
+                                "mode": "000550",
+                                "owner": "root",
+                                "group": "root",
+                                "authentication": "S3AccessCreds"
+                            },
+                            "/tmp/install.sh": {
+                                "source": {
+                                    "Fn::Sub": [
+                                        "https://${QSS3BucketName}.${QSS3Region}.amazonaws.com/${QSS3KeyPrefix}scripts/install.sh",
+                                        {
+                                            "QSS3Region": {
+                                                "Fn::If": [
+                                                    "GovCloudCondition",
+                                                    "s3-us-gov-west-1",
+                                                    "s3"
+                                                ]
+                                            }
+                                        }
+                                    ]
+                                },
+                                "mode": "000550",
+                                "owner": "root",
+                                "group": "root",
+                                "authentication": "S3AccessCreds"
+                            },
+                            "/tmp/uninstall.sh": {
+                                "source": {
+                                    "Fn::Sub": [
+                                        "https://${QSS3BucketName}.${QSS3Region}.amazonaws.com/${QSS3KeyPrefix}scripts/uninstall.sh",
+                                        {
+                                            "QSS3Region": {
+                                                "Fn::If": [
+                                                    "GovCloudCondition",
+                                                    "s3-us-gov-west-1",
+                                                    "s3"
+                                                ]
+                                            }
+                                        }
+                                    ]
+                                },
+                                "mode": "000550",
+                                "owner": "root",
+                                "group": "root",
+                                "authentication": "S3AccessCreds"
+                            },
+                            "/tmp/params": {
+                                "content": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "DownloadUrl=",
+                                            {
+                                                "Ref": "DownloadUrl"
+                                            },
+                                            "\n",
+                                            "LicenseKey=",
+                                            {
+                                                "Ref": "LicenseKey"
+                                            },
+                                            "\n",
+                                            "AdminEmail=",
+                                            {
+                                                "Ref": "AdminEmail"
+                                            },
+                                            "\n",
+                                            "AdminPassword=",
+                                            {
+                                                "Ref": "AdminPassword"
+                                            },
+                                            "\n",
+                                            "SeedIpName=",
+                                            {
+                                                "Ref": "SeedIpName"
+                                            },
+                                            "\n",
+                                            "SeedTokenName=",
+                                            {
+                                                "Ref": "SeedTokenName"
+                                            },
+                                            "\n"
+                                        ]
+                                    ]
+                                },
+                                "mode": "000550",
+                                "owner": "root",
+                                "group": "root",
+                                "authentication": "S3AccessCreds"
+                            }
+                        },
+                        "commands": {
+                            "1-host-setup": {
+                                "command": "/tmp/host_setup.sh"
+                            },
+                            "2-download-installer": {
+                                "command": "/tmp/download_installer.sh /tmp/params"
+                            },
+                            "3-dynatrace-install": {
+                                "command": "/tmp/install.sh /tmp/params"
+                            },
+                            "4-cleanup": {
+                                "command": "rm /tmp/params"
+                            }
+                        }
+                    }
+                }
+            },
+            "Properties": {
+                "BlockDeviceMappings": [
+                    {
+                        "DeviceName": "/dev/xvda",
+                        "Ebs": {
+                            "VolumeSize": "20",
+                            "VolumeType": "gp2"
+                        }
+                    },
+                    {
+                        "DeviceName": "/dev/xvdb",
+                        "Ebs": {
+                            "VolumeSize": {
+                                "Ref": "BinVolumeSize"
+                            },
+                            "VolumeType": "gp2"
+                        }
+                    },
+                    {
+                        "DeviceName": "/dev/xvdc",
+                        "Ebs": {
+                            "VolumeSize": {
+                                "Ref": "MiscVolumeSize"
+                            },
+                            "VolumeType": "gp2"
+                        }
+                    },
+                    {
+                        "DeviceName": "/dev/xvdd",
+                        "Ebs": {
+                            "VolumeSize": {
+                                "Ref": "SrvVolumeSize"
+                            },
+                            "VolumeType": "gp2"
+                        }
+                    },
+                    {
+                        "DeviceName": "/dev/xvde",
+                        "Ebs": {
+                            "VolumeSize": {
+                                "Ref": "CassandraVolumeSize"
+                            },
+                            "VolumeType": "gp2"
+                        }
+                    },
+                    {
+                        "DeviceName": "/dev/xvdf",
+                        "Ebs": {
+                            "VolumeSize": {
+                                "Ref": "ElasticSearchVolumeSize"
+                            },
+                            "VolumeType": "gp2"
+                        }
+                    }
+                ],
+                "KeyName": {
+                    "Ref": "KeyPairName"
+                },
+                "IamInstanceProfile": {
+                    "Ref": "DynatraceNodeProfile"
+                },
+                "ImageId": {
+                    "Fn::FindInMap": [
+                        "AWSAMIRegionMap",
+                        {
+                            "Ref": "AWS::Region"
+                        },
+                        "AMZNLINUXHVM"
+                    ]
+                },
+                "SecurityGroupIds": [
+                    {
+                        "Ref": "DynatraceNodeSecurityGroup"
+                    }
+                ],
+                "SubnetId": {
+                    "Ref": "PrivateSubnetID"
+                },
+                "InstanceType": {
+                    "Ref": "DynatraceInstanceType"
+                },
+                "UserData": {
+                    "Fn::Base64": {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "#!/bin/bash\n",
+                                "yum update -y",
+                                "\n",
+                                "/opt/aws/bin/cfn-init",
+                                " --stack ",
+                                {
+                                    "Ref": "AWS::StackId"
+                                },
+                                " --resource DynatraceNode --region ",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                "\n",
+                                "EXITCODE=$?",
+                                "\n",
+                                "/opt/aws/bin/cfn-signal -e $EXITCODE --stack ",
+                                {
+                                    "Ref": "AWS::StackName"
+                                },
+                                " --resource DynatraceNode --region ",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                "\n"
+                            ]
+                        ]
+                    }
+                },
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": {
+                            "Fn::Join": [
+                                "",
+                                [
+                                    "DynatraceNode",
+                                    {
+                                        "Ref": "NodeIndex"
+                                    }
+                                ]
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "Environment",
+                        "Value": "AWS Quick Start"
+                    }
+                ],
+                "Tenancy": {
+                    "Ref": "DynatraceInstanceTenancy"
+                }
+            },
+            "CreationPolicy": {
+                "ResourceSignal": {
+                    "Timeout": "PT30M"
+                }
+            }
+        },
+        "RecoveryAlarm": {
+            "Type": "AWS::CloudWatch::Alarm",
+            "Properties": {
+                "AlarmDescription": "Trigger a recovery when instance status check fails for 15 consecutive minutes.",
+                "Namespace": "AWS/EC2",
+                "MetricName": "StatusCheckFailed_System",
+                "Statistic": "Minimum",
+                "Period": "60",
+                "EvaluationPeriods": "15",
+                "ComparisonOperator": "GreaterThanThreshold",
+                "Threshold": "0",
+                "AlarmActions": [
+                    {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "arn:aws:automate:",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                ":ec2:recover"
+                            ]
+                        ]
+                    }
+                ],
+                "Dimensions": [
+                    {
+                        "Name": "InstanceId",
+                        "Value": {
+                            "Ref": "DynatraceNode"
+                        }
+                    }
+                ]
+            }
+        }
+    },
+    "Outputs": {
+        "DynatraceNode": {
+            "Description": "Dynatrace EC2 Instance",
+            "Value": {
+                "Ref": "DynatraceNode"
+            }
+        }
+    }
+}

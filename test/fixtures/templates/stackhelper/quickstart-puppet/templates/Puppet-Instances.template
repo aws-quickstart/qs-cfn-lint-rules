@@ -1,0 +1,839 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "Step 3 of 3: Create the Amazon EC2 instances for the Puppet Quick Start.",
+    "Metadata": {
+        "AWS::CloudFormation::Interface": {
+            "ParameterGroups": [
+                {
+                    "Label": {
+                        "default": "Security Configuration"
+                    },
+                    "Parameters": [
+                        "KeyPairName",
+                        "RemoteAdminCIDR"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "Network Configuration"
+                    },
+                    "Parameters": [
+                        "VPC",
+                        "VPCCIDR"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "Puppet Configuration"
+                    },
+                    "Parameters": [
+                        "PuppetMasterIP",
+                        "PuppetAgentLinuxIP"
+                    ]
+                }
+            ],
+            "ParameterLabels": {
+                "KeyPairName": {
+                    "default": "Select a key pair"
+                },
+                "RemoteAdminCIDR": {
+                    "default": "Source IP for remote access"
+                },
+                "VPC": {
+                    "default": "Select a VPC Name"
+                },
+                "VPCCIDR": {
+                    "default": "CIDR Address for the VPC"
+                },
+                "PuppetMasterIP": {
+                    "default": "IP Address for Puppet Master"
+                },
+                "PuppetAgentLinuxIP": {
+                    "default": "IP Address for the Linux Agent"
+                }
+            }
+        }
+    },
+    "Parameters": {
+        "KeyPairName": {
+            "Description": "Public/private key pair",
+            "Type": "AWS::EC2::KeyPair::KeyName"
+        },
+        "SubnetId": {
+            "Description": "VPC subnet ID for EC2 Instances",
+            "Type": "AWS::EC2::Subnet::Id"
+        },
+        "VPC": {
+            "Description": "VPC ID",
+            "Type": "AWS::EC2::VPC::Id"
+        },
+        "RemoteAdminCIDR": {
+            "Description": "CIDR block or IP for SSH and RDP access Note: a value of 0.0.0.0/0 will allow access from ANY ip address",
+            "Type": "String",
+            "AllowedPattern": "[a-zA-Z0-9]+\\..+"
+        },
+        "PuppetMasterIP": {
+            "Description": "IP for the Puppet master",
+            "Type": "String",
+            "Default": "10.0.0.10"
+        },
+        "PuppetAgentLinuxIP": {
+            "Description": "IP for the Puppet agent",
+            "Type": "String",
+            "Default": "10.0.0.11"
+        },
+        "VPCCIDR": {
+            "Description": "CIDR block for the VPC",
+            "Type": "String",
+            "Default": "10.0.0.0/16",
+            "AllowedPattern": "[a-zA-Z0-9]+\\..+"
+        },
+        "Windows2012AMI": {
+            "Type": "AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>",
+            "Default": "/aws/service/ami-windows-latest/Windows_Server-2012-R2_RTM-English-64Bit-Base"
+        },
+        "QSS3BucketName": {
+            "Type": "String",
+            "AllowedPattern": "^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$",
+            "ConstraintDescription": "Quick Start bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-).",
+            "Default": "aws-quickstart",
+            "Description": "S3 bucket name for the Quick Start assets. Quick Start bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-)."
+        },
+        "QSS3KeyPrefix": {
+            "Type": "String",
+            "AllowedPattern": "^[0-9a-zA-Z-/]*$",
+            "ConstraintDescription": "Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).",
+            "Default": "quickstart-puppet/",
+            "Description": "S3 key prefix for the Quick Start assets. Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/)."
+        }
+    },
+    "Mappings": {
+        "AWSAMIRegionMap": {
+            "AMI": {
+                "US1404HVM": "ubuntu/images/hvm-ssd/ubuntu-trusty-14.04-amd64-server-20190514"
+            },
+            "ap-northeast-1": {
+                "US1404HVM": "ami-0cf54a87bffe628d2"
+            },
+            "ap-northeast-2": {
+                "US1404HVM": "ami-06014a6d5047caf51"
+            },
+            "ap-south-1": {
+                "US1404HVM": "ami-0460ce78b2cf43489"
+            },
+            "ap-southeast-1": {
+                "US1404HVM": "ami-0aa787af8cdd260f1"
+            },
+            "ap-southeast-2": {
+                "US1404HVM": "ami-0caee806a0c3782c4"
+            },
+            "ca-central-1": {
+                "US1404HVM": "ami-0975224f6cbaca625"
+            },
+            "eu-central-1": {
+                "US1404HVM": "ami-0e18ae6e39f4962f0"
+            },
+            "eu-west-1": {
+                "US1404HVM": "ami-005af4c3162f495fa"
+            },
+            "eu-west-2": {
+                "US1404HVM": "ami-02e42a8490e212d0a"
+            },
+            "sa-east-1": {
+                "US1404HVM": "ami-0b42a18b2c9c5ba83"
+            },
+            "us-east-1": {
+                "US1404HVM": "ami-000b3a073fc20e415"
+            },
+            "us-east-2": {
+                "US1404HVM": "ami-032eae14ebea64f91"
+            },
+            "us-west-1": {
+                "US1404HVM": "ami-0430743863c514c80"
+            },
+            "us-west-2": {
+                "US1404HVM": "ami-0bac6fc47ad07c5f5"
+            }
+        }
+    },
+    "Conditions": {
+        "GovCloudCondition": {
+            "Fn::Equals": [
+                {
+                    "Ref": "AWS::Region"
+                },
+                "us-gov-west-1"
+            ]
+        }
+    },
+    "Resources": {
+        "PuppetWaitCondition": {
+            "Type": "AWS::CloudFormation::WaitCondition",
+            "DependsOn": "PuppetMaster",
+            "Properties": {
+                "Handle": {
+                    "Ref": "PuppetWaitConditionHandle"
+                },
+                "Timeout": "4000"
+            }
+        },
+        "PuppetWaitConditionHandle": {
+            "Type": "AWS::CloudFormation::WaitConditionHandle",
+            "Properties": {}
+        },
+        "PuppetHostRole": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "Policies": [
+                    {
+                        "PolicyDocument": {
+                            "Version": "2012-10-17",
+                            "Statement": [
+                                {
+                                    "Action": [
+                                        "s3:GetObject",
+                                        "s3:ListObject"
+                                    ],
+                                    "Resource": {
+                                        "Fn::Sub": [
+                                            "arn:${Partition}:s3:::${QSS3BucketName}/${QSS3KeyPrefix}*",
+                                            {
+                                                "Partition": {
+                                                    "Fn::If": [
+                                                        "GovCloudCondition",
+                                                        "aws-us-gov",
+                                                        "aws"
+                                                    ]
+                                                }
+                                            }
+                                        ]
+                                    },
+                                    "Effect": "Allow"
+                                }
+                            ]
+                        },
+                        "PolicyName": "aws-quick-start-s3-policy"
+                    }
+                ],
+                "AssumeRolePolicyDocument": {
+                    "Statement": [
+                        {
+                            "Action": [
+                                "sts:AssumeRole"
+                            ],
+                            "Principal": {
+                                "Service": [
+                                    "ec2.amazonaws.com"
+                                ]
+                            },
+                            "Effect": "Allow"
+                        }
+                    ],
+                    "Version": "2012-10-17"
+                }
+            }
+        },
+        "PuppetHostProfile": {
+            "Type": "AWS::IAM::InstanceProfile",
+            "Properties": {
+                "Roles": [
+                    {
+                        "Ref": "PuppetHostRole"
+                    }
+                ],
+                "Path": "/"
+            }
+        },
+        "PuppetMaster": {
+            "Type": "AWS::EC2::Instance",
+            "Metadata": {
+                "AWS::CloudFormation::Authentication": {
+                    "S3AccessCreds": {
+                        "type": "S3",
+                        "roleName": {
+                            "Ref": "PuppetHostRole"
+                        },
+                        "buckets": [
+                            {
+                                "Ref": "QSS3BucketName"
+                            }
+                        ]
+                    }
+                },
+                "AWS::CloudFormation::Init": {
+                    "config": {
+                        "config": {
+                            "files": {
+                                "/etc/cfn/cfn-hup.conf": {
+                                    "content": {
+                                        "Fn::Join": [
+                                            "",
+                                            [
+                                                {
+                                                    "Fn::Sub": "/usr/local/bin/cfn-init -v --stack ${AWS::StackName} --resource PuppetMaster --region ${AWS::Region}"
+                                                },
+                                                "\n"
+                                            ]
+                                        ]
+                                    },
+                                    "mode": "000400",
+                                    "user": "root",
+                                    "group": "root"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "Properties": {
+                "IamInstanceProfile": {
+                    "Ref": "PuppetHostProfile"
+                },
+                "ImageId": {
+                    "Fn::FindInMap": [
+                        "AWSAMIRegionMap",
+                        {
+                            "Ref": "AWS::Region"
+                        },
+                        "US1404HVM"
+                    ]
+                },
+                "InstanceType": "t3.medium",
+                "NetworkInterfaces": [
+                    {
+                        "DeleteOnTermination": true,
+                        "DeviceIndex": "0",
+                        "SubnetId": {
+                            "Ref": "SubnetId"
+                        },
+                        "PrivateIpAddresses": [
+                            {
+                                "Primary": true,
+                                "PrivateIpAddress": {
+                                    "Ref": "PuppetMasterIP"
+                                }
+                            }
+                        ],
+                        "GroupSet": [
+                            {
+                                "Ref": "PuppetMasterSecurityGroup"
+                            }
+                        ]
+                    }
+                ],
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": "Puppet"
+                    }
+                ],
+                "BlockDeviceMappings": [
+                    {
+                        "DeviceName": "/dev/sda1",
+                        "Ebs": {
+                            "VolumeSize": 50,
+                            "VolumeType": "gp2"
+                        }
+                    }
+                ],
+                "KeyName": {
+                    "Ref": "KeyPairName"
+                },
+                "UserData": {
+                    "Fn::Base64": {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "#!/bin/bash -e\n",
+                                "export LC_ALL=C\n",
+                                "export PATH=/usr/local/bin:$PATH\n",
+                                "hostname puppet.example.com\n",
+                                "apt-get update\n",
+                                "apt-get install -y python-pip\n",
+                                "pip install awscli\n",
+                                "apt-get install -y libffi-dev libssl-dev\n",
+                                "wget https://apt.puppetlabs.com/puppetlabs-release-trusty.deb -O /tmp/puppetlabs-release-trusty.deb\n",
+                                "pip install --upgrade pip &> /dev/null\n",
+                                "pip install pyopenssl ndg-httpsclient pyasn1\n",
+                                "easy_install https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-latest.tar.gz\n",
+                                "dpkg -i /tmp/puppetlabs-release-trusty.deb\n",
+                                "apt-get install puppetmaster-passenger -y\n",
+                                "sed --in-place '/templatedir/ d' /etc/puppet/puppet.conf\n",
+                                {
+                                    "Fn::Sub": "aws s3 cp s3://${QSS3BucketName}/${QSS3KeyPrefix}scripts/autosign.conf /etc/puppet/autosign.conf --region ${AWS::Region}\n"
+                                },
+                                {
+                                    "Fn::Sub": "aws s3 cp s3://${QSS3BucketName}/${QSS3KeyPrefix}scripts/site.pp /etc/puppet/manifests/site.pp --region ${AWS::Region}\n"
+                                },
+                                "mkdir -p /etc/puppet/modules/lampserver/manifests\n",
+                                "mkdir -p /etc/puppet/modules/iisserver/manifests\n",
+                                "puppet module install puppetlabs-powershell\n",
+                                "puppet module install puppet-windowsfeature\n",
+                                {
+                                    "Fn::Sub": "aws s3 cp s3://${QSS3BucketName}/${QSS3KeyPrefix}scripts/lampserver/init.pp /etc/puppet/modules/lampserver/manifests/init.pp --region ${AWS::Region}\n"
+                                },
+                                {
+                                    "Fn::Sub": "aws s3 cp s3://${QSS3BucketName}/${QSS3KeyPrefix}scripts/iisserver/init.pp /etc/puppet/modules/iisserver/manifests/init.pp --region ${AWS::Region}\n"
+                                },
+                                {
+                                    "Fn::Sub": "/usr/local/bin/cfn-init -v --stack ${AWS::StackName} --resource PuppetMaster --region ${AWS::Region}\n"
+                                },
+                                {
+                                    "Fn::Sub": "/usr/local/bin/cfn-signal -e $? '${PuppetWaitConditionHandle}'\n"
+                                }
+                            ]
+                        ]
+                    }
+                }
+            }
+        },
+        "LinuxAgent": {
+            "Type": "AWS::EC2::Instance",
+            "DependsOn": "PuppetWaitCondition",
+            "Properties": {
+                "ImageId": {
+                    "Fn::FindInMap": [
+                        "AWSAMIRegionMap",
+                        {
+                            "Ref": "AWS::Region"
+                        },
+                        "US1404HVM"
+                    ]
+                },
+                "InstanceType": "t3.medium",
+                "NetworkInterfaces": [
+                    {
+                        "DeleteOnTermination": true,
+                        "DeviceIndex": "0",
+                        "SubnetId": {
+                            "Ref": "SubnetId"
+                        },
+                        "PrivateIpAddresses": [
+                            {
+                                "Primary": true,
+                                "PrivateIpAddress": {
+                                    "Ref": "PuppetAgentLinuxIP"
+                                }
+                            }
+                        ],
+                        "GroupSet": [
+                            {
+                                "Ref": "PuppetAgentLinuxSecurityGroup"
+                            }
+                        ]
+                    }
+                ],
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": "LinuxAgent"
+                    }
+                ],
+                "KeyName": {
+                    "Ref": "KeyPairName"
+                },
+                "UserData": {
+                    "Fn::Base64": {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "#!/bin/bash -e\n",
+                                "export LC_ALL=C\n",
+                                "export PATH=/usr/local/bin:$PATH\n",
+                                "sed -i 's/.*DPkg/#&/' /etc/apt/apt.conf.d/70debconf\n",
+                                "hostname linuxagent.example.com\n",
+                                "apt-get update\n",
+                                "apt-get install -y python-pip\n",
+                                "easy_install https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-latest.tar.gz\n",
+                                "apt-get install puppet -y\n",
+                                "sed -i '/main/aserver=puppet.example.com' /etc/puppet/puppet.conf\n",
+                                "puppet agent --enable\n",
+                                "puppet agent --test --verbose\n"
+                            ]
+                        ]
+                    }
+                }
+            }
+        },
+        "WindowsAgent": {
+            "Type": "AWS::EC2::Instance",
+            "DependsOn": "PuppetMaster",
+            "Metadata": {
+                "AWS::CloudFormation::Authentication": {
+                    "default": {
+                        "type": "S3",
+                        "buckets": [
+                            {
+                                "Ref": "QSS3BucketName"
+                            }
+                        ],
+                        "roleName": {
+                            "Ref": "PuppetHostRole"
+                        }
+                    }
+                },
+                "AWS::CloudFormation::Init": {
+                    "configSets": {
+                        "config": [
+                            "setup"
+                        ]
+                    },
+                    "setup": {
+                        "files": {
+                            "c:\\cfn\\cfn-hup.conf": {
+                                "content": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "[main]\n",
+                                            "stack=",
+                                            {
+                                                "Ref": "AWS::StackId"
+                                            },
+                                            "\n",
+                                            "region=",
+                                            {
+                                                "Ref": "AWS::Region"
+                                            },
+                                            "\n"
+                                        ]
+                                    ]
+                                }
+                            },
+                            "c:\\cfn\\hooks.d\\cfn-auto-reloader.conf": {
+                                "content": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "[cfn-auto-reloader-hook]\n",
+                                            "triggers=post.update\n",
+                                            "path=Resources.WindowsAgent.Metadata.AWS::CloudFormation::Init\n",
+                                            "action=cfn-init.exe -v -s ",
+                                            {
+                                                "Ref": "AWS::StackId"
+                                            },
+                                            " -r WindowsAgent",
+                                            " --region ",
+                                            {
+                                                "Ref": "AWS::Region"
+                                            },
+                                            "\n"
+                                        ]
+                                    ]
+                                }
+                            },
+                            "c:\\cfn\\scripts\\Unzip-Archive.ps1": {
+                                "source": {
+                                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}submodules/quickstart-microsoft-utilities/scripts/Unzip-Archive.ps1"
+                                }
+                            },
+                            "c:\\cfn\\modules\\AWSQuickStart.zip": {
+                                "source": {
+                                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}submodules/quickstart-microsoft-utilities/modules/AWSQuickStart.zip"
+                                }
+                            },
+                            "c:\\cfn\\downloads\\puppet-latest.msi": {
+                                "source": "https://downloads.puppetlabs.com/windows/puppet-3.8.6-x64.msi"
+                            },
+                            "c:\\cfn\\scripts\\New-LocalAdministrator.ps1": {
+                                "source": {
+                                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}submodules/quickstart-microsoft-utilities/scripts/New-LocalAdministrator.ps1"
+                                }
+                            },
+                            "c:\\cfn\\downloads\\Win8.1AndW2K12R2-KB3134758-x64.msu": {
+                                "source": "https://download.microsoft.com/download/2/C/6/2C6E1B4A-EBE5-48A6-B225-2D2058A9CEFB/Win8.1AndW2K12R2-KB3134758-x64.msu"
+                            },
+                            "c:\\cfn\\scripts\\Set-PrimaryDnsSuffix.ps1": {
+                                "source": {
+                                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}submodules/quickstart-microsoft-utilities/scripts/Set-PrimaryDNSSuffix.ps1"
+                                }
+                            },
+                            "c:\\cfn\\scripts\\UpdateCerts.ps1": {
+                                "source": {
+                                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}scripts/iisserver/UpdateCerts.ps1"
+                                }
+                            }
+                        },
+                        "commands": {
+                            "a-set-execution-policy": {
+                                "command": "powershell.exe -command Set-ExecutionPolicy RemoteSigned -Force",
+                                "waitAfterCompletion": "0"
+                            },
+                            "b-unpack-quickstart-module": {
+                                "command": "powershell.exe -command c:\\cfn\\scripts\\Unzip-Archive.ps1 -Source c:\\cfn\\modules\\AWSQuickStart.zip -Destination C:\\Windows\\system32\\WindowsPowerShell\\v1.0\\Modules\\",
+                                "waitAfterCompletion": "0"
+                            },
+                            "c-init-quickstart-module": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "powershell.exe -Command \"",
+                                            "New-AWSQuickStartResourceSignal -Stack '",
+                                            {
+                                                "Ref": "AWS::StackName"
+                                            },
+                                            "' -Resource 'WindowsAgent' -Region '",
+                                            {
+                                                "Ref": "AWS::Region"
+                                            },
+                                            "'\""
+                                        ]
+                                    ]
+                                },
+                                "waitAfterCompletion": "0"
+                            },
+                            "d-install-puppet-agent": {
+                                "command": "powershell.exe -command Start-Process msiexec.exe '/qn /norestart /i C:\\cfn\\downloads\\puppet-latest.msi PUPPET_MASTER_SERVER=puppet.example.com' -NoNewWindow -Wait",
+                                "waitAfterCompletion": "0"
+                            },
+                            "e-execute-powershell-script-RenameComputer": {
+                                "command": "powershell.exe -Command Rename-Computer -NewName windowsagent -Restart",
+                                "waitAfterCompletion": "forever"
+                            },
+                            "f-execute-powershell-script-SetDnsSuffix": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "powershell.exe -command c:\\cfn\\scripts\\Set-PrimaryDnsSuffix.ps1 -Suffix 'example.com'"
+                                        ]
+                                    ]
+                                },
+                                "waitAfterCompletion": "forever"
+                            },
+                            "g-update-certs": {
+                                "command": "powershell.exe -command c:\\cfn\\scripts\\UpdateCerts.ps1",
+                                "waitAfterCompletion": "0"
+                            },
+                            "h-install-puppetlabs-windows": {
+                                "command": "puppet module install puppetlabs-windows",
+                                "waitAfterCompletion": "0"
+                            },
+                            "i-send-signal": {
+                                "command": "powershell.exe -command Write-AWSQuickStartStatus",
+                                "waitAfterCompletion": "0"
+                            }
+                        },
+                        "services": {
+                            "windows": {
+                                "cfn-hup": {
+                                    "enabled": "true",
+                                    "ensureRunning": "true",
+                                    "files": [
+                                        "c:\\cfn\\cfn-hup.conf",
+                                        "c:\\cfn\\hooks.d\\cfn-auto-reloader.conf"
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "Properties": {
+                "IamInstanceProfile": {
+                    "Ref": "PuppetHostProfile"
+                },
+                "ImageId": {
+                    "Ref": "Windows2012AMI"
+                },
+                "InstanceType": "t2.medium",
+                "SubnetId": {
+                    "Ref": "SubnetId"
+                },
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": "WindowsAgent"
+                    }
+                ],
+                "BlockDeviceMappings": [
+                    {
+                        "DeviceName": "/dev/sda1",
+                        "Ebs": {
+                            "VolumeSize": 50,
+                            "VolumeType": "gp2"
+                        }
+                    }
+                ],
+                "SecurityGroupIds": [
+                    {
+                        "Ref": "PuppetAgentWindowsSecurityGroup"
+                    }
+                ],
+                "KeyName": {
+                    "Ref": "KeyPairName"
+                },
+                "UserData": {
+                    "Fn::Base64": {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "<script>\n",
+                                "cfn-init.exe -v -c config -s ",
+                                {
+                                    "Ref": "AWS::StackId"
+                                },
+                                " -r WindowsAgent",
+                                " --region ",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                "\n",
+                                "</script>\n"
+                            ]
+                        ]
+                    }
+                }
+            },
+            "CreationPolicy": {
+                "ResourceSignal": {
+                    "Count": "1",
+                    "Timeout": "PT40M"
+                }
+            }
+        },
+        "PuppetMasterSecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "GroupDescription": "Enables access to the Puppet master",
+                "VpcId": {
+                    "Ref": "VPC"
+                },
+                "SecurityGroupIngress": [
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": 22,
+                        "ToPort": 22,
+                        "CidrIp": {
+                            "Ref": "RemoteAdminCIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": 22,
+                        "ToPort": 22,
+                        "CidrIp": {
+                            "Ref": "VPCCIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": 8140,
+                        "ToPort": 8140,
+                        "CidrIp": {
+                            "Ref": "VPCCIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": 80,
+                        "ToPort": 80,
+                        "CidrIp": {
+                            "Ref": "VPCCIDR"
+                        }
+                    }
+                ]
+            }
+        },
+        "PuppetAgentLinuxSecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "GroupDescription": "Enables access to the puppet agent",
+                "VpcId": {
+                    "Ref": "VPC"
+                },
+                "SecurityGroupIngress": [
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": 22,
+                        "ToPort": 22,
+                        "CidrIp": {
+                            "Ref": "RemoteAdminCIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": 22,
+                        "ToPort": 22,
+                        "CidrIp": {
+                            "Ref": "VPCCIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": 80,
+                        "ToPort": 80,
+                        "CidrIp": {
+                            "Ref": "RemoteAdminCIDR"
+                        }
+                    }
+                ]
+            }
+        },
+        "PuppetAgentWindowsSecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "GroupDescription": "Enables access to the puppet agent",
+                "VpcId": {
+                    "Ref": "VPC"
+                },
+                "SecurityGroupIngress": [
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": 3389,
+                        "ToPort": 3389,
+                        "CidrIp": {
+                            "Ref": "RemoteAdminCIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": 3389,
+                        "ToPort": 3389,
+                        "CidrIp": {
+                            "Ref": "VPCCIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": 80,
+                        "ToPort": 80,
+                        "CidrIp": {
+                            "Ref": "RemoteAdminCIDR"
+                        }
+                    }
+                ]
+            }
+        }
+    },
+    "Outputs": {
+        "PuppetMasterDnsName": {
+            "Value": {
+                "Fn::GetAtt": [
+                    "PuppetMaster",
+                    "PublicDnsName"
+                ]
+            },
+            "Description": "Public DNS Name for the Puppet Server"
+        },
+        "PuppetAgentLinuxDnsName": {
+            "Value": {
+                "Fn::GetAtt": [
+                    "LinuxAgent",
+                    "PublicDnsName"
+                ]
+            },
+            "Description": "Public DNS Name for the Puppet Linux agent"
+        },
+        "PuppetAgentWindowsDnsName": {
+            "Value": {
+                "Fn::GetAtt": [
+                    "WindowsAgent",
+                    "PublicDnsName"
+                ]
+            },
+            "Description": "Public DNS Name for the Puppet Windows agent"
+        }
+    }
+}

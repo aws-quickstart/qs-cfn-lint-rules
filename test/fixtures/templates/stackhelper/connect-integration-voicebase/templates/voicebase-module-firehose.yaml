@@ -1,0 +1,148 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: VoiceBase integration for Amazon Connect - Transcription S3 Delivery
+Parameters:
+  QSS3BucketName:
+    Type: String
+    Default: aws-quickstart
+    Description: >-
+      S3 bucket name for the Quick Start assets. This string can include
+      numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot
+      start or end with a hyphen (-)
+    AllowedPattern: '^[0-9a-zA-Z]+([0-9a-zA-Z-.]*[0-9a-zA-Z])*$'
+    ConstraintDescription: >-
+      Quick Start bucket name can include numbers, lowercase letters, uppercase
+      letters, and hyphens (-). It cannot start or end with a hyphen (-)
+  QSS3KeyPrefix:
+    Type: String
+    Default: connect-integration-voicebase/
+    Description: >-
+      S3 key prefix for the Quick Start assets. Quick Start key prefix can
+      include numbers, lowercase letters, uppercase letters, hyphens (-), and
+      forward slash (/)
+    AllowedPattern: '^[0-9a-zA-Z-/]*$'
+    ConstraintDescription: >-
+      Quick Start key prefix can include numbers, lowercase letters, uppercase
+      letters, hyphens (-), and forward slash (/)
+  OutputS3BucketName:
+    Type: String
+    AllowedPattern: '^[0-9a-zA-Z]+([0-9a-zA-Z-.]*[0-9a-zA-Z])*$'
+    Description: >-
+      S3 bucket where the transcription output will be stored. NOTE: It's
+      recommended NOT to use your connect integration S3 bucket for output.
+  OutputS3KeyPrefix:
+    Type: String
+    Default: connect/voicebase/transcriptions/
+    Description: >-
+      S3 key prefix for VoiceBase transcription delivery; can include numbers,
+      lowercase letters, uppercase letters, hyphens (-), and forward slash (/)
+    AllowedPattern: '^[0-9a-zA-Z-/]*$'
+    ConstraintDescription: >-
+      VoiceBase transcription key prefix can include numbers, lowercase letters,
+      uppercase letters, hyphens (-), and forward slash (/)
+  EnableEncryption:
+    AllowedValues:
+      - 'yes'
+      - 'no'
+    Type: String
+    Default: 'yes'
+    Description: >-
+      Enables server-side encryption using an AWS KMS key   
+  VoicebaseTranscriptionStreamArn:
+      Type: String
+      Default: ''
+      Description: ARN of Amazon Kinesis stream to which VoiceBase transcriptions are delivered.
+Conditions:
+  encryptionEnabled: !Equals
+    - !Ref EnableEncryption
+    - 'yes'
+Resources:
+  VoicebaseTranscriptionS3OutputRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: firehose.amazonaws.com
+            Action: 'sts:AssumeRole'
+            Condition:
+              StringEquals:
+                'sts:ExternalId': !Ref 'AWS::AccountId'
+      Policies:                
+        - PolicyName: VoicebaseTranscriptionS3OutputKinesisPolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'kinesis:DescribeStream'
+                  - 'kinesis:GetShardIterator'
+                  - 'kinesis:GetRecords'
+                Resource:
+                  - !Ref VoicebaseTranscriptionStreamArn
+        - PolicyName: VoicebaseTranscriptionS3OutputPolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 's3:AbortMultipartUpload'
+                  - 's3:GetBucketLocation'
+                  - 's3:GetObject'
+                  - 's3:ListBucket'
+                  - 's3:ListBucketMultipartUploads'
+                  - 's3:PutObject'
+                Resource:
+                  - !Join 
+                    - ''
+                    - - 'arn:aws:s3:::'
+                      - !Ref OutputS3BucketName
+                  - !Join 
+                    - ''
+                    - - 'arn:aws:s3:::'
+                      - !Ref OutputS3BucketName
+                      - /*
+  VoicebaseTranscriptionS3Output:
+    Type: 'AWS::KinesisFirehose::DeliveryStream'
+    Properties:
+      DeliveryStreamType: KinesisStreamAsSource
+      KinesisStreamSourceConfiguration:
+        KinesisStreamARN: !Ref VoicebaseTranscriptionStreamArn
+        RoleARN: !GetAtt 
+          - VoicebaseTranscriptionS3OutputRole
+          - Arn
+      S3DestinationConfiguration:
+        BucketARN: !Join 
+          - ''
+          - - 'arn:aws:s3:::'
+            - !Ref OutputS3BucketName
+        CompressionFormat: UNCOMPRESSED
+        Prefix: !Ref OutputS3KeyPrefix
+        BufferingHints:
+          IntervalInSeconds: 60
+          SizeInMBs: 5
+        EncryptionConfiguration: !If
+          - encryptionEnabled
+          - KMSEncryptionConfig:
+              AWSKMSKeyARN: !Join 
+                - ''
+                - - 'arn:aws:kms:'
+                  - !Ref 'AWS::Region'
+                  - ':'
+                  - !Ref 'AWS::AccountId'
+                  - ':alias/aws/s3'
+          - NoEncryptionConfig: NoEncryption
+        RoleARN: !GetAtt 
+          - VoicebaseTranscriptionS3OutputRole
+          - Arn
+Outputs:
+  VoicebaseTranscriptionS3Bucket:
+    Description: VoiceBase Transcription Output S3 Bucket Name
+    Value: !Ref OutputS3BucketName
+  VoicebaseTranscriptionS3KeyPrefix:
+    Description: VoiceBase Transcription Output S3 Key Prefix
+    Value: !Ref OutputS3KeyPrefix
+  VoicebaseTranscriptionDeliveryStream:
+      Description: Delivery stream that stores VoiceBase output in S3
+      Value: !GetAtt VoicebaseTranscriptionS3Output.Arn

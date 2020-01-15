@@ -1,0 +1,456 @@
+---
+AWSTemplateFormatVersion: 2010-09-09
+Description: >-
+  IBM Cloud Private cluster members. **WARNING** This template creates EC2 instances and related resources. You will be billed for the AWS resources used if you create a stack from this template.
+
+Parameters:
+  # Variables are declared in alphabetical order.
+  AMIImageId:
+    Description: >-
+      The AMI virutal machine image identifier.  Root template defines the mapping by region.
+    Type: String
+
+  ApplicationSecurityGroup:
+    Description: >-
+      ApplicationSecurityGroup resource ID from the parent stack
+    Type: String
+
+  AvailabilityZoneCount:
+    Description: >-
+      The number of Availability Zones.
+    Type: Number
+
+  EBSVolumeType:
+    Description: >-
+      The type of EBS volume to use for the cluster member EC2 instances. The io1 volume type supports the specification of the disk IOPS.  The gp2 volume type is less expensive and may perform well enough for your purposes. The StorageIOPS parameter specifies the IOPS of an io2 storage device.
+    Type: String
+
+  EFSDNSName:
+    Description: >-
+      The EFS server public DNS name providing shared storage used by the master and Vulnerability Advisor nodes for the various mount points they need to share. For example, the master nodes share the docker registry. The Vulnerability Advisor nodes share the Minio storage starting with ICP 3.1.1.
+    Type: String
+
+  ExternalSSHSecurityGroup:
+    Description: >-
+      ExternalSSHSecurityGroup resource ID from the parent stack
+    Type: String
+
+  IBMCloudPrivateVPC:
+    Description: >-
+      The VPC resource ID for the IBMCloudPrivateVPC deployed by the root template.
+    Type: String
+
+  ICPArchiveBucketName:
+    Description: >-
+      The name of the S3 bucket where the ICP install archive and Docker install binary is located.  The bucket name is needed to establish permission to access the ICP and Docker installation archives. Root template uses a mapping based on AWS region to provide the archive bucket name.
+    Type: String
+
+  ICPClusterNodeScriptPackagePath:
+    Description: >-
+      The path in the ICP bootstrap S3 bucket to the ICP cluster node script package (zip) file.  Cluster nodes are master, proxy, worker, management, vulnerability advisor.
+    Type: String
+
+  ICPDeploymentLogsBucketName:
+    Description: >-
+      The name of the S3 bucket where ICP stack deployment logs are to be exported. The deployment logs provide a record of the boot strap scripting actions and are useful for problem determination if the deployment fails in some way.
+    Type: String
+
+  ICPMasterSecurityGroup:
+    Description: >-
+      ICPMasterSecurityGroup resource ID from the parent stack
+    Type: String
+
+  ICPNodeProfile:
+    Description: >-
+      ICPNodeProfile resource ID from the parent stack
+    Type: String
+
+  ICPNodeRole:
+    Description: >-
+      The IAM role with the permissions to access the various resources of the
+      IBM Cloud Private deployment.
+    Type: String
+
+  ICPS3KeyPrefix:
+    Description: >-
+      The S3 key prefix (context root) for IBM Cloud Private installation artifacts in the ICPScriptBucketName S3 bucket. By convention the value includes a trailing slash. (The ICPScriptBucketName gets assigned the value of the QSS3BucketName.)
+    Type: String
+
+  ICPScriptBucketName:
+    Description: >-
+      The name of the S3 bucket where the ICP boostrap script packages are located. (The ICPScriptBucketName gets assigned the value of the QSS3BucketName.)
+    Type: String
+
+  ICPVersion:
+    Description: >-
+      The version of ICP to be deployed. Provided by the parent stack.  Used in the nodeinit script to determine what Docker binary to install.
+    Type: String
+
+  InternalICPSecurityGroup:
+    Description: >-
+      InternalICPSecurityGroup resource ID from the parent stack
+    Type: String
+
+  InternalSSHSecurityGroup:
+    Description: >-
+      InternalSSHSecurityGroup resource ID from the parent stack
+    Type: String
+
+  KeyName:
+    Description: >-
+      Name of an existing EC2 KeyPair to enable SSH access to the instance
+    Type: AWS::EC2::KeyPair::KeyName
+    ConstraintDescription: Must be the name of an existing EC2 KeyPair.
+
+  ManagementNodeCount:
+    Description: >-
+      Number of Management nodes to be deployed in the ICP cluster. For a dev deployment 1 is sufficient. For production deployments, at least 2 and typically 3 are deployed.  The Management nodes run the resource and log monitoring monitoring components, e.g., Prometheus, Grafana and the ELK stack.
+    Type: Number
+
+  ManagementNodeInstanceType:
+    Description: ICP Management node AWS EC2 instance type
+    Type: String
+    AllowedValues:
+      - m5.xlarge
+      - m5.2xlarge
+      - m5d.xlarge
+      - m5d.2xlarge
+    ConstraintDescription: Must be a valid EC2 instance type.
+
+  MasterNodeCount:
+    Description: >-
+      Number of master nodes to be deployed in the ICP cluster. Must be an odd number. For a development deployment 1 is sufficient. For production deployments typically 3 or 5.
+    Type: String
+
+  MasterNodeInstanceType:
+    Description: ICP master node AWS EC2 instance type
+    Type: String
+    AllowedValues:
+      - m5.xlarge
+      - m5.2xlarge
+      - m5d.xlarge
+      - m5d.2xlarge
+    ConstraintDescription: Must be a valid EC2 instance type.
+
+  MasterNodeProfile:
+    Description: >-
+      ICPMasterNodeProfile resource ID from the parent stack
+    Type: String
+
+  MasterNodeRole:
+    Description: >-
+      The IAM role with the permissions to access the various resources of the
+      IBM Cloud Private deployment.
+    Type: String
+
+  PrivateSubnetIds:
+    Description: >-
+      A comma delimted list of private subnet resource IDs passed in from the parent stack. The PrivateSubnetIds are used to configure the master node auto-scaling group.
+    Type: String
+
+  ProxyNodeCount:
+    Description: >-
+      Number of proxy nodes to be deployed in the ICP cluster. For a dev deployment 1 is sufficient. For production deployments, at least 2 and typically 3 are deployed.
+    Type: String
+    Default: 1
+
+  ProxyNodeInstanceType:
+    Description: ICP worker node AWS EC2 instance type
+    Type: String
+    AllowedValues:
+      - m5.large
+      - m5.xlarge
+      - m5.2xlarge
+      - m5d.large
+      - m5d.xlarge
+      - m5d.2xlarge
+    ConstraintDescription: Must be a valid EC2 instance type.
+
+  PublicSubnetIds:
+    Description: >-
+      A comma delimted list of public subnet resource IDs passed in from the parent stack.  PublicSubnetIds are used to configure the Master Node Elastic Load Balancer (ELB).
+    Type: String
+
+  ResourceOwner:
+    Description: >-
+      Value for the owner tag for the deployed resource associated with the stack.
+    Type: String
+
+  RootStackName:
+    Description: >-
+      The root stack name. The root stack name is used as the common unique name for the Kubernetes tag on all EC2 instances in the cluster.
+    Type: String
+
+  StorageIOPS:
+    Description: >-
+      The maximum number of read and write operations per second for the EBS storage devices provisioned to the IBM Cloud Private cluster member EC2 instances. The io1 storage volume type supports an explicit setting of the IOPS of the device. The EBSVolumeType parameter specifies the storage volume type. This parameter is ignored if the EBSVolumeType is set to gp2.
+    Type: Number
+
+  VulnerabilityAdvisorNodeCount:
+    Description: >-
+      Number of Vulnerability Advisor nodes to be deployed in the ICP cluster. Not typically deployed for a development environment. For production deployments, typically 3 are deployed. VA uses zookeeper which requires an odd number of instances for consistency voting purposes. The VA nodes run the resource image and container security scanning components.
+    Type: Number
+    AllowedValues:
+      - 0
+      - 1
+      - 3
+
+  VulnerabilityAdvisorNodeInstanceType:
+    Description: ICP Vulnerability Advisor node AWS EC2 instance type
+    Type: String
+    AllowedValues:
+      - m5.2xlarge
+      - m5.4xlarge
+      - m5d.2xlarge
+      - m5d.4xlarge
+    ConstraintDescription: Must be a valid EC2 instance type.
+
+  WorkerNodeCount:
+    Description: >-
+      Number of worker nodes (desired capacity) to be deployed in the ICP cluster.
+    Type: String
+    Default: 2
+
+  WorkerNodeInstanceType:
+    Description: ICP worker node AWS EC2 instance type
+    Type: String
+    Default: m5d.xlarge
+    AllowedValues:
+      - t2.micro
+      - t2.large
+      - t2.xlarge
+      - t2.2xlarge
+      - m5.large
+      - m5.xlarge
+      - m5.2xlarge
+      - m5.4xlarge
+      - m5.12xlarge
+      - m5.24xlarge
+      - m5a.4xlarge
+      - m5a.12xlarge
+      - m5a.24xlarge
+      - c5.4xlarge
+      - c5.12xlarge
+      - c5.18xlarge
+      - c5.24xlarge
+      - m5d.large
+      - m5d.xlarge
+      - m5d.2xlarge
+      - m5d.4xlarge
+    ConstraintDescription: Must be a valid EC2 instance type.
+
+
+Conditions:
+  DeployVulnerabilityAdvisor: !Not [!Equals [!Ref VulnerabilityAdvisorNodeCount, 0]]
+  3MastersCondition: !Equals [!Ref MasterNodeCount, 3]
+
+Resources:
+
+  MasterNodeStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub https://s3.amazonaws.com/${ICPScriptBucketName}/${ICPS3KeyPrefix}templates/ibm-cloud-private-master.yaml
+      Parameters:
+        AMIImageId: !Ref AMIImageId
+        AvailabilityZoneCount: !Ref AvailabilityZoneCount
+        EBSVolumeType: !Ref EBSVolumeType
+        EFSDNSName: !Ref EFSDNSName
+        ExternalSSHSecurityGroup: !Ref ExternalSSHSecurityGroup
+        IBMCloudPrivateVPC: !Ref IBMCloudPrivateVPC
+        ICPArchiveBucketName: !Ref ICPArchiveBucketName
+        ICPClusterNodeScriptPackagePath: !Ref ICPClusterNodeScriptPackagePath
+        ICPDeploymentLogsBucketName: !Ref ICPDeploymentLogsBucketName
+        ICPMasterSecurityGroup: !Ref ICPMasterSecurityGroup
+        ICPS3KeyPrefix: !Ref ICPS3KeyPrefix
+        ICPScriptBucketName: !Ref ICPScriptBucketName
+        ICPVersion: !Ref ICPVersion
+        InternalICPSecurityGroup: !Ref InternalICPSecurityGroup
+        InternalSSHSecurityGroup: !Ref InternalSSHSecurityGroup
+        KeyName: !Ref KeyName
+        MasterNodeCount: !Ref MasterNodeCount
+        MasterNodeInstanceType: !Ref MasterNodeInstanceType
+        MasterNodeProfile: !Ref MasterNodeProfile
+        MasterNodeRole: !Ref MasterNodeRole
+        PrivateSubnetIds: !Ref PrivateSubnetIds
+        PublicSubnetIds: !Ref PublicSubnetIds
+        ResourceOwner: !Ref ResourceOwner
+        RootStackName: !Ref RootStackName
+        StorageIOPS: !Ref StorageIOPS
+
+
+  ManagementNodeStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub https://s3.amazonaws.com/${ICPScriptBucketName}/${ICPS3KeyPrefix}templates/ibm-cloud-private-mgmt.yaml
+      Parameters:
+        AMIImageId: !Ref AMIImageId
+        AvailabilityZoneCount: !Ref AvailabilityZoneCount
+        EBSVolumeType: !Ref EBSVolumeType
+        ICPArchiveBucketName: !Ref ICPArchiveBucketName
+        ICPClusterNodeScriptPackagePath: !Ref ICPClusterNodeScriptPackagePath
+        ICPDeploymentLogsBucketName: !Ref ICPDeploymentLogsBucketName
+        ICPNodeProfile: !Ref ICPNodeProfile
+        ICPNodeRole: !Ref ICPNodeRole
+        ICPS3KeyPrefix: !Ref ICPS3KeyPrefix
+        ICPScriptBucketName: !Ref ICPScriptBucketName
+        ICPVersion: !Ref ICPVersion
+        InternalICPSecurityGroup: !Ref InternalICPSecurityGroup
+        InternalSSHSecurityGroup: !Ref InternalSSHSecurityGroup
+        KeyName: !Ref KeyName
+        ManagementNodeCount: !Ref ManagementNodeCount
+        ManagementNodeInstanceType: !Ref ManagementNodeInstanceType
+        PrivateSubnetIds: !Ref PrivateSubnetIds
+        ResourceOwner: !Ref ResourceOwner
+        RootStackName: !Ref RootStackName
+        StorageIOPS: !Ref StorageIOPS
+
+
+  VulnerabilityAdvisorNodeStack:
+    Condition: DeployVulnerabilityAdvisor
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub https://s3.amazonaws.com/${ICPScriptBucketName}/${ICPS3KeyPrefix}templates/ibm-cloud-private-va.yaml
+      Parameters:
+        AMIImageId: !Ref AMIImageId
+        AvailabilityZoneCount: !Ref AvailabilityZoneCount
+        EBSVolumeType: !Ref EBSVolumeType
+        EFSDNSName: !Ref EFSDNSName
+        ICPArchiveBucketName: !Ref ICPArchiveBucketName
+        ICPClusterNodeScriptPackagePath: !Ref ICPClusterNodeScriptPackagePath
+        ICPDeploymentLogsBucketName: !Ref ICPDeploymentLogsBucketName
+        ICPNodeProfile: !Ref ICPNodeProfile
+        ICPNodeRole: !Ref ICPNodeRole
+        ICPS3KeyPrefix: !Ref ICPS3KeyPrefix
+        ICPScriptBucketName: !Ref ICPScriptBucketName
+        ICPVersion: !Ref ICPVersion
+        InternalICPSecurityGroup: !Ref InternalICPSecurityGroup
+        InternalSSHSecurityGroup: !Ref InternalSSHSecurityGroup
+        KeyName: !Ref KeyName
+        VulnerabilityAdvisorNodeCount: !Ref VulnerabilityAdvisorNodeCount
+        VulnerabilityAdvisorNodeInstanceType: !Ref VulnerabilityAdvisorNodeInstanceType
+        PrivateSubnetIds: !Ref PrivateSubnetIds
+        ResourceOwner: !Ref ResourceOwner
+        RootStackName: !Ref RootStackName
+        StorageIOPS: !Ref StorageIOPS
+
+
+  ProxyNodeStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub https://s3.amazonaws.com/${ICPScriptBucketName}/${ICPS3KeyPrefix}templates/ibm-cloud-private-proxy.yaml
+      Parameters:
+        AMIImageId: !Ref AMIImageId
+        ApplicationSecurityGroup: !Ref ApplicationSecurityGroup
+        AvailabilityZoneCount: !Ref AvailabilityZoneCount
+        EBSVolumeType: !Ref EBSVolumeType
+        # ExternalSSHSecurityGroup is used for debugging
+        ExternalSSHSecurityGroup: !Ref ExternalSSHSecurityGroup
+        IBMCloudPrivateVPC: !Ref IBMCloudPrivateVPC
+        ICPArchiveBucketName: !Ref ICPArchiveBucketName
+        ICPClusterNodeScriptPackagePath: !Ref ICPClusterNodeScriptPackagePath
+        ICPDeploymentLogsBucketName: !Ref ICPDeploymentLogsBucketName
+        ICPNodeProfile: !Ref ICPNodeProfile
+        ICPNodeRole: !Ref ICPNodeRole
+        ICPS3KeyPrefix: !Ref ICPS3KeyPrefix
+        ICPScriptBucketName: !Ref ICPScriptBucketName
+        ICPVersion: !Ref ICPVersion
+        InternalICPSecurityGroup: !Ref InternalICPSecurityGroup
+        InternalSSHSecurityGroup: !Ref InternalSSHSecurityGroup
+        KeyName: !Ref KeyName
+        ProxyNodeCount: !Ref ProxyNodeCount
+        ProxyNodeInstanceType: !Ref ProxyNodeInstanceType
+        PrivateSubnetIds: !Ref PrivateSubnetIds
+        PublicSubnetIds: !Ref PublicSubnetIds
+        ResourceOwner: !Ref ResourceOwner
+        RootStackName: !Ref RootStackName
+        StorageIOPS: !Ref StorageIOPS
+
+
+  WorkerNodeStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub https://s3.amazonaws.com/${ICPScriptBucketName}/${ICPS3KeyPrefix}templates/ibm-cloud-private-worker.yaml
+      Parameters:
+        AMIImageId: !Ref AMIImageId
+        AvailabilityZoneCount: !Ref AvailabilityZoneCount
+        EBSVolumeType: !Ref EBSVolumeType
+        ICPArchiveBucketName: !Ref ICPArchiveBucketName
+        ICPClusterNodeScriptPackagePath: !Ref ICPClusterNodeScriptPackagePath
+        ICPDeploymentLogsBucketName: !Ref ICPDeploymentLogsBucketName
+        ICPNodeProfile: !Ref ICPNodeProfile
+        ICPNodeRole: !Ref ICPNodeRole
+        ICPS3KeyPrefix: !Ref ICPS3KeyPrefix
+        ICPScriptBucketName: !Ref ICPScriptBucketName
+        ICPVersion: !Ref ICPVersion
+        InternalICPSecurityGroup: !Ref InternalICPSecurityGroup
+        InternalSSHSecurityGroup: !Ref InternalSSHSecurityGroup
+        KeyName: !Ref KeyName
+        WorkerNodeCount: !Ref WorkerNodeCount
+        WorkerNodeInstanceType: !Ref WorkerNodeInstanceType
+        PrivateSubnetIds: !Ref PrivateSubnetIds
+        ResourceOwner: !Ref ResourceOwner
+        RootStackName: !Ref RootStackName
+        StorageIOPS: !Ref StorageIOPS
+
+
+Outputs:
+  MasterNodeLoadBalancerDNSName:
+    Description: >-
+      The master node Elastic Load Balancer (ELB) DNS name (used in Route53 record set).
+    Value: !GetAtt MasterNodeStack.Outputs.MasterNodeLoadBalancerDNSName
+
+  MasterNodeLoadBalancerHostedZoneID:
+    Description: >-
+      The master node Elastic Load Balancer (ELB) hosted zone ID (used in Route53 record set).
+    Value: !GetAtt MasterNodeStack.Outputs.MasterNodeLoadBalancerHostedZoneID
+
+  MasterNodeLoadBalancer:
+    Description: >-
+      ID of the master node Elastic Load Balancer (ELB)
+    Value: !GetAtt MasterNodeStack.Outputs.MasterNodeLoadBalancer
+
+  MasterNodeOne:
+    Description: >-
+      Instance ID of the first master node
+    Value: !GetAtt MasterNodeStack.Outputs.MasterNodeOne
+
+  MasterNodeTwo:
+    Condition: 3MastersCondition
+    Description: >-
+      Instance ID of the second master node
+    Value: !GetAtt MasterNodeStack.Outputs.MasterNodeTwo
+
+  MasterNodeThree:
+    Condition: 3MastersCondition
+    Description: >-
+      Instance ID of the third master node
+    Value: !GetAtt MasterNodeStack.Outputs.MasterNodeThree
+
+  ProxyNodeLoadBalancerDNSName:
+    Description: >-
+      The proxy node Elastic Load Balancer (ELB) DNS name (used in Route53 record set).
+    Value: !GetAtt ProxyNodeStack.Outputs.ProxyNodeLoadBalancerDNSName
+
+  ProxyNodeLoadBalancerHostedZoneID:
+    Description: >-
+      The proxy node Elastic Load Balancer (ELB) hosted zone ID (used in Route53 record set).
+    Value: !GetAtt ProxyNodeStack.Outputs.ProxyNodeLoadBalancerHostedZoneID
+
+  StackIds:
+    Description: >-
+      StackIds for all cluster member template stacks where EC2 instances or auto-scaling groups are defined. Used in the bootstrap script to collect information to create the configuration file.
+    Value: !If
+      - DeployVulnerabilityAdvisor
+      - !Join
+        - ','
+        - - !GetAtt MasterNodeStack.Outputs.StackId
+          - !GetAtt ManagementNodeStack.Outputs.StackId
+          - !GetAtt VulnerabilityAdvisorNodeStack.Outputs.StackId
+          - !GetAtt ProxyNodeStack.Outputs.StackId
+          - !GetAtt WorkerNodeStack.Outputs.StackId
+      - !Join
+        - ','
+        - - !GetAtt MasterNodeStack.Outputs.StackId
+          - !GetAtt ManagementNodeStack.Outputs.StackId
+          - !GetAtt ProxyNodeStack.Outputs.StackId
+          - !GetAtt WorkerNodeStack.Outputs.StackId

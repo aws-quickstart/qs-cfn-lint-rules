@@ -1,0 +1,392 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "This template will deploy a CloudplexServer instance into an existing VPC subnet.  **WARNING** This template creates Amazon EC2 instance and related resources. You will be billed for the AWS resources used if you create a stack from this template. QS(9999)",
+    "Parameters": {
+        "QSS3BucketName": {
+            "AllowedPattern": "^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$",
+            "ConstraintDescription": "Quick Start bucket name can include numbers, lowercase letters, uppercase letters, periods (.), and hyphens (-). It cannot start or end with a hyphen (-).",
+            "Description": "S3 bucket name for the Quick Start assets. Quick Start bucket name can include numbers, lowercase letters, uppercase letters, periods (.), and hyphens (-). It cannot start or end with a hyphen (-).",
+            "Type": "String"
+        },
+        "QSS3KeyPrefix": {
+            "AllowedPattern": "^[0-9a-zA-Z-/]*$",
+            "ConstraintDescription": "Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).  Prefix cannot start with a slash but must end with a slash unless it is the empty string.",
+            "Default": "quickstart-datalake-snaplogic/",
+            "Description": "S3 key prefix for the Quick Start assets. Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).  Prefix cannot start with a slash but must end with a slash unless it is the empty string.",
+            "Type": "String"
+        },
+        "SnapLogicLicenseBucket": {
+            "Description": "The Amazon S3 bucket where the SnapLogic license file is stored.",
+            "Type": "String"
+        },
+        "VpcId": {
+            "Description": "VPC to which security groups belong",
+            "Type": "AWS::EC2::VPC::Id"
+        },
+        "SnaplexConfS3Key": {
+            "Description": "The path at which SnapLogic configuration has been uploaded to the SnapLogic license S3 bucket.",
+            "Type": "String"
+        },
+        "InstanceRole": {
+            "Description": "Snaplogic Server EC2 IAM Role",
+            "Type": "String"
+        },
+        "InstanceProfile": {
+            "Description": "Snaplogic Server EC2 Instance Profile",
+            "Type": "String"
+        },
+        "CloudplexServerAutoscaleMinSize": {
+            "Description": "Snaplogic CloudplexServer autoscale minimum size",
+            "Type": "Number",
+            "MinValue": "1",
+            "MaxValue": "10",
+            "Default": "1"
+        },
+        "CloudplexServerAutoscaleMaxSize": {
+            "Description": "The maximum number of Cloudplex servers in the Auto Scaling group.",
+            "Type": "Number",
+            "MinValue": "1",
+            "MaxValue": "10",
+            "Default": "5"
+        },
+        "CloudplexServerAutoscaleDesiredCapacity": {
+            "Description": "The desired capacity for Cloudplex servers in the Auto Scaling group.",
+            "Type": "Number",
+            "MinValue": "1",
+            "MaxValue": "10",
+            "Default": "1"
+        },
+        "InstanceType": {
+            "Description": "Snaplogic Server EC2 instance type",
+            "Type": "String",
+            "Default": "t2.large",
+            "AllowedValues": [
+                "t2.medium",
+                "t2.large",
+                "t2.xlarge",
+                "t2.2xlarge",
+                "m4.large",
+                "m4.xlarge",
+                "m4.2xlarge",
+                "m4.4xlarge",
+                "m4.10xlarge",
+                "m4.16xlarge",
+                "c4.large",
+                "c4.xlarge",
+                "c4.2xlarge",
+                "c4.4xlarge",
+                "c4.8xlarge",
+                "x1.16xlarge",
+                "x1.32xlarge",
+                "x1e.32xlarge",
+                "r4.large",
+                "r4.xlarge",
+                "r4.2xlarge",
+                "r4.4xlarge",
+                "r4.8xlarge",
+                "r4.16xlarge",
+                "d2.xlarge",
+                "d2.2xlarge",
+                "d2.4xlarge",
+                "d2.8xlarge",
+                "i3.large",
+                "i3.xlarge",
+                "i3.2xlarge",
+                "i3.4xlarge",
+                "i3.8xlarge",
+                "i3.16xlarge"
+            ],
+            "ConstraintDescription": "must be a valid EC2 instance type."
+        },
+        "KeyName": {
+            "Description": "Name of an EC2 KeyPair to enable SSH access to the Snaplogic Server instance.",
+            "Type": "AWS::EC2::KeyPair::KeyName",
+            "ConstraintDescription": "Must be the name of an existing EC2 KeyPair."
+        },
+        "PrivateSubnetId1": {
+            "Description": "Snaplogic Server subnet id 1.",
+            "Type": "AWS::EC2::Subnet::Id"
+        },
+        "PrivateSubnetId2": {
+            "Description": "Snaplogic Server subnet id 2.",
+            "Type": "AWS::EC2::Subnet::Id"
+        }
+    },
+    "Mappings": {
+        "AWSRegionArch2AMI": {
+            "us-gov-west-1": {
+                "HVM64": "ami-8c1be5f6"
+            },
+            "us-east-1": {
+                "HVM64": "ami-8c1be5f6"
+            },
+            "us-east-2": {
+                "HVM64": "ami-c5062ba0"
+            },
+            "us-west-1": {
+                "HVM64": "ami-02eada62"
+            },
+            "us-west-2": {
+                "HVM64": "ami-e689729e"
+            },
+            "ca-central-1": {
+                "HVM64": "ami-fd55ec99"
+            },
+            "sa-east-1": {
+                "HVM64": "ami-f1344b9d"
+            },
+            "eu-west-1": {
+                "HVM64": "ami-acd005d5"
+            },
+            "eu-west-2": {
+                "HVM64": "ami-1a7f6d7e"
+            },
+            "eu-central-1": {
+                "HVM64": "ami-c7ee5ca8"
+            },
+            "ap-northeast-1": {
+                "HVM64": "ami-2a69be4c"
+            },
+            "ap-northeast-2": {
+                "HVM64": "ami-9bec36f5"
+            },
+            "ap-south-1": {
+                "HVM64": "ami-4fc58420"
+            },
+            "ap-southeast-1": {
+                "HVM64": "ami-0797ea64"
+            },
+            "ap-southeast-2": {
+                "HVM64": "ami-8536d6e7"
+            },
+            "cn-north-1": {
+                "HVM64": "ami-f239abcb"
+            }
+        }
+    },
+    "Resources": {
+        "CloudplexServerAutoscaling": {
+            "Type": "AWS::AutoScaling::AutoScalingGroup",
+            "Properties": {
+                "LaunchConfigurationName": {
+                    "Ref": "CloudplexServerLaunchConfig"
+                },
+                "MinSize": {
+                    "Ref": "CloudplexServerAutoscaleMinSize"
+                },
+                "MaxSize": {
+                    "Ref": "CloudplexServerAutoscaleMaxSize"
+                },
+                "DesiredCapacity": {
+                    "Ref": "CloudplexServerAutoscaleDesiredCapacity"
+                },
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": "CloudplexServer",
+                        "PropagateAtLaunch": "true"
+                    }
+                ],
+                "HealthCheckGracePeriod": "120",
+                "VPCZoneIdentifier": [
+                    {
+                        "Ref": "PrivateSubnetId1"
+                    },
+                    {
+                        "Ref": "PrivateSubnetId2"
+                    }
+                ]
+            }
+        },
+        "CloudplexServerLaunchConfig": {
+            "Type": "AWS::AutoScaling::LaunchConfiguration",
+            "Properties": {
+                "InstanceType": {
+                    "Ref": "InstanceType"
+                },
+                "ImageId": {
+                    "Fn::FindInMap": [
+                        "AWSRegionArch2AMI",
+                        {
+                            "Ref": "AWS::Region"
+                        },
+                        "HVM64"
+                    ]
+                },
+                "KeyName": {
+                    "Ref": "KeyName"
+                },
+                "SecurityGroups": [
+                    {
+                        "Ref": "CloudplexServerSecurityGroup"
+                    }
+                ],
+                "IamInstanceProfile": {
+                    "Ref": "InstanceProfile"
+                },
+                "BlockDeviceMappings": [
+                    {
+                        "DeviceName": "/dev/xvda",
+                        "Ebs": {
+                            "VolumeSize": "100"
+                        }
+                    }
+                ],
+                "UserData": {
+                    "Fn::Base64": {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "#!/bin/bash -xe\n",
+                                "sudo -i\n",
+                                "cd /tmp/",
+                                "\n",
+                                "wget https://snaplogic-uxpod-sldb.s3.amazonaws.com/pkgs/snaplogic-sidekick-4.master-4777-x86_64.rpm\n",
+                                "rpm -ivh snaplogic-sidekick-4.master-4777-x86_64.rpm\n",
+                                {
+                                    "Fn::Sub": "aws s3 cp s3://${SnapLogicLicenseBucket}/${SnaplexConfS3Key} /opt/snaplogic/etc"
+                                },
+                                "\n",
+                                "sudo chown -R snapuser:snapuser /opt/snaplogic/etc/*\n",
+                                "sudo chmod 600 /opt/snaplogic/etc/*\n",
+                                "sudo /opt/snaplogic/bin/jcc.sh start\n",
+                                "yum -y update\n",
+                                "while ! yum install -y aws-cfn-bootstrap ; do sleep 10; done\n",
+                                "#fix ec2 hostname resolution\n",
+                                "\n",
+                                "wget ",
+                                {
+                                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}scripts/bootstrap/ec2-metadata"
+                                },
+                                "\n",
+                                "chmod +x ec2-metadata\n",
+                                "wget ",
+                                {
+                                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}scripts/bootstrap/update_hosts.sh"
+                                },
+                                "\n",
+                                "chmod +x update_hosts.sh\n",
+                                "./update_hosts.sh\n",
+                                "# Install the files and packages from the metadata\n",
+                                "/opt/aws/bin/cfn-init -v ",
+                                "         --stack ",
+                                {
+                                    "Ref": "AWS::StackName"
+                                },
+                                "         --resource CloudplexServerLaunchConfig ",
+                                "         --configsets All ",
+                                "         --region ",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                "\n",
+                                "# Signal the status from cfn-init\n",
+                                "/opt/aws/bin/cfn-signal -e $? ",
+                                "         --stack ",
+                                {
+                                    "Ref": "AWS::StackName"
+                                },
+                                "         --resource CloudplexServerLaunchConfig ",
+                                "         --region ",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                "\n"
+                            ]
+                        ]
+                    }
+                }
+            }
+        },
+        "CloudplexServerSecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "VpcId"
+                },
+                "GroupDescription": "Allow access to CloudplexServer from TAC on 8000 (command), 8001 (file), and 8888 (monitoring), and ssh from remote access",
+                "SecurityGroupIngress": [
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "22",
+                        "ToPort": "22",
+                        "CidrIp": "10.0.0.0/8"
+                    }
+                ]
+            }
+        },
+        "CloudplexServerIngressCloudplexServer": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "Properties": {
+                "GroupId": {
+                    "Ref": "CloudplexServerSecurityGroup"
+                },
+                "IpProtocol": "tcp",
+                "FromPort": "0",
+                "ToPort": "65535",
+                "SourceSecurityGroupId": {
+                    "Ref": "CloudplexServerSecurityGroup"
+                }
+            }
+        },
+        "CloudplexServerIngressCloudplexServerICMP": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "Properties": {
+                "GroupId": {
+                    "Ref": "CloudplexServerSecurityGroup"
+                },
+                "IpProtocol": "icmp",
+                "FromPort": "-1",
+                "ToPort": "-1",
+                "SourceSecurityGroupId": {
+                    "Ref": "CloudplexServerSecurityGroup"
+                }
+            }
+        }
+    },
+    "Metadata": {
+        "AWS::CloudFormation::Authentication": {
+            "S3AccessCreds": {
+                "type": "S3",
+                "roleName": {
+                    "Ref": "InstanceRole"
+                }
+            }
+        }
+    },
+    "Outputs": {
+        "CloudplexServerSecurityGroupID": {
+            "Description": "CloudplexServer security group.",
+            "Value": {
+                "Ref": "CloudplexServerSecurityGroup"
+            },
+            "Export": {
+                "Name": {
+                    "Fn::Sub": "${AWS::StackName}:CloudplexServerSecurityGroupID"
+                }
+            }
+        },
+        "CloudplexServerAutoscaling": {
+            "Value": {
+                "Ref": "CloudplexServerAutoscaling"
+            },
+            "Description": "CloudplexServer Autoscaling resource Id",
+            "Export": {
+                "Name": {
+                    "Fn::Sub": "${AWS::StackName}:CloudplexServerAutoscaling"
+                }
+            }
+        },
+        "CloudplexServerLaunchConfig": {
+            "Value": {
+                "Ref": "CloudplexServerLaunchConfig"
+            },
+            "Description": "CloudplexServer Launch Configuration resource Id",
+            "Export": {
+                "Name": {
+                    "Fn::Sub": "${AWS::StackName}:CloudplexServerLaunchConfig"
+                }
+            }
+        }
+    }
+}

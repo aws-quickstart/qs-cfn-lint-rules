@@ -1,0 +1,395 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+  This template deploys a full application stack, including a network, bastion host,
+  auto scaled BIG-IPs and demo applications. It creates a VPC infrastructure for a
+  multi-AZ, multi-tier deployment of a Linux based Application infrastructure. It
+  will deploy a bastion and managed NAT gateways or NAT instances into the public
+  subnet for each Availability Zone. Finally, it will create an optional webapp template
+  for demonstration purposes.  **WARNING** This template creates multiple AWS resources.
+  You will be billed for the AWS resources used if you create a stack from this template.(qs-1p2474b65)
+Conditions:
+  GovCloudCondition: !Equals
+    - !Ref 'AWS::Region'
+    - us-gov-west-1
+Outputs:
+  appUrl:
+    Value: !GetAtt 'WorkLoadStack.Outputs.appUrl'
+  bastionAutoscaleGroup:
+    Value: !GetAtt 'BastionStack.Outputs.BastionAutoScalingGroup'
+  bigipAutoscaleGroup:
+    Value: !GetAtt 'WorkLoadStack.Outputs.bigipAutoscaleGroup'
+  bigipS3Bucket:
+    Value: !GetAtt 'WorkLoadStack.Outputs.bigipS3Bucket'
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Network Configuration
+        Parameters:
+          - availabilityZones
+          - vpcCIDR
+          - publicSubnet1CIDR
+          - publicSubnet2CIDR
+          - privateSubnet1CIDR
+          - privateSubnet2CIDR
+      - Label:
+          default: Amazon EC2 Configuration
+        Parameters:
+          - keyPairName
+          - remoteAccessCIDR
+      - Label:
+          default: BIG-IP and Auto Scaling Configuration
+        Parameters:
+          - bigipImage
+          - bigipInstanceType
+          - bigipManagementGuiPort
+          - bigipScalingMinSize
+          - bigipScalingMaxSize
+      - Label:
+          default: Application Configuration
+        Parameters:
+          - application
+          - applicationPoolTagKey
+          - application1PoolTagValue
+          - application2PoolTagValue
+          - applicationRestrictedSrcAddr
+      - Label:
+          default: Analytics
+        Parameters:
+          - notificationEmail
+          - allowUsageAnalytics
+      - Label:
+          default: Web App Configuration
+        Parameters:
+          - deploymentName
+          - deployDemoWebApp
+      - Label:
+          default: AWS Quick Start Configuration
+        Parameters:
+          - qss3BucketName
+          - qss3KeyPrefix
+    ParameterLabels:
+      allowUsageAnalytics:
+        default: Send Anonymous Statistics to F5
+      application:
+        default: Application Name
+      applicationPoolTagKey:
+        default: Application Pool Tag Key
+      application1PoolTagValue:
+        default: Application1 Pool Tag Value
+      application2PoolTagValue:
+        default: Application2 Pool Tag Value
+      applicationRestrictedSrcAddr:
+        default: Application Restricted Source Address
+      availabilityZones:
+        default: Availability Zones
+      bigipImage:
+        default: BIG-IP Image
+      bigipInstanceType:
+        default: BIG-IP EC2 Instance Size
+      bigipManagementGuiPort:
+        default: Management Port
+      bigipScalingMaxSize:
+        default: Maximum No. of Instances
+      bigipScalingMinSize:
+        default: Minimum No. of Instances
+      deployDemoWebApp:
+        default: Deploy Demo Web App
+      deploymentName:
+        default: Deployment Name
+      keyPairName:
+        default: Key Pair Name
+      notificationEmail:
+        default: Notification Email
+      privateSubnet1CIDR:
+        default: Private Subnet 1 CIDR
+      privateSubnet2CIDR:
+        default: Private Subnet 2 CIDR
+      publicSubnet1CIDR:
+        default: Public Subnet 1 CIDR
+      publicSubnet2CIDR:
+        default: Public Subnet 2 CIDR
+      qss3BucketName:
+        default: Quick Start S3 Bucket Name
+      qss3KeyPrefix:
+        default: Quick Start S3 Key Prefix
+      remoteAccessCIDR:
+        default: Allowed Bastion External Access CIDR
+      vpcCIDR:
+        default: VPC CIDR
+Parameters:
+  allowUsageAnalytics:
+    AllowedValues:
+      - 'Yes'
+      - 'No'
+    Default: 'No'
+    Description: This deployment can send anonymous statistics to F5 to help us determine
+      how to improve our solutions. If you select **No** statistics are not sent.
+    Type: String
+  application:
+    AllowedPattern: '[a-zA-Z0-9]+'
+    Description: Name of the application deploying behind proxy.
+    Type: String
+    MaxLength: 20
+    Default: f5demoapp
+  applicationPoolTagKey:
+    Description: This is used to detect the auto-scaled instances by BIG-IP. BIG-IP
+      uses both application pool tag key and value to discover new instances of the
+      apps whether they are custom apps or the demo app.
+    Type: String
+    Default: f5demoapp
+  application1PoolTagValue:
+    Description: This is used to detect the auto-scaled instances by BIG-IP. BIG-IP
+      uses both application pool tag and value to discover new instances of the apps
+      whether they are custom apps or the demo app.
+    Type: String
+    Default: f5-demo-app-0.0.1
+  application2PoolTagValue:
+    Description: This is used to detect the auto-scaled instances by BIG-IP BIG-IP
+      uses both application pool tag value to discover new isntances of the apps whether
+      they are custom apps or the demo app.
+    Type: String
+    Default: f5-demo-app-0.0.2
+  applicationRestrictedSrcAddr:
+    AllowedPattern: ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/([0-9]|[1-2][0-9]|3[0-2]))$
+    ConstraintDescription: address must be in the form x.x.x.x/x
+    Description: Allowed CIDR block to the virtual service and web app.
+    Type: String
+  availabilityZones:
+    Description: 'List of Availability Zones to use for the subnets in the VPC. Note:
+      The logical order is preserved and only 2 AZs are used for this deployment.'
+    Type: List<AWS::EC2::AvailabilityZone::Name>
+  bigipImage:
+    Description: BIG-IP Image for BIG-IP VE.
+    Type: String
+    Default: PerAppVeLtm25Mbps
+    AllowedValues:
+      - Good25Mbps
+      - Good200Mbps
+      - Good1000Mbps
+      - Good5000Mbps
+      - Better25Mbps
+      - Better200Mbps
+      - Better1000Mbps
+      - Better5000Mbps
+      - Best25Mbps
+      - Best200Mbps
+      - Best1000Mbps
+      - Best5000Mbps
+      - PerAppVeLtm25Mbps
+      - PerAppVeLtm200Mbps
+    ConstraintDescription: Select the BIG-IP Image you want to use from the allowed
+      values.
+  bigipInstanceType:
+    Description: BIG-IP EC2 Instance Size.
+    Type: String
+    Default: m5.large
+    AllowedValues:
+      - t2.medium
+      - t2.large
+      - m3.large
+      - m3.xlarge
+      - m3.2xlarge
+      - m4.large
+      - m4.xlarge
+      - m4.2xlarge
+      - m4.4xlarge
+      - m4.10xlarge
+      - m5.large
+      - m5.xlarge
+      - m5.2xlarge
+      - m5.4xlarge
+      - c3.xlarge
+      - c3.2xlarge
+      - c3.4xlarge
+      - c3.8xlarge
+      - c4.xlarge
+      - c4.2xlarge
+      - c4.4xlarge
+      - c4.8xlarge
+      - c5.large
+      - c5.xlarge
+      - c5.2xlarge
+      - c5.4xlarge
+    ConstraintDescription: Must be a valid BIG-IP BEST virtual EC2 instance type.
+  bigipManagementGuiPort:
+    Description: Port for the BIG-IP management Configuration utility.
+    Type: Number
+    Default: 8443
+    ConstraintDescription: Must be a valid, unused port on the BIG-IP.
+  bigipScalingMaxSize:
+    Description: Maximum number of BIG-IP instances (1-8) that can be created in the
+      Auto Scale Group.
+    Default: '1'
+    ConstraintDescription: Must be a number between 1-8.
+    Type: Number
+    MaxValue: '8'
+    MinValue: '1'
+  bigipScalingMinSize:
+    Description: Minimum number of BIG-IP instances (1-8) you want available in the
+      Auto Scale Group.
+    Default: '1'
+    ConstraintDescription: Must be a number between 1-8
+    Type: Number
+    MaxValue: '8'
+    MinValue: '1'
+  deployDemoWebApp:
+    AllowedValues:
+      - 'Yes'
+      - 'No'
+    Default: 'No'
+    Description: This is used to deploy the demo WebApps.
+    Type: String
+  deploymentName:
+    Description: Name is used as a prefix for object names.
+    Type: String
+    MaxLength: 25
+    Default: f5awsqs
+  keyPairName:
+    Description: Public/private key pairs allow you to securely connect to your instance
+      after it launches.
+    Type: AWS::EC2::KeyPair::KeyName
+  notificationEmail:
+    Description: Valid email address to send auto-scaling event notifications.
+    ConstraintDescription: Must be a valid email address.
+    AllowedPattern: .+@.+
+    Type: String
+  privateSubnet1CIDR:
+    AllowedPattern: ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/(1[6-9]|2[0-8]))$
+    ConstraintDescription: CIDR block parameter must be in the form x.x.x.x/16-28
+    Default: 10.0.11.0/24
+    Description: CIDR block for private subnet 1 located in Availability Zone 1.
+    Type: String
+  privateSubnet2CIDR:
+    AllowedPattern: ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/(1[6-9]|2[0-8]))$
+    ConstraintDescription: CIDR block parameter must be in the form x.x.x.x/16-28
+    Default: 10.0.21.0/24
+    Description: CIDR block for private subnet 2 located in Availability Zone 2.
+    Type: String
+  publicSubnet1CIDR:
+    AllowedPattern: ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/(1[6-9]|2[0-8]))$
+    ConstraintDescription: CIDR block parameter must be in the form x.x.x.x/16-28
+    Default: 10.0.10.0/24
+    Description: CIDR Block for the public DMZ subnet 1 located in Availability Zone
+      1.
+    Type: String
+  publicSubnet2CIDR:
+    AllowedPattern: ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/(1[6-9]|2[0-8]))$
+    ConstraintDescription: CIDR block parameter must be in the form x.x.x.x/16-28
+    Default: 10.0.20.0/24
+    Description: CIDR Block for the public DMZ subnet 2 located in Availability Zone
+      2.
+    Type: String
+  qss3BucketName:
+    AllowedPattern: ^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$
+    ConstraintDescription: Quick Start bucket name can include numbers, lowercase
+      letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen
+      (-).
+    Default: aws-quickstart
+    Description: S3 bucket name for the Quick Start assets. Quick Start bucket name
+      can include numbers, lowercase letters, uppercase letters, and hyphens (-).
+      It cannot start or end with a hyphen (-).
+    Type: String
+  qss3KeyPrefix:
+    AllowedPattern: ^[0-9a-zA-Z-/]*$
+    ConstraintDescription: Quick Start key prefix can include numbers, lowercase letters,
+      uppercase letters, hyphens (-), and forward slash (/).
+    Default: quickstart-f5-big-ip-virtual-edition/
+    Description: S3 key prefix for the Quick Start assets. Quick Start key prefix
+      can include numbers, lowercase letters, uppercase letters, hyphens (-), and
+      forward slash (/).
+    Type: String
+  remoteAccessCIDR:
+    AllowedPattern: ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/([0-9]|[1-2][0-9]|3[0-2]))$
+    ConstraintDescription: CIDR block parameter must be in the form x.x.x.x/x
+    Description: Allowed CIDR block for external SSH access to the bastions.
+    Type: String
+  vpcCIDR:
+    AllowedPattern: ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/(1[6-9]|2[0-8]))$
+    ConstraintDescription: CIDR block parameter must be in the form x.x.x.x/16-28
+    Default: 10.0.0.0/16
+    Description: CIDR Block for the VPC.
+    Type: String
+Resources:
+  VPCStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub
+        - https://${qss3BucketName}.${qss3Region}.amazonaws.com/${qss3KeyPrefix}submodules/quickstart-aws-vpc/templates/aws-vpc.template
+        - qss3Region: !If
+            - GovCloudCondition
+            - s3-us-gov-west-1
+            - s3
+      Parameters:
+        AvailabilityZones: !Join
+          - ','
+          - !Ref 'availabilityZones'
+        KeyPairName: !Ref 'keyPairName'
+        NumberOfAZs: '2'
+        PrivateSubnet1ACIDR: !Ref 'privateSubnet1CIDR'
+        PrivateSubnet2ACIDR: !Ref 'privateSubnet2CIDR'
+        PublicSubnet1CIDR: !Ref 'publicSubnet1CIDR'
+        PublicSubnet2CIDR: !Ref 'publicSubnet2CIDR'
+        VPCCIDR: !Ref 'vpcCIDR'
+  BastionStack:
+    DependsOn: VPCStack
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub
+        - https://${qss3BucketName}.${qss3Region}.amazonaws.com/${qss3KeyPrefix}submodules/quickstart-linux-bastion/templates/linux-bastion.template
+        - qss3Region: !If
+            - GovCloudCondition
+            - s3-us-gov-west-1
+            - s3
+      Parameters:
+        BastionAMIOS: Ubuntu-Server-16.04-LTS-HVM
+        BastionBanner: ''
+        BastionInstanceType: t2.micro
+        EnableBanner: 'false'
+        EnableTCPForwarding: 'true'
+        EnableX11Forwarding: 'true'
+        KeyPairName: !Ref 'keyPairName'
+        NumBastionHosts: '1'
+        PublicSubnet1ID: !GetAtt 'VPCStack.Outputs.PublicSubnet1ID'
+        PublicSubnet2ID: !GetAtt 'VPCStack.Outputs.PublicSubnet2ID'
+        QSS3BucketName: !Ref 'qss3BucketName'
+        QSS3KeyPrefix: !Sub '${qss3KeyPrefix}submodules/quickstart-linux-bastion/'
+        RemoteAccessCIDR: !Ref 'remoteAccessCIDR'
+        VPCID: !GetAtt 'VPCStack.Outputs.VPCID'
+  WorkLoadStack:
+    DependsOn: BastionStack
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub
+        - https://${qss3BucketName}.${qss3Region}.amazonaws.com/${qss3KeyPrefix}templates/workload.template
+        - qss3Region: !If
+            - GovCloudCondition
+            - s3-us-gov-west-1
+            - s3
+      Parameters:
+        deploymentName: !Ref 'deploymentName'
+        deployDemoWebApp: !Ref 'deployDemoWebApp'
+        qss3BucketName: !Ref 'qss3BucketName'
+        qss3KeyPrefix: !Ref 'qss3KeyPrefix'
+        vpc: !GetAtt 'VPCStack.Outputs.VPCID'
+        availabilityZones: !Join
+          - ','
+          - !Ref 'availabilityZones'
+        privateSubnet1ID: !GetAtt 'VPCStack.Outputs.PrivateSubnet1AID'
+        privateSubnet2ID: !GetAtt 'VPCStack.Outputs.PrivateSubnet2AID'
+        publicSubnet1ID: !GetAtt 'VPCStack.Outputs.PublicSubnet1ID'
+        publicSubnet2ID: !GetAtt 'VPCStack.Outputs.PublicSubnet2ID'
+        sshKey: !Ref 'keyPairName'
+        restrictedSrcAddress: !Ref 'vpcCIDR'
+        applicationRestrictedSrcAddr: !Ref 'applicationRestrictedSrcAddr'
+        bigipImage: !Ref 'bigipImage'
+        bigipInstanceType: !Ref 'bigipInstanceType'
+        bigipManagementGuiPort: !Ref 'bigipManagementGuiPort'
+        bigipScalingMinSize: !Ref 'bigipScalingMinSize'
+        bigipScalingMaxSize: !Ref 'bigipScalingMaxSize'
+        application: !Ref 'application'
+        applicationPoolTagKey: !Ref 'applicationPoolTagKey'
+        application1PoolTagValue: !Ref 'application1PoolTagValue'
+        application2PoolTagValue: !Ref 'application2PoolTagValue'
+        notificationEmail: !Ref 'notificationEmail'
+        allowUsageAnalytics: !Ref 'allowUsageAnalytics'

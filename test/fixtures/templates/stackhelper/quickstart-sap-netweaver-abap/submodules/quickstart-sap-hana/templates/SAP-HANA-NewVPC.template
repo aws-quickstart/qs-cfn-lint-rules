@@ -1,0 +1,798 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "(0007) Deploy AWS infrastructure and SAP HANA on AWS",
+    "Parameters": {
+        "VPCCIDR": {
+            "Description": "CIDR block for the Amazon VPC to create for SAP HANA deployment",
+            "Type": "String",
+            "Default": "10.0.0.0/16",
+            "AllowedPattern": "^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\\/(1[6-9]|2[0-8]))$"
+        },
+        "HANAInstallMedia": {
+            "Description": "Full path to Amazon S3 location of SAP HANA software files (e.g., s3://myhanabucket/sap-hana-sps11/).",
+            "Type": "String",
+            "Default": ""
+        },
+        "AvailabilityZone": {
+            "Description": "The Availability Zone where SAP HANA subnets will be created.",
+            "Type": "AWS::EC2::AvailabilityZone::Name"
+        },
+        "AutoRecovery": {
+            "Type": "String",
+            "Description": "Enable (Yes) or disable (No) automatic recovery feature for SAP HANA nodes. Disable it for Dedicated Host Deployments.",
+            "Default": "Yes",
+            "AllowedValues": [
+                "Yes",
+                "No"
+            ]
+        },
+        "AWSEFS": {
+            "Type": "String",
+            "Description": "Use (Yes) or don't use (No) Amazon EFS for HANA shared file system.",
+            "Default": "Yes",
+            "AllowedValues": [
+                "Yes",
+                "No"
+            ]
+        },
+        "Encryption": {
+            "Type": "String",
+            "Description": "Enable (Yes) or disable (No) encryption on EBS volumes.",
+            "Default": "No",
+            "AllowedValues": [
+                "Yes",
+                "No"
+            ]
+        },
+        "DMZCIDR": {
+            "Description": "CIDR block for the public DMZ subnet located in the new VPC.",
+            "Type": "String",
+            "Default": "10.0.2.0/24",
+            "AllowedPattern": "^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\\/(1[6-9]|2[0-8]))$"
+        },
+        "PrivSubCIDR": {
+            "Description": "CIDR block for the private subnet where SAP HANA will be deployed.",
+            "Type": "String",
+            "Default": "10.0.1.0/24",
+            "AllowedPattern": "^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\\/(1[6-9]|2[0-8]))$"
+        },
+        "RemoteAccessCIDR": {
+            "Description": "CIDR block from where you want to access your bastion and RDP instances.",
+            "Type": "String",
+            "MinLength": "9",
+            "MaxLength": "18",
+            "Default": "0.0.0.0/0",
+            "AllowedPattern": "^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\\/([0-9]|[1-2][0-9]|3[0-2]))$",
+            "ConstraintDescription": "This must be a valid CIDR range in the format x.x.x.x/x."
+        },
+        "ApplicationCIDR": {
+            "Description": "CIDR block of subnet where SAP Application servers are deployed.",
+            "Type": "String",
+            "AllowedPattern": "^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\\/([0-9]|[1-2][0-9]|3[0-2]))$",
+            "Default": "0.0.0.0/0",
+            "ConstraintDescription": "This must be a valid CIDR range in the format x.x.x.x/x."
+        },
+        "KeyName": {
+            "Type": "AWS::EC2::KeyPair::KeyName",
+            "Default": "home",
+            "Description": "Name of an existing Amazon EC2 key pair. All instances will launch with this key pair."
+        },
+        "BASTIONInstanceType": {
+            "Description": "Amazon EC2 instance type for the bastion host.",
+            "Type": "String",
+            "Default": "t2.small",
+            "AllowedValues": [
+                "t2.small",
+                "t2.medium",
+                "t2.large",
+                "m4.large",
+                "m5.large",
+                "c4.large",
+                "c5.large"
+            ]
+        },
+        "DomainName": {
+            "Type": "String",
+            "Description": "Name to use for fully qualified domain names.",
+            "Default": "local"
+        },
+        "HANAMasterHostname": {
+            "Type": "String",
+            "Description": "Host name to use for SAP HANA master node (DNS short name).",
+            "Default": "imdbmaster"
+        },
+        "HANAWorkerHostname": {
+            "Type": "String",
+            "Description": "Host name to use for SAP HANA worker node(s) (DNS short name).",
+            "Default": "imdbworker"
+        },
+        "PlacementGroupName": {
+            "Type": "String",
+            "Default": "",
+            "Description": "Name of an existing placement group where SAP HANA should be deployed (for scale-out deployments)."
+        },
+        "PrivateBucket": {
+            "Description": "Main build bucket where templates and scripts are located.",
+            "Type": "String",
+            "Default": "aws-quickstart/quickstart-sap-hana"
+        },
+        "CustomStorageConfig": {
+            "Description": "S3 location where custom storage configuration file is localted.",
+            "Type": "String",
+            "Default": "aws-quickstart/quickstart-sap-hana/scripts"
+        },
+        "Proxy": {
+            "Description": "Proxy address for http access (e.g., http://xyz.abc.com:8080 or http://10.x.x.x:8080).",
+            "Type": "String",
+            "Default": ""
+        },
+        "EnableLogging": {
+            "Description": "Enable (Yes) or disable (No) logging with AWS CloudTrail and AWS Config.",
+            "Default": "No",
+            "Type": "String",
+            "AllowedValues": [
+                "Yes",
+                "No"
+            ]
+        },
+        "CloudTrailS3Bucket": {
+            "Description": "Name of S3 bucket where AWS CloudTrail trails and AWS Config log files can be stored (e.g., mycloudtrail).",
+            "Default": "",
+            "Type": "String"
+        },
+        "MyOS": {
+            "Type": "String",
+            "Description": "Operating system (SLES or RHEL) and version for master/worker nodes.",
+            "Default": "SuSELinux12SP4ForSAP",
+            "AllowedValues": [
+                "RedHatLinux75ForSAP",
+                "RedHatLinux74ForSAP-With-HA-US",
+                "RedHatLinux75ForSAP-With-HA-US",
+                "RedHatLinux76ForSAP-With-HA-US",
+                "SuSELinux11SP4",
+                "SuSELinux12SP1",
+                "SuSELinux12SP3",
+                "SuSELinux12SP4",
+                "SuSELinux15",
+                "SuSELinux12SP2ForSAP",
+                "SuSELinux12SP3ForSAP",
+                "SuSELinux12SP4ForSAP",
+                "SuSELinux15ForSAP",
+                "SuSELinux12SP1ForSAP-BYOS",
+                "SuSELinux12SP2ForSAP-BYOS",
+                "SuSELinux12SP3ForSAP-BYOS",
+                "SuSELinux12SP4ForSAP-BYOS",
+                "SuSELinux15ForSAP-BYOS"
+            ]
+        },
+        "MyInstanceType": {
+            "Type": "String",
+            "Description": "Instance type for SAP HANA host.",
+            "Default": "r5.2xlarge",
+            "AllowedValues": [
+                "r3.8xlarge",
+                "r3.4xlarge",
+                "r3.2xlarge",
+                "r4.16xlarge",
+                "r4.8xlarge",
+                "r4.4xlarge",
+                "r4.2xlarge",
+                "r5.2xlarge",
+                "r5.4xlarge",
+                "r5.12xlarge",
+                "r5.24xlarge",
+                "r5.metal",
+                "x1.16xlarge",
+                "x1.32xlarge",
+                "x1e.xlarge",
+                "x1e.2xlarge",
+                "x1e.4xlarge",
+                "x1e.32xlarge",
+                "u-6tb1.metal",
+                "u-9tb1.metal",
+                "u-12tb1.metal",
+                "u-18tb1.metal",
+                "u-24tb1.metal"
+            ]
+        },
+        "DedicatedHostId": {
+            "Type": "CommaDelimitedList",
+            "Description": "Existing dedicated host(s) where you want to launch your EC2 instance(s). Use comma to provide multiple hosts. Mandatory for Amazon EC2 High Memory Instances.",
+            "Default": ""
+        },
+        "RDPInstanceType": {
+            "Type": "String",
+            "Description": "Instance type for Windows RDP instance.",
+            "Default": "c5.large",
+            "AllowedValues": [
+                "c4.large",
+                "c4.xlarge",
+                "c5.large",
+                "c5.xlarge",
+                "m4.large",
+                "m4.xlarge",
+                "m5.large",
+                "m5.xlarge"
+            ]
+        },
+        "InstallRDPInstance": {
+            "Type": "String",
+            "Description": "Install (Yes) or don't install (No) optional Windows RDP instance.",
+            "Default": "No",
+            "AllowedValues": [
+                "Yes",
+                "No"
+            ]
+        },
+        "InstallHANA": {
+            "Type": "String",
+            "Description": "Install (Yes) or don't install (No) HANA. When set to No, only AWS infrastructure is provisioned.",
+            "Default": "Yes",
+            "AllowedValues": [
+                "Yes",
+                "No"
+            ]
+        },
+        "HostCount": {
+            "Type": "Number",
+            "Description": "Total number of SAP HANA nodes you want to deploy in the SAP HANA cluster.",
+            "Default": "1",
+            "MinValue": "1",
+            "MaxValue": "5"
+        },
+        "SID": {
+            "Type": "String",
+            "Default": "HDB",
+            "Description": "SAP HANA system ID for installation and setup.",
+            "AllowedPattern": "([A-Z]{1}[0-9A-Z]{2})",
+            "ConstraintDescription": "This value must consist of 3 characters."
+        },
+        "SAPInstanceNum": {
+            "Type": "String",
+            "Default": "00",
+            "Description": "SAP HANA instance number to use for installation and setup, and to open ports for security groups.",
+            "AllowedPattern": "([0-8]{1}[0-9]{1}|[9]{1}[0-7]{1})",
+            "ConstraintDescription": "Instance number must be between 00 and 97."
+        },
+        "HANAMasterPass": {
+            "Type": "String",
+            "Description": "SAP HANA password to use during installation. Must be at least 8 characters with uppercase, lowercase, and numeric values",
+            "NoEcho": "true",
+            "MinLength": "8",
+            "AllowedPattern": "^(?=.*?[a-z])(?=.*?[A-Z])(?=.*[0-9]).*",
+            "ConstraintDescription": "This must be at least 8 characters, including uppercase, lowercase, and numeric values."
+        },
+        "VolumeTypeHanaData": {
+            "Type": "String",
+            "Description": "EBS volume type for SAP HANA Data: General Purpose SSD (gp2) or Provisioned IOPS SSD (io1).",
+            "Default": "gp2",
+            "AllowedValues": [
+                "gp2",
+                "io1"
+            ]
+        },
+        "VolumeTypeHanaLog": {
+            "Type": "String",
+            "Description": "EBS volume type for SAP HANA Log: General Purpose SSD (gp2) or Provisioned IOPS SSD (io1).",
+            "Default": "gp2",
+            "AllowedValues": [
+                "gp2",
+                "io1"
+            ]
+        },
+        "SAPTZ": {
+            "AllowedValues": [
+                "CT",
+                "ET",
+                "JT",
+                "PT",
+                "UC"
+            ],
+            "ConstraintDescription": "This value must consist of 2 characters.",
+            "Default": "UC",
+            "Description": "The TimeZone of your SAP HANA Server (PT, CT, ET, or UTC)",
+            "Type": "String"
+        },
+        "SLESBYOSRegCode": {
+            "Type": "String",
+            "Default": "",
+            "Description": "Registration code for SUSE BYOS (Applicable only if you use BYOS Option).",
+            "NoEcho": "true"
+        }
+    },
+    "Conditions": {
+        "PlacementGroupNull": {
+            "Fn::Equals": [
+                {
+                    "Ref": "PlacementGroupName"
+                },
+                ""
+            ]
+        },
+        "IfDedicatedHost": {
+            "Fn::Not": [
+                {
+                    "Fn::Equals": [
+                        {
+                            "Fn::Select": [
+                                "0",
+                                {
+                                    "Ref": "DedicatedHostId"
+                                }
+                            ]
+                        },
+                        ""
+                    ]
+                }
+            ]
+        }
+    },
+    "Metadata": {
+        "AWS::CloudFormation::Interface": {
+            "ParameterGroups": [
+                {
+                    "Label": {
+                        "default": "Network infrastructure configuration"
+                    },
+                    "Description": {
+                        "default": ""
+                    },
+                    "Parameters": [
+                        "VPCCIDR",
+                        "PrivSubCIDR",
+                        "DMZCIDR",
+                        "RemoteAccessCIDR",
+                        "BASTIONInstanceType",
+                        "AvailabilityZone"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "Server and storage configuration"
+                    },
+                    "Description": {
+                        "default": ""
+                    },
+                    "Parameters": [
+                        "MyOS",
+                        "SLESBYOSRegCode",
+                        "MyInstanceType",
+                        "HostCount",
+                        "AutoRecovery",
+                        "KeyName",
+                        "VolumeTypeHanaData",
+                        "VolumeTypeHanaLog",
+                        "AWSEFS",
+                        "Encryption"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "SAP HANA database configuration"
+                    },
+                    "Description": {
+                        "default": ""
+                    },
+                    "Parameters": [
+                        "DomainName",
+                        "HANAMasterHostname",
+                        "HANAWorkerHostname",
+                        "SID",
+                        "SAPInstanceNum",
+                        "HANAMasterPass",
+                        "SAPTZ",
+                        "HANAInstallMedia",
+                        "InstallHANA"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "Optional configuration"
+                    },
+                    "Description": {
+                        "default": ""
+                    },
+                    "Parameters": [
+                        "DedicatedHostId",
+                        "PlacementGroupName",
+                        "InstallRDPInstance",
+                        "RDPInstanceType",
+                        "RemoteAccessCIDR",
+                        "ApplicationCIDR",
+                        "EnableLogging",
+                        "CloudTrailS3Bucket",
+                        "Proxy"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "Advanced configuration (Do not modify unless directed by AWS Support)"
+                    },
+                    "Description": {
+                        "default": ""
+                    },
+                    "Parameters": [
+                        "PrivateBucket",
+                        "CustomStorageConfig"
+                    ]
+                }
+            ],
+            "ParameterLabels": {
+                "VPCCIDR": {
+                    "default": "Enter CIDR block for Amazon VPC"
+                },
+                "PrivSubCIDR": {
+                    "default": "Enter CIDR block for private subnet"
+                },
+                "DMZCIDR": {
+                    "default": "Enter CIDR block for public subnet"
+                },
+                "BASTIONInstanceType": {
+                    "default": "Choose instance type for bastion host"
+                },
+                "AvailabilityZone": {
+                    "default": "Choose Availability Zone for subnet creation"
+                },
+                "RemoteAccessCIDR": {
+                    "default": "Enter CIDR block for SSH/RDP access"
+                },
+                "DomainName": {
+                    "default": "Enter domain name"
+                },
+                "HANAMasterHostname": {
+                    "default": "Enter SAP HANA master host name"
+                },
+                "HANAWorkerHostname": {
+                    "default": "Enter SAP HANA worker host name"
+                },
+                "HANAInstallMedia": {
+                    "default": "Enter Amazon S3 URL for SAP HANA software"
+                },
+                "CloudTrailS3Bucket": {
+                    "default": "Enter S3 bucket name to store AWS CloudTrail trails and AWS Config logs"
+                },
+                "PlacementGroupName": {
+                    "default": "Enter optional placement group name"
+                },
+                "DedicatedHostId": {
+                    "default": "Enter Dedicated Host ID"
+                },
+                "PrivateBucket": {
+                    "default": "Enter private bucket"
+                },
+                "CustomStorageConfig": {
+                    "default": "Enter custom storage configuration location"
+                },
+                "Proxy": {
+                    "default": "Enter proxy server address"
+                },
+                "KeyName": {
+                    "default": "Choose key pair"
+                },
+                "MyOS": {
+                    "default": "Choose operating system and version for SAP HANA"
+                },
+                "SLESBYOSRegCode": {
+                    "default": "Enter SUSE BYOS Registration Code"
+                },
+                "AutoRecovery": {
+                    "default": "Would you like to turn on automatic recovery?"
+                },
+                "InstallRDPInstance": {
+                    "default": "Do you need a Windows RDP instance?"
+                },
+                "InstallHANA": {
+                    "default": "Install SAP HANA software?"
+                },
+                "AWSEFS": {
+                    "default": "Would you like to use Amazon EFS?"
+                },
+                "Encryption": {
+                    "default": "Would you like to turn on encryption?"
+                },
+                "VolumeTypeHanaData": {
+                    "default": "Choose storage volume type for SAP HANA Data"
+                },
+                "VolumeTypeHanaLog": {
+                    "default": "Choose storage volume type for SAP HANA Log"
+                },
+                "MyInstanceType": {
+                    "default": "Choose instance type for SAP HANA"
+                },
+                "RDPInstanceType": {
+                    "default": "Choose instance type for RDP host"
+                },
+                "HostCount": {
+                    "default": "Enter number of SAP HANA hosts"
+                },
+                "SID": {
+                    "default": "Enter SAP HANA system ID"
+                },
+                "SAPInstanceNum": {
+                    "default": "Enter SAP HANA instance number"
+                },
+                "HANAMasterPass": {
+                    "default": "Enter SAP HANA password"
+                },
+                "EnableLogging": {
+                    "default": "Would you like to enable AWS CloudTrail trails and AWS Config?"
+                },
+                "SAPTZ": {
+                    "default": "Enter SAP HANA Server timezone"
+                },
+                "ApplicationCIDR": {
+                    "default": "Enter CIDR block of your SAP Application Servers"
+                }
+            }
+        }
+    },
+    "Mappings": {
+        "AWSAMIRegionMap": {
+            "AMI": {
+                "AWSNAT": "amzn-ami-vpc-nat-hvm-2018.03.0.20181116-x86_64-ebs"
+            },
+            "ap-northeast-1": {
+                "AWSNAT": "ami-00d29e4cb217ae06b"
+            },
+            "ap-northeast-2": {
+                "AWSNAT": "ami-0d98591cbf9ef1ffd"
+            },
+            "ap-south-1": {
+                "AWSNAT": "ami-00b3aa8a93dd09c13"
+            },
+            "ap-southeast-1": {
+                "AWSNAT": "ami-01514bb1776d5c018"
+            },
+            "ap-southeast-2": {
+                "AWSNAT": "ami-062c04ec46aecd204"
+            },
+            "ca-central-1": {
+                "AWSNAT": "ami-0b32354309da5bba5"
+            },
+            "eu-central-1": {
+                "AWSNAT": "ami-06a5303d47fbd8c60"
+            },
+            "eu-west-1": {
+                "AWSNAT": "ami-024107e3e3217a248"
+            },
+            "eu-west-2": {
+                "AWSNAT": "ami-0ca65a55561666293"
+            },
+            "eu-west-3": {
+                "AWSNAT": "ami-0641e4dfc1427f114"
+            },
+            "sa-east-1": {
+                "AWSNAT": "ami-057f5d52ff7ae75ae"
+            },
+            "us-east-1": {
+                "AWSNAT": "ami-00a9d4a05375b2763"
+            },
+            "us-east-2": {
+                "AWSNAT": "ami-00d1f8201864cc10c"
+            },
+            "us-west-1": {
+                "AWSNAT": "ami-097ad469381034fa2"
+            },
+            "us-west-2": {
+                "AWSNAT": "ami-0b840e8a1ce4cdf15"
+            }
+        }
+    },
+    "Outputs": {},
+    "Resources": {
+        "VPC": {
+            "Type": "AWS::EC2::VPC",
+            "Properties": {
+                "CidrBlock": {
+                    "Ref": "VPCCIDR"
+                },
+                "EnableDnsHostnames": "true",
+                "EnableDnsSupport": "true",
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": "SAP HANA"
+                    }
+                ]
+            }
+        },
+        "InternetGateway": {
+            "Type": "AWS::EC2::InternetGateway"
+        },
+        "AttachGateway": {
+            "Type": "AWS::EC2::VPCGatewayAttachment",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "VPC"
+                },
+                "InternetGatewayId": {
+                    "Ref": "InternetGateway"
+                }
+            }
+        },
+        "BaseNodes": {
+            "Type": "AWS::CloudFormation::Stack",
+            "Properties": {
+                "TemplateURL": "https://s3.amazonaws.com/aws-quickstart/quickstart-sap-hana/templates/SAP-HANA-BaseNodes.template",
+                "Parameters": {
+                    "PrivSubCIDR": {
+                        "Ref": "PrivSubCIDR"
+                    },
+                    "DMZCIDR": {
+                        "Ref": "DMZCIDR"
+                    },
+                    "VPCID": {
+                        "Fn::GetAtt": [
+                            "BaseNetwork",
+                            "Outputs.VPCID"
+                        ]
+                    },
+                    "HANASubnet": {
+                        "Fn::GetAtt": [
+                            "BaseNetwork",
+                            "Outputs.HANASubnet"
+                        ]
+                    },
+                    "DMZSubnet": {
+                        "Fn::GetAtt": [
+                            "BaseNetwork",
+                            "Outputs.PublicSubnet"
+                        ]
+                    },
+                    "DomainName": {
+                        "Ref": "DomainName"
+                    },
+                    "RemoteAccessCIDR": {
+                        "Ref": "RemoteAccessCIDR"
+                    },
+                    "ApplicationCIDR": {
+                        "Ref": "ApplicationCIDR"
+                    },
+                    "HANAMasterHostname": {
+                        "Ref": "HANAMasterHostname"
+                    },
+                    "HANAWorkerHostname": {
+                        "Ref": "HANAWorkerHostname"
+                    },
+                    "PlacementGroupName": {
+                        "Fn::If": [
+                            "PlacementGroupNull",
+                            {
+                                "Ref": "AWS::NoValue"
+                            },
+                            {
+                                "Fn::Join": [
+                                    "",
+                                    [
+                                        {
+                                            "Ref": "PlacementGroupName"
+                                        },
+                                        ""
+                                    ]
+                                ]
+                            }
+                        ]
+                    },
+                    "PrivateBucket": {
+                        "Ref": "PrivateBucket"
+                    },
+                    "Proxy": {
+                        "Ref": "Proxy"
+                    },
+                    "KeyName": {
+                        "Ref": "KeyName"
+                    },
+                    "MyOS": {
+                        "Ref": "MyOS"
+                    },
+                    "MyInstanceType": {
+                        "Ref": "MyInstanceType"
+                    },
+                    "DedicatedHostId": {
+                        "Fn::If": [
+                            "IfDedicatedHost",
+                            {
+                                "Fn::Select": [
+                                    "0",
+                                    {
+                                        "Ref": "DedicatedHostId"
+                                    }
+                                ]
+                            },
+                            ""
+                        ]
+                    },
+                    "RDPInstanceType": {
+                        "Ref": "RDPInstanceType"
+                    },
+                    "InstallRDPInstance": {
+                        "Ref": "InstallRDPInstance"
+                    },
+                    "InstallHANA": {
+                        "Ref": "InstallHANA"
+                    },
+                    "AWSEFS": {
+                        "Ref": "AWSEFS"
+                    },
+                    "Encryption": {
+                        "Ref": "Encryption"
+                    },
+                    "VolumeTypeHanaData": {
+                        "Ref": "VolumeTypeHanaData"
+                    },
+                    "VolumeTypeHanaLog": {
+                        "Ref": "VolumeTypeHanaLog"
+                    },
+                    "HostCount": {
+                        "Ref": "HostCount"
+                    },
+                    "SID": {
+                        "Ref": "SID"
+                    },
+                    "SAPInstanceNum": {
+                        "Ref": "SAPInstanceNum"
+                    },
+                    "HANAMasterPass": {
+                        "Ref": "HANAMasterPass"
+                    },
+                    "HANAInstallMedia": {
+                        "Ref": "HANAInstallMedia"
+                    },
+                    "AutoRecovery": {
+                        "Ref": "AutoRecovery"
+                    },
+                    "CloudTrailS3Bucket": {
+                        "Ref": "CloudTrailS3Bucket"
+                    },
+                    "EnableLogging": {
+                        "Ref": "EnableLogging"
+                    },
+                    "SAPTZ": {
+                        "Ref": "SAPTZ"
+                    },
+                    "CustomStorageConfig": {
+                        "Ref": "CustomStorageConfig"
+                    },
+                    "SLESBYOSRegCode": {
+                        "Ref": "SLESBYOSRegCode"
+                    }
+                }
+            }
+        },
+        "BaseNetwork": {
+            "Type": "AWS::CloudFormation::Stack",
+            "Properties": {
+                "TemplateURL": "https://s3.amazonaws.com/aws-quickstart/quickstart-sap-hana/templates/SAP-HANA-BaseNetwork.template",
+                "Parameters": {
+                    "VPC": {
+                        "Ref": "VPC"
+                    },
+                    "InternetGateway": {
+                        "Ref": "InternetGateway"
+                    },
+                    "VPCCIDR": {
+                        "Ref": "VPCCIDR"
+                    },
+                    "DMZCIDR": {
+                        "Ref": "DMZCIDR"
+                    },
+                    "PrivSubCIDR": {
+                        "Ref": "PrivSubCIDR"
+                    },
+                    "RemoteAccessCIDR": {
+                        "Ref": "RemoteAccessCIDR"
+                    },
+                    "KeyName": {
+                        "Ref": "KeyName"
+                    },
+                    "BASTIONInstanceType": {
+                        "Ref": "BASTIONInstanceType"
+                    },
+                    "AvailabilityZone": {
+                        "Ref": "AvailabilityZone"
+                    }
+                }
+            }
+        }
+    }
+}

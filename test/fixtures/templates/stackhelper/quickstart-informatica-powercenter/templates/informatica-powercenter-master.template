@@ -1,0 +1,656 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "AWS Cloud Formation Template for deployment of Informatica Powercenter Version 10.1.1 on a VPC infrastructure. Informatica PowerCenter is deployed on RHEL 7.3 or Windows Server 2012 R2 depending on user input. Amazon RDS instance in a private subnet is used as the repository for Informatica Domain Metadata. **WARNING** This template creates Amazon EC2 instance and related resources. You will be billed for the AWS resources used if you create a stack from this template. (qs-1p2ul213e)",
+    "Metadata": {
+        "AWS::CloudFormation::Interface": {
+            "ParameterGroups": [
+                {
+                    "Label": {
+                        "default": "Network Configuration"
+                    },
+                    "Parameters": [
+                        "AvailabilityZones",
+                        "VPCCIDR",
+                        "PrivateSubnet1CIDR",
+                        "PrivateSubnet2CIDR",
+                        "PublicSubnet1CIDR",
+                        "PublicSubnet2CIDR",
+                        "RemoteAccessCIDR"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "Amazon EC2 Configuration"
+                    },
+                    "Parameters": [
+                        "KeyPairName",
+                        "PowerCenterOS",
+                        "PowerCenterInstanceType",
+                        "NumberOfPowerCenterInstances",
+                        "EnableEIP",
+                        "CreateEFS"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "Amazon RDS Configuration"
+                    },
+                    "Parameters": [
+                        "DatabaseType",
+                        "DatabaseName",
+                        "DatabaseUsername",
+                        "DatabasePassword",
+                        "DatabasePasswordConfirm"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "Informatica PowerCenter Configuration"
+                    },
+                    "Parameters": [
+                        "InformaticaDomainName",
+                        "InformaticaNodeName",
+                        "InformaticaDomainUsername",
+                        "InformaticaDomainPassword",
+                        "InformaticaDomainPasswordConfirm",
+                        "EncryptionKeyPhrase",
+                        "LicenseKey"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "AWS Quick Start Configuration"
+                    },
+                    "Parameters": [
+                        "QSS3BucketName",
+                        "QSS3KeyPrefix"
+                    ]
+                }
+            ],
+            "ParameterLabels": {
+                "AvailabilityZones": {
+                    "default": "Availability Zones"
+                },
+                "DatabasePassword": {
+                    "default": "Database Password"
+                },
+                "DatabasePasswordConfirm": {
+                    "default": "Confirm Password"
+                },
+                "DatabaseName": {
+                    "default": "Database Name"
+                },
+                "DatabaseType": {
+                    "default": "Database Type"
+                },
+                "DatabaseUsername": {
+                    "default": "Database Username"
+                },
+                "EncryptionKeyPhrase": {
+                    "default": "Encryption Key Phrase"
+                },
+                "InformaticaDomainName": {
+                    "default": "Informatica Domain Name"
+                },
+                "InformaticaNodeName": {
+                    "default": "Informatica Node Prefix"
+                },
+                "InformaticaDomainUsername": {
+                    "default": "Informatica Administrator Username"
+                },
+                "InformaticaDomainPassword": {
+                    "default": "Informatica Administrator Password"
+                },
+                "InformaticaDomainPasswordConfirm": {
+                    "default": "Confirm Password"
+                },
+                "KeyPairName": {
+                    "default": "Key Pair Name"
+                },
+                "PowerCenterOS": {
+                    "default": "Operating System"
+                },
+                "PowerCenterInstanceType": {
+                    "default": "Informatica Domain Instance Type"
+                },
+                "NumberOfPowerCenterInstances": {
+                    "default": "Number of Instances"
+                },
+                "EnableEIP": {
+                    "default": "Enable Elastic IP Addressing"
+                },
+                "CreateEFS": {
+                    "default": "Create Elastic File System"
+                },
+                "PrivateSubnet1CIDR": {
+                    "default": "Private Subnet 1 CIDR"
+                },
+                "PrivateSubnet2CIDR": {
+                    "default": "Private Subnet 2 CIDR"
+                },
+                "PublicSubnet1CIDR": {
+                    "default": "Public Subnet 1 CIDR"
+                },
+                "PublicSubnet2CIDR": {
+                    "default": "Public Subnet 2 CIDR"
+                },
+                "QSS3BucketName": {
+                    "default": "Quick Start S3 Bucket Name"
+                },
+                "QSS3KeyPrefix": {
+                    "default": "Quick Start S3 Key Prefix"
+                },
+                "RemoteAccessCIDR": {
+                    "default": "Allowed Remote Access CIDR"
+                },
+                "VPCCIDR": {
+                    "default": "VPC CIDR"
+                },
+                "LicenseKey": {
+                    "default": "Informatica License Key"
+                }
+            }
+        }
+    },
+    "Parameters": {
+        "AvailabilityZones": {
+            "Description": "List of Availability Zones to use for the subnets in the VPC. Note: The logical order is preserved and only 2 AZs are used for this deployment",
+            "Type": "List<AWS::EC2::AvailabilityZone::Name>",
+            "MinLength": "1"
+        },
+        "CreateEFS": {
+            "Description": "*LINUX ONLY*. Create shared storage for High Availability. Default value is Yes. Shared storage is created only if it is available in your region",
+            "Type": "String",
+            "AllowedValues": [
+                "Yes",
+                "No"
+            ],
+            "Default": "Yes"
+        },
+        "DatabaseName": {
+            "AllowedPattern": "^([a-zA-Z][a-z0-9A-Z_]{4,8})$",
+            "ConstraintDescription": "Only alphanumeric characters and underscore are allowed. Should begin with an alphabet. The value must be 4-8",
+            "Description": "Database Name for RDS Instance. Default value is InfaDB",
+            "Type": "String",
+            "Default": "InfaDB",
+            "MinLength": "4",
+            "MaxLength": "8"
+        },
+        "DatabasePassword": {
+            "AllowedPattern": "^([a-zA-Z][a-z0-9A-Z_]{3,20})$",
+            "ConstraintDescription": "Only alphanumeric characters and underscore are allowed. Should begin with an alphabet. The value must be 8-18",
+            "Description": "Password for the Amazon RDS database account. Only alphanumeric characters and underscore are allowed. Should begin with an alphabet. The value must be 8-18",
+            "MaxLength": "18",
+            "MinLength": "8",
+            "NoEcho": "True",
+            "Type": "String"
+        },
+        "DatabasePasswordConfirm": {
+            "AllowedPattern": "^([a-zA-Z][a-z0-9A-Z_]{3,20})$",
+            "ConstraintDescription": "Only alphanumeric characters and underscore are allowed. Should begin with an alphabet. The value must be 8-18",
+            "Description": "Password for the Amazon RDS database account.",
+            "MaxLength": "18",
+            "MinLength": "8",
+            "NoEcho": "True",
+            "Type": "String"
+        },
+        "DatabaseType": {
+            "AllowedValues": [
+                "Oracle-Standard-Edition-One-11.2.0-License-Included",
+                "Oracle-Standard-Edition-One-11.2.0-BYOL",
+                "Oracle-Enterprise-Edition-12.1.0-BYOL",
+                "Oracle-Enterprise-Edition-11.2.0-BYOL",
+                "Oracle-Standard-Edition-11.2.0-BYOL"
+            ],
+            "Default": "Oracle-Standard-Edition-One-11.2.0-License-Included",
+            "Description": "The type of database to use in Amazon RDS. Currently, you can only use Oracle",
+            "Type": "String"
+        },
+        "DatabaseUsername": {
+            "AllowedPattern": "^([a-zA-Z][a-z0-9A-Z_]{3,20})$",
+            "ConstraintDescription": "Only alphanumeric characters and underscore are allowed. Should begin with an alphabet. The value must be 4-20",
+            "Description": "Username for the Amazon RDS database account",
+            "MaxLength": "30",
+            "MinLength": "4",
+            "Type": "String"
+        },
+        "EnableEIP": {
+            "Description": "Assign Elastic IPs to Instances. Default value is Yes",
+            "Type": "String",
+            "AllowedValues": [
+                "Yes",
+                "No"
+            ],
+            "Default": "Yes"
+        },
+        "EncryptionKeyPhrase": {
+            "AllowedPattern": "^(?=.*[0-9])(?=.*[a-z])(?=.*[A-Z])(?=\\S+$).{8,}$",
+            "ConstraintDescription": "It should be 8 to 20 characters long, at least one uppercase letter at least one lowercase letter-at least one number Does not contain spaces",
+            "Description": "The text string used as the base word from which to generate an encryption key for the Informatica domain",
+            "MaxLength": "32",
+            "MinLength": "8",
+            "NoEcho": "true",
+            "Type": "String"
+        },
+        "InformaticaDomainName": {
+            "AllowedPattern": "^([a-zA-Z][a-z0-9A-Z_]{7,20})$",
+            "ConstraintDescription": "Only alphanumeric characters and underscore are allowed. Should begin with an alphabet. The value must be 4-20",
+            "Description": "Name for the Informatica Domain.",
+            "Type": "String",
+            "Default": "InfaDomain",
+            "MinLength": "8",
+            "MaxLength": "20"
+        },
+        "InformaticaDomainPassword": {
+            "AllowedPattern": "^(?=.*[A-Z])(?=.*[a-z])(?=.*\\d)(?=.*[^\\s\\w])(?!.*[\"$&]).{7,32}$",
+            "ConstraintDescription": "Password must be at least 8 characters in length. Should contain at least one special character, number, upper-case and lower-case character. Double quote(\"),ampersand(&) and dollar($) is not allowed",
+            "Description": "Password for the Informatica Domain. Password must be at least 8 characters in length. Should contain at least one special character, number, upper-case and lower-case character. Double quote(\"),ampersand(&) and dollar($) is not allowed",
+            "NoEcho": "True",
+            "MaxLength": "32",
+            "MinLength": "8",
+            "Type": "String"
+        },
+        "InformaticaDomainPasswordConfirm": {
+            "AllowedPattern": "^(?=.*[A-Z])(?=.*[a-z])(?=.*\\d)(?=.*[^\\s\\w])(?!.*[\"$&]).{7,32}$",
+            "ConstraintDescription": "Password must be at least 8 characters in length. Should contain at least one special character, number, upper-case and lower-case character. Double quote(\"),ampersand(&) and dollar($) is not allowed",
+            "Description": "Password for the Informatica Domain.",
+            "NoEcho": "True",
+            "MaxLength": "32",
+            "MinLength": "8",
+            "Type": "String"
+        },
+        "InformaticaDomainUsername": {
+            "AllowedPattern": "^([a-zA-Z][a-z0-9A-Z_]{7,20})$",
+            "ConstraintDescription": "Only alphanumeric characters and underscore are allowed. Should begin with an alphabet. The value must be 4-20",
+            "Description": "Username for the Informatica Domain.",
+            "Default": "Administrator",
+            "MaxLength": "20",
+            "MinLength": "8",
+            "Type": "String"
+        },
+        "InformaticaNodeName": {
+            "AllowedPattern": "^([a-zA-Z][a-z0-9A-Z_]{3,20})$",
+            "ConstraintDescription": "Only alphanumeric characters and underscore are allowed. Should begin with an alphabet. The value must be 4-20",
+            "Description": "Prefix for the Nodes in Informatica Domain. Node number will be the suffix for the nodes. Eg InfaNode1, InfaNode2",
+            "Type": "String",
+            "Default": "Infa",
+            "MinLength": "4",
+            "MaxLength": "20"
+        },
+        "KeyPairName": {
+            "Description": "Name of an existing EC2 KeyPair to enable external access to the Informatica Domain",
+            "Type": "AWS::EC2::KeyPair::KeyName",
+            "MinLength": "1"
+        },
+        "LicenseKey": {
+            "Description": "*OPTIONAL*. Provide a PUBLIC S3 link for the License Key file. Leave blank to go ahead without the Licence Key",
+            "Type": "String",
+            "Default": ""
+        },
+        "NumberOfPowerCenterInstances": {
+            "Description": "Number of PowerCenter Nodes. Each node runs on one EC2 Instance",
+            "Type": "String",
+            "AllowedValues": [
+                "1",
+                "2",
+                "4",
+                "6",
+                "8",
+                "10",
+                "12",
+                "14",
+                "16"
+            ],
+            "Default": "4"
+        },
+        "PowerCenterOS": {
+            "Description": "Operation System on which Informatica Domain will be deployed",
+            "AllowedValues": [
+                "Windows Server",
+                "Red Hat Enterprise Linux"
+            ],
+            "Default": "Windows Server",
+            "MaxLength": "32",
+            "MinLength": "8",
+            "Type": "String"
+        },
+        "PowerCenterInstanceType": {
+            "AllowedValues": [
+                "m4.large",
+                "c4.xlarge",
+                "c4.2xlarge",
+                "c4.4xlarge",
+                "c4.8xlarge",
+                "r3.large",
+                "r3.xlarge",
+                "r3.2xlarge",
+                "r3.4xlarge",
+                "r3.8xlarge"
+            ],
+            "Default": "c4.2xlarge",
+            "Description": "Instance Type for Informatica Domain. Default is c4.2xlarge",
+            "Type": "String"
+        },
+        "PrivateSubnet1CIDR": {
+            "AllowedPattern": "^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\\/(1[6-9]|2[0-8]))$",
+            "ConstraintDescription": "CIDR block parameter must be in the form x.x.x.x/16-28",
+            "Default": "10.0.0.0/19",
+            "Description": "CIDR block for private subnet 1 located in Availability Zone 1",
+            "Type": "String"
+        },
+        "PrivateSubnet2CIDR": {
+            "AllowedPattern": "^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\\/(1[6-9]|2[0-8]))$",
+            "ConstraintDescription": "CIDR block parameter must be in the form x.x.x.x/16-28",
+            "Default": "10.0.32.0/19",
+            "Description": "CIDR block for private subnet 2 located in Availability Zone 2",
+            "Type": "String"
+        },
+        "PublicSubnet1CIDR": {
+            "AllowedPattern": "^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\\/(1[6-9]|2[0-8]))$",
+            "ConstraintDescription": "CIDR block parameter must be in the form x.x.x.x/16-28",
+            "Default": "10.0.128.0/20",
+            "Description": "CIDR Block for the public subnet 1 located in Availability Zone 1",
+            "Type": "String"
+        },
+        "PublicSubnet2CIDR": {
+            "AllowedPattern": "^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\\/(1[6-9]|2[0-8]))$",
+            "ConstraintDescription": "CIDR block parameter must be in the form x.x.x.x/16-28",
+            "Default": "10.0.144.0/20",
+            "Description": "CIDR Block for the public subnet 2 located in Availability Zone 2",
+            "Type": "String"
+        },
+        "QSS3BucketName": {
+            "AllowedPattern": "^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$",
+            "ConstraintDescription": "Quick Start bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-).",
+            "Default": "aws-quickstart",
+            "Description": "S3 bucket name for the Quick Start assets. Quick Start bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-).",
+            "Type": "String"
+        },
+        "QSS3KeyPrefix": {
+            "AllowedPattern": "^[0-9a-zA-Z-/]*$",
+            "ConstraintDescription": "Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).",
+            "Default": "quickstart-informatica-powercenter/",
+            "Description": "S3 key prefix for the Quick Start assets. Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).",
+            "Type": "String"
+        },
+        "RemoteAccessCIDR": {
+            "AllowedPattern": "^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\\/([0-9]|[1-2][0-9]|3[0-2]))$",
+            "ConstraintDescription": "CIDR block parameter must be in the form x.x.x.x/x",
+            "Description": "Allowed CIDR block for external access to the Informatica Domain",
+            "Type": "String"
+        },
+        "VPCCIDR": {
+            "AllowedPattern": "^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\\/(1[6-9]|2[0-8]))$",
+            "ConstraintDescription": "CIDR block parameter must be in the form x.x.x.x/16-28",
+            "Default": "10.0.0.0/16",
+            "Description": "CIDR Block for the VPC",
+            "Type": "String"
+        }
+    },
+    "Rules": {
+        "InformaticaPasswordConfirm": {
+            "Assertions": [
+                {
+                    "Assert": {
+                        "Fn::Equals": [
+                            {
+                                "Ref": "InformaticaDomainPassword"
+                            },
+                            {
+                                "Ref": "InformaticaDomainPasswordConfirm"
+                            }
+                        ]
+                    },
+                    "AssertDescription": "Informatica Domain Passwords do not match"
+                }
+            ]
+        },
+        "DatabasePasswordConfirm": {
+            "Assertions": [
+                {
+                    "Assert": {
+                        "Fn::Equals": [
+                            {
+                                "Ref": "DatabasePassword"
+                            },
+                            {
+                                "Ref": "DatabasePasswordConfirm"
+                            }
+                        ]
+                    },
+                    "AssertDescription": "Database Passwords do not match"
+                }
+            ]
+        }
+    },
+    "Mappings": {
+        "AWSInfoRegionMap": {
+            "ap-northeast-1": {
+                "Partition": "aws",
+                "QuickStartS3URL": "https://s3.amazonaws.com"
+            },
+            "ap-northeast-2": {
+                "Partition": "aws",
+                "QuickStartS3URL": "https://s3.amazonaws.com"
+            },
+            "ap-south-1": {
+                "Partition": "aws",
+                "QuickStartS3URL": "https://s3.amazonaws.com"
+            },
+            "ap-southeast-1": {
+                "Partition": "aws",
+                "QuickStartS3URL": "https://s3.amazonaws.com"
+            },
+            "ap-southeast-2": {
+                "Partition": "aws",
+                "QuickStartS3URL": "https://s3.amazonaws.com"
+            },
+            "ca-central-1": {
+                "Partition": "aws",
+                "QuickStartS3URL": "https://s3.amazonaws.com"
+            },
+            "eu-central-1": {
+                "Partition": "aws",
+                "QuickStartS3URL": "https://s3.amazonaws.com"
+            },
+            "eu-west-1": {
+                "Partition": "aws",
+                "QuickStartS3URL": "https://s3.amazonaws.com"
+            },
+            "eu-west-2": {
+                "Partition": "aws",
+                "QuickStartS3URL": "https://s3.amazonaws.com"
+            },
+            "sa-east-1": {
+                "Partition": "aws",
+                "QuickStartS3URL": "https://s3.amazonaws.com"
+            },
+            "us-east-1": {
+                "Partition": "aws",
+                "QuickStartS3URL": "https://s3.amazonaws.com"
+            },
+            "us-east-2": {
+                "Partition": "aws",
+                "QuickStartS3URL": "https://s3.amazonaws.com"
+            },
+            "us-west-1": {
+                "Partition": "aws",
+                "QuickStartS3URL": "https://s3.amazonaws.com"
+            },
+            "us-west-2": {
+                "Partition": "aws",
+                "QuickStartS3URL": "https://s3.amazonaws.com"
+            }
+        }
+    },
+    "Conditions": {
+        "InfaOnWindows": {
+            "Fn::Equals": [
+                {
+                    "Ref": "PowerCenterOS"
+                },
+                "Windows Server"
+            ]
+        }
+    },
+    "Resources": {
+        "VPCStack": {
+            "Type": "AWS::CloudFormation::Stack",
+            "Properties": {
+                "TemplateURL": {
+                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}submodules/quickstart-aws-vpc/templates/aws-vpc.template"
+                },
+                "Parameters": {
+                    "AvailabilityZones": {
+                        "Fn::Join": [
+                            ",",
+                            {
+                                "Ref": "AvailabilityZones"
+                            }
+                        ]
+                    },
+                    "KeyPairName": {
+                        "Ref": "KeyPairName"
+                    },
+                    "NumberOfAZs": "2",
+                    "PrivateSubnet1ACIDR": {
+                        "Ref": "PrivateSubnet1CIDR"
+                    },
+                    "PrivateSubnet2ACIDR": {
+                        "Ref": "PrivateSubnet2CIDR"
+                    },
+                    "PublicSubnet1CIDR": {
+                        "Ref": "PublicSubnet1CIDR"
+                    },
+                    "PublicSubnet2CIDR": {
+                        "Ref": "PublicSubnet2CIDR"
+                    },
+                    "VPCCIDR": {
+                        "Ref": "VPCCIDR"
+                    }
+                }
+            }
+        },
+        "PowerCenterStack": {
+            "DependsOn": "VPCStack",
+            "Type": "AWS::CloudFormation::Stack",
+            "Properties": {
+                "TemplateURL": {
+                    "Fn::Sub": [
+                        "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}templates/${DeployOSTemplate}",
+                        {
+                            "DeployOSTemplate": {
+                                "Fn::If": [
+                                    "InfaOnWindows",
+                                    "informatica-powercenter-windows.template",
+                                    "informatica-powercenter-linux.template"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                "Parameters": {
+                    "CreateEFS": {
+                        "Fn::If": [
+                            "InfaOnWindows",
+                            {
+                                "Ref": "AWS::NoValue"
+                            },
+                            {
+                                "Ref": "CreateEFS"
+                            }
+                        ]
+                    },
+                    "DBSubnetIDs": {
+                        "Fn::Join": [
+                            ",",
+                            [
+                                {
+                                    "Fn::GetAtt": [
+                                        "VPCStack",
+                                        "Outputs.PrivateSubnet1AID"
+                                    ]
+                                },
+                                {
+                                    "Fn::GetAtt": [
+                                        "VPCStack",
+                                        "Outputs.PrivateSubnet2AID"
+                                    ]
+                                }
+                            ]
+                        ]
+                    },
+                    "DatabaseName": {
+                        "Ref": "DatabaseName"
+                    },
+                    "DatabasePassword": {
+                        "Ref": "DatabasePassword"
+                    },
+                    "DatabasePasswordConfirm": {
+                        "Ref": "DatabasePasswordConfirm"
+                    },
+                    "DatabaseType": {
+                        "Ref": "DatabaseType"
+                    },
+                    "DatabaseUsername": {
+                        "Ref": "DatabaseUsername"
+                    },
+                    "EnableEIP": {
+                        "Ref": "EnableEIP"
+                    },
+                    "EncryptionKeyPhrase": {
+                        "Ref": "EncryptionKeyPhrase"
+                    },
+                    "InformaticaDomainName": {
+                        "Ref": "InformaticaDomainName"
+                    },
+                    "InformaticaDomainPassword": {
+                        "Ref": "InformaticaDomainPassword"
+                    },
+                    "InformaticaDomainPasswordConfirm": {
+                        "Ref": "InformaticaDomainPasswordConfirm"
+                    },
+                    "InformaticaDomainUsername": {
+                        "Ref": "InformaticaDomainUsername"
+                    },
+                    "InformaticaNodeName": {
+                        "Ref": "InformaticaNodeName"
+                    },
+                    "KeyPairName": {
+                        "Ref": "KeyPairName"
+                    },
+                    "LicenseKey": {
+                        "Ref": "LicenseKey"
+                    },
+                    "NumberOfPowerCenterInstances": {
+                        "Ref": "NumberOfPowerCenterInstances"
+                    },
+                    "PowerCenterInstanceType": {
+                        "Ref": "PowerCenterInstanceType"
+                    },
+                    "PublicSubnet1ID": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.PublicSubnet1ID"
+                        ]
+                    },
+                    "PublicSubnet2ID": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.PublicSubnet2ID"
+                        ]
+                    },
+                    "RemoteAccessCIDR": {
+                        "Ref": "RemoteAccessCIDR"
+                    },
+                    "VPCID": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.VPCID"
+                        ]
+                    }
+                }
+            }
+        }
+    }
+}

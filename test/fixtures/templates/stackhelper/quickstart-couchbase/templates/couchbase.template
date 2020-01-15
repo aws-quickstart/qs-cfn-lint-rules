@@ -1,0 +1,897 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "AWS Deployment for Couchbase Enterprise, License: Apache 2.0 (Please do not remove) Dec,8,2017 (qs-1nq4cb8lb)",
+    "Metadata": {
+        "AWS::CloudFormation::Interface": {
+            "ParameterGroups": [{
+                "Label": {
+                    "default": "Network Configuration"
+                },
+                "Parameters": [
+                    "VPCID",
+                    "PublicSubnet1ID",
+                    "PublicSubnet2ID",
+                    "PublicSubnet3ID",
+                    "PublicSubnet4ID",
+                    "RemoteAccessCIDR",
+                    "XDCRCIDR",
+                    "VPCCIDR"
+                ]
+            }, {
+            "Label": {
+                "default": "Amazon EC2 Configuration"
+            },
+            "Parameters": [
+                "KeyName",
+                "InstanceType"
+            ]
+            }, {
+            "Label": {
+                "default": "Couchbase Configuration"
+            },
+            "Parameters": [
+                "Username",
+                "Password",
+                "ServerDiskSize",
+                "ServerInstanceCount",
+                "SyncGatewayInstanceCount",
+                "EncryptEBS",
+                "License"
+            ]
+            }, {
+            "Label": {
+                "default": "AWS Quick Start Configuration"
+            },
+            "Parameters": [
+                "QSS3BucketName",
+                "QSS3KeyPrefix"
+            ]
+            }],
+            "ParameterLabels": {
+                "QSS3BucketName": {
+                    "default": "Quick Start S3 Bucket Name"
+                },
+                "QSS3KeyPrefix": {
+                    "default": "Quick Start S3 Key Prefix"
+                },
+                "RemoteAccessCIDR": {
+                    "default": "Allowed External Access CIDR"
+                },
+                "EncryptEBS": {
+                    "default": "Encrypt Instance EBS"
+                },
+                "XDCRCIDR": {
+                    "default": "XDCR CIDR"
+                },
+                "VPCCIDR": {
+                    "default": "VPC CIDR"
+                },
+                "VPCID": {
+                    "default": "VPC ID"
+                },
+                "KeyName": {
+                    "default": "SSH Key Name"
+                },
+                "Username": {
+                    "default": "Couchbase Administrator Username"
+                },
+                "Password": {
+                    "default": "Couchbase Administrator Password"
+                },
+                "InstanceType": {
+                    "default": "Couchbase Instance Type"
+                },
+                "ServerInstanceCount": {
+                    "default": "Couchbase Instance Count"
+                },
+                "ServerDiskSize": {
+                    "default": "Server Disk Size"
+                },
+                "SyncGatewayInstanceCount": {
+                    "default": "Number of Couchbase Sync Gateway Nodes"
+                },
+                "PublicSubnet1ID": {
+                    "default": "Public Subnet 1 ID"
+                },
+                "PublicSubnet2ID": {
+                    "default": "Public Subnet 2 ID"
+                },
+                "PublicSubnet3ID": {
+                    "default": "Public Subnet 3 ID"
+                },
+                "PublicSubnet4ID": {
+                    "default": "Public Subnet 4 ID"
+                }
+            }
+        }
+    },
+    "Parameters": {
+        "ServerInstanceCount": {
+            "Description": "Number of Couchbase Server Nodes",
+            "Type": "Number",
+            "Default": 4
+        },
+        "ServerDiskSize": {
+            "Description": "Size in GB of the EBS gp2 volume on each Couchbase node",
+            "Type": "Number",
+            "Default": 100
+        },
+        "SyncGatewayInstanceCount": {
+            "Description": "Number of Couchbase Sync Gateway Nodes",
+            "Type": "Number",
+            "Default": 2
+        },
+        "InstanceType": {
+            "Description": "Instance type for Couchbase Nodes",
+            "Type": "String",
+            "Default": "m4.xlarge",
+            "AllowedValues": [
+                "m4.xlarge",
+                "m4.2xlarge",
+                "m4.4xlarge",
+                "m4.10xlarge",
+                "m4.16xlarge",
+                "r4.xlarge",
+                "r4.2xlarge",
+                "r4.4xlarge",
+                "r4.8xlarge",
+                "r4.16xlarge"
+            ]
+        },
+        "EncryptEBS": {
+            "Description": "Encrypt EBS volume",
+            "Type": "String",
+            "Default": "true",
+            "AllowedValues": [
+                "true",
+                "false"
+            ]
+        },
+        "Username": {
+            "Description": "Username for Couchbase administrator",
+            "Type": "String"
+        },
+        "Password": {
+            "Description": "Password for Couchbase administrator",
+            "Type": "String",
+            "NoEcho": true
+        },
+        "KeyName": {
+            "Description": "Name of an existing EC2 KeyPair",
+            "Type": "AWS::EC2::KeyPair::KeyName"
+        },
+        "License": {
+            "Description": "License model can be BYOL or HourlyPricing",
+            "Type": "String",
+            "Default": "HourlyPricing",
+            "AllowedValues": [
+                "HourlyPricing",
+                "BYOL"
+            ]
+        },
+        "PublicSubnet1ID": {
+            "Description": "ID of the public subnet 1 in Availability Zone 1 (e.g., subnet-xxxxxxxx)",
+            "Default": "",
+            "Type": "String"
+        },
+        "PublicSubnet2ID": {
+            "Description": "ID of the public subnet 2 in Availability Zone 2 (e.g., subnet-xxxxxxxx)",
+            "Default": "",
+            "Type": "String"
+        },
+        "PublicSubnet3ID": {
+            "Description": "ID of the public subnet 3 in Availability Zone 3 (e.g., subnet-xxxxxxxx)",
+            "Default": "",
+            "Type": "String"
+        },
+        "PublicSubnet4ID": {
+            "Description": "ID of the public subnet 4 in Availability Zone 4 (e.g., subnet-xxxxxxxx)",
+            "Default": "",
+            "Type": "String"
+        },
+        "QSS3BucketName": {
+            "AllowedPattern": "^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$",
+            "ConstraintDescription": "Quick Start bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-).",
+            "Default": "aws-quickstart",
+            "Description": "S3 bucket name for the Quick Start assets. This string can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-).",
+            "Type": "String"
+        },
+        "QSS3KeyPrefix": {
+            "AllowedPattern": "^[0-9a-zA-Z-/]*$",
+            "ConstraintDescription": "Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).",
+            "Default": "quickstart-couchbase/",
+            "Description": "S3 key prefix for the Quick Start assets. Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).",
+            "Type": "String"
+        },
+        "RemoteAccessCIDR": {
+            "AllowedPattern": "^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\\/([0-9]|[1-2][0-9]|3[0-2]))$",
+            "ConstraintDescription": "CIDR block parameter must be in the form x.x.x.x/16-32",
+            "Description": "The CIDR IP range that is permitted to access the instances We recommend that you set this value to a trusted IP range.",
+            "Type": "String"
+        },
+        "XDCRCIDR": {
+            "AllowedPattern": "^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\\/([0-9]|[1-2][0-9]|3[0-2]))$",
+            "ConstraintDescription": "CIDR block parameter must be in the form x.x.x.x/16-32",
+            "Description": "The CIDR IP range that is permitted to access XDCR",
+            "Type": "String"
+        },
+        "VPCID": {
+            "Description": "VPC ID",
+            "Type": "AWS::EC2::VPC::Id"
+        },
+        "VPCCIDR": {
+            "AllowedPattern": "^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\\/([0-9]|[1-2][0-9]|3[0-2]))$",
+            "Description": "CIDR Block for the VPC",
+            "Type": "String"
+        }
+    },
+    "Mappings": {
+      "CouchbaseServer": {
+        "us-east-1": { "BYOL": "ami-33ea154e", "HourlyPricing": "ami-aeef10d3" },
+        "us-east-2": { "BYOL": "ami-a26751c7", "HourlyPricing": "ami-866650e3" },
+        "us-west-1": { "BYOL": "ami-12a5af72", "HourlyPricing": "ami-d0bab0b0" },
+        "us-west-2": { "BYOL": "ami-5fbb2f27", "HourlyPricing": "ami-acb92dd4" },
+        "ca-central-1": { "BYOL": "ami-7754d313", "HourlyPricing": "ami-9c57d0f8" },
+        "eu-central-1": { "BYOL": "ami-76670919", "HourlyPricing": "ami-57640a38" },
+        "eu-west-1": { "BYOL": "ami-d7b4f7ae", "HourlyPricing": "ami-f1b6f588" },
+        "eu-west-2": { "BYOL": "ami-30e80f57", "HourlyPricing": "ami-cff710a8" },
+        "eu-west-3": { "BYOL": "ami-8954e2f4", "HourlyPricing": "ami-8854e2f5" },
+        "ap-southeast-1": { "BYOL": "ami-4f8dd933", "HourlyPricing": "ami-7b8cd807" },
+        "ap-southeast-2": { "BYOL": "ami-f975b49b", "HourlyPricing": "ami-fa75b498" },
+        "ap-south-1": { "BYOL": "ami-8f90cee0", "HourlyPricing": "ami-c690cea9" },
+        "ap-northeast-1": { "BYOL": "ami-fa430f9c", "HourlyPricing": "ami-92410df4" },
+        "ap-northeast-2": { "BYOL": "ami-ec1eb382", "HourlyPricing": "ami-8a1fb2e4" },
+        "sa-east-1": { "BYOL": "ami-a42963c8", "HourlyPricing": "ami-a72963cb" }
+      },
+      "CouchbaseSyncGateway": {
+        "us-east-1": { "BYOL": "ami-8294a4f8", "HourlyPricing": "ami-6d93a317" },
+        "us-east-2": { "BYOL": "ami-0877426d", "HourlyPricing": "ami-0f75406a" },
+        "us-west-1": { "BYOL": "ami-288c8148", "HourlyPricing": "ami-76f2ff16" },
+        "us-west-2": { "BYOL": "ami-589c2320", "HourlyPricing": "ami-41a01f39" },
+        "ca-central-1": { "BYOL": "ami-ad20a5c9", "HourlyPricing": "ami-c22da8a6" },
+        "eu-central-1": { "BYOL": "ami-103aa37f", "HourlyPricing": "ami-d5069fba" },
+        "eu-west-1": { "BYOL": "ami-b696f1cf", "HourlyPricing": "ami-c293f4bb" },
+        "eu-west-2": { "BYOL": "ami-6c445e08", "HourlyPricing": "ami-11445e75" },
+        "eu-west-3": { "BYOL": "ami-c9d86eb4", "HourlyPricing": "ami-58c77125" },
+        "ap-southeast-1": { "BYOL": "ami-10eb936c", "HourlyPricing": "ami-a4ed95d8" },
+        "ap-southeast-2": { "BYOL": "ami-a610eec4", "HourlyPricing": "ami-2911ef4b" },
+        "ap-south-1": { "BYOL": "ami-898cdde6", "HourlyPricing": "ami-058cdd6a" },
+        "ap-northeast-1": { "BYOL": "ami-b9e588df", "HourlyPricing": "ami-b3e588d5" },
+        "ap-northeast-2": { "BYOL": "ami-38933056", "HourlyPricing": "ami-648c2f0a" },
+        "sa-east-1": { "BYOL": "ami-3654185a", "HourlyPricing": "ami-b95a16d5" }
+      }
+    },
+    "Conditions": {
+        "3Subnets": {
+            "Fn::Not": [{
+                "Fn::Equals": [{
+                    "Ref": "PublicSubnet3ID"
+                },
+                ""
+                ]
+            }]
+        },
+        "4Subnets": {
+            "Fn::Not": [{
+                "Fn::Equals": [{
+                    "Ref": "PublicSubnet4ID"
+                },
+                ""
+                ]
+            }]
+        }
+
+    },
+    "Resources": {
+        "ServerAutoScalingGroup": {
+            "Type": "AWS::AutoScaling::AutoScalingGroup",
+            "Metadata": {
+                "AWS::CloudFormation::Authentication": {
+                    "S3AccessCreds": {
+                        "type": "S3",
+                        "roleName": {
+                            "Ref": "CouchbaseRole"
+                        },
+                        "buckets": [{
+                            "Ref": "QSS3BucketName"
+                        }]
+                    }
+                },
+                "AWS::CloudFormation::Init": {
+                    "config": {
+                        "files": {
+                            "/tmp/server.sh": {
+                                "source": {
+                                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}scripts/server.sh"
+                                },
+                                "mode": "000550",
+                                "owner": "root",
+                                "group": "root",
+                                "authentication": "S3AccessCreds"
+                            },
+                            "/tmp/util.sh": {
+                                "source": {
+                                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}scripts/util.sh"
+                                },
+                                "mode": "000550",
+                                "owner": "root",
+                                "group": "root",
+                                "authentication": "S3AccessCreds"
+                            },
+                            "/tmp/access.txt": {
+                                "content": {
+                                    "Fn::Join": [
+                                        "", [{
+                                            "Ref": "Username"
+                                        },
+                                        "\n",
+                                        {
+                                            "Ref": "Password"
+                                        },
+                                        "\n"
+                                        ]
+                                    ]
+                                },
+                                "mode": "000550",
+                                "owner": "root",
+                                "group": "root"
+                            }
+                        },
+                        "commands": {
+                            "00configureServer": {
+                                "command": {
+                                    "Fn::Join": [
+                                        " ", [
+                                            "cd /tmp && bash server.sh",
+                                            "$(head -1 /tmp/access.txt)",
+                                            "$(tail -n 1 /tmp/access.txt)",
+                                            "data,index,query,fts",
+                                            {
+                                                "Ref": "AWS::StackName"
+                                            }
+                                        ]
+                                    ]
+                                },
+                                "test": "test -e /tmp/server.sh"
+                            },
+                            "01cleanupCreds": {
+                                "command": "rm -f /tmp/access.txt"
+                            }
+                        }
+                    }
+                }
+            },
+            "Properties": {
+                "LaunchConfigurationName": {
+                    "Ref": "ServerLaunchConfiguration"
+                },
+                "MinSize": 1,
+                "MaxSize": 100,
+                "DesiredCapacity": {
+                    "Ref": "ServerInstanceCount"
+                },
+
+                "VPCZoneIdentifier": [{
+                    "Ref": "PublicSubnet1ID"
+                },
+                {
+                    "Ref": "PublicSubnet2ID"
+                },
+                {
+                    "Fn::If": [
+                        "3Subnets",
+                        {
+                            "Ref": "PublicSubnet3ID"
+                        },
+                        {
+                            "Ref": "AWS::NoValue"
+                        }
+                    ]
+                },
+                {
+                    "Fn::If": [
+                        "4Subnets",
+                        {
+                            "Ref": "PublicSubnet4ID"
+                        },
+                        {
+                            "Ref": "AWS::NoValue"
+                        }
+                    ]
+                }
+                ]
+            },
+            "CreationPolicy": {
+                "ResourceSignal": {
+                    "Count": {
+                        "Ref": "ServerInstanceCount"
+                    },
+                    "Timeout": "PT30M"
+                }
+            }
+        },
+        "ServerLaunchConfiguration": {
+            "Type": "AWS::AutoScaling::LaunchConfiguration",
+            "Properties": {
+                "ImageId": {
+                    "Fn::FindInMap": [
+                        "CouchbaseServer",
+                        {
+                            "Ref": "AWS::Region"
+                        },
+                        {
+                            "Ref": "License"
+                        }
+                    ]
+                },
+                "InstanceType": {
+                    "Ref": "InstanceType"
+                },
+                "SecurityGroups": [{
+                    "Ref": "CouchbaseSecurityGroup"
+                },
+                {
+                    "Ref": "XDCRSecurityGroup"
+                }
+                ],
+                "KeyName": {
+                    "Ref": "KeyName"
+                },
+                "EbsOptimized": true,
+                "IamInstanceProfile": {
+                    "Ref": "CouchbaseInstanceProfile"
+                },
+                "BlockDeviceMappings": [{
+                    "DeviceName": "/dev/xvda",
+                    "Ebs": {
+                        "DeleteOnTermination": true
+                    }
+                },
+                {
+                    "DeviceName": "/dev/sdk",
+                    "Ebs": {
+                        "VolumeSize": {
+                            "Ref": "ServerDiskSize"
+                        },
+                        "Encrypted": {
+                            "Ref": "EncryptEBS"
+                        },
+                        "VolumeType": "gp2"
+                    }
+                }
+                ],
+                "UserData": {
+                    "Fn::Base64": {
+                        "Fn::Join": ["", [
+                            "#!/bin/bash\n",
+                            "/opt/aws/bin/cfn-init -v --stack ",
+                            {
+                                "Ref": "AWS::StackName"
+                            },
+                            " --resource ServerAutoScalingGroup ",
+                            " --region ",
+                            {
+                                "Ref": "AWS::Region"
+                            },
+                            "\n",
+                            "/opt/aws/bin/cfn-signal -e $? -r \"Server node configured\" --stack ",
+                            {
+                                "Ref": "AWS::StackName"
+                            },
+                            " --resource ServerAutoScalingGroup --region ",
+                            {
+                                "Ref": "AWS::Region"
+                            },
+                            "\n"
+                        ]]
+                    }
+                }
+            }
+        },
+        "SyncGatewayAutoScalingGroup": {
+            "Type": "AWS::AutoScaling::AutoScalingGroup",
+            "Properties": {
+                "LaunchConfigurationName": {
+                    "Ref": "SyncGatewayLaunchConfiguration"
+                },
+                "MinSize": 1,
+                "MaxSize": 100,
+                "DesiredCapacity": {
+                    "Ref": "SyncGatewayInstanceCount"
+                },
+                "LoadBalancerNames": [{
+                    "Ref": "SyncGatewayELB"
+                }],
+                "VPCZoneIdentifier": [{
+                    "Ref": "PublicSubnet1ID"
+                },
+                {
+                    "Ref": "PublicSubnet2ID"
+                },
+                {
+                    "Fn::If": [
+                        "3Subnets",
+                        {
+                            "Ref": "PublicSubnet3ID"
+                        },
+                        {
+                            "Ref": "AWS::NoValue"
+                        }
+                    ]
+                },
+                {
+                    "Fn::If": [
+                        "4Subnets",
+                        {
+                            "Ref": "PublicSubnet4ID"
+                        },
+                        {
+                            "Ref": "AWS::NoValue"
+                        }
+                    ]
+                }
+                ]
+            },
+            "CreationPolicy": {
+                "ResourceSignal": {
+                    "Count": {
+                        "Ref": "SyncGatewayInstanceCount"
+                    },
+                    "Timeout": "PT30M"
+                }
+            }
+        },
+        "SyncGatewayLaunchConfiguration": {
+            "Type": "AWS::AutoScaling::LaunchConfiguration",
+            "Metadata": {
+                "AWS::CloudFormation::Authentication": {
+                    "S3AccessCreds": {
+                        "type": "S3",
+                        "roleName": {
+                            "Ref": "CouchbaseRole"
+                        },
+                        "buckets": [{
+                            "Ref": "QSS3BucketName"
+                        }]
+                    }
+                },
+                "AWS::CloudFormation::Init": {
+                    "config": {
+                        "files": {
+                            "/tmp/syncGateway.sh": {
+                                "source": {
+                                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}scripts/syncGateway.sh"
+                                },
+                                "mode": "000550",
+                                "owner": "root",
+                                "group": "root",
+                                "authentication": "S3AccessCreds"
+                            }
+                        },
+                        "commands": {
+                            "configureGateway": {
+                                "command": {
+                                    "Fn::Join": [
+                                        " ", [
+                                            "/tmp/syncGateway.sh",
+                                            {
+                                                "Ref": "AWS::StackName"
+                                            }
+                                        ]
+                                    ]
+                                },
+                                "test": "test -e /tmp/syncGateway.sh"
+                            }
+                        }
+                    }
+                }
+            },
+            "Properties": {
+                "ImageId": {
+                    "Fn::FindInMap": [
+                        "CouchbaseSyncGateway",
+                        {
+                            "Ref": "AWS::Region"
+                        },
+                        {
+                            "Ref": "License"
+                        }
+                    ]
+                },
+                "InstanceType": {
+                    "Ref": "InstanceType"
+                },
+                "SecurityGroups": [{
+                    "Ref": "SyncGatewaySecurityGroup"
+                }],
+                "KeyName": {
+                    "Ref": "KeyName"
+                },
+                "EbsOptimized": true,
+                "IamInstanceProfile": {
+                    "Ref": "CouchbaseInstanceProfile"
+                },
+                "UserData": {
+                    "Fn::Base64": {
+                        "Fn::Join": ["", [
+                            "#!/bin/bash\n",
+                            "/opt/aws/bin/cfn-init -v --stack ",
+                            {
+                                "Ref": "AWS::StackName"
+                            },
+                            " --resource SyncGatewayLaunchConfiguration ",
+                            " --region ",
+                            {
+                                "Ref": "AWS::Region"
+                            },
+                            "\n",
+                            "/opt/aws/bin/cfn-signal -e $? -r \"Gateway node configured\" --stack ",
+                            {
+                                "Ref": "AWS::StackName"
+                            },
+                            " --resource SyncGatewayAutoScalingGroup --region ",
+                            {
+                                "Ref": "AWS::Region"
+                            },
+                            "\n"
+                        ]]
+                    }
+                }
+            }
+        },
+        "SyncGatewayELB": {
+            "Type": "AWS::ElasticLoadBalancing::LoadBalancer",
+            "Properties": {
+                "ConnectionDrainingPolicy": {
+                    "Enabled": "True"
+                },
+                "CrossZone": "True",
+                "HealthCheck": {
+                    "HealthyThreshold": "2",
+                    "Interval": "10",
+                    "Target": "HTTP:4984/",
+                    "Timeout": "5",
+                    "UnhealthyThreshold": "10"
+                },
+                "Listeners": [{
+                    "InstancePort": "4984",
+                    "InstanceProtocol": "HTTP",
+                    "LoadBalancerPort": "4984",
+                    "Protocol": "HTTP"
+                },
+                {
+                    "InstancePort": "4985",
+                    "InstanceProtocol": "HTTP",
+                    "LoadBalancerPort": "4985",
+                    "Protocol": "HTTP"
+                }
+                ],
+                "Tags": [{
+                    "Key": "Name",
+                    "Value": "SyncGateway ELB"
+                }],
+                "Scheme": "internet-facing",
+                "Subnets": [{
+                    "Ref": "PublicSubnet1ID"
+                },
+                {
+                    "Ref": "PublicSubnet2ID"
+                },
+                {
+                    "Fn::If": [
+                        "3Subnets",
+                        {
+                            "Ref": "PublicSubnet3ID"
+                        },
+                        {
+                            "Ref": "AWS::NoValue"
+                        }
+                    ]
+                },
+                {
+                    "Fn::If": [
+                        "4Subnets",
+                        {
+                            "Ref": "PublicSubnet4ID"
+                        },
+                        {
+                            "Ref": "AWS::NoValue"
+                        }
+                    ]
+                }
+                ],
+                "SecurityGroups": [{
+                    "Ref": "SyncGatewayELBSecurityGroup"
+                }]
+            }
+        },
+        "CouchbaseInstanceProfile": {
+            "Type": "AWS::IAM::InstanceProfile",
+            "Properties": {
+                "Roles": [{
+                    "Ref": "CouchbaseRole"
+                }]
+            }
+        },
+        "CouchbaseRole": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "AssumeRolePolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [{
+                        "Effect": "Allow",
+                        "Principal": {
+                            "Service": ["ec2.amazonaws.com"]
+                        },
+                        "Action": ["sts:AssumeRole"]
+                    }]
+                },
+                "Policies": [{
+                    "PolicyName": "CouchbasePolicy",
+                    "PolicyDocument": {
+                        "Version": "2012-10-17",
+                        "Statement": [{
+                            "Effect": "Allow",
+                            "Action": [
+                                "ec2:CreateTags",
+                                "ec2:DescribeTags",
+                                "ec2:DescribeInstances",
+                                "autoscaling:DescribeAutoScalingGroups"
+                            ],
+                            "Resource": "*"
+                        }]
+                    }
+                },
+                {
+                    "PolicyDocument": {
+                        "Version": "2012-10-17",
+                        "Statement": [{
+                            "Action": ["s3:GetObject"],
+                            "Resource": {
+                                "Fn::Sub": "arn:aws:s3:::${QSS3BucketName}/${QSS3KeyPrefix}*"
+                            },
+                            "Effect": "Allow"
+                        }]
+                    },
+                    "PolicyName": "aws-quick-start-s3-policy"
+                }
+                ]
+            }
+        },
+        "SyncGatewayELBSecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "GroupDescription": "Enable external access to SyncGateway ELB",
+                "VpcId": {
+                    "Ref": "VPCID"
+                },
+                "SecurityGroupIngress": [{
+                    "IpProtocol": "tcp",
+                    "FromPort": 4984,
+                    "ToPort": 4985,
+                    "CidrIp": {
+                        "Ref": "RemoteAccessCIDR"
+                    }
+                }]
+            }
+        },
+        "SyncGatewaySecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "GroupDescription": "Enable SSH and SyncGateway Ports",
+                "VpcId": {
+                    "Ref": "VPCID"
+                },
+                "SecurityGroupIngress": [{
+                    "IpProtocol": "tcp",
+                    "FromPort": 22,
+                    "ToPort": 22,
+                    "CidrIp": {
+                        "Ref": "RemoteAccessCIDR"
+                    }
+                },
+                {
+                    "IpProtocol": "tcp",
+                    "FromPort": 4984,
+                    "ToPort": 4985,
+                    "SourceSecurityGroupId": {
+                        "Ref": "SyncGatewayELBSecurityGroup"
+                    }
+                }
+                ]
+            }
+        },
+        "CouchbaseSecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "GroupDescription": "Enable SSH and Couchbase Ports",
+                "VpcId": {
+                    "Ref": "VPCID"
+                },
+                "SecurityGroupIngress": [{
+                    "IpProtocol": "tcp",
+                    "FromPort": 22,
+                    "ToPort": 22,
+                    "CidrIp": {
+                        "Ref": "RemoteAccessCIDR"
+                    }
+                }, {
+                "IpProtocol": "tcp",
+                "FromPort": 4369,
+                "ToPort": 4369,
+                "CidrIp": {
+                    "Ref": "RemoteAccessCIDR"
+                }
+                }, {
+                "IpProtocol": "tcp",
+                "FromPort": 9100,
+                "ToPort": 9105,
+                "CidrIp": {
+                    "Ref": "RemoteAccessCIDR"
+                }
+                }, {
+                "IpProtocol": "tcp",
+                "FromPort": 9998,
+                "ToPort": 9999,
+                "CidrIp": {
+                    "Ref": "RemoteAccessCIDR"
+                }
+                }, {
+                "IpProtocol": "tcp",
+                "FromPort": 11207,
+                "ToPort": 11215,
+                "CidrIp": {
+                    "Ref": "RemoteAccessCIDR"
+                }
+                }, {
+                "IpProtocol": "tcp",
+                "FromPort": 18091,
+                "ToPort": 18093,
+                "CidrIp": {
+                    "Ref": "RemoteAccessCIDR"
+                }
+                }, {
+                "IpProtocol": "tcp",
+                "FromPort": 21100,
+                "ToPort": 21299,
+                "CidrIp": {
+                    "Ref": "RemoteAccessCIDR"
+                }
+                }, {
+                "IpProtocol": "tcp",
+                "FromPort": "0",
+                "ToPort": "65535",
+                "CidrIp": {
+                    "Ref": "VPCCIDR"
+                }
+                }]
+            }
+        },
+        "XDCRSecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "GroupDescription": "Enable XDCR Couchbase Ports",
+                "VpcId": {
+                    "Ref": "VPCID"
+                },
+                "SecurityGroupIngress": [{
+                    "IpProtocol": "tcp",
+                    "FromPort": 18091,
+                    "ToPort": 18093,
+                    "CidrIp": {
+                        "Ref": "RemoteAccessCIDR"
+                    }
+                },
+                {
+                    "IpProtocol": "tcp",
+                    "FromPort": "0",
+                    "ToPort": "65535",
+                    "CidrIp": {
+                        "Ref": "VPCCIDR"
+                    }
+                }
+                ]
+            }
+        }
+    }
+}

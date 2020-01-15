@@ -1,0 +1,2233 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "This template creates a Lustre infrastructure in a single AZ. It will deploy Security Groups, 2 EC2 instances, 1 AutoScaling Group and Launch Configuration for Lustre in a private subnet. **WARNING** This template creates Amazon EC2 RHEL instances and dependent resources. You will be billed for the AWS resources used if you create a stack from this template. (qs-1nh8kis2f)",
+    "Metadata": {
+        "AWS::CloudFormation::Interface": {
+            "ParameterGroups": [
+                {
+                    "Label": {
+                        "default": "Network Configuration"
+                    },
+                    "Parameters": [
+                        "VPCID",
+                        "PrivateSubnet1ID",
+                        "PrivateSubnet2ID",
+                        "VPCCIDR",
+                        "RDGWSG"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "Lustre EC2 Configuration"
+                    },
+                    "Parameters": [
+                        "LustreKeyPairName",
+                        "NumberOfOSSNodes",
+                        "LustreOSSEBSVolumeSize",
+                        "LustreEBSVolumeType"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "Other AWS Quick Start Configuration"
+                    },
+                    "Parameters": [
+                        "DomainDNSName"
+                    ]
+                }
+            ],
+            "ParameterLabels": {
+                "DomainDNSName": {
+                    "default": "Domain DNS Name"
+                },
+                "LustreKeyPairName": {
+                    "default": "Lustre KeyPair Name"
+                },
+                "LustreOSSEBSVolumeSize": {
+                    "default": "Lustre OSS EBS Volume Size"
+                },
+                "NumberOfOSSNodes": {
+                    "default": "Number of OSS Nodes"
+                },
+                "PrivateSubnet1ID": {
+                    "default": "SASGrid Subnet ID"
+                },
+                "PrivateSubnet2ID": {
+                    "default": "Lustre Subnet ID"
+                },
+                "VPCID": {
+                    "default": "VPC ID"
+                },
+                "RDGWSG": {
+                    "default": "Security Group ID of RDGW Instance"
+                },
+                "LustreEBSVolumeType": {
+                    "default": "EBS Volumes type for Lustre Instances"
+                },
+                "VPCCIDR": {
+                    "default": "CIDR of VPC"
+                }
+            }
+        }
+    },
+    "Parameters": {
+        "LustreEBSVolumeType": {
+            "Type": "String",
+            "Default": "gp2",
+            "AllowedValues": [
+                "gp2",
+                "io1",
+                "standard",
+                "sc1",
+                "st1"
+            ]
+        },
+        "PrivateSubnet1ID": {
+            "Description": "ID of the public subnet 1 that you want to provision the first Remote Desktop Gateway into (e.g., subnet-a0246dcd)",
+            "Type": "AWS::EC2::Subnet::Id"
+        },
+        "LustreKeyPairName": {
+            "Description": "Public/private key pairs allow you to securely connect to your instance after it launches",
+            "Type": "AWS::EC2::KeyPair::KeyName"
+        },
+        "PrivateSubnet2ID": {
+            "Description": "Select the Subnet ID of a private subnet 2 located in Availability Zone 1.",
+            "Type": "AWS::EC2::Subnet::Id"
+        },
+        "NumberOfOSSNodes": {
+            "Description": "Provide the number of OSS Node instances are required",
+            "Type": "Number",
+            "MinValue": "3",
+            "MaxValue": "15",
+            "Default": "3"
+        },
+        "LustreOSSEBSVolumeSize": {
+            "Description": "EBS volume size (in GiB) for Lustre OSS nodes. You can specify 100-9900 GiB.?Provide size (in GiB) for Lustre OSS Data Volume in multiples of 100. Volume size for each OSS node will be assigned based on the input provided here",
+            "Type": "String",
+            "MinLength": "3",
+            "MaxLength": "4",
+            "Default": "100"
+        },
+        "VPCID": {
+            "Description": "Select the ID of an existing VPC",
+            "Type": "AWS::EC2::VPC::Id"
+        },
+        "RDGWSG": {
+            "Description": "ID of the Security Group (e.g., sg-0343606e)",
+            "Type": "AWS::EC2::SecurityGroup::Id"
+        },
+        "DomainDNSName": {
+            "AllowedPattern": "[a-zA-Z0-9]+\\..+",
+            "Default": "example.com",
+            "Description": "Fully qualified domain name (FQDN) of the forest root domain e.g. example.com",
+            "MaxLength": "25",
+            "MinLength": "3",
+            "Type": "String"
+        },
+        "VPCCIDR": {
+            "AllowedPattern": "^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\\/(1[6-9]|2[0-8]))$",
+            "ConstraintDescription": "CIDR block parameter must be in the form x.x.x.x/16-28",
+            "Default": "10.0.0.0/16",
+            "Description": "CIDR Block for the VPC",
+            "Type": "String"
+        },
+        "QSS3BucketName": {
+            "AllowedPattern": "^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$",
+            "ConstraintDescription": "Quick Start bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-).",
+            "Default": "aws-quickstart",
+            "Description": "S3 bucket name for the Quick Start assets. Quick Start bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-).",
+            "Type": "String"
+        },
+        "QSS3KeyPrefix": {
+            "AllowedPattern": "^[0-9a-zA-Z-/]*$",
+            "ConstraintDescription": "Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).",
+            "Default": "quickstart-sas-grid/",
+            "Description": "S3 key prefix for the Quick Start assets. Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).",
+            "Type": "String"
+        },
+        "SASSoftwareDepot": {
+            "AllowedPattern": "^([-a-zA-Z0-9@:%_\\+.~#?&//=]*)$",
+            "Description": "S3 folder location of the Software Depot tar file",
+            "Type": "String"
+        }
+    },
+    "Mappings": {
+        "AWSAMIRegionMap": {
+            "AMI": {
+                "LUSTREAMI": "Lustre MarketPlace"
+            },
+            "us-east-1": {
+                "LUSTREAMI": "ami-b28a89cd"
+            },
+            "us-east-2": {
+                "LUSTREAMI": "ami-1f1b217a"
+            },
+            "us-west-1": {
+                "LUSTREAMI": "ami-ce2dc0ad"
+            },
+            "us-west-2": {
+                "LUSTREAMI": "ami-b4c09ecc"
+            },
+            "ap-northeast-1": {
+                "LUSTREAMI": "ami-2a4c39c7"
+            },
+            "ap-northeast-2": {
+                "LUSTREAMI": "ami-15893e7b"
+            },
+            "ap-south-1": {
+                "LUSTREAMI": "ami-3e625051"
+            },
+            "ap-southeast-1": {
+                "LUSTREAMI": "ami-1d95d2f7"
+            },
+            "ap-southeast-2": {
+                "LUSTREAMI": "ami-e1389f83"
+            },
+            "ca-central-1": {
+                "LUSTREAMI": "ami-caaa27ae"
+            },
+            "eu-central-1": {
+                "LUSTREAMI": "ami-131310f8"
+            },
+            "eu-west-1": {
+                "LUSTREAMI": "ami-aa180340"
+            },
+            "eu-west-2": {
+                "LUSTREAMI": "ami-e9e3098e"
+            },
+            "eu-west-3": {
+                "LUSTREAMI": "ami-ea8d3d97"
+            },
+            "sa-east-1": {
+                "LUSTREAMI": "ami-8b2405e7"
+            }
+        },
+        "InfraSizeMap": {
+            "LustreInstances": {
+                "LustreOSSInstanceType": "c4.8xlarge",
+                "LustreMGTInstanceType": "c4.xlarge",
+                "LustreMDTInstanceType": "c4.4xlarge",
+                "NoOfLustreMGTInstances": "1",
+                "NoOfLustreMDTInstances": "1"
+            }
+        },
+        "Backups": {
+            "LustreMGT": {
+                "Daily": "6",
+                "Weekly": "5"
+            },
+            "LustreMDT": {
+                "Daily": "5",
+                "Weekly": "4"
+            },
+            "LustreOSS": {
+                "Daily": "3",
+                "Weekly": "3"
+            }
+        }
+    },
+    "Resources": {
+        "DynamoDBPutIAMPolicy": {
+            "Type": "AWS::IAM::Policy",
+            "Properties": {
+                "PolicyName": "DynamoDBPutIAMPolicy",
+                "PolicyDocument": {
+                    "Statement": [
+                        {
+                            "Sid": "Stmt1527587282041",
+                            "Action": [
+                                "dynamodb:DescribeTable",
+                                "dynamodb:GetItem",
+                                "dynamodb:GetRecords",
+                                "dynamodb:PutItem"
+                            ],
+                            "Effect": "Allow",
+                            "Resource": {
+                                "Fn::Join": [
+                                    "",
+                                    [
+                                        "arn:aws:dynamodb:*:*:table/",
+                                        {
+                                            "Ref": "ServersList"
+                                        }
+                                    ]
+                                ]
+                            }
+                        },
+                        {
+                            "Effect": "Allow",
+                            "Action": [
+                                "ec2:Describe*",
+                                "ec2:CreateTags",
+                                "ec2:UpdateTags"
+                            ],
+                            "Resource": "arn:aws:ec2:*:*:instance/*"
+                        }
+                    ]
+                },
+                "Roles": [
+                    {
+                        "Ref": "DynamoDBPutRole"
+                    }
+                ]
+            },
+            "DependsOn": [
+                "DynamoDBPutRole"
+            ]
+        },
+        "DynamoDBPutRole": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+              "Policies": [
+                  {
+                      "PolicyName": "AnsibleKeySSMPolicy",
+                      "PolicyDocument": {
+                          "Statement": [
+                             {
+                                 "Action": "ssm:GetParameter",
+                                 "Resource": "arn:aws:ssm:*:*:parameter/*",
+                                 "Effect": "Allow"
+                             }
+                          ]
+                      }
+                  },
+                  {
+                      "PolicyName": "CloudformationPolicy",
+                      "PolicyDocument": {
+                          "Statement": [
+                             {
+                                 "Action": [
+                                     "cloudformation:DescribeStacks",
+                                     "cloudformation:DescribeStackEvents",
+                                     "cloudformation:DescribeStackResource",
+                                     "cloudformation:DescribeStackResources"
+                                 ],
+                                 "Resource": "arn:aws:cloudformation:*:*:stack/*/*",
+                                 "Effect": "Allow"
+                             }
+                          ]
+                      }
+                  },
+                  {
+                      "PolicyName": "mercury_s3_policy",
+                      "PolicyDocument": {
+                          "Statement": [
+                              {
+                                 "Sid": "VisualEditor0",
+                                 "Effect": "Allow",
+                                 "Action": [
+                                     "s3:GetObject",
+                                     "s3:ListBucket"
+                                 ],
+                                 "Resource": [
+                                     { "Fn::Sub": "arn:aws:s3:::${QSS3BucketName}/${QSS3KeyPrefix}/*" },
+                                     { "Fn::Sub": "arn:aws:s3:::${QSS3BucketName}/${QSS3KeyPrefix}" },
+                                     { "Fn::Sub": [ "arn:aws:s3:::${target_bucket_name}/*",
+                                         { "target_bucket_name":
+                                           { "Fn::Select": [0, { "Fn::Split": ["/", { "Fn::Sub": "${SASSoftwareDepot}" } ] } ] }} ] },
+                                     { "Fn::Sub": [ "arn:aws:s3:::${target_bucket_name}",
+                                         { "target_bucket_name":
+                                           { "Fn::Select": [0, { "Fn::Split": ["/", { "Fn::Sub": "${SASSoftwareDepot}" } ] } ] } } ] }
+                                 ]
+                             }
+                          ]
+                      }
+                  }
+              ],
+              "AssumeRolePolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Principal": {
+                                "Service": [
+                                    "ec2.amazonaws.com"
+                                ]
+                            },
+                            "Action": [
+                                "sts:AssumeRole"
+                            ]
+                        }
+                    ]
+                },
+                "Path": "/"
+            },
+            "DependsOn": [
+                "ServersList"
+            ]
+        },
+        "DynamoDBPutInstanceProfile": {
+            "Type": "AWS::IAM::InstanceProfile",
+            "Properties": {
+                "Roles": [
+                    {
+                        "Ref": "DynamoDBPutRole"
+                    }
+                ]
+            },
+            "DependsOn": [
+                "DynamoDBPutRole"
+            ]
+        },
+        "ServersList": {
+            "Type": "AWS::DynamoDB::Table",
+            "Properties": {
+                "AttributeDefinitions": [
+                    {
+                        "AttributeName": "InstanceId",
+                        "AttributeType": "S"
+                    }
+                ],
+                "KeySchema": [
+                    {
+                        "AttributeName": "InstanceId",
+                        "KeyType": "HASH"
+                    }
+                ],
+                "ProvisionedThroughput": {
+                    "ReadCapacityUnits": 5,
+                    "WriteCapacityUnits": 5
+                }
+            }
+        },
+        "LambdaExecutionRole": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "AssumeRolePolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Principal": {
+                                "Service": [
+                                    "lambda.amazonaws.com"
+                                ]
+                            },
+                            "Action": [
+                                "sts:AssumeRole"
+                            ]
+                        }
+                    ]
+                },
+                "Path": "/",
+                "ManagedPolicyArns": [
+                    "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+                ],
+                "Policies": [
+                    {
+                        "PolicyName": "EC2Policy",
+                        "PolicyDocument": {
+                            "Version": "2012-10-17",
+                            "Statement": [
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "ec2:RunInstances",
+                                        "ec2:Describe*",
+                                        "ec2:TerminateInstances",
+                                        "ec2:RebootInstances",
+                                        "ec2:*NetworkInterface*"
+                                    ],
+                                    "Resource": "*"
+                                },
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "iam:PassRole",
+                                        "iam:ListAttachedRolePolicies",
+                                        "iam:AttachRolePolicy"
+                                    ],
+                                    "Resource": "*"
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        "DivideFunction": {
+            "Type": "AWS::Lambda::Function",
+            "Properties": {
+                "Handler": "index.handler",
+                "Role": {
+                    "Fn::GetAtt": [
+                        "LambdaExecutionRole",
+                        "Arn"
+                    ]
+                },
+                "Code": {
+                    "ZipFile": {
+                        "Fn::Sub": "var response = require('cfn-response');\nexports.handler = function(event, context) {\n  var result = parseInt(event.ResourceProperties.Op1) / parseInt(event.ResourceProperties.Op2);\n  response.send(event, context, response.SUCCESS, {Value: result});\n};\n"
+                    }
+                },
+                "Runtime": "nodejs8.10"
+            }
+        },
+        "DivideEBSVolumeSize": {
+            "Type": "Custom::Add",
+            "Properties": {
+                "ServiceToken": {
+                    "Fn::GetAtt": [
+                        "DivideFunction",
+                        "Arn"
+                    ]
+                },
+                "Op1": {
+                    "Ref": "LustreOSSEBSVolumeSize"
+                },
+                "Op2": "20"
+            }
+        },
+        "SASGridSG": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "VPCID"
+                },
+                "GroupDescription": "This SG Created for SAS Grid Nodes",
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": "SASGrid_Nodes_SG"
+                    },
+                    {
+                        "Key": "Create By",
+                        "Value": "CoreCompete"
+                    },
+                    {
+                        "Key": "Project",
+                        "Value": "AWS Quick Start - SAS Grid with Lustre"
+                    }
+                ],
+                "SecurityGroupIngress": []
+            }
+        },
+        "MGTNode": {
+            "Type": "AWS::EC2::Instance",
+            "Properties": {
+                "InstanceType": {
+                    "Fn::FindInMap": [
+                        "InfraSizeMap",
+                        "LustreInstances",
+                        "LustreMGTInstanceType"
+                    ]
+                },
+                "ImageId": {
+                    "Fn::FindInMap": [
+                        "AWSAMIRegionMap",
+                        {
+                            "Ref": "AWS::Region"
+                        },
+                        "LUSTREAMI"
+                    ]
+                },
+                "KeyName": {
+                    "Ref": "LustreKeyPairName"
+                },
+                "SecurityGroupIds": [
+                    {
+                        "Ref": "LustreMGTSG"
+                    }
+                ],
+                "SubnetId": {
+                    "Ref": "PrivateSubnet2ID"
+                },
+                "IamInstanceProfile": {
+                    "Ref": "DynamoDBPutInstanceProfile"
+                },
+                "BlockDeviceMappings": [
+                    {
+                        "DeviceName": "/dev/sda1",
+                        "Ebs": {
+                            "VolumeType": "gp2",
+                            "VolumeSize": "50"
+                        }
+                    },
+                    {
+                        "DeviceName": "/dev/xvdf",
+                        "Ebs": {
+                            "VolumeType": {
+                                "Ref": "LustreEBSVolumeType"
+                            },
+                            "VolumeSize": "20"
+                        }
+                    }
+                ],
+                "UserData": {
+                    "Fn::Base64": {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "#!/bin/bash \n",
+                                "set -x\n",
+                                "\n",
+                                "trap read debug\n",
+                                "\n",
+                                "exec 1>/tmp/bootstrap.log 2>&1\n",
+                                "\n",
+                                "/sbin/resize2fs /dev/xvda1\n",
+                                "yum -y update\n",
+                                "systemctl disable firewalld \n",
+                                "service firewalld stop \n",
+                                "groupadd -f -g 1003 sas && useradd -u 501 -g 1003 sasinst && useradd -u 502 -g 1003 lsfadmin && useradd -u 503 -g 1003 sas && useradd -u 504 -g 1003 sasdemo && \n",
+                                "useradd -u 505 -g 1003 sassrv && useradd -u 506 -g 1003 sastrust && useradd -u 507 -g 1003 sasadm && usermod -a -G sas sasinst && \n",
+                                "useradd -u 508 -g 1003 sasevs && useradd -u 509 -g 1003 webanon \n",
+                                "mkdir /nfs /lsf_config /nfs/LustreMGTNodes /nfs/LustreMDTNodes /nfs/LustreOSSNodes && chmod -R 777 /nfs \n",
+                                "mkfs.lustre --fsname lustre --reformat --mgs /dev/xvdf \n",
+                                "UUID=`blkid | grep xvdf | sed 's/.*UUID=//' | cut -d' ' -f1` && echo 'UUID='$UUID'   /lsf_config lustre defaults,_netdev 0 0' >> /etc/fstab \n",
+                                "mount /lsf_config \n",
+                                "yum -y install jq mdadm python-pip vim wget mlocate nfs-utils libnfsidmap \n",
+                                "pip install pystache argparse python-daemon requests \n",
+                                "cd /opt && curl -O https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-latest.tar.gz \n",
+                                "tar -xvpf aws-cfn-bootstrap-latest.tar.gz \n",
+                                "cd aws-cfn-bootstrap-1.4/ && python setup.py build && python setup.py install \n",
+                                "ln -s /usr/init/redhat/cfn-hup /etc/init.d/cfn-hup \n",
+                                "chmod 775 /usr/init/redhat/cfn-hup \n",
+                                "mkdir -p /opt/aws/bin \n",
+                                "ln -s /usr/bin/cfn-hup /opt/aws/bin/cfn-hup \n",
+                                "ln -s /usr/bin/cfn-init /opt/aws/bin/cfn-init \n",
+                                "ln -s /usr/bin/cfn-signal /opt/aws/bin/cfn-signal \n",
+                                "ln -s /usr/bin/cfn-elect-cmd-leader /opt/aws/bin/cfn-elect-cmd-leader \n",
+                                "ln -s /usr/bin/cfn-get-metadata /opt/aws/bin/cfn-get-metadata \n",
+                                "ln -s /usr/bin/cfn-send-cmd-event /opt/aws/bin/cfn-send-cmd-event \n",
+                                "ln -s /usr/bin/cfn-send-cmd-result /opt/aws/bin/cfn-send-cmd-result \n",
+                                "iptables -F \n",
+                                "chkconfig nfs on \n",
+                                "echo \"/nfs ",
+                                {
+                                    "Ref": "VPCCIDR"
+                                },
+                                "(rw,sync,root_squash)\" > /etc/exports \n",
+                                "service nfs-server start && exportfs -arv \n",
+                                "LustreMGTNodes=",
+                                {
+                                    "Fn::FindInMap": [
+                                        "InfraSizeMap",
+                                        "LustreInstances",
+                                        "NoOfLustreMGTInstances"
+                                    ]
+                                },
+                                "\n",
+                                "IP=`ifconfig eth0 | grep 'inet ' | cut -d: -f2 | awk '{print $2}'` && touch /nfs/LustreMGTNodes/$IP \n",
+                                "NoOfNodes=`ls /nfs/LustreMGTNodes | wc -l` \n",
+                                "until [ $NoOfNodes -eq $LustreMGTNodes ] \n",
+                                "do \n",
+                                "echo 'No of IPs are not equal to no of sas grid instances' \n",
+                                "NoOfNodes=`ls /nfs/LustreMGTNodes | wc -l` \n",
+                                "sleep 5 \n",
+                                "done \n",
+                                "NodeNumber=`ls /nfs/LustreMGTNodes | nl > /tmp/temp && cat /tmp/temp | grep -w \"$IP\" | cut -f1 | sed -r 's/ //g'` \n",
+                                "DOMAIN=",
+                                {
+                                    "Ref": "DomainDNSName"
+                                },
+                                "\n",
+                                "hostnamectl set-hostname --static 'mgtnode'$NodeNumber'.'$DOMAIN'' && echo ''$IP'   mgtnode'$NodeNumber'.'$DOMAIN' mgtnode'$NodeNumber'' >> /nfs/hostsfile \n",
+                                "echo 'preserve_hostname: true' >> /etc/cloud/cloud.cfg \n",
+                                "chmod 777 /nfs/hostsfile \n",
+                                "HOSTFILEENTRY=`cat /nfs/hostsfile | nl | cut -f1 | sed -r 's/ //g'| sort -rh | head -1` \n",
+                                "cat /nfs/hostsfile >> /etc/hosts \n",
+                                "pip install awscli \n",
+                                "REGION=`curl --silent http://169.254.169.254/latest/dynamic/instance-identity/document | jq -r .region` \n",
+                                "PRIVATEIP=`curl --silent http://169.254.169.254/latest/meta-data/local-ipv4/` \n",
+                                "FQDN=`cat /etc/hostname` \n",
+                                "SHORTNAME=`cat /etc/hostname | cut -d'.' -f1` \n",
+                                "INSTANCEID=`curl --silent http://169.254.169.254/latest/meta-data/instance-id` \n",
+                                "PRIORITY='1' \n",
+                                "DAILYRETENTION=",
+                                {
+                                    "Fn::FindInMap": [
+                                        "Backups",
+                                        "LustreMGT",
+                                        "Daily"
+                                    ]
+                                },
+                                "\n",
+                                "WEEKLYRETENTION=",
+                                {
+                                    "Fn::FindInMap": [
+                                        "Backups",
+                                        "LustreMGT",
+                                        "Weekly"
+                                    ]
+                                },
+                                "\n",
+                                "aws --region $REGION dynamodb put-item --table-name ",
+                                {
+                                    "Ref": "ServersList"
+                                },
+                                " --item '{ \"InstanceId\": { \"S\": \"'\"$INSTANCEID\"'\" }, \"FQDN\": {\"S\": \"'\"$FQDN\"'\"}, \"ShortName\":{\"S\": \"'\"$SHORTNAME\"'\"}, \"Priority\": {\"N\": \"'\"$PRIORITY\"'\"}, \"PrivateIp\":{\"S\": \"'\"$PRIVATEIP\"'\"}, \"DailyRetention\":{\"S\": \"'\"$DAILYRETENTION\"'\"}, \"WeeklyRetention\":{\"S\": \"'\"$WEEKLYRETENTION\"'\"} }' \n",
+                                "aws --region $REGION ec2 create-tags --resources $INSTANCEID --tags Key=Name,Value=$FQDN \n",
+                                "echo 'BootStrap completed successfully' \n",
+                                "echo 'Server will now reboot' \n",
+                                "updatedb \n",
+                                "touch /opt/signal.sh && chmod +x /opt/signal.sh \n",
+                                "echo '#!/bin/bash' > /opt/signal.sh \n",
+                                "echo 'set -x' >> /opt/signal.sh \n",
+                                "echo 'trap read debug' >> /opt/signal.sh \n",
+                                "echo 'exec 1>/tmp/mount.log 2>&1' >> /opt/signal.sh \n",
+                                "echo \"date\" >> /opt/signal.sh \n",
+                                "echo 'MOUNT=/lsf_config' >> /opt/signal.sh \n",
+                                "echo 'if grep -qs $MOUNT /proc/mounts;' >> /opt/signal.sh \n",
+                                "echo 'then' >> /opt/signal.sh \n",
+                                "echo '  echo \"Filesystem is mounted.\"' >> /opt/signal.sh \n",
+                                "echo '  /opt/aws/bin/cfn-signal -e 0 ",
+                                "         --stack ",
+                                {
+                                    "Ref": "AWS::StackName"
+                                },
+                                "         --resource MGTNode ",
+                                "         --region ",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                "' >> /opt/signal.sh \n",
+                                "echo 'else' >> /opt/signal.sh \n",
+                                "echo '  echo \"Filesystem is not mounted, attempting to mount.\"' >> /opt/signal.sh \n",
+                                "echo '  mount /lsf_config' >> /opt/signal.sh \n",
+                                "echo '  /opt/aws/bin/cfn-signal -e $? ",
+                                "         --stack ",
+                                {
+                                    "Ref": "AWS::StackName"
+                                },
+                                "         --resource MGTNode ",
+                                "         --region ",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                "' >> /opt/signal.sh \n",
+                                "echo 'fi' >> /opt/signal.sh \n",
+                                "KEY=dummy\n",
+                                {"Fn::Sub": "PARENT_STACK_ID=$(aws --region \"${AWS::Region}\" cloudformation describe-stacks --stack-name \"${AWS::StackName}\" --query \"Stacks[].ParentId\" --output text)\n"},
+                                "PARENT_STACK_NAME=$(aws --region ${REGION} cloudformation describe-stacks --stack-name \"${PARENT_STACK_ID}\" --query \"Stacks[].StackName\" --output text)\n",
+                                "KEY=$(aws ssm get-parameter --region $REGION --name \"sas-grid-ansiblekey-${PARENT_STACK_NAME}\" --query Parameter.Value --output text)\n",
+                                "echo \"$KEY\" | su ec2-user bash -c 'tee -a ~/.ssh/authorized_keys'\n",
+                                "(echo '@reboot /opt/signal.sh') | crontab - \n",
+                                "reboot \n"
+                            ]
+                        ]
+                    }
+                }
+            },
+            "DependsOn": [
+                "LustreMGTSG"
+            ],
+            "CreationPolicy": {
+                "ResourceSignal": {
+                    "Timeout": "PT20M"
+                }
+            }
+        },
+        "LustreMGTRecovery": {
+            "Type": "AWS::CloudWatch::Alarm",
+            "Properties": {
+                "AlarmDescription": "Trigger a recovery when instance status check fails for 15 consecutive minutes.",
+                "Namespace": "AWS/EC2",
+                "MetricName": "StatusCheckFailed_System",
+                "Statistic": "Minimum",
+                "Period": "60",
+                "EvaluationPeriods": "15",
+                "ComparisonOperator": "GreaterThanThreshold",
+                "Threshold": "0",
+                "AlarmActions": [
+                    {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "arn:aws:automate:",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                ":ec2:recover"
+                            ]
+                        ]
+                    }
+                ],
+                "Dimensions": [
+                    {
+                        "Name": "InstanceId",
+                        "Value": {
+                            "Ref": "MGTNode"
+                        }
+                    }
+                ]
+            },
+            "DependsOn": [
+                "MGTNode"
+            ]
+        },
+        "MDTNode": {
+            "Type": "AWS::EC2::Instance",
+            "Properties": {
+                "InstanceType": {
+                    "Fn::FindInMap": [
+                        "InfraSizeMap",
+                        "LustreInstances",
+                        "LustreMDTInstanceType"
+                    ]
+                },
+                "ImageId": {
+                    "Fn::FindInMap": [
+                        "AWSAMIRegionMap",
+                        {
+                            "Ref": "AWS::Region"
+                        },
+                        "LUSTREAMI"
+                    ]
+                },
+                "KeyName": {
+                    "Ref": "LustreKeyPairName"
+                },
+                "SecurityGroupIds": [
+                    {
+                        "Ref": "LustreMDTSG"
+                    }
+                ],
+                "SubnetId": {
+                    "Ref": "PrivateSubnet2ID"
+                },
+                "IamInstanceProfile": {
+                    "Ref": "DynamoDBPutInstanceProfile"
+                },
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": "Lustre MDT Node"
+                    },
+                    {
+                        "Key": "Created By",
+                        "Value": "CoreCompete-AWS_Quick_Start"
+                    }
+                ],
+                "BlockDeviceMappings": [
+                    {
+                        "DeviceName": "/dev/sda1",
+                        "Ebs": {
+                            "VolumeType": "gp2",
+                            "VolumeSize": "50"
+                        }
+                    },
+                    {
+                        "DeviceName": "/dev/xvdf",
+                        "Ebs": {
+                            "VolumeType": {
+                                "Ref": "LustreEBSVolumeType"
+                            },
+                            "VolumeSize": "20"
+                        }
+                    }
+                ],
+                "UserData": {
+                    "Fn::Base64": {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "#!/bin/bash \n",
+                                "set -x\n",
+                                "\n",
+                                "trap read debug\n",
+                                "\n",
+                                "exec 1>/tmp/bootstrap.log 2>&1\n",
+                                "\n",
+                                "/sbin/resize2fs /dev/xvda1\n",
+                                "yum -y update\n",
+                                "systemctl disable firewalld \n",
+                                "service firewalld stop \n",
+                                "groupadd -f -g 1003 sas && useradd -u 501 -g 1003 sasinst && useradd -u 502 -g 1003 lsfadmin && useradd -u 503 -g 1003 sas && useradd -u 504 -g 1003 sasdemo && \n",
+                                "useradd -u 505 -g 1003 sassrv && useradd -u 506 -g 1003 sastrust && useradd -u 507 -g 1003 sasadm && usermod -a -G sas sasinst && \n",
+                                "useradd -u 508 -g 1003 sasevs && useradd -u 509 -g 1003 webanon \n",
+                                "yum -y install jq mdadm python-pip vim wget mlocate nfs-utils libnfsidmap \n",
+                                "pip install pystache argparse python-daemon requests \n",
+                                "cd /opt && curl -O https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-latest.tar.gz \n",
+                                "tar -xvpf aws-cfn-bootstrap-latest.tar.gz \n",
+                                "cd aws-cfn-bootstrap-1.4/ && python setup.py build && python setup.py install \n",
+                                "ln -s /usr/init/redhat/cfn-hup /etc/init.d/cfn-hup \n",
+                                "chmod 775 /usr/init/redhat/cfn-hup \n",
+                                "mkdir -p /opt/aws/bin \n",
+                                "ln -s /usr/bin/cfn-hup /opt/aws/bin/cfn-hup \n",
+                                "ln -s /usr/bin/cfn-init /opt/aws/bin/cfn-init \n",
+                                "ln -s /usr/bin/cfn-signal /opt/aws/bin/cfn-signal \n",
+                                "ln -s /usr/bin/cfn-elect-cmd-leader /opt/aws/bin/cfn-elect-cmd-leader \n",
+                                "ln -s /usr/bin/cfn-get-metadata /opt/aws/bin/cfn-get-metadata \n",
+                                "ln -s /usr/bin/cfn-send-cmd-event /opt/aws/bin/cfn-send-cmd-event \n",
+                                "ln -s /usr/bin/cfn-send-cmd-result /opt/aws/bin/cfn-send-cmd-result \n",
+                                "systemctl enable rpcbind && systemctl start rpcbind \n",
+                                "mkdir /nfs /lsf_config \n",
+                                "until mount ",
+                                {
+                                    "Fn::GetAtt": [
+                                        "MGTNode",
+                                        "PrivateIp"
+                                    ]
+                                },
+                                ":/nfs /nfs \n",
+                                "do \n",
+                                "echo 'Sleeping for 10 seconds' \n",
+                                "sleep 10 \n",
+                                "done \n",
+                                "LustreMDTNodes=",
+                                {
+                                    "Fn::FindInMap": [
+                                        "InfraSizeMap",
+                                        "LustreInstances",
+                                        "NoOfLustreMDTInstances"
+                                    ]
+                                },
+                                "\n",
+                                "IP=`ifconfig eth0 | grep 'inet ' | cut -d: -f2 | awk '{print $2}'` && touch /nfs/LustreMDTNodes/$IP \n",
+                                "NoOfNodes=`ls /nfs/LustreMDTNodes | wc -l` \n",
+                                "until [ $NoOfNodes -eq $LustreMDTNodes ] \n",
+                                "do \n",
+                                "echo 'No of IPs are not equal to no of sas grid instances' \n",
+                                "NoOfNodes=`ls /nfs/LustreMDTNodes | wc -l` \n",
+                                "sleep 5 \n",
+                                "done \n",
+                                "NodeNumber=`ls /nfs/LustreMDTNodes | nl > /tmp/temp && cat /tmp/temp | grep -w \"$IP\" | cut -f1 | sed -r 's/ //g'` \n",
+                                "DOMAIN=",
+                                {
+                                    "Ref": "DomainDNSName"
+                                },
+                                "\n",
+                                "hostnamectl set-hostname --static  'mdtnode'$NodeNumber'.'$DOMAIN'' && echo ''$IP'   mdtnode'$NodeNumber'.'$DOMAIN' mdtnode'$NodeNumber'' >> /nfs/hostsfile \n",
+                                "echo 'preserve_hostname: true' >> /etc/cloud/cloud.cfg \n",
+                                "HOSTFILEENTRY=`cat /nfs/hostsfile | nl | cut -f1 | sed -r 's/ //g'| sort -rh | head -1` \n",
+                                "cat /nfs/hostsfile >> /etc/hosts \n",
+                                "mkfs.lustre --fsname lustre --mdt --reformat --mgsnode=",
+                                {
+                                    "Fn::GetAtt": [
+                                        "MGTNode",
+                                        "PrivateIp"
+                                    ]
+                                },
+                                "@tcp --index=0 /dev/xvdf \n",
+                                "UUID=`blkid | grep xvdf | sed 's/.*UUID=//' | cut -d' ' -f1` && echo 'UUID='$UUID'   /lsf_config lustre defaults,_netdev 0 0' >> /etc/fstab \n",
+                                "pip install awscli \n",
+                                "REGION=`curl --silent http://169.254.169.254/latest/dynamic/instance-identity/document | jq -r .region` \n",
+                                "PRIVATEIP=`curl --silent http://169.254.169.254/latest/meta-data/local-ipv4/` \n",
+                                "FQDN=`cat /etc/hostname` \n",
+                                "SHORTNAME=`cat /etc/hostname | cut -d'.' -f1` \n",
+                                "INSTANCEID=`curl --silent http://169.254.169.254/latest/meta-data/instance-id` \n",
+                                "PRIORITY='2' \n",
+                                "DAILYRETENTION=",
+                                {
+                                    "Fn::FindInMap": [
+                                        "Backups",
+                                        "LustreMDT",
+                                        "Daily"
+                                    ]
+                                },
+                                "\n",
+                                "WEEKLYRETENTION=",
+                                {
+                                    "Fn::FindInMap": [
+                                        "Backups",
+                                        "LustreMDT",
+                                        "Weekly"
+                                    ]
+                                },
+                                "\n",
+                                "aws --region $REGION dynamodb put-item --table-name ",
+                                {
+                                    "Ref": "ServersList"
+                                },
+                                " --item '{ \"InstanceId\": { \"S\": \"'\"$INSTANCEID\"'\" }, \"FQDN\": {\"S\": \"'\"$FQDN\"'\"}, \"ShortName\":{\"S\": \"'\"$SHORTNAME\"'\"}, \"Priority\": {\"N\": \"'\"$PRIORITY\"'\"}, \"PrivateIp\":{\"S\": \"'\"$PRIVATEIP\"'\"}, \"DailyRetention\":{\"S\": \"'\"$DAILYRETENTION\"'\"}, \"WeeklyRetention\":{\"S\": \"'\"$WEEKLYRETENTION\"'\"} }' \n",
+                                "aws --region $REGION ec2 create-tags --resources $INSTANCEID --tags Key=Name,Value=$FQDN \n",
+                                "echo 'BootStrap completed successfully' \n",
+                                "echo 'Server will now reboot' \n",
+                                "updatedb \n",
+                                "touch /opt/signal.sh && chmod +x /opt/signal.sh \n",
+                                "echo '#!/bin/bash' > /opt/signal.sh \n",
+                                "echo 'set -x' >> /opt/signal.sh \n",
+                                "echo 'trap read debug' >> /opt/signal.sh \n",
+                                "echo 'exec 1>/tmp/mount.log 2>&1' >> /opt/signal.sh \n",
+                                "echo \"date\" >> /opt/signal.sh \n",
+                                "echo 'MOUNT=/lsf_config' >> /opt/signal.sh \n",
+                                "echo 'if grep -qs $MOUNT /proc/mounts;' >> /opt/signal.sh \n",
+                                "echo 'then' >> /opt/signal.sh \n",
+                                "echo '  echo \"Filesystem is mounted.\"' >> /opt/signal.sh \n",
+                                "echo '  /opt/aws/bin/cfn-signal -e 0 ",
+                                "         --stack ",
+                                {
+                                    "Ref": "AWS::StackName"
+                                },
+                                "         --resource MDTNode ",
+                                "         --region ",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                "' >> /opt/signal.sh \n",
+                                "echo 'else' >> /opt/signal.sh \n",
+                                "echo '  echo \"Filesystem is not mounted, attempting to mount.\"' >> /opt/signal.sh \n",
+                                "echo '  mount /lsf_config' >> /opt/signal.sh \n",
+                                "echo '  /opt/aws/bin/cfn-signal -e $? ",
+                                "         --stack ",
+                                {
+                                    "Ref": "AWS::StackName"
+                                },
+                                "         --resource MDTNode ",
+                                "         --region ",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                "' >> /opt/signal.sh \n",
+                                "echo 'fi' >> /opt/signal.sh \n",
+                                "KEY=dummy\n",
+                                {"Fn::Sub": "PARENT_STACK_ID=$(aws --region \"${AWS::Region}\" cloudformation describe-stacks --stack-name \"${AWS::StackName}\" --query \"Stacks[].ParentId\" --output text)\n"},
+                                "PARENT_STACK_NAME=$(aws --region ${REGION} cloudformation describe-stacks --stack-name \"${PARENT_STACK_ID}\" --query \"Stacks[].StackName\" --output text)\n",
+                                                    "KEY=$(aws ssm get-parameter --region $REGION --name \"sas-grid-ansiblekey-${PARENT_STACK_NAME}\" --query Parameter.Value --output text)\n",
+                                                    "echo \"$KEY\" | su ec2-user bash -c 'tee -a ~/.ssh/authorized_keys'\n",
+                                "(echo '@reboot /opt/signal.sh') | crontab - \n",
+                                "reboot \n"
+                            ]
+                        ]
+                    }
+                }
+            },
+            "DependsOn": [
+                "MGTNode",
+                "LustreMDTSG"
+            ],
+            "CreationPolicy": {
+                "ResourceSignal": {
+                    "Timeout": "PT10M"
+                }
+            }
+        },
+        "LustreMDTRecovery": {
+            "Type": "AWS::CloudWatch::Alarm",
+            "Properties": {
+                "AlarmDescription": "Trigger a recovery when instance status check fails for 15 consecutive minutes.",
+                "Namespace": "AWS/EC2",
+                "MetricName": "StatusCheckFailed_System",
+                "Statistic": "Minimum",
+                "Period": "60",
+                "EvaluationPeriods": "15",
+                "ComparisonOperator": "GreaterThanThreshold",
+                "Threshold": "0",
+                "AlarmActions": [
+                    {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "arn:aws:automate:",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                ":ec2:recover"
+                            ]
+                        ]
+                    }
+                ],
+                "Dimensions": [
+                    {
+                        "Name": "InstanceId",
+                        "Value": {
+                            "Ref": "MDTNode"
+                        }
+                    }
+                ]
+            },
+            "DependsOn": [
+                "MDTNode"
+            ]
+        },
+        "LustreMGTSG": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "VPCID"
+                },
+                "GroupDescription": "This SG is created for Lustre MGT Node",
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": "Lustre_MGT_Node_SG"
+                    },
+                    {
+                        "Key": "Create By",
+                        "Value": "CoreCompete"
+                    },
+                    {
+                        "Key": "Project",
+                        "Value": "AWS Quick Start - SAS Grid with Lustre"
+                    }
+                ],
+                "SecurityGroupIngress": []
+            },
+            "DependsOn": [
+                "ServersList"
+            ]
+        },
+        "LustreMDTSG": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "VPCID"
+                },
+                "GroupDescription": "This SG is created for Lustre MDT Node",
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": "Lustre_MDT_Node_SG"
+                    },
+                    {
+                        "Key": "Create By",
+                        "Value": "CoreCompete"
+                    },
+                    {
+                        "Key": "Project",
+                        "Value": "AWS Quick Start - SAS Grid with Lustre"
+                    }
+                ],
+                "SecurityGroupIngress": []
+            }
+        },
+        "LustreOSSSG": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "VPCID"
+                },
+                "GroupDescription": "This SG is created for Lustre OSS Nodes",
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": "Lustre_OSS_Node_SG"
+                    },
+                    {
+                        "Key": "Create By",
+                        "Value": "CoreCompete"
+                    },
+                    {
+                        "Key": "Project",
+                        "Value": "AWS Quick Start - SAS Grid with Lustre"
+                    }
+                ],
+                "SecurityGroupIngress": []
+            }
+        },
+        "MGTAllowLustreMDTSG": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "Properties": {
+                "IpProtocol": "-1",
+                "GroupId": {
+                    "Ref": "LustreMGTSG"
+                },
+                "SourceSecurityGroupId": {
+                    "Ref": "LustreMDTSG"
+                }
+            }
+        },
+        "MGTAllowLustreOSSSG": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "Properties": {
+                "IpProtocol": "-1",
+                "GroupId": {
+                    "Ref": "LustreMGTSG"
+                },
+                "SourceSecurityGroupId": {
+                    "Ref": "LustreOSSSG"
+                }
+            }
+        },
+        "MGTAllowSASGridSG": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "Properties": {
+                "IpProtocol": "-1",
+                "GroupId": {
+                    "Ref": "LustreMGTSG"
+                },
+                "SourceSecurityGroupId": {
+                    "Ref": "SASGridSG"
+                }
+            }
+        },
+        "MGTAllowRDGWSG": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "Properties": {
+                "IpProtocol": "-1",
+                "GroupId": {
+                    "Ref": "LustreMGTSG"
+                },
+                "SourceSecurityGroupId": {
+                    "Ref": "RDGWSG"
+                }
+            }
+        },
+        "MGTAllowMGTWSG": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "Properties": {
+                "IpProtocol": "-1",
+                "GroupId": {
+                    "Ref": "LustreMGTSG"
+                },
+                "SourceSecurityGroupId": {
+                    "Ref": "LustreMGTSG"
+                }
+            }
+        },
+        "MDTAllowLustreMGTSG": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "Properties": {
+                "IpProtocol": "-1",
+                "GroupId": {
+                    "Ref": "LustreMDTSG"
+                },
+                "SourceSecurityGroupId": {
+                    "Ref": "LustreMGTSG"
+                }
+            }
+        },
+        "MDTAllowLustreOSSSG": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "Properties": {
+                "IpProtocol": "-1",
+                "GroupId": {
+                    "Ref": "LustreMDTSG"
+                },
+                "SourceSecurityGroupId": {
+                    "Ref": "LustreOSSSG"
+                }
+            }
+        },
+        "MDTAllowSASGridSG": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "Properties": {
+                "IpProtocol": "-1",
+                "GroupId": {
+                    "Ref": "LustreMDTSG"
+                },
+                "SourceSecurityGroupId": {
+                    "Ref": "SASGridSG"
+                }
+            }
+        },
+        "MDTAllowRDGWSG": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "Properties": {
+                "IpProtocol": "-1",
+                "GroupId": {
+                    "Ref": "LustreMDTSG"
+                },
+                "SourceSecurityGroupId": {
+                    "Ref": "RDGWSG"
+                }
+            }
+        },
+        "OSSAllowLustreMGTSG": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "Properties": {
+                "IpProtocol": "-1",
+                "GroupId": {
+                    "Ref": "LustreOSSSG"
+                },
+                "SourceSecurityGroupId": {
+                    "Ref": "LustreMGTSG"
+                }
+            }
+        },
+        "OSSAllowLustreMDTSG": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "Properties": {
+                "IpProtocol": "-1",
+                "GroupId": {
+                    "Ref": "LustreOSSSG"
+                },
+                "SourceSecurityGroupId": {
+                    "Ref": "LustreMDTSG"
+                }
+            }
+        },
+        "OSSAllowLustreOSSSG": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "Properties": {
+                "IpProtocol": "-1",
+                "GroupId": {
+                    "Ref": "LustreOSSSG"
+                },
+                "SourceSecurityGroupId": {
+                    "Ref": "LustreOSSSG"
+                }
+            }
+        },
+        "OSSAllowRDGWSG": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "Properties": {
+                "IpProtocol": "-1",
+                "GroupId": {
+                    "Ref": "LustreOSSSG"
+                },
+                "SourceSecurityGroupId": {
+                    "Ref": "RDGWSG"
+                }
+            }
+        },
+        "SASSGAllowSASSG": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "Properties": {
+                "IpProtocol": "-1",
+                "GroupId": {
+                    "Ref": "SASGridSG"
+                },
+                "SourceSecurityGroupId": {
+                    "Ref": "SASGridSG"
+                }
+            }
+        },
+        "SASSGAllowRDGWSG": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "Properties": {
+                "IpProtocol": "-1",
+                "GroupId": {
+                    "Ref": "SASGridSG"
+                },
+                "SourceSecurityGroupId": {
+                    "Ref": "RDGWSG"
+                }
+            }
+        },
+        "OSSAllowSASGridSG": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "Properties": {
+                "IpProtocol": "-1",
+                "GroupId": {
+                    "Ref": "LustreOSSSG"
+                },
+                "SourceSecurityGroupId": {
+                    "Ref": "SASGridSG"
+                }
+            }
+        },
+        "LustreOSSAllowSASGridSG": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "Properties": {
+                "IpProtocol": "-1",
+                "GroupId": {
+                    "Ref": "SASGridSG"
+                },
+                "SourceSecurityGroupId": {
+                    "Ref": "LustreOSSSG"
+                }
+            }
+        },
+        "LustreMDTAllowSASGridSG": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "Properties": {
+                "IpProtocol": "-1",
+                "GroupId": {
+                    "Ref": "SASGridSG"
+                },
+                "SourceSecurityGroupId": {
+                    "Ref": "LustreMDTSG"
+                }
+            }
+        },
+        "LustreMGTAllowSASGridSG": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "Properties": {
+                "IpProtocol": "-1",
+                "GroupId": {
+                    "Ref": "SASGridSG"
+                },
+                "SourceSecurityGroupId": {
+                    "Ref": "LustreMGTSG"
+                }
+            }
+        },
+        "WaitHandle": {
+            "Type": "AWS::CloudFormation::WaitConditionHandle"
+        },
+        "WaitCondition": {
+            "Type": "AWS::CloudFormation::WaitCondition",
+            "DependsOn": "OSSEC2Instances",
+            "Properties": {
+                "Handle": {
+                    "Ref": "WaitHandle"
+                },
+                "Timeout": "600",
+                "Count": {
+                    "Ref": "NumberOfOSSNodes"
+                }
+            }
+        },
+        "EC2InstancesFunction": {
+            "Type": "AWS::Lambda::Function",
+            "Properties": {
+                "Handler": "index.handler",
+                "Role": {
+                    "Fn::GetAtt": [
+                        "LambdaExecutionRole",
+                        "Arn"
+                    ]
+                },
+                "Code": {
+                    "ZipFile": {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "var response = require('cfn-response');\nvar iaminstanceprofile = {};\niaminstanceprofile['Arn'] = '",
+                                {
+                                    "Fn::GetAtt": [
+                                        "DynamoDBPutInstanceProfile",
+                                        "Arn"
+                                    ]
+                                },
+                                "';\n",
+                                "console.log(iaminstanceprofile);\n",
+                                "var AWS = require('aws-sdk');\n",
+                                "exports.handler = function(event, context) {\n",
+                                "  var physicalId = event.PhysicalResourceId || 'none';\n",
+                                "  function success(data) {\n",
+                                "    return response.send(event, context, response.SUCCESS, data, physicalId);\n",
+                                "  }\n",
+                                "  function failed(e) {\n",
+                                "    return response.send(event, context, response.FAILED, e, physicalId);\n",
+                                "  }\n",
+                                "  var ec2 = new AWS.EC2();\n",
+                                "  var instances;\n",
+                                "  if (event.RequestType == 'Create') {\n",
+                                "    var launchParams = event.ResourceProperties;\n",
+                                "    launchParams['IamInstanceProfile'] = iaminstanceprofile;\n",
+                                "    delete launchParams.ServiceToken;\n",
+                                "    ec2.runInstances(launchParams).promise().then((data)=> {\n",
+                                "      instances = data.Instances.map((data)=> data.InstanceId);\n",
+                                "      physicalId = instances.join(':');\n",
+                                "      return ec2.waitFor('instanceRunning', {InstanceIds: instances}).promise();\n",
+                                "    }).then((data)=> success({Instances: instances})\n",
+                                "    ).catch((e)=> failed(e));\n",
+                                "  } else if (event.RequestType == 'Delete') {\n",
+                                "    if (physicalId == 'none') {return success({});}\n",
+                                "    var deleteParams = {InstanceIds: physicalId.split(':')};\n",
+                                "    ec2.terminateInstances(deleteParams).promise().then((data)=>\n",
+                                "      ec2.waitFor('instanceTerminated', deleteParams).promise()\n",
+                                "    ).then((data)=>success({})\n",
+                                "    ).catch((e)=>failed(e));\n",
+                                "  } else {\n",
+                                "    return failed({Error: \"In-place updates not supported.\"});\n",
+                                "  }\n",
+                                "};\n"
+                            ]
+                        ]
+                    }
+                },
+                "Runtime": "nodejs8.10",
+                "Timeout": 300
+            },
+            "DependsOn": [
+                "LambdaExecutionRole",
+                "LustreOSSSG",
+                "MGTNode"
+            ]
+        },
+        "OSSEC2Instances": {
+            "Type": "Custom::EC2Instances",
+            "Properties": {
+                "ServiceToken": {
+                    "Fn::GetAtt": [
+                        "EC2InstancesFunction",
+                        "Arn"
+                    ]
+                },
+                "MinCount": {
+                    "Ref": "NumberOfOSSNodes"
+                },
+                "MaxCount": {
+                    "Ref": "NumberOfOSSNodes"
+                },
+                "SubnetId": {
+                    "Ref": "PrivateSubnet2ID"
+                },
+                "SecurityGroupIds": [
+                    {
+                        "Ref": "LustreOSSSG"
+                    }
+                ],
+                "InstanceType": {
+                    "Fn::FindInMap": [
+                        "InfraSizeMap",
+                        "LustreInstances",
+                        "LustreOSSInstanceType"
+                    ]
+                },
+                "ImageId": {
+                    "Fn::FindInMap": [
+                        "AWSAMIRegionMap",
+                        {
+                            "Ref": "AWS::Region"
+                        },
+                        "LUSTREAMI"
+                    ]
+                },
+                "KeyName": {
+                    "Ref": "LustreKeyPairName"
+                },
+                "IamInstanceProfile": {
+                    "Ref": "DynamoDBPutInstanceProfile"
+                },
+                "BlockDeviceMappings": [
+                    {
+                        "DeviceName": "/dev/sda1",
+                        "Ebs": {
+                            "VolumeType": "gp2",
+                            "VolumeSize": "50"
+                        }
+                    },
+                    {
+                        "DeviceName": "/dev/xvdba",
+                        "Ebs": {
+                            "VolumeType": {
+                                "Ref": "LustreEBSVolumeType"
+                            },
+                            "VolumeSize": {
+                                "Fn::GetAtt": [
+                                    "DivideEBSVolumeSize",
+                                    "Value"
+                                ]
+                            }
+                        }
+                    },
+                    {
+                        "DeviceName": "/dev/xvdbb",
+                        "Ebs": {
+                            "VolumeType": {
+                                "Ref": "LustreEBSVolumeType"
+                            },
+                            "VolumeSize": {
+                                "Fn::GetAtt": [
+                                    "DivideEBSVolumeSize",
+                                    "Value"
+                                ]
+                            }
+                        }
+                    },
+                    {
+                        "DeviceName": "/dev/xvdbc",
+                        "Ebs": {
+                            "VolumeType": {
+                                "Ref": "LustreEBSVolumeType"
+                            },
+                            "VolumeSize": {
+                                "Fn::GetAtt": [
+                                    "DivideEBSVolumeSize",
+                                    "Value"
+                                ]
+                            }
+                        }
+                    },
+                    {
+                        "DeviceName": "/dev/xvdbd",
+                        "Ebs": {
+                            "VolumeType": {
+                                "Ref": "LustreEBSVolumeType"
+                            },
+                            "VolumeSize": {
+                                "Fn::GetAtt": [
+                                    "DivideEBSVolumeSize",
+                                    "Value"
+                                ]
+                            }
+                        }
+                    },
+                    {
+                        "DeviceName": "/dev/xvdbe",
+                        "Ebs": {
+                            "VolumeType": {
+                                "Ref": "LustreEBSVolumeType"
+                            },
+                            "VolumeSize": {
+                                "Fn::GetAtt": [
+                                    "DivideEBSVolumeSize",
+                                    "Value"
+                                ]
+                            }
+                        }
+                    },
+                    {
+                        "DeviceName": "/dev/xvdbf",
+                        "Ebs": {
+                            "VolumeType": {
+                                "Ref": "LustreEBSVolumeType"
+                            },
+                            "VolumeSize": {
+                                "Fn::GetAtt": [
+                                    "DivideEBSVolumeSize",
+                                    "Value"
+                                ]
+                            }
+                        }
+                    },
+                    {
+                        "DeviceName": "/dev/xvdbg",
+                        "Ebs": {
+                            "VolumeType": {
+                                "Ref": "LustreEBSVolumeType"
+                            },
+                            "VolumeSize": {
+                                "Fn::GetAtt": [
+                                    "DivideEBSVolumeSize",
+                                    "Value"
+                                ]
+                            }
+                        }
+                    },
+                    {
+                        "DeviceName": "/dev/xvdbh",
+                        "Ebs": {
+                            "VolumeType": {
+                                "Ref": "LustreEBSVolumeType"
+                            },
+                            "VolumeSize": {
+                                "Fn::GetAtt": [
+                                    "DivideEBSVolumeSize",
+                                    "Value"
+                                ]
+                            }
+                        }
+                    },
+                    {
+                        "DeviceName": "/dev/xvdbi",
+                        "Ebs": {
+                            "VolumeType": {
+                                "Ref": "LustreEBSVolumeType"
+                            },
+                            "VolumeSize": {
+                                "Fn::GetAtt": [
+                                    "DivideEBSVolumeSize",
+                                    "Value"
+                                ]
+                            }
+                        }
+                    },
+                    {
+                        "DeviceName": "/dev/xvdbj",
+                        "Ebs": {
+                            "VolumeType": {
+                                "Ref": "LustreEBSVolumeType"
+                            },
+                            "VolumeSize": {
+                                "Fn::GetAtt": [
+                                    "DivideEBSVolumeSize",
+                                    "Value"
+                                ]
+                            }
+                        }
+                    },
+                    {
+                        "DeviceName": "/dev/xvdbk",
+                        "Ebs": {
+                            "VolumeType": {
+                                "Ref": "LustreEBSVolumeType"
+                            },
+                            "VolumeSize": {
+                                "Fn::GetAtt": [
+                                    "DivideEBSVolumeSize",
+                                    "Value"
+                                ]
+                            }
+                        }
+                    },
+                    {
+                        "DeviceName": "/dev/xvdbl",
+                        "Ebs": {
+                            "VolumeType": {
+                                "Ref": "LustreEBSVolumeType"
+                            },
+                            "VolumeSize": {
+                                "Fn::GetAtt": [
+                                    "DivideEBSVolumeSize",
+                                    "Value"
+                                ]
+                            }
+                        }
+                    },
+                    {
+                        "DeviceName": "/dev/xvdbm",
+                        "Ebs": {
+                            "VolumeType": {
+                                "Ref": "LustreEBSVolumeType"
+                            },
+                            "VolumeSize": {
+                                "Fn::GetAtt": [
+                                    "DivideEBSVolumeSize",
+                                    "Value"
+                                ]
+                            }
+                        }
+                    },
+                    {
+                        "DeviceName": "/dev/xvdbn",
+                        "Ebs": {
+                            "VolumeType": {
+                                "Ref": "LustreEBSVolumeType"
+                            },
+                            "VolumeSize": {
+                                "Fn::GetAtt": [
+                                    "DivideEBSVolumeSize",
+                                    "Value"
+                                ]
+                            }
+                        }
+                    },
+                    {
+                        "DeviceName": "/dev/xvdbo",
+                        "Ebs": {
+                            "VolumeType": {
+                                "Ref": "LustreEBSVolumeType"
+                            },
+                            "VolumeSize": {
+                                "Fn::GetAtt": [
+                                    "DivideEBSVolumeSize",
+                                    "Value"
+                                ]
+                            }
+                        }
+                    },
+                    {
+                        "DeviceName": "/dev/xvdbp",
+                        "Ebs": {
+                            "VolumeType": {
+                                "Ref": "LustreEBSVolumeType"
+                            },
+                            "VolumeSize": {
+                                "Fn::GetAtt": [
+                                    "DivideEBSVolumeSize",
+                                    "Value"
+                                ]
+                            }
+                        }
+                    },
+                    {
+                        "DeviceName": "/dev/xvdbq",
+                        "Ebs": {
+                            "VolumeType": {
+                                "Ref": "LustreEBSVolumeType"
+                            },
+                            "VolumeSize": {
+                                "Fn::GetAtt": [
+                                    "DivideEBSVolumeSize",
+                                    "Value"
+                                ]
+                            }
+                        }
+                    },
+                    {
+                        "DeviceName": "/dev/xvdbr",
+                        "Ebs": {
+                            "VolumeType": {
+                                "Ref": "LustreEBSVolumeType"
+                            },
+                            "VolumeSize": {
+                                "Fn::GetAtt": [
+                                    "DivideEBSVolumeSize",
+                                    "Value"
+                                ]
+                            }
+                        }
+                    },
+                    {
+                        "DeviceName": "/dev/xvdbs",
+                        "Ebs": {
+                            "VolumeType": {
+                                "Ref": "LustreEBSVolumeType"
+                            },
+                            "VolumeSize": {
+                                "Fn::GetAtt": [
+                                    "DivideEBSVolumeSize",
+                                    "Value"
+                                ]
+                            }
+                        }
+                    },
+                    {
+                        "DeviceName": "/dev/xvdbt",
+                        "Ebs": {
+                            "VolumeType": {
+                                "Ref": "LustreEBSVolumeType"
+                            },
+                            "VolumeSize": {
+                                "Fn::GetAtt": [
+                                    "DivideEBSVolumeSize",
+                                    "Value"
+                                ]
+                            }
+                        }
+                    }
+                ],
+                "UserData": {
+                    "Fn::Base64": {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "#!/bin/bash \n",
+                                "set -x\n",
+                                "\n",
+                                "trap read debug\n",
+                                "\n",
+                                "exec 1>/tmp/bootstrap.log 2>&1\n",
+                                "\n",
+                                "/sbin/resize2fs /dev/xvda1\n",
+                                "yum -y update\n",
+                                "systemctl disable firewalld \n",
+                                "service firewalld stop \n",
+                                "groupadd -f -g 1003 sas && useradd -u 501 -g 1003 sasinst && useradd -u 502 -g 1003 lsfadmin && useradd -u 503 -g 1003 sas && useradd -u 504 -g 1003 sasdemo && \n",
+                                "useradd -u 505 -g 1003 sassrv && useradd -u 506 -g 1003 sastrust && useradd -u 507 -g 1003 sasadm && usermod -a -G sas sasinst && \n",
+                                "useradd -u 508 -g 1003 sasevs && useradd -u 509 -g 1003 webanon \n",
+                                "yum -y install jq mdadm python-pip vim wget mlocate nfs-utils libnfsidmap \n",
+                                "pip install pystache argparse python-daemon requests \n",
+                                "cd /opt && curl -O https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-latest.tar.gz \n",
+                                "tar -xvpf aws-cfn-bootstrap-latest.tar.gz \n",
+                                "cd aws-cfn-bootstrap-1.4/ && python setup.py build && python setup.py install \n",
+                                "ln -s /usr/init/redhat/cfn-hup /etc/init.d/cfn-hup \n",
+                                "chmod 775 /usr/init/redhat/cfn-hup \n",
+                                "mkdir -p /opt/aws/bin \n",
+                                "ln -s /usr/bin/cfn-hup /opt/aws/bin/cfn-hup \n",
+                                "ln -s /usr/bin/cfn-init /opt/aws/bin/cfn-init \n",
+                                "ln -s /usr/bin/cfn-signal /opt/aws/bin/cfn-signal \n",
+                                "ln -s /usr/bin/cfn-elect-cmd-leader /opt/aws/bin/cfn-elect-cmd-leader \n",
+                                "ln -s /usr/bin/cfn-get-metadata /opt/aws/bin/cfn-get-metadata \n",
+                                "ln -s /usr/bin/cfn-send-cmd-event /opt/aws/bin/cfn-send-cmd-event \n",
+                                "ln -s /usr/bin/cfn-send-cmd-result /opt/aws/bin/cfn-send-cmd-result \n",
+                                "systemctl enable rpcbind && systemctl start rpcbind \n",
+                                "echo 'DEVICE /dev/xvdb[a-t]' > /etc/mdadm.conf \n",
+                                "echo 'ARRAY /dev/md0 devices=/dev/xvdb[a-t]' >> /etc/mdadm.conf \n",
+                                "mdadm -C /dev/md0 --level=raid0 --raid-devices=20 /dev/xvdb[a-t] \n",
+                                "mkdir /nfs && mkdir /lsf_data \n",
+                                "until mount ",
+                                {
+                                    "Fn::GetAtt": [
+                                        "MGTNode",
+                                        "PrivateIp"
+                                    ]
+                                },
+                                ":/nfs /nfs \n",
+                                "do \n",
+                                "echo 'Sleeping for 10 seconds' \n",
+                                "sleep 10 \n",
+                                "done \n",
+                                "LustreOSSNodes=",
+                                {
+                                    "Ref": "NumberOfOSSNodes"
+                                },
+                                "\n",
+                                "IP=`ifconfig eth0 | grep 'inet ' | cut -d: -f2 | awk '{print $2}'` && touch /nfs/LustreOSSNodes/$IP \n",
+                                "NoOfNodes=`ls /nfs/LustreOSSNodes | wc -l` \n",
+                                "until [ $NoOfNodes -eq $LustreOSSNodes ] \n",
+                                "do \n",
+                                "echo 'No of IPs are not equal to no of sas grid instances' \n",
+                                "NoOfNodes=`ls /nfs/LustreOSSNodes | wc -l` \n",
+                                "sleep 5 \n",
+                                "done \n",
+                                "NodeNumber=`ls /nfs/LustreOSSNodes | nl > /tmp/temp && cat /tmp/temp | grep -w \"$IP\" | cut -f1 | sed -r 's/ //g'` \n",
+                                "DOMAIN=",
+                                {
+                                    "Ref": "DomainDNSName"
+                                },
+                                "\n",
+                                "hostnamectl set-hostname --static  'ossnode'$NodeNumber'.'$DOMAIN'' && echo ''$IP'   ossnode'$NodeNumber'.'$DOMAIN' ossnode'$NodeNumber'' >> /nfs/hostsfile \n",
+                                "echo 'preserve_hostname: true' >> /etc/cloud/cloud.cfg \n",
+                                "HOSTFILEENTRY=`cat /nfs/hostsfile | nl | cut -f1 | sed -r 's/ //g'| sort -rh | head -1` \n",
+                                "cat /nfs/hostsfile >> /etc/hosts \n",
+                                "echo 'mkfs.lustre --fsname lustre --reformat --ost --mgsnode=",
+                                {
+                                    "Fn::GetAtt": [
+                                        "MGTNode",
+                                        "PrivateIp"
+                                    ]
+                                },
+                                "@tcp --index='$NodeNumber' /dev/md0' > /tmp/temp.sh && chmod +x /tmp/temp.sh && /bin/bash /tmp/temp.sh \n",
+                                "UUID=`blkid | grep md0 | cut -d' ' -f3` && echo ''$UUID' /lsf_data lustre defaults,_netdev 0 0' >> /etc/fstab \n",
+                                "pip install awscli \n",
+                                "REGION=`curl --silent http://169.254.169.254/latest/dynamic/instance-identity/document | jq -r .region` \n",
+                                "PRIVATEIP=`curl --silent http://169.254.169.254/latest/meta-data/local-ipv4/` \n",
+                                "FQDN=`cat /etc/hostname` \n",
+                                "SHORTNAME=`cat /etc/hostname | cut -d'.' -f1` \n",
+                                "INSTANCEID=`curl --silent http://169.254.169.254/latest/meta-data/instance-id` \n",
+                                "PRIORITY='3' \n",
+                                "DAILYRETENTION=",
+                                {
+                                    "Fn::FindInMap": [
+                                        "Backups",
+                                        "LustreOSS",
+                                        "Daily"
+                                    ]
+                                },
+                                "\n",
+                                "WEEKLYRETENTION=",
+                                {
+                                    "Fn::FindInMap": [
+                                        "Backups",
+                                        "LustreOSS",
+                                        "Weekly"
+                                    ]
+                                },
+                                "\n",
+                                "aws --region $REGION dynamodb put-item --table-name ",
+                                {
+                                    "Ref": "ServersList"
+                                },
+                                " --item '{ \"InstanceId\": { \"S\": \"'\"$INSTANCEID\"'\" }, \"FQDN\": {\"S\": \"'\"$FQDN\"'\"}, \"ShortName\":{\"S\": \"'\"$SHORTNAME\"'\"}, \"Priority\": {\"N\": \"'\"$PRIORITY\"'\"}, \"PrivateIp\":{\"S\": \"'\"$PRIVATEIP\"'\"}, \"DailyRetention\":{\"S\": \"'\"$DAILYRETENTION\"'\"}, \"WeeklyRetention\":{\"S\": \"'\"$WEEKLYRETENTION\"'\"} }' \n",
+                                "aws --region $REGION ec2 create-tags --resources $INSTANCEID --tags Key=Name,Value=$FQDN \n",
+                                "echo 'BootStrap completed successfully' \n",
+                                "echo 'Server will now reboot' \n",
+                                "updatedb \n",
+                                "touch /opt/signal.sh && chmod +x /opt/signal.sh \n",
+                                "echo '#!/bin/bash' > /opt/signal.sh \n",
+                                "echo 'set -x' >> /opt/signal.sh \n",
+                                "echo 'trap read debug' >> /opt/signal.sh \n",
+                                "echo 'exec 1>/tmp/mount.log 2>&1' >> /opt/signal.sh \n",
+                                "echo \"date\" >> /opt/signal.sh \n",
+                                "echo 'MOUNT=/lsf_data' >> /opt/signal.sh \n",
+                                "echo 'if grep -qs $MOUNT /proc/mounts;' >> /opt/signal.sh \n",
+                                "echo 'then' >> /opt/signal.sh \n",
+                                "echo '  echo \"Filesystem is mounted.\"' >> /opt/signal.sh \n",
+                                "echo '/opt/aws/bin/cfn-signal -e 0 -r Success \"",
+                                {
+                                    "Ref": "WaitHandle"
+                                },
+                                "\"' >> /opt/signal.sh \n",
+                                "echo 'else' >> /opt/signal.sh \n",
+                                "echo '  echo \"Filesystem is not mounted, attempting to mount.\"' >> /opt/signal.sh \n",
+                                "echo '  mount /lsf_data' >> /opt/signal.sh \n",
+                                "echo '/opt/aws/bin/cfn-signal -e $? -r Success \"",
+                                {
+                                    "Ref": "WaitHandle"
+                                },
+                                "\"' >> /opt/signal.sh \n",
+                                "echo 'fi' >> /opt/signal.sh \n",
+                                "KEY=dummy\n",
+                                {"Fn::Sub": "PARENT_STACK_ID=$(aws --region \"${AWS::Region}\" cloudformation describe-stacks --stack-name \"${AWS::StackName}\" --query \"Stacks[].ParentId\" --output text)\n"},
+                                "PARENT_STACK_NAME=$(aws --region ${REGION} cloudformation describe-stacks --stack-name \"${PARENT_STACK_ID}\" --query \"Stacks[].StackName\" --output text)\n",
+                                                    "KEY=$(aws ssm get-parameter --region $REGION --name \"sas-grid-ansiblekey-${PARENT_STACK_NAME}\" --query Parameter.Value --output text)\n",
+                                                    "echo \"$KEY\" | su ec2-user bash -c 'tee -a ~/.ssh/authorized_keys'\n",
+                                "(echo '@reboot /opt/signal.sh') | crontab - \n",
+                                "reboot \n"
+                            ]
+                        ]
+                    }
+                }
+            },
+            "DependsOn": [
+                "EC2InstancesFunction",
+                "LustreOSSSG",
+                "MDTNode",
+                "DivideEBSVolumeSize"
+            ]
+        },
+        "AMIBackupExecutionRole": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "AssumeRolePolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Principal": {
+                                "Service": ["lambda.amazonaws.com"]
+                            },
+                            "Action": ["sts:AssumeRole"]
+                        }
+                    ]
+                },
+                "Path": "/"
+            }
+        },
+        "AMIBackupExecutionPolicy": {
+            "DependsOn": [
+                "AMIBackupExecutionRole"
+            ],
+            "Type": "AWS::IAM::Policy",
+            "Properties": {
+                "PolicyName": "AMIBackupExecutionPolicy",
+                "Roles": [
+                    {
+                        "Ref": "AMIBackupExecutionRole"
+                    }
+                ],
+                "PolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Action": ["logs:*"],
+                            "Resource": ["arn:aws:logs:*:*:*"],
+                            "Effect": "Allow"
+                        },
+                        {
+                            "Action": [
+                                "ec2:Describe*",
+                                "ec2:CreateTags",
+                                "ec2:CreateImage",
+                                "ec2:CreateSnapshot"
+                            ],
+                             "Resource": "*",
+                             "Effect": "Allow"
+                        },
+                        {
+                             "Action": [
+                                 "ec2:DeregisterImage"
+                             ],
+                             "Resource": "arn:aws:ec2:::image/*",
+                             "Effect": "Allow"
+                        },
+                        {
+                             "Action": [
+                                 "ec2:DeleteSnapshot",
+                                 "ec2:ModifySnapshotAttribute",
+                                 "ec2:ResetSnapshotAttribute"
+                             ],
+                             "Resource": "arn:aws:ec2:::snapshot/*",
+                             "Effect": "Allow"
+                        },
+                        {
+                             "Action": [
+                                 "dynamodb:DescribeTable",
+                                 "dynamodb:GetItem",
+                                 "dynamodb:GetRecords",
+                                 "dynamodb:Scan"
+                             ],
+                             "Resource": {
+                                 "Fn::Join": [
+                                     "",
+                                     [
+                                         "arn:aws:dynamodb:*:*:table/",
+                                         {
+                                             "Ref": "ServersList"
+                                         }
+                                     ]
+                                 ]
+                             },
+                             "Effect": "Allow"
+                        }
+                    ]
+                }
+            }
+        },
+        "AutomatedAMIBackups": {
+            "Type": "AWS::Lambda::Function",
+            "Properties": {
+                "Role": {
+                    "Fn::GetAtt": ["AMIBackupExecutionRole", "Arn"]
+                },
+                "Code": {
+                    "ZipFile":
+                    {
+                        "Fn::Join": [
+                                    "",
+                                    [
+                                        "import datetime\n",
+                                        "import boto3\n",
+                                        "import os\n",
+                                        "\n",
+                                        "\n",
+                                        "def get_account_id():\n",
+                                        "\n",
+                                        "    sts_client = boto3.client(\"sts\")\n",
+                                        "    account_id = sts_client.get_caller_identity()[\"Account\"]\n",
+                                        "    return account_id\n",
+                                        "\n",
+                                        "\n",
+                                        "def get_table_data(region, table):\n",
+                                        "\n",
+                                        "    retentions = []\n",
+                                        "\n",
+                                        "    dynamo_db = boto3.client(\"dynamodb\", region_name=region)\n",
+                                        "    table_data = dynamo_db.scan(TableName=table, AttributesToGet=[\"InstanceId\", \"FQDN\", \"DailyRetention\", \"WeeklyRetention\"])\n",
+                                        "    rows = table_data[\"Items\"]\n",
+                                        "    \n",
+                                        "    try:\n",
+                                        "        for row in rows:\n",
+                                        "            retentions.append({\n",
+                                        "                \"instance_id\": row[\"InstanceId\"][\"S\"],\n",
+                                        "                \"fqdn\": row[\"FQDN\"][\"S\"],\n",
+                                        "                \"daily\": row[\"DailyRetention\"][\"S\"],\n",
+                                        "                \"weekly\": row[\"WeeklyRetention\"][\"S\"]\n",
+                                        "                })\n",
+                                        "        return retentions\n",
+                                        "    \n",
+                                        "    except Exception as error:\n",
+                                        "        print(\"KeyError\",error)\n",
+                                        "        return None\n",
+                                        "\n",
+                                        "\n",
+                                        "\n",
+                                        "def create_instance_image(client, instance_info):\n",
+                                        "\n",
+                                        "    today = datetime.datetime.now()\n",
+                                        "    \n",
+                                        "    instance_id = instance_info[\"instance_id\"]\n",
+                                        "    fqdn = instance_info[\"fqdn\"]\n",
+                                        "    image_name = fqdn + \"-\" + today.strftime(\"%d-%m-%Y %H:%M:%S\")\n",
+                                        "\n",
+                                        "    try:\n",
+                                        "        response = client.create_image(InstanceId=instance_id, Name=image_name)\n",
+                                        "        if response[\"ResponseMetadata\"][\"HTTPStatusCode\"] == 200:\n",
+                                        "            print(\"Image Created Successfully..\")\n",
+                                        "    except Exception as error:\n",
+                                        "        print(error)\n",
+                                        "    \n",
+                                        "\n",
+                                        "def get_image(client, image):\n",
+                                        "\n",
+                                        "    try:\n",
+                                        "        request = client.describe_images(Filters=[{\"Name\": \"name\", \"Values\":[image]}])\n",
+                                        "        \n",
+                                        "        if request[\"Images\"]:\n",
+                                        "            image_info = request[\"Images\"][0] # we're filtering by image as value, will always get one\n",
+                                        "            snapshots = [block[\"Ebs\"][\"SnapshotId\"] for block in image_info[\"BlockDeviceMappings\"]]\n",
+                                        "            if image_info[\"State\"] == \"available\":\n",
+                                        "                return {\"state\": image_info[\"State\"], \"image_id\": image_info[\"ImageId\"], \"snapshots\": snapshots}\n",
+                                        "        else:\n",
+                                        "            return None\n",
+                                        "    except Exception as error:\n",
+                                        "        return error\n",
+                                        "\n",
+                                        "\n",
+                                        "def delete_image(client, image_id):\n",
+                                        "\n",
+                                        "    if image_id is not None:\n",
+                                        "        try:\n",
+                                        "            response = client.deregister_image(ImageId=image_id)\n",
+                                        "            if response[\"ResponseMetadata\"][\"HTTPStatusCode\"] == 200:\n",
+                                        "                print(\"Image Successfully Deleted..\")\n",
+                                        "        except Exception as error:\n",
+                                        "            return error\n",
+                                        "    else:\n",
+                                        "        print(\"No Image found..\")\n",
+                                        "\n",
+                                        "\n",
+                                        "def lambda_handler(event, context):\n",
+                                        "\n",
+                                        "    region = os.environ[\"AWS_DEFAULT_REGION\"]\n    table = \"",
+                                        {
+                                            "Ref": "ServersList"
+                                        },
+                                        "\"\n",
+                                        "\n",
+                                        "    today = datetime.datetime.now()\n",
+                                        "\n",
+                                        "    ec2_client = boto3.client(\"ec2\", region_name=region)\n",
+                                        "\n",
+                                        "    db_rows = get_table_data(region, table)\n",
+                                        "    \n",
+                                        "    if db_rows:\n",
+                                        "\n",
+                                        "        for row in db_rows:\n",
+                                        "            \n",
+                                        "            create_instance_image(ec2_client, row)\n",
+                                        "    \n",
+                                        "            daily_retention = today-datetime.timedelta(int(row[\"daily\"]))\n",
+                                        "            daily_retention = daily_retention.strftime(\"%d-%m-%Y\")\n",
+                                        "            daily_image = \"daily\" + \"-\" + row[\"fqdn\"] + \"-\" + daily_retention\n",
+                                        "    \n",
+                                        "            weekly_retention = today-datetime.timedelta(int(row[\"weekly\"]))\n",
+                                        "            weekly_retention = weekly_retention.strftime(\"%d-%m-%Y\")\n",
+                                        "            weekly_image = \"weekly\" + \"-\" + row[\"fqdn\"] + \"-\" + weekly_retention\n",
+                                        "    \n",
+                                        "            for image in [daily_image, weekly_image]:\n",
+                                        "                image_info = get_image(ec2_client, image)\n",
+                                        "                if image_info is not None:\n",
+                                        "                    if image_info[\"state\"] == \"available\":\n",
+                                        "                        del_status = delete_image(ec2_client, image_info[\"image_id\"])\n",
+                                        "                        for snapshot in image_info[\"snapshots\"]:\n",
+                                        "                            snap_status = ec2_client.delete_snapshot(SnapshotId=snapshot)\n",
+                                        "                            if snap_status[\"ResponseMetadata\"][\"HTTPStatusCode\"] == 200:\n",
+                                        "                                print(\"Snapshot deleted successfully..\")\n",
+                                        "                else:\n",
+                                        "                    print(\"Image '{}' not found\".format(image))\n",
+                                        "    else:\n",
+                                        "        print(\"Please check the data in DynamoDB table\")\n"
+                                    ]
+                                ]
+                    }
+                },
+                "Runtime": "python3.6",
+                "Handler": "index.lambda_handler",
+                "Timeout": 900
+            },
+            "DependsOn": [
+                "AMIBackupExecutionPolicy"
+            ]
+        },
+        "AMIBackupTrigger": {
+            "Type": "AWS::Events::Rule",
+            "Properties": {
+                "Description": "AMI Backup Scheduler",
+                "Name": "AMIBackupTrigger",
+                "State": "ENABLED",
+                "ScheduleExpression": "cron(0 12 * * ? *)",
+                "Targets": [
+                    {
+                        "Arn": {
+                            "Fn::GetAtt": [
+                                "AutomatedAMIBackups",
+                                "Arn"
+                            ]
+                        },
+                        "Id": "TargetFunctionV1"
+                    }
+                ]
+            }
+        }
+    },
+    "Outputs": {
+        "SASGridSGID": {
+            "Description": "Security Group ID of SASGrid Instances",
+            "Value": {
+                "Ref": "SASGridSG"
+            },
+            "Export": {
+                "Name": {
+                    "Fn::Sub": "${AWS::StackName}-SASGridSG"
+                }
+            }
+        },
+        "DynamoDBTableName": {
+            "Description": "Name of DynamoDB Table",
+            "Value": {
+                "Ref": "ServersList"
+            },
+            "Export": {
+                "Name": {
+                    "Fn::Sub": "${AWS::StackName}-DynamoDBTableName"
+                }
+            }
+        },
+        "DynamoDBInstanceProfileName": {
+            "Description": "Name of DynamoDB Put Instance Profile",
+            "Value": {
+                "Ref": "DynamoDBPutInstanceProfile"
+            },
+            "Export": {
+                "Name": {
+                    "Fn::Sub": "${AWS::StackName}-DynamoDBInstanceProfileName"
+                }
+            }
+        },
+        "LustreMGTNodeIP": {
+            "Description": "Private IP Address of Lustre MGT Node",
+            "Value": {
+                "Fn::GetAtt": [
+                    "MGTNode",
+                    "PrivateIp"
+                ]
+            },
+            "Export": {
+                "Name": {
+                    "Fn::Sub": "${AWS::StackName}-LustreMGTNodeIP"
+                }
+            }
+        },
+        "OSSInstances": {
+            "Value": {
+                "Fn::Join": [
+                    ",",
+                    {
+                        "Fn::GetAtt": [
+                            "OSSEC2Instances",
+                            "Instances"
+                        ]
+                    }
+                ]
+            }
+        }
+    }
+}

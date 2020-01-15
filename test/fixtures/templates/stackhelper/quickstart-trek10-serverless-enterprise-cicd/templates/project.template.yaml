@@ -1,0 +1,233 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  (qs-1ph8nehbe) 
+  Serverless CICD Quick Start
+  Shared services account resources for a project
+
+Parameters:
+  AppName:
+    Description: Application name, used for the repository and child stack name
+    Type: String
+    Default: Sample
+  DevAwsAccountId:
+    Description: AWS account ID for development account
+    Type: String
+    AllowedPattern: (\d{12}|^$)
+    ConstraintDescription: Must be an AWS account ID
+    Default: '159527342995'
+  ProdAwsAccountId:
+    Description: AWS account ID for production account
+    Type: String
+    AllowedPattern: (\d{12}|^$)
+    ConstraintDescription: Must be an AWS account ID
+    Default: '159527342995'
+  DynamicPipelineMakerLambdaArn:
+    Description: ARN of Lambda function to create dynamic pipeline
+    Type: String
+  CodecommitCredentialsLambdaArn:
+    Description: ARN of Lambda function to create credentials for access to CodeCommit
+    Type: String
+  BuildImageName:
+    Description: Docker image for application build
+    Type: String
+    Default: aws/codebuild/nodejs:10.1.0
+  ArtifactBucket:
+    Description: Artifact S3 bucket
+    Type: String
+  ArtifactBucketKeyArn:
+    Description: ARN of the artifact bucket KMS key
+    Type: String
+  PipelineServiceRoleArn:
+    Description: Pipeline service role ARN
+    Type: String
+  SamTranslationBucket:
+    Description: S3 bucket for SAM translations
+    Type: String
+
+Conditions:
+  AddDevAccountPermissions: !Not [!Equals [ !Ref DevAwsAccountId, '' ]]
+  AddProdAccountPermissions: !Not [!Equals [ !Ref ProdAwsAccountId, '' ]]
+
+Resources:
+  SecretDev:
+    Condition: AddDevAccountPermissions
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Description: Secret to define sensitive data for application in child accounts (Dev)
+      KmsKeyId: !GetAtt SecretsManagerKey.Arn
+      GenerateSecretString:
+        SecretStringTemplate: '{"username": "sample-user"}'
+        GenerateStringKey: "password"
+        PasswordLength: 30
+        ExcludeCharacters: '"@/\'
+      Name: !Sub sample-secret-${AWS::Region}-${AWS::AccountId}-dev
+      Tags:
+        - Key: Stage
+          Value: dev
+  SecretProd:
+    Condition: AddProdAccountPermissions
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Description: Secret to define sensitive data for application in child accounts (Prod)
+      KmsKeyId: !GetAtt SecretsManagerKey.Arn
+      GenerateSecretString:
+        SecretStringTemplate: '{"username": "sample-user"}'
+        GenerateStringKey: "password"
+        PasswordLength: 30
+        ExcludeCharacters: '"@/\'
+      Name: !Sub sample-secret-${AWS::Region}-${AWS::AccountId}-prod
+      Tags:
+        - Key: Stage
+          Value: prod
+
+  SecretPolicyDev:
+    Condition: AddDevAccountPermissions
+    Type: AWS::SecretsManager::ResourcePolicy
+    Properties:
+      SecretId: !Ref SecretDev
+      ResourcePolicy:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS:
+                - !Sub arn:aws:iam::${DevAwsAccountId}:role/SampleLambdaRole-${AWS::Region}-${DevAwsAccountId}-dev
+            Action:
+              - secretsmanager:GetSecretValue
+            Resource: '*'
+            Condition:
+              ForAnyValue:StringEquals: # Only the latest secret can be retrieved (per best practices)
+                secretsmanager:VersionStage: AWSCURRENT
+
+  SecretPolicyProd:
+    Condition: AddProdAccountPermissions
+    Type: AWS::SecretsManager::ResourcePolicy
+    Properties:
+      SecretId: !Ref SecretProd
+      ResourcePolicy:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS:
+                - !Sub arn:aws:iam::${ProdAwsAccountId}:role/SampleLambdaRole-${AWS::Region}-${ProdAwsAccountId}-prod
+            Action:
+              - secretsmanager:GetSecretValue
+            Resource: '*'
+            Condition:
+              ForAnyValue:StringEquals: # Only the latest secret can be retrieved (per best practices)
+                secretsmanager:VersionStage: AWSCURRENT
+
+  SecretsManagerKey: # This key is used to encrypt/decrypt the secret in Secrets Manager
+    Type: AWS::KMS::Key
+    Properties:
+      Description: "Key for encrypting sample Secret Manager secret"
+      KeyPolicy:
+        Version: '2012-10-17'
+        Id: key-default-1
+        Statement:
+          - Sid: Allow administration of the key
+            Effect: Allow
+            Principal:
+              AWS:
+                - !Sub arn:aws:iam::${AWS::AccountId}:root
+            Action:
+              - kms:*
+            Resource: '*'
+          - Sid: Allow the dev and prod accounts to the key
+            Effect: Allow
+            Principal:
+              AWS:
+                - !If
+                  - AddDevAccountPermissions
+                  - !Sub arn:aws:iam::${DevAwsAccountId}:role/SampleLambdaRole-${AWS::Region}-${DevAwsAccountId}-dev
+                  - !Ref AWS::NoValue
+                - !If
+                  - AddProdAccountPermissions
+                  - !Sub arn:aws:iam::${ProdAwsAccountId}:role/SampleLambdaRole-${AWS::Region}-${ProdAwsAccountId}-prod
+                  - !Ref AWS::NoValue
+            Action:
+              - kms:Decrypt
+            Resource: '*'
+
+  SMSecretAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: alias/secrets-manager
+      TargetKeyId: !Ref SecretsManagerKey
+
+  Repository:
+    Type: AWS::CodeCommit::Repository
+    Properties:
+      RepositoryName: !Ref AppName
+      Triggers:
+        - CustomData: !Sub '{"SecretArnDev": "${SecretDev}","SecretsManagerKey": "${SecretsManagerKey.Arn}","AppName": "${AppName}","BuildImageName": "${BuildImageName}","ArtifactBucket": "${ArtifactBucket}","ArtifactBucketKeyArn": "${ArtifactBucketKeyArn}","SamTranslationBucket": "${SamTranslationBucket}","PipelineServiceRoleArn": "${PipelineServiceRoleArn}","DevAwsAccountId": "${DevAwsAccountId}"}'
+          DestinationArn: !Ref DynamicPipelineMakerLambdaArn
+          Events:
+            - createReference
+            - deleteReference
+          Name: Create or delete dynamic pipeline for new branch
+
+  DynamicPipelineMakerLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties: 
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref DynamicPipelineMakerLambdaArn
+      Principal: codecommit.amazonaws.com
+      SourceArn: !GetAtt Repository.Arn
+
+  RepositoryUser:
+    Type: AWS::IAM::User
+    Properties:
+      UserName: !Sub AWS-CICD-Quickstart-${AppName}-${AWS::Region}-${AWS::AccountId}
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AWSCodeCommitPowerUser
+
+  CodecommitCredentials:
+    Type: AWS::CloudFormation::CustomResource
+    Properties:
+      ServiceToken: !Ref CodecommitCredentialsLambdaArn
+      IAM_USER_NAME: !Ref RepositoryUser
+
+Outputs:
+  SecretsManagerAliasName:
+    Description: KMS key alias for the use of secrets across accounts
+    Value: !Ref SecretsManagerKey
+  SecretsManagerKey:
+    Description: KMS key for the use of secrets across accounts
+    Value: !GetAtt SecretsManagerKey.Arn
+  RepoCloneUrlHttp:
+    Description: URL for HTTP loning 
+    Value: !GetAtt Repository.CloneUrlHttp
+  RepoCloneUrlSsh:
+    Description: URL for SSH cloning
+    Value: !GetAtt Repository.CloneUrlSsh
+  RepoSshConfigHost:
+    Description: URL for SSH cloning
+    Value: !Sub git-codecommit.${AWS::Region}.amazonaws.com/v1/repos/${Repository.Name}
+  RepoName:
+    Description: Name of the repo
+    Value: !GetAtt Repository.Name
+  IAMUserName:
+    Description: IAM user to be able to use the repository
+    Value: !Ref RepositoryUser
+  SecretArnDev:
+    Description: Dev secret ARN
+    Value:
+      !If
+        - AddDevAccountPermissions
+        - !Ref SecretDev
+        - ''
+  SecretArnProd:
+    Description: Prod secret ARN
+    Value:
+      !If
+        - AddProdAccountPermissions
+        - !Ref SecretProd
+        - ''
+  GitUserName:
+    Description: Username for access to the CodeCommit repository
+    Value: !GetAtt CodecommitCredentials.UserName
+  GitPassword:
+    Description: Password for access to the CodeCommit repository
+    Value: !GetAtt CodecommitCredentials.Password

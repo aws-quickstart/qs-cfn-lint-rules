@@ -1,0 +1,814 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "CloudFormation sub-template for Single Node EC2 deployment within Solace HA Cluster. (qs-1nm1r54hd)",
+    "Parameters": {
+        "SolaceDockerImage": {
+            "Description": "Solace PubSub+ message broker docker image reference: a docker registry name with optional tag or a download URL. The download URL can be obtained from http://dev.solace.com/downloads/ or it can be a url to a remotely hosted load version",
+            "Default": "solace/solace-pubsub-standard:latest",
+            "Type": "String"
+        },
+        "AdminPassword": {
+            "Description": "Password to access Solace admin console and SEMP",
+            "Type": "String",
+            "NoEcho": "True"
+        },
+        "ContainerLoggingFormat": {
+            "AllowedValues": [
+                "graylog",
+                "legacy",
+                "raw",
+                "rfc5424"
+            ],
+            "ConstraintDescription": "Must be a valid container logging format.",
+            "Default": "graylog",
+            "Description": "Solace message broker logging format in CloudWatch",
+            "Type": "String"
+        },
+        "BootDiskSize": {
+            "ConstraintDescription": "Deployment supports 8 to 128 GB for boot volumes",
+            "Default": "24",
+            "Description": "Allocated EBS storage for boot disk",
+            "MaxValue": "128",
+            "MinValue": "8",
+            "Type": "Number"
+        },
+        "ClusterInfoHandle": {
+            "Description": "",
+            "Type": "String"
+        },
+        "InstanceProfile": {
+            "Description": "IAM Profile for the deployment",
+            "Type": "String"
+        },
+        "KeyPairName": {
+            "Description": "Name of an existing EC2 key pair within the AWS region; all instances will launch with this key pair",
+            "Type": "AWS::EC2::KeyPair::KeyName"
+        },
+        "NodeDesignation": {
+            "Default": "unspecified",
+            "Description": "Tag for deployed instances",
+            "Type": "String"
+        },
+        "NodeInstanceType": {
+            "ConstraintDescription": "Must be a valid EC2 instance type.",
+            "Default": "m4.large",
+            "Description": "Instance Type for Solace PubSub+ message broker nodes",
+            "Type": "String"
+        },
+        "NodeSecurityGroup": {
+            "Description": "Comma separated list of security groups for the members of the cluster (e.g. sg-7f16e910,sg-4be93ca2); The security groups must be in the same VPC as the subnets",
+            "Type": "List<AWS::EC2::SecurityGroup::Id>"
+        },
+        "ParentStackName": {
+            "Description": "Wrapper stack for this deployment",
+            "Type": "String"
+        },
+        "PersistentStorage": {
+            "ConstraintDescription": "No more than 1024 GB per device (4 TB per node).",
+            "Default": "0",
+            "Description": "Allocated EBS storage for each block device (in GB; 4 devs per node); 0 indicates ephemeral storage only. Non-zero will cause a new io1 disk creation for message-spool which will NOT be deleted on stack termination",
+            "AllowedValues": [
+                "0",
+                "20",
+                "40",
+                "80",
+                "160",
+                "320",
+                "640"
+            ],
+            "Type": "Number"
+        },
+        "QSS3BucketName": {
+            "AllowedPattern": "^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$",
+            "ConstraintDescription": "Quick Start bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-).",
+            "Default": "aws-quickstart",
+            "Description": "S3 bucket name for the Quick Start assets. Quick Start bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-).",
+            "Type": "String"
+        },
+        "QSS3KeyPrefix": {
+            "AllowedPattern": "^[0-9a-zA-Z-/]*$",
+            "ConstraintDescription": "Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).",
+            "Default": "quickstart-solace-vmr/",
+            "Description": "S3 key prefix for the Quick Start assets. Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).",
+            "Type": "String"
+        },
+        "SubnetID": {
+            "Description": "Comma separated list of VPC subnet IDs for the cluster deployment (e.g. subnet-4b8d329f,subnet-bd73afc8); VPC must exist with proper configuration for Solacet cluster access (internal and external)and the subnets must be in the same VPC as the security groups",
+            "Type": "AWS::EC2::Subnet::Id"
+        }
+    },
+    "Mappings": {
+        "AWSAMIRegionMap": {
+            "AMI": {
+                "AMZNLINUXHVM": "amzn-ami-hvm-2018.03.0.20180622-x86_64-gp2"
+            },
+            "ap-northeast-1": {
+                "AMZNLINUXHVM": "ami-9c9443e3"
+            },
+            "ap-northeast-2": {
+                "AMZNLINUXHVM": "ami-ebc47185"
+            },
+            "ap-south-1": {
+                "AMZNLINUXHVM": "ami-5a8da735"
+            },
+            "ap-southeast-1": {
+                "AMZNLINUXHVM": "ami-ed838091"
+            },
+            "ap-southeast-2": {
+                "AMZNLINUXHVM": "ami-33f92051"
+            },
+            "ca-central-1": {
+                "AMZNLINUXHVM": "ami-03e86a67"
+            },
+            "eu-central-1": {
+                "AMZNLINUXHVM": "ami-a058674b"
+            },
+            "eu-west-1": {
+                "AMZNLINUXHVM": "ami-e4515e0e"
+            },
+            "eu-west-2": {
+                "AMZNLINUXHVM": "ami-b2b55cd5"
+            },
+            "eu-west-3": {
+                "AMZNLINUXHVM": "ami-d50bbaa8"
+            },
+            "sa-east-1": {
+                "AMZNLINUXHVM": "ami-83d58fef"
+            },
+            "us-east-1": {
+                "AMZNLINUXHVM": "ami-cfe4b2b0"
+            },
+            "us-east-2": {
+                "AMZNLINUXHVM": "ami-40142d25"
+            },
+            "us-west-1": {
+                "AMZNLINUXHVM": "ami-0e86606d"
+            },
+            "us-west-2": {
+                "AMZNLINUXHVM": "ami-0ad99772"
+            }
+        },
+        "LinuxAMINameMap": {
+            "Amazon-Linux-HVM": {
+                "Code": "AMZNLINUXHVM"
+            }
+        },
+        "Linux2BootDisk": {
+            "Amazon-Linux-HVM": {
+                "BootDisk": "/dev/xvda"
+            }
+        },
+        "Linux2SpoolDisk": {
+            "Amazon-Linux-HVM": {
+                "SpoolDisk": "/dev/xvdb"
+            }
+        },
+        "IOPsMap": {
+            "0": {
+                "IOPs": "0"
+            },
+            "20": {
+                "IOPs": "1000"
+            },
+            "40": {
+                "IOPs": "2000"
+            },
+            "80": {
+                "IOPs": "4000"
+            },
+            "160": {
+                "IOPs": "8000"
+            },
+            "320": {
+                "IOPs": "16000"
+            },
+            "640": {
+                "IOPs": "20000"
+            }
+        }
+    },
+    "Conditions": {
+        "EphemeralStorage": {
+            "Fn::Equals": [
+                {
+                    "Ref": "PersistentStorage"
+                },
+                "0"
+            ]
+        },
+        "GovCloudCondition": {
+            "Fn::Equals": [
+                {
+                    "Ref": "AWS::Region"
+                },
+                "us-gov-west-1"
+            ]
+        }
+    },
+    "Resources": {
+        "CloudFormationLogs": {
+            "Type": "AWS::Logs::LogGroup",
+            "Properties": {
+                "RetentionInDays": 7
+            }
+        },
+        "RecoveryTestAlarm": {
+            "Type": "AWS::CloudWatch::Alarm",
+            "Properties": {
+                "AlarmDescription": "Trigger a recovery when instance status check fails for 3 consecutive minutes.",
+                "Namespace": "AWS/EC2",
+                "MetricName": "StatusCheckFailed_System",
+                "Statistic": "Minimum",
+                "Period": "60",
+                "EvaluationPeriods": "3",
+                "ComparisonOperator": "GreaterThanThreshold",
+                "Threshold": "0",
+                "AlarmActions": [
+                    {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "arn:aws:automate:",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                ":ec2:recover"
+                            ]
+                        ]
+                    }
+                ],
+                "Dimensions": [
+                    {
+                        "Name": "InstanceId",
+                        "Value": {
+                            "Ref": "NodeLaunchConfig"
+                        }
+                    }
+                ]
+            }
+        },
+        "NodeLaunchConfig": {
+            "Type": "AWS::EC2::Instance",
+            "Metadata": {
+                "AWS::CloudFormation::Init": {
+                    "configSets": {
+                        "install_all": [
+                            "install_awscli",
+                            "install_logs",
+                            "install_docker",
+                            "install_extras",
+                            "install_solace"
+                        ]
+                    },
+                    "install_awscli": {
+                        "packages": {
+                            "python": {
+                                "awscli": []
+                            }
+                        }
+                    },
+                    "install_logs": {
+                        "packages": {
+                            "yum": {
+                                "awslogs": []
+                            }
+                        },
+                        "files": {
+                            "/etc/awslogs/awslogs.conf": {
+                                "content": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "[general]\n",
+                                            "state_file= /var/awslogs/state/agent-state\n",
+                                            "[/var/log/cloud-init.log]\n",
+                                            "file = /var/log/cloud-init.log\n",
+                                            "log_group_name = ",
+                                            {
+                                                "Ref": "CloudFormationLogs"
+                                            },
+                                            "\n",
+                                            "log_stream_name = {instance_id}/cloud-init.log\n",
+                                            "datetime_format = \n",
+                                            "[/var/log/cloud-init-output.log]\n",
+                                            "file = /var/log/cloud-init-output.log\n",
+                                            "log_group_name = ",
+                                            {
+                                                "Ref": "CloudFormationLogs"
+                                            },
+                                            "\n",
+                                            "log_stream_name = {instance_id}/cloud-init-output.log\n",
+                                            "datetime_format = \n",
+                                            "[/var/log/cfn-init.log]\n",
+                                            "file = /var/log/cfn-init.log\n",
+                                            "log_group_name = ",
+                                            {
+                                                "Ref": "CloudFormationLogs"
+                                            },
+                                            "\n",
+                                            "log_stream_name = {instance_id}/cfn-init.log\n",
+                                            "datetime_format = \n",
+                                            "[/var/log/cfn-hup.log]\n",
+                                            "file = /var/log/cfn-hup.log\n",
+                                            "log_group_name = ",
+                                            {
+                                                "Ref": "CloudFormationLogs"
+                                            },
+                                            "\n",
+                                            "log_stream_name = {instance_id}/cfn-hup.log\n",
+                                            "datetime_format = \n",
+                                            "[/var/log/cfn-wire.log]\n",
+                                            "file = /var/log/cfn-wire.log\n",
+                                            "log_group_name = ",
+                                            {
+                                                "Ref": "CloudFormationLogs"
+                                            },
+                                            "\n",
+                                            "log_stream_name = {instance_id}/cfn-wire.log\n",
+                                            "datetime_format = \n",
+                                            "[/var/log/solace.log]\n",
+                                            "file = /var/log/solace.log\n",
+                                            "log_group_name = ",
+                                            {
+                                                "Ref": "CloudFormationLogs"
+                                            },
+                                            "\n",
+                                            "log_stream_name = {instance_id}/solace.log\n",
+                                            "datetime_format = \n"
+                                        ]
+                                    ]
+                                },
+                                "mode": "000444",
+                                "owner": "root",
+                                "group": "root"
+                            },
+                            "/etc/awslogs/awscli.conf": {
+                                "content": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "[plugins]\n",
+                                            "cwlogs = cwlogs\n",
+                                            "[default]\n",
+                                            "region = ",
+                                            {
+                                                "Ref": "AWS::Region"
+                                            },
+                                            "\n"
+                                        ]
+                                    ]
+                                },
+                                "mode": "000444",
+                                "owner": "root",
+                                "group": "root"
+                            }
+                        },
+                        "commands": {
+                            "01_create_state_directory": {
+                                "command": "mkdir -p /var/awslogs/state"
+                            }
+                        },
+                        "services": {
+                            "sysvinit": {
+                                "awslogs": {
+                                    "enabled": "true",
+                                    "ensureRunning": "true",
+                                    "files": [
+                                        "/etc/awslogs/awslogs.conf"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "install_docker": {
+                        "packages": {
+                            "yum": {
+                                "docker": [],
+                                "wget": [],
+                                "lvm2": []
+                            }
+                        },
+                        "files": {
+                            "/etc/sysconfig/docker": {
+                                "content": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "DAEMON_PIDFILE_TIMEOUT=10\n",
+                                            "OPTIONS=\"--default-ulimit nofile=1024:4096 --iptables=false --storage-driver overlay2\"\n"
+                                        ]
+                                    ]
+                                },
+                                "mode": "000444",
+                                "owner": "root",
+                                "group": "root"
+                            }
+                        },
+                        "commands": {
+                            "01_add_ec2-user_to_docker_group": {
+                                "command": "usermod -a -G docker ec2-user"
+                            }
+                        },
+                        "services": {
+                            "sysvinit": {
+                                "docker": {
+                                    "enabled": "true",
+                                    "ensureRunning": "true",
+                                    "files": [
+                                        "/etc/sysconfig/docker"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "install_extras": {
+                        "packages": {
+                            "yum": {
+                                "epel-release": [],
+                                "jq": []
+                            }
+                        }
+                    },
+                    "install_solace": {
+                        "commands": {
+                            "01_create_secrets_directory": {
+                                "command": "mkdir -p /mnt/vmr/secrets"
+                            }
+                        },
+                        "files": {
+                            "/mnt/vmr/secrets/solOSpasswd": {
+                                "content": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            {
+                                                "Ref": "AdminPassword"
+                                            },
+                                            "\n"
+                                        ]
+                                    ]
+                                }
+                            },
+                            "/tmp/gen-cluster-hosts.sh": {
+                                "source": {
+                                    "Fn::Sub": [
+                                        "https://${QSS3BucketName}.${QSS3Region}.amazonaws.com/${QSS3KeyPrefix}scripts/gen-cluster-hosts.sh",
+                                        {
+                                            "QSS3Region": {
+                                                "Fn::If": [
+                                                    "GovCloudCondition",
+                                                    "s3-us-gov-west-1",
+                                                    "s3"
+                                                ]
+                                            }
+                                        }
+                                    ]
+                                },
+                                "mode": "000755",
+                                "owner": "root",
+                                "group": "root"
+                            },
+                            "/tmp/wait-for-child-resource.sh": {
+                                "source": {
+                                    "Fn::Sub": [
+                                        "https://${QSS3BucketName}.${QSS3Region}.amazonaws.com/${QSS3KeyPrefix}scripts/wait-for-child-resource.sh",
+                                        {
+                                            "QSS3Region": {
+                                                "Fn::If": [
+                                                    "GovCloudCondition",
+                                                    "s3-us-gov-west-1",
+                                                    "s3"
+                                                ]
+                                            }
+                                        }
+                                    ]
+                                },
+                                "mode": "000755",
+                                "owner": "root",
+                                "group": "root"
+                            },
+                            "/tmp/wait-for-resource.sh": {
+                                "source": {
+                                    "Fn::Sub": [
+                                        "https://${QSS3BucketName}.${QSS3Region}.amazonaws.com/${QSS3KeyPrefix}scripts/wait-for-resource.sh",
+                                        {
+                                            "QSS3Region": {
+                                                "Fn::If": [
+                                                    "GovCloudCondition",
+                                                    "s3-us-gov-west-1",
+                                                    "s3"
+                                                ]
+                                            }
+                                        }
+                                    ]
+                                },
+                                "mode": "000755",
+                                "owner": "root",
+                                "group": "root"
+                            },
+                            "/etc/init.d/solace-vmr": {
+                                "source": {
+                                    "Fn::Sub": [
+                                        "https://${QSS3BucketName}.${QSS3Region}.amazonaws.com/${QSS3KeyPrefix}scripts/init.d/solace-vmr",
+                                        {
+                                            "QSS3Region": {
+                                                "Fn::If": [
+                                                    "GovCloudCondition",
+                                                    "s3-us-gov-west-1",
+                                                    "s3"
+                                                ]
+                                            }
+                                        }
+                                    ]
+                                },
+                                "mode": "000755",
+                                "owner": "root",
+                                "group": "root"
+                            },
+                            "/tmp/install-solace.sh": {
+                                "source": {
+                                    "Fn::Sub": [
+                                        "https://${QSS3BucketName}.${QSS3Region}.amazonaws.com/${QSS3KeyPrefix}scripts/install-solace.sh",
+                                        {
+                                            "QSS3Region": {
+                                                "Fn::If": [
+                                                    "GovCloudCondition",
+                                                    "s3-us-gov-west-1",
+                                                    "s3"
+                                                ]
+                                            }
+                                        }
+                                    ]
+                                },
+                                "mode": "000755",
+                                "owner": "root",
+                                "group": "root"
+                            },
+                            "/tmp/semp_query.sh": {
+                                "source": {
+                                    "Fn::Sub": [
+                                        "https://${QSS3BucketName}.${QSS3Region}.amazonaws.com/${QSS3KeyPrefix}scripts/semp_query.sh",
+                                        {
+                                            "QSS3Region": {
+                                                "Fn::If": [
+                                                    "GovCloudCondition",
+                                                    "s3-us-gov-west-1",
+                                                    "s3"
+                                                ]
+                                            }
+                                        }
+                                    ]
+                                },
+                                "mode": "000755",
+                                "owner": "root",
+                                "group": "root"
+                            }
+                        }
+                    }
+                }
+            },
+            "Properties": {
+                "BlockDeviceMappings": {
+                    "Fn::If": [
+                        "EphemeralStorage",
+                        [
+                            {
+                                "DeviceName": {
+                                    "Fn::FindInMap": [
+                                        "Linux2BootDisk",
+                                        "Amazon-Linux-HVM",
+                                        "BootDisk"
+                                    ]
+                                },
+                                "Ebs": {
+                                    "VolumeSize": {
+                                        "Ref": "BootDiskSize"
+                                    },
+                                    "DeleteOnTermination": "True"
+                                }
+                            }
+                        ],
+                        [
+                            {
+                                "DeviceName": {
+                                    "Fn::FindInMap": [
+                                        "Linux2BootDisk",
+                                        "Amazon-Linux-HVM",
+                                        "BootDisk"
+                                    ]
+                                },
+                                "Ebs": {
+                                    "VolumeSize": {
+                                        "Ref": "BootDiskSize"
+                                    },
+                                    "DeleteOnTermination": "False"
+                                }
+                            },
+                            {
+                                "DeviceName": {
+                                    "Fn::FindInMap": [
+                                        "Linux2SpoolDisk",
+                                        "Amazon-Linux-HVM",
+                                        "SpoolDisk"
+                                    ]
+                                },
+                                "Ebs": {
+                                    "VolumeSize": {
+                                        "Ref": "PersistentStorage"
+                                    },
+                                    "DeleteOnTermination": "False",
+                                    "VolumeType": "io1",
+                                    "Iops": {
+                                        "Fn::FindInMap": [
+                                            "IOPsMap",
+                                            {
+                                                "Ref": "PersistentStorage"
+                                            },
+                                            "IOPs"
+                                        ]
+                                    }
+                                }
+                            }
+                        ]
+                    ]
+                },
+                "ImageId": {
+                    "Fn::FindInMap": [
+                        "AWSAMIRegionMap",
+                        {
+                            "Ref": "AWS::Region"
+                        },
+                        "AMZNLINUXHVM"
+                    ]
+                },
+                "InstanceType": {
+                    "Ref": "NodeInstanceType"
+                },
+                "KeyName": {
+                    "Ref": "KeyPairName"
+                },
+                "NetworkInterfaces": [
+                    {
+                        "AssociatePublicIpAddress": true,
+                        "DeleteOnTermination": true,
+                        "Description": "Main interface",
+                        "DeviceIndex": "0",
+                        "GroupSet": {
+                            "Ref": "NodeSecurityGroup"
+                        },
+                        "SubnetId": {
+                            "Ref": "SubnetID"
+                        }
+                    }
+                ],
+                "IamInstanceProfile": {
+                    "Ref": "InstanceProfile"
+                },
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": {
+                            "Fn::Join": [
+                                "-",
+                                [
+                                    {
+                                        "Ref": "ParentStackName"
+                                    },
+                                    {
+                                        "Ref": "NodeDesignation"
+                                    }
+                                ]
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "ParentStack",
+                        "Value": {
+                            "Ref": "ParentStackName"
+                        }
+                    },
+                    {
+                        "Key": "HARole",
+                        "Value": {
+                            "Ref": "NodeDesignation"
+                        }
+                    }
+                ],
+                "UserData": {
+                    "Fn::Base64": {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "#!/bin/bash -xe\n",
+                                "AMI_SBIN=/tmp\n",
+                                "yum install -y aws-cfn-bootstrap\n",
+                                "\n",
+                                "## Retrieve scripts to deploy Solace on the instances \n",
+                                "/opt/aws/bin/cfn-init -v ",
+                                "    --stack ",
+                                {
+                                    "Ref": "AWS::StackName"
+                                },
+                                "    --resource NodeLaunchConfig ",
+                                "    --configsets install_all ",
+                                "    --region ",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                "\n",
+                                "## Wait for all nodes to come on-line\n",
+                                "$AMI_SBIN/wait-for-child-resource.sh ",
+                                {
+                                    "Ref": "ParentStackName"
+                                },
+                                " MonitorStack NodeLaunchConfig\n",
+                                "\n",
+                                "$AMI_SBIN/wait-for-child-resource.sh ",
+                                {
+                                    "Ref": "ParentStackName"
+                                },
+                                " MessageRouterPrimaryStack NodeLaunchConfig\n",
+                                "\n",
+                                "$AMI_SBIN/wait-for-child-resource.sh ",
+                                {
+                                    "Ref": "ParentStackName"
+                                },
+                                " MessageRouterBackupStack NodeLaunchConfig\n",
+                                "\n",
+                                "## Now find the private IP addresses of all deployed nodes\n",
+                                "##   (generating /tmp/solacehosts and /tmp/<role> files)\n",
+                                "$AMI_SBIN/gen-cluster-hosts.sh ",
+                                {
+                                    "Ref": "ParentStackName"
+                                },
+                                "\n",
+                                "## Tag the instance (now that we're sure of launch index)\n",
+                                "instance_id=$(curl -f http://instance-data/latest/meta-data/instance-id)\n",
+                                "instance_tag=",
+                                {
+                                    "Ref": "ParentStackName"
+                                },
+                                "-",
+                                {
+                                    "Ref": "NodeDesignation"
+                                },
+                                "\n",
+                                " \n",
+                                "aws ec2 create-tags",
+                                "    --region ",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                "    --resources $instance_id --tags Key=Name,Value=$instance_tag\n",
+                                "\n",
+                                "cd /tmp\n",
+                                "# Install Solace\n",
+                                "$AMI_SBIN/install-solace.sh -c /tmp/solacehosts -d /tmp/solace",
+                                "  -u ",
+                                {
+                                    "Ref": "SolaceDockerImage"
+                                },
+                                "  -p /mnt/vmr/secrets/solOSpasswd",
+                                "  -s ",
+                                {
+                                    "Ref": "PersistentStorage"
+                                },
+                                "  -v /dev/xvdb",
+                                "  -f ",
+                                {
+                                    "Ref": "ContainerLoggingFormat"
+                                },
+                                "  -g ",
+                                {
+                                    "Ref": "CloudFormationLogs"
+                                },
+                                "  -r ${instance_id}/solace.log",
+                                " \n",
+                                "## Signal back information for outputs (now that all nodes are up) \n",
+                                "/opt/aws/bin/cfn-signal -e 0 -r 'Solace HA deployment complete' '",
+                                {
+                                    "Ref": "ClusterInfoHandle"
+                                },
+                                "'\n",
+                                "\n"
+                            ]
+                        ]
+                    }
+                }
+            }
+        }
+    },
+    "Outputs": {
+        "EC2ID": {
+            "Description": "Reference to created ec2 instance",
+            "Value": {
+                "Ref": "NodeLaunchConfig"
+            },
+            "Export": {
+                "Name": {
+                    "Fn::Sub": "${AWS::StackName}-EC2ID"
+                }
+            }
+        }
+    }
+}

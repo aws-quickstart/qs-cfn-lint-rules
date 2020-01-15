@@ -1,0 +1,222 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "(0020) - Step 1 of 3: This template deploys the AWS Puppet Quick Start. See the deployment guide at http://aws.amazon.com/quickstart for details. This template creates Amazon EC2 instances and related resources. You will be billed for the AWS resources used if you create a stack from this template.",
+    "Parameters": {
+        "KeyPairName": {
+            "Description": "Public/private key pair",
+            "Type": "AWS::EC2::KeyPair::KeyName"
+        },
+        "SubnetCIDR": {
+            "Description": "CIDR block for the public subnet",
+            "Type": "String",
+            "Default": "10.0.0.0/19",
+            "AllowedPattern": "[a-zA-Z0-9]+\\..+"
+        },
+        "RemoteAdminCIDR": {
+            "Description": "CIDR block or IP for SSH access Note: a value of 0.0.0.0/0 will allow access from ANY ip address",
+            "Type": "String",
+            "AllowedPattern": "[a-zA-Z0-9]+\\..+"
+        },
+        "VPCCIDR": {
+            "Description": "CIDR block for the VPC",
+            "Type": "String",
+            "Default": "10.0.0.0/16",
+            "AllowedPattern": "[a-zA-Z0-9]+\\..+"
+        },
+        "PuppetMasterIP": {
+            "Description": "IP for the Puppet master",
+            "Type": "String",
+            "Default": "10.0.0.10"
+        },
+        "PuppetAgentLinuxIP": {
+            "Description": "IP for the Linux Puppet agent",
+            "Type": "String",
+            "Default": "10.0.0.11"
+        },
+        "PuppetAgentWindowsIP": {
+            "Description": "IP for the Windows Puppet agent",
+            "Type": "String",
+            "Default": "10.0.0.12"
+        },
+        "QSS3BucketName": {
+            "Type": "String",
+            "AllowedPattern": "^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$",
+            "ConstraintDescription": "Quick Start bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-).",
+            "Default": "aws-quickstart",
+            "Description": "S3 bucket name for the Quick Start assets. Quick Start bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-)."
+        },
+        "QSS3KeyPrefix": {
+            "Type": "String",
+            "AllowedPattern": "^[0-9a-zA-Z-/]*$",
+            "ConstraintDescription": "Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).",
+            "Default": "quickstart-puppet/",
+            "Description": "S3 key prefix for the Quick Start assets. Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/)."
+        }
+    },
+    "Metadata": {
+        "AWS::CloudFormation::Interface": {
+            "ParameterGroups": [
+                {
+                    "Label": {
+                        "default": "Security Configuration"
+                    },
+                    "Parameters": [
+                        "KeyPairName",
+                        "RemoteAdminCIDR"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "AWS Quick Start Configuration"
+                    },
+                    "Parameters": [
+                        "QSS3BucketName",
+                        "QSS3KeyPrefix"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "Network Configuration"
+                    },
+                    "Parameters": [
+                        "VPCCIDR",
+                        "SubnetCIDR",
+                        "PuppetMasterIP",
+                        "PuppetAgentLinuxIP",
+                        "PuppetAgentWindowsIP"
+                    ]
+                }
+            ],
+            "ParameterLabels": {
+                "KeyPairName": {
+                    "default": "Select a key pair:"
+                },
+                "RemoteAdminCIDR": {
+                    "default": "Source IP for remote access (e.g., 1.1.1.1/32):"
+                },
+                "VPCCIDR": {
+                    "default": "CIDR range for your VPC:"
+                },
+                "SubnetCIDR": {
+                    "default": "CIDR range for the subnet in your VPC:"
+                },
+                "PuppetMasterIP": {
+                    "default": "IP address for the Puppet master:"
+                },
+                "PuppetAgentLinuxIP": {
+                    "default": "IP address for the Linux Puppet agent:"
+                },
+                "PuppetAgentWindowsIP": {
+                    "default": "IP address for the Windows Puppet agent:"
+                },
+                "QSS3BucketName": {
+                    "default": "Quick Start S3 Bucket Name:"
+                },
+                "QSS3KeyPrefix": {
+                    "default": "Quick Start S3 Key Prefix:"
+                }
+            }
+        }
+    },
+    "Conditions": {
+        "GovCloudCondition": {
+            "Fn::Equals": [{
+                "Ref": "AWS::Region"
+            },
+            "us-gov-west-1"
+            ]
+        }
+    },
+    "Resources": {
+        "VPCStack": {
+            "Type": "AWS::CloudFormation::Stack",
+            "Properties": {
+                "TemplateURL": { 
+                    "Fn::Sub": [
+                        "https://${QSS3BucketName}.${QSS3Region}.amazonaws.com/${QSS3KeyPrefix}templates/Puppet-VPC.template",
+                        {
+                            "QSS3Region": {
+                                "Fn::If": [
+                                    "GovCloudCondition",
+                                    "s3-us-gov-west-1",
+                                    "s3"
+                                   ]
+                            }
+                        }
+                    ]
+                },
+                "Parameters": {
+                    "SubnetCIDR": {
+                        "Ref": "SubnetCIDR"
+                    },
+                    "VPCCIDR": {
+                        "Ref": "VPCCIDR"
+                    },
+                    "PuppetMasterIP": {
+                        "Ref": "PuppetMasterIP"
+                    },
+                    "PuppetAgentLinuxIP": {
+                        "Ref": "PuppetAgentLinuxIP"
+                    },
+                    "PuppetAgentWindowsIP": {
+                        "Ref": "PuppetAgentWindowsIP"
+                    }
+                }
+            }
+        },
+        "InstanceStack": {
+            "Type": "AWS::CloudFormation::Stack",
+            "Properties": {
+                "TemplateURL": { 
+                    "Fn::Sub":[
+                        "https://${QSS3BucketName}.${QSS3Region}.amazonaws.com/${QSS3KeyPrefix}templates/Puppet-Instances.template",
+                        {
+                            "QSS3Region": {
+                                "Fn::If": [
+                                    "GovCloudCondition",
+                                    "s3-us-gov-west-1",
+                                    "s3"
+                                ]
+                            } 
+                        }
+                    ]
+                },
+                "Parameters": {
+                    "KeyPairName": {
+                        "Ref": "KeyPairName"
+                    },
+                    "SubnetId": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.SubnetId"
+                        ]
+                    },
+                    "VPC": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.VPC"
+                        ]
+                    },
+                    "VPCCIDR": {
+                        "Ref": "VPCCIDR"
+                    },
+                    "PuppetMasterIP": {
+                        "Ref": "PuppetMasterIP"
+                    },
+                    "PuppetAgentLinuxIP": {
+                        "Ref": "PuppetAgentLinuxIP"
+                    },
+                    "RemoteAdminCIDR": {
+                        "Ref": "RemoteAdminCIDR"
+                    },
+                    "QSS3BucketName": {
+                        "Ref": "QSS3BucketName"
+                    },
+                    "QSS3KeyPrefix": {
+                        "Ref": "QSS3KeyPrefix"
+                    }
+                }
+            }
+        }
+    }
+}

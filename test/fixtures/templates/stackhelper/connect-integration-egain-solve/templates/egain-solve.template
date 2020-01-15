@@ -1,0 +1,162 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+Description: eGain Solve integration for Amazon Connect Quick Start (qs-1o85952hu)
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+    - Label:
+        default: eGain Solve Configuration
+      Parameters:
+      - Baseurl
+      - Portalid
+      - Casebaseid
+    ParameterLabels:
+      Baseurl:
+        default: eGain URL
+      Portalid:
+        default: Portal Id
+      Casebaseid:
+        default: Casebase Id
+Parameters:
+  Baseurl:
+    AllowedPattern: ^https:\/\/[a-zA-Z0-9-\/\.]+$
+    ConstraintDescription: This URL must be a valid https URL.
+    Default: https://example.egain.cloud/system
+    Description: The eGain Application URL is needed to access the Casebase.
+    Type: String
+  Portalid:
+    AllowedPattern: ^[0-9]+$
+    ConstraintDescription: This Portal Id must be numeric.
+    Default: '123456789000000'
+    Description: This Portal Id is needed to access the Casebase.
+    Type: String
+  Casebaseid:
+    AllowedPattern: ^[0-9]+$
+    ConstraintDescription: This Casebase Id must be numeric.
+    Default: '123456789000000'
+    Description: This Casebase Id is needed to access the Casebase.
+    Type: String
+Rules:
+  RegionSupport:
+    Assertions:
+    - Assert:
+        Fn::Equals:
+        - Ref: AWS::Region
+        - us-east-1
+      AssertDescription: Region must be US East (N. Virginia) - us-east-1
+  ParameterDefaults:
+    Assertions:
+    - Assert:
+        Fn::Not:
+        - Fn::Equals:
+          - Ref: Baseurl
+          - https://example.egain.cloud/system
+      AssertDescription: Please provide a valid eGain Application URL.
+    - Assert:
+        Fn::Not:
+        - Fn::Equals:
+          - Ref: Portalid
+          - '123456789000000'
+      AssertDescription: Portal Id is required.
+    - Assert:
+        Fn::Not:
+        - Fn::Equals:
+          - Ref: Casebaseid
+          - '123456789000000'
+      AssertDescription: Casebase Id is required.
+Resources:
+  IntegrationTestFunctionExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Path: /
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+  IntegrationTestFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: main.handler
+      MemorySize: 128
+      Role:
+        Fn::GetAtt: IntegrationTestFunctionExecutionRole.Arn
+      Runtime: python3.6
+      Timeout: 30
+      Code:
+        S3Bucket: aws-quickstart
+        S3Key: connect-integration-egain-solve/functions/packages/integration-test/lambda.zip
+  IntegrationTest:
+    Type: Custom::IntegrationTest
+    Version: '1.0'
+    Properties:
+      ServiceToken:
+        Fn::GetAtt: IntegrationTestFunction.Arn
+      BASE_URL:
+        Ref: Baseurl
+      PORTAL_ID:
+        Ref: Portalid
+      CASEBASE_ID:
+        Ref: Casebaseid
+  IntegrationFunctionExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Path: /
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+  IntegrationFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: egain_casebase_call.lambda_handler
+      Runtime: python3.6
+      Description: Toolkit for Amazon Connect to access eGain Casebase for IVR and
+        Routing
+      MemorySize: 128
+      Timeout: 30
+      Role:
+        Fn::GetAtt: IntegrationFunctionExecutionRole.Arn
+      Environment:
+        Variables:
+          BASE_URL:
+            Ref: Baseurl
+          PORTAL_ID:
+            Ref: Portalid
+          CASEBASE_ID:
+            Ref: Casebaseid
+      Code:
+        S3Bucket: aws-quickstart
+        S3Key: connect-integration-egain-solve/functions/packages/integration/lambda.zip
+  IntegrationFunctionPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName:
+        Ref: IntegrationFunction
+      Action: lambda:InvokeFunction
+      Principal: connect.amazonaws.com
+      SourceAccount:
+        Ref: AWS::AccountId
+Outputs:
+  IntegrationFunctionExecutionRole:
+    Description: Lambda Function Execution Role ARN
+    Value:
+      Fn::GetAtt: IntegrationFunctionExecutionRole.Arn
+  IntegrationFunction:
+    Description: Toolkit for Amazon Connect to access eGain Casebase for IVR and Routing
+    Value:
+      Fn::GetAtt: IntegrationFunction.Arn
+...

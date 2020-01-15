@@ -1,0 +1,70 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Deploys an EFS file system and efs-provisioner (qs-1pipqrqhi)
+
+Parameters:
+  HelmLambdaArn:
+    Type: String
+  KubeConfigPath:
+    Type: String
+  KubeConfigKmsContext:
+    Type: String
+  InitialNodeGroupSecurityGroup:
+    Type: AWS::EC2::SecurityGroup::Id
+  PrivateSubnet1ID:
+    Type: AWS::EC2::Subnet::Id
+  PrivateSubnet2ID:
+    Type: AWS::EC2::Subnet::Id
+  PrivateSubnet3ID:
+    Type: AWS::EC2::Subnet::Id
+
+Resources:
+  EFSFileSystem:
+    Type: AWS::EFS::FileSystem
+    Properties: 
+      #Encrypted: Boolean
+      FileSystemTags:
+      - Key: Name
+        Value: cloudbees-core-efs-filesystem
+      #KmsKeyId: String
+      PerformanceMode: generalPurpose
+      ProvisionedThroughputInMibps: 160
+      ThroughputMode: provisioned
+  MountTargetPrivateSubnet1:
+    Type: AWS::EFS::MountTarget
+    Properties:
+      FileSystemId: !Ref EFSFileSystem
+      #IpAddress: String
+      SecurityGroups: [ !Ref InitialNodeGroupSecurityGroup ]
+      SubnetId: !Ref PrivateSubnet1ID
+  MountTargetPrivateSubnet2:
+    Type: AWS::EFS::MountTarget
+    Properties:
+      FileSystemId: !Ref EFSFileSystem
+      #IpAddress: String
+      SecurityGroups: [ !Ref InitialNodeGroupSecurityGroup ]
+      SubnetId: !Ref PrivateSubnet2ID
+  MountTargetPrivateSubnet3:
+    Type: AWS::EFS::MountTarget
+    Properties:
+      FileSystemId: !Ref EFSFileSystem
+      #IpAddress: String
+      SecurityGroups: [ !Ref InitialNodeGroupSecurityGroup ]
+      SubnetId: !Ref PrivateSubnet3ID
+  EFSProvisioner:
+    Type: "Custom::Helm"
+    Version: '1.0'
+    Properties:
+      ServiceToken: !Ref HelmLambdaArn
+      KubeConfigPath: !Ref KubeConfigPath
+      KubeConfigKmsContext: !Ref KubeConfigKmsContext
+      Namespace: efs-provisioner
+      Chart: stable/efs-provisioner
+      Values:
+        efsProvisioner.efsFileSystemId: !Ref EFSFileSystem
+        efsProvisioner.awsRegion: !Ref "AWS::Region"
+        nodeSelector.partition: masters
+
+Outputs:
+  EFSFileSystemID:
+    Description: EFS file system ID
+    Value: !Ref EFSFileSystem

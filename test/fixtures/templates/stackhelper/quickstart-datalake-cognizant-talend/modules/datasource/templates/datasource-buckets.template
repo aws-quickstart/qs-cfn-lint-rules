@@ -1,0 +1,131 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "S3 Demo Buckets",
+    "Parameters": {
+        "CreateEmr": {
+            "Description": "Create EMR log bucket.",
+            "Type": "String",
+            "Default": "true",
+            "AllowedValues": [
+                "true",
+                "false"
+            ]
+        }
+    },
+    "Mappings": {
+    },
+    "Conditions": {
+        "IsStandardIA": {
+            "Fn::Or": [
+                { "Fn::Equals": [ "us-gov-west-1", { "Ref": "AWS::Region" } ] },
+                { "Fn::Equals": [ "sa-east-1", { "Ref": "AWS::Region" } ] },
+                { "Fn::Equals": [ "ap-southeast-1", { "Ref": "AWS::Region" } ] }
+            ]
+        },
+        "CreateEmrCondition": {
+            "Fn::Equals": [
+                { "Ref": "CreateEmr" },
+                "true"
+            ]
+        }
+    },
+    "Resources": {
+        "TalendSourceBucket": {
+            "Type": "AWS::S3::Bucket",
+            "Properties": {
+                "AccessControl": "Private",
+                "LifecycleConfiguration": {
+                    "Rules": [
+                        {
+                            "Id": "Transition90daysRetain7yrs",
+                            "Status": "Disabled",
+                            "ExpirationInDays": 2555,
+                            "Transition": {
+                                "TransitionInDays": 90,
+                                "StorageClass": {
+                                    "Fn::If": [
+                                        "IsStandardIA",
+                                        "STANDARD_IA",
+                                        "GLACIER"
+                                    ]
+                                }
+                            }
+                        }
+                    ]
+                }
+            }
+        },
+        "TalendTargetBucket": {
+            "Type": "AWS::S3::Bucket",
+            "Properties": {
+                "AccessControl": "Private",
+                "LifecycleConfiguration": {
+                    "Rules": [
+                        {
+                            "Id": "Transition90daysRetain7yrs",
+                            "Status": "Disabled",
+                            "ExpirationInDays": 2555,
+                            "Transition": {
+                                "TransitionInDays": 90,
+                                "StorageClass": {
+                                    "Fn::If": [
+                                        "IsStandardIA",
+                                        "STANDARD_IA",
+                                        "GLACIER"
+                                    ]
+                                }
+                            }
+                        }
+                    ]
+                }
+            }
+        },
+        
+        "EmrLogBucket": {
+            "Type": "AWS::S3::Bucket",
+            "Condition": "CreateEmrCondition",
+            "Properties": {
+                "AccessControl": "Private",
+                "LifecycleConfiguration": {
+                    "Rules": [
+                        {
+                            "Id": "Transition90daysRetain7yrs",
+                            "Status": "Enabled",
+                            "ExpirationInDays": 2555,
+                            "Transition": {
+                                "TransitionInDays": 90,
+                                "StorageClass": {
+                                    "Fn::If": [
+                                        "IsStandardIA",
+                                        "STANDARD_IA",
+                                        "GLACIER"
+                                    ]
+                                }
+                            }
+                        }
+                    ]
+                }
+            }
+        }
+    },
+    "Outputs": {
+        "TalendSourceBucket": {
+            "Value": { "Ref": "TalendSourceBucket" },
+            "Export": { "Name": { "Fn::Sub": "${AWS::StackName}:TalendSourceBucket" } }
+        },
+        "TalendTargetBucket": {
+            "Value": { "Ref": "TalendTargetBucket" },
+            "Export": { "Name": { "Fn::Sub": "${AWS::StackName}:TalendTargetBucket" } }
+        },
+        "EmrLogBucket": {
+            "Condition": "CreateEmrCondition",
+            "Value": { "Ref": "EmrLogBucket" },
+            "Export": { "Name": { "Fn::Sub": "${AWS::StackName}:EmrLogBucket" } }
+        },
+        "EmrLogBucketDnsName": {
+            "Condition": "CreateEmrCondition",
+            "Value": { "Fn::GetAtt": [ "EmrLogBucket", "DomainName" ] },
+            "Export": { "Name": { "Fn::Sub": "${AWS::StackName}:EmrLogBucketDnsName" } }
+        }
+    }
+}

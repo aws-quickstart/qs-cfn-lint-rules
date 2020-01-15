@@ -1,0 +1,613 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "This master template creates a VPC infrastructure for a multi-AZ, multi-tier deployment of a workload on AWS. It deploys a VPC with bastions and a workload cluster behind an ELB. The cluster is configured to use an S3 bucket for storage  **WARNING** This template creates EC2 instances and related resources. You will be billed for the AWS resources used if you create a stack from this template. (qs-1puat847h)",
+    "Metadata": {
+        "AWS::CloudFormation::Interface": {
+            "ParameterGroups": [
+
+                {
+                    "Label": {
+                        "default": "Network configuration"
+                    },
+                    "Parameters": [
+                        "AvailabilityZones",
+                        "VPCCIDR",
+                        "PrivateSubnet1CIDR",
+                        "PrivateSubnet2CIDR",
+                        "PublicSubnet1CIDR",
+                        "PublicSubnet2CIDR",
+                        "RemoteAccessCIDR"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "Amazon EC2 configuration"
+                    },
+                    "Parameters": [
+                        "KeyPairName",
+                        "BastionAMIOS",
+                        "BastionInstanceType"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "TIBCO JasperReports nodes configuration"
+                    },
+                    "Parameters": [
+                        "WorkloadInstanceType",
+                        "WorkloadNodesMinSize",
+                        "WorkloadNodesDesiredCapacity",
+                        "WorkloadNodesMaxSize",
+                        "OperatorEmail",
+                        "NewBucket",
+                        "S3BucketName"
+
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "Database configuration"
+                    },
+                    "Parameters": [
+                        "RDSDbSize",
+                        "RDSUser",
+                        "RDSPassword",
+                        "DBName",
+                        "IncludeSamples"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "AWS Quick Start configuration"
+                    },
+                    "Parameters": [
+                        "QSS3BucketName",
+                        "QSS3KeyPrefix"
+                    ]
+                }
+
+            ],
+            "ParameterLabels": {
+                "AvailabilityZones": {
+                    "default": "Availability Zones"
+                },
+                "BastionAMIOS": {
+                    "default": "Bastion AMI operating system"
+                },
+                "BastionInstanceType": {
+                    "default": "Bastion instance type"
+                },
+                "KeyPairName": {
+                    "default": "Key pair name"
+                },
+                "OperatorEmail": {
+                    "default": "Operator email address"
+                },
+                "PrivateSubnet1CIDR": {
+                    "default": "Private subnet 1 CIDR"
+                },
+                "PrivateSubnet2CIDR": {
+                    "default": "Private subnet 2 CIDR"
+                },
+                "PublicSubnet1CIDR": {
+                    "default": "Public subnet 1 CIDR"
+                },
+                "PublicSubnet2CIDR": {
+                    "default": "Public subnet 2 CIDR"
+                },
+                "QSS3BucketName": {
+                    "default": "Quick Start S3 bucket name"
+                },
+                "QSS3KeyPrefix": {
+                    "default": "Quick Start S3 key prefix"
+                },
+                "RDSDbSize": {
+                    "default": "RDS database instance type"
+                },
+                "RDSUser": {
+                    "default": "RDS database user name"
+                },
+                "RDSPassword": {
+                    "default": "RDS database password"
+                },
+                "DBName": {
+                    "default": "RDS database name"
+                },
+                "RemoteAccessCIDR": {
+                    "default": "Allowed bastion external access CIDR"
+                },
+                "VPCCIDR": {
+                    "default": "VPC CIDR"
+                },
+                "WorkloadInstanceType": {
+                    "default": "Servers instance type"
+                },
+                "WorkloadNodesDesiredCapacity": {
+                    "default": "Nodes desired capacity"
+                },
+                "WorkloadNodesMaxSize": {
+                    "default": "Nodes maximum size"
+                },
+                "WorkloadNodesMinSize": {
+                    "default": "Nodes minimum size"
+                },
+                "NewBucket" : {
+                    "default" : "S3 bucket for license and customization"
+                },
+                "S3BucketName": {
+                    "default" : "Name of S3 bucket for license and customization"
+                },
+                "IncludeSamples": {
+                    "default" : "Include samples"
+                }
+
+            }
+        }
+    },
+    "Parameters": {
+        "AvailabilityZones": {
+            "Description": "List of Availability Zones to use for the subnets in the VPC. Only two Availability Zones are used for this deployment, and the logical order of your selections is preserved.",
+            "Type": "List<AWS::EC2::AvailabilityZone::Name>",
+            "MinLength": "1",
+            "MaxLength": "64",
+            "ConstraintDescription" : "Parameter value is Required"
+
+        },
+        "BastionAMIOS": {
+            "AllowedValues": [
+                "Amazon-Linux-HVM",
+                "CentOS-7-HVM",
+                "Ubuntu-Server-14.04-LTS-HVM",
+                "Ubuntu-Server-16.04-LTS-HVM"
+            ],
+            "Default": "Amazon-Linux-HVM",
+            "Description": "The Linux distribution for the AMI to be used for the bastion instances.",
+            "Type": "String"
+        },
+        "BastionInstanceType": {
+            "AllowedValues": [
+                "t2.nano",
+                "t2.micro",
+                "t2.small",
+                "t2.medium",
+                "t2.large",
+                "m3.large",
+                "m3.xlarge",
+                "m3.2xlarge",
+                "m4.large",
+                "m4.xlarge",
+                "m4.2xlarge",
+                "m4.4xlarge"
+            ],
+            "Default": "t2.micro",
+            "Description": "Amazon EC2 instance type for the bastion instances.",
+            "Type": "String"
+        },
+        "KeyPairName": {
+            "Description": "The name of an existing public/private key pair, which allows you to securely connect to your instance after it launches.",
+            "Type": "AWS::EC2::KeyPair::KeyName",
+            "MinLength": "1",
+            "MaxLength": "64",
+            "ConstraintDescription" : "Parameter value is Required"
+        },
+        "OperatorEmail": {
+            "AllowedPattern": "(([a-zA-Z0-9_\\-\\.]+)@((\\[[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}\\.)|(([a-zA-Z0-9\\-]+\\.)+))([a-zA-Z]{2,4}|[0-9]{1,3})(\\]?))||(^$)",
+            "ConstraintDescription": "Must be a valid email address.",
+            "Description": "(Optional) Email address that notifications of any scaling operations will be sent to.",
+            "Type": "String"
+        },
+        "PrivateSubnet1CIDR": {
+            "AllowedPattern": "^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\\/(1[6-9]|2[0-8]))$",
+            "ConstraintDescription": "CIDR block parameter must be in the form x.x.x.x/16-28",
+            "Default": "10.0.0.0/19",
+            "Description": "CIDR block for private subnet 1 located in Availability Zone 1.",
+            "Type": "String"
+        },
+        "PrivateSubnet2CIDR": {
+            "AllowedPattern": "^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\\/(1[6-9]|2[0-8]))$",
+            "ConstraintDescription": "CIDR block parameter must be in the form x.x.x.x/16-28",
+            "Default": "10.0.32.0/19",
+            "Description": "CIDR block for private subnet 2 located in Availability Zone 2.",
+            "Type": "String"
+        },
+        "PublicSubnet1CIDR": {
+            "AllowedPattern": "^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\\/(1[6-9]|2[0-8]))$",
+            "ConstraintDescription": "CIDR block parameter must be in the form x.x.x.x/16-28",
+            "Default": "10.0.128.0/20",
+            "Description": "CIDR block for the public (DMZ) subnet 1 located in Availability Zone 1.",
+            "Type": "String"
+        },
+        "PublicSubnet2CIDR": {
+            "AllowedPattern": "^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\\/(1[6-9]|2[0-8]))$",
+            "ConstraintDescription": "CIDR block parameter must be in the form x.x.x.x/16-28",
+            "Default": "10.0.144.0/20",
+            "Description": "CIDR block for the public (DMZ) subnet 2 located in Availability Zone 2.",
+            "Type": "String"
+        },
+        "QSS3BucketName": {
+            "AllowedPattern": "^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$",
+            "ConstraintDescription": "Quick Start bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-).",
+            "Default": "aws-quickstart",
+            "Description": "S3 bucket name for the Quick Start assets. This string can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-).",
+            "Type": "String"
+        },
+        "QSS3KeyPrefix": {
+            "AllowedPattern": "^[0-9a-zA-Z-/]*$",
+            "ConstraintDescription": "Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).",
+            "Default": "quickstart-tibco-jaspersoft/",
+            "Description": "S3 key prefix for the Quick Start assets. Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).",
+            "Type": "String"
+        },
+        "RemoteAccessCIDR": {
+            "AllowedPattern": "^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\\/([0-9]|[1-2][0-9]|3[0-2]))$",
+            "ConstraintDescription": "CIDR block parameter must be in the form x.x.x.x/x",
+            "Description": "The CIDR IP range that is permitted to access the bastions. We recommend that you set this value to a trusted IP range.",
+            "Type": "String"
+        },
+        "VPCCIDR": {
+            "AllowedPattern": "^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\\/(1[6-9]|2[0-8]))$",
+            "ConstraintDescription": "CIDR block parameter must be in the form x.x.x.x/16-28",
+            "Default": "10.0.0.0/16",
+            "Description": "CIDR block for the VPC.",
+            "Type": "String"
+        },
+        "RDSDbSize": {
+            "Description" : "The instance type for the Amazon RDS database. Must be one of the following valid RDS instance types (db.m3.medium | db.m3.large | db.m3.xlarge).",
+            "Type" : "String",
+            "Default" : "db.t2.medium",
+            "AllowedValues" : [ "db.t2.small","db.t2.medium","db.t2.large","db.m4.large","db.m4.xlarge","db.m4.2xlarge"],
+            "ConstraintDescription" : "Must be one of the following valid RDS instance types ( db.t2.small | db.t2.medium | db.t2.large | db.m4.large | db.m4.xlarge | db.m4.2xlarge)."
+        },
+        "RDSUser" : {
+            "Description" : "Master user name for the RDS database.",
+            "Type" : "String",
+            "MinLength": "1",
+            "MaxLength": "64",
+            "AllowedPattern" : "[-_a-zA-Z0-9]*",
+            "ConstraintDescription" : "It can contain only alphanumeric characters and underscores."
+        },
+        "RDSPassword" : {
+            "Description" : "Master password for the RDS database.",
+            "Type" : "String",
+            "MinLength": "1",
+            "MaxLength": "64",
+            "NoEcho" : "true",
+            "AllowedPattern" : "[-_a-zA-Z0-9]*",
+            "ConstraintDescription" : "It can contain only alphanumeric characters and underscores."
+        },
+        "WorkloadInstanceType": {
+            "AllowedValues": [
+                "m4.large","m4.xlarge","m4.2xlarge","m4.4xlarge","m4.10xlarge","r3.xlarge","r3.2xlarge","c4.xlarge","t2.medium","m5.large"
+            ],
+            "ConstraintDescription": "Must contain valid instance type",
+            "Default": "m4.xlarge",
+            "Description": "Amazon EC2 instance type for the TIBCO JasperReports Server instances.",
+            "Type": "String"
+        },
+        "WorkloadNodesDesiredCapacity": {
+            "Default": "2",
+            "Description": "The desired number of nodes in the Auto Scaling group.",
+            "Type": "String"
+        },
+        "WorkloadNodesMaxSize": {
+            "Default": "4",
+            "Description": "The maximum number of nodes in the Auto Scaling group.",
+            "Type": "String",
+            "MinLength": "1",
+            "MaxLength": "64",
+            "ConstraintDescription" : "Parameter value is Required"
+        },
+        "WorkloadNodesMinSize": {
+            "Default": "2",
+            "Description": "The minimum number of nodes in the Auto Scaling group.",
+            "Type": "String",
+            "MinLength": "1",
+            "MaxLength": "64",
+            "ConstraintDescription" : "Parameter value is Required"
+        },
+        "NewBucket": {
+            "AllowedValues": [
+                "Yes",
+                "No"
+            ],
+            "ConstraintDescription": "The value should be Yes/No.",
+            "Default": "No",
+            "Description": "S3 bucket creation. Choose Yes to create a new bucket can upload third-party drivers, OSGI bundles, certificates, plugins etc. to extend the base image later.",
+            "Type": "String"
+        },
+        "S3BucketName": {
+            "Description" : "Name of the new S3 bucket. Enter a unique name that does not include uppercase characters.",
+            "Type" : "String",
+            "Default" : "new-bucket-for-license-and-customization",
+            "MinLength": "1",
+            "MaxLength": "64"
+        },
+        "DBName" : {
+            "Description" : "Database name that will be used for repository creation.",
+            "Type" : "String",
+            "MinLength": "1",
+            "MaxLength": "64",
+            "Default": "jasperserver",
+            "AllowedPattern" : "[-_a-zA-Z0-9]*",
+            "ConstraintDescription" : "It can contain only alphanumeric characters and underscores."
+        },
+        "IncludeSamples" : {
+            "AllowedValues": [
+                "Yes",
+                "No"
+            ],
+            "ConstraintDescription": "The value should be Yes/No.",
+            "Default": "No",
+            "Description": "Sample sugarcrm and foodmart databases. Choose Yes if you want to use the sample data.",
+            "Type": "String"
+        }
+
+    },
+    "Resources": {
+        "VPCStack": {
+            "Type": "AWS::CloudFormation::Stack",
+            "Properties": {
+                "TemplateURL": {
+                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}submodules/quickstart-aws-vpc/templates/aws-vpc.template"
+                },
+                "Parameters": {
+                    "AvailabilityZones": {
+                        "Fn::Join": [
+                            ",",
+                            {
+                                "Ref": "AvailabilityZones"
+                            }
+                        ]
+                    },
+                    "KeyPairName": {
+                        "Ref": "KeyPairName"
+                    },
+                    "NumberOfAZs": "2",
+                    "PrivateSubnet1ACIDR": {
+                        "Ref": "PrivateSubnet1CIDR"
+                    },
+                    "PrivateSubnet2ACIDR": {
+                        "Ref": "PrivateSubnet2CIDR"
+                    },
+                    "PublicSubnet1CIDR": {
+                        "Ref": "PublicSubnet1CIDR"
+                    },
+                    "PublicSubnet2CIDR": {
+                        "Ref": "PublicSubnet2CIDR"
+                    },
+                    "VPCCIDR": {
+                        "Ref": "VPCCIDR"
+                    }
+                }
+            }
+        },
+        "BastionStack": {
+            "DependsOn": "VPCStack",
+            "Type": "AWS::CloudFormation::Stack",
+            "Properties": {
+                "TemplateURL": {
+                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}submodules/quickstart-linux-bastion/templates/linux-bastion.template"
+                },
+                "Parameters": {
+                    "BastionAMIOS": {
+                        "Ref": "BastionAMIOS"
+                    },
+                    "BastionInstanceType": {
+                        "Ref": "BastionInstanceType"
+                    },
+                    "KeyPairName": {
+                        "Ref": "KeyPairName"
+                    },
+                    "PublicSubnet1ID": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.PublicSubnet1ID"
+                        ]
+                    },
+                    "PublicSubnet2ID": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.PublicSubnet2ID"
+                        ]
+                    },
+                    "QSS3BucketName": {
+                        "Ref": "QSS3BucketName"
+                    },
+                    "QSS3KeyPrefix": {
+                        "Fn::Sub": "${QSS3KeyPrefix}submodules/quickstart-linux-bastion/"
+                    },
+                    "RemoteAccessCIDR": {
+                        "Ref": "RemoteAccessCIDR"
+                    },
+                    "VPCID": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.VPCID"
+                        ]
+                    }
+                }
+            }
+        },
+        "DatabaseStack" : {
+            "DependsOn": "BastionStack",
+            "Type": "AWS::CloudFormation::Stack",
+            "Properties": {
+                "TemplateURL": {
+                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}templates/rds-postgres-cluster.template"
+                },
+                "Parameters": {
+                    "RDSDbSize": {
+                        "Ref": "RDSDbSize"
+                    },
+                    "RDSUser": {
+                        "Ref": "RDSUser"
+                    },
+                    "RDSPassword": {
+                        "Ref": "RDSPassword"
+                    },
+                    "PrivateSubnet1ID": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.PrivateSubnet1AID"
+                        ]
+                    },
+                    "PrivateSubnet2ID": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.PrivateSubnet2AID"
+                        ]
+                    },
+                    "AvailabilityZones": {
+                        "Fn::Join": [
+                            ",",
+                            {
+                                "Ref": "AvailabilityZones"
+                            }
+                        ]
+                    },
+                    "VPCID": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.VPCID"
+                        ]
+                    },
+                    "VPCCIDR": {
+                        "Ref": "VPCCIDR"
+                    }
+                }
+            }
+
+        },
+        "WorkloadStackClustered": {
+            "DependsOn": "DatabaseStack",
+            "Type": "AWS::CloudFormation::Stack",
+            "Properties": {
+                "TemplateURL": {
+                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}templates/tibco-jrs-cluster-existing-infrastructure.template"
+                },
+                "Parameters": {
+                    "WorkloadInstanceType": {
+                        "Ref": "WorkloadInstanceType"
+                    },
+                    "WorkloadNodesDesiredCapacity": {
+                        "Ref": "WorkloadNodesDesiredCapacity"
+                    },
+                    "WorkloadNodesMaxSize": {
+                        "Ref": "WorkloadNodesMaxSize"
+                    },
+                    "WorkloadNodesMinSize": {
+                        "Ref": "WorkloadNodesMinSize"
+                    },
+                    "BastionSecurityGroupID": {
+                        "Fn::GetAtt": [
+                            "BastionStack",
+                            "Outputs.BastionSecurityGroupID"
+                        ]
+                    },
+                    "KeyPairName": {
+                        "Ref": "KeyPairName"
+                    },
+                    "OperatorEmail": {
+                        "Ref": "OperatorEmail"
+                    },
+                    "PrivateSubnet1ID": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.PrivateSubnet1AID"
+                        ]
+                    },
+                    "PrivateSubnet2ID": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.PrivateSubnet2AID"
+                        ]
+                    },
+                    "PublicSubnet1ID": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.PublicSubnet1ID"
+                        ]
+                    },
+                    "PublicSubnet2ID": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.PublicSubnet2ID"
+                        ]
+                    },
+                    "VPCID": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.VPCID"
+                        ]
+                    },
+                    "RDSUser": {
+                        "Ref": "RDSUser"
+                    },
+                    "RDSPassword": {
+                        "Ref": "RDSPassword"
+                    },
+                    "RDSAddress": {
+                        "Fn::GetAtt": [
+                            "DatabaseStack",
+                            "Outputs.Address"
+                        ]
+                    },
+                    "RDSPort": {
+                        "Fn::GetAtt": [
+                            "DatabaseStack",
+                            "Outputs.Port"
+                        ]
+                    },
+                    "DBName" : { "Ref": "DBName" },
+                    "IncludeSamples" : { "Ref": "IncludeSamples" },
+                    "NewBucket": {
+                        "Ref": "NewBucket"
+                    },
+                    "S3BucketName" : {
+                        "Ref": "S3BucketName"
+                    }
+
+                }
+            }
+        }
+
+    },
+    "Outputs": {
+      "GettingStartedPublicURL": {
+        "Description": "TIBCO JasperReports Getting started URL",
+        "Value": {
+          "Fn::GetAtt": [
+            "WorkloadStackClustered",
+            "Outputs.GettingStartedPublicURL"
+          ]
+        }
+      },
+      "S3CustomizationBucket": {
+        "Description" : "S3 bucket where you can upload your license file \"jasperserver.license\" and customizations for product",
+        "Value": {
+          "Fn::GetAtt": [
+            "WorkloadStackClustered",
+            "Outputs.S3CustomizationBucket"
+          ]
+        }
+      },
+      "AutoscalingGroup" : {
+        "Description" : "TIBCO JasperReports Autoscaling Group",
+        "Value": {
+          "Fn::GetAtt": [
+            "WorkloadStackClustered",
+            "Outputs.AutoscalingGroup"
+          ]
+        }
+
+      },
+      "Login" : {
+        "Value": "superuser",
+        "Description": "Master user name"
+      },
+      "Password" : {
+        "Value" :  "Same as provided password for database",
+        "Description" : "Initial master user password"
+      }
+    }
+}

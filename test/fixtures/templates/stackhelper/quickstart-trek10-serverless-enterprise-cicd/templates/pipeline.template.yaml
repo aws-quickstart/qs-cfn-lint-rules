@@ -1,0 +1,346 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  (qs-1ph8nehb7) 
+  Serverless CICD Quick Start
+  Codepipeline shared resources and security
+
+Parameters:
+  AppName:
+    Description: Application name, used for the repository and child stack name
+    Type: String
+    Default: Sample
+  BuildImageName:
+    Description: Docker image for application build
+    Type: String
+    Default: aws/codebuild/nodejs:10.1.0
+  DevAwsAccountId:
+    Description: AWS account ID for development account
+    Type: String
+    AllowedPattern: (\d{12}|^$)
+    ConstraintDescription: Must be an AWS account ID
+    Default: '159527342995'
+  ProdAwsAccountId:
+    Description: AWS account ID for production account
+    Type: String
+    AllowedPattern: (\d{12}|^$)
+    ConstraintDescription: Must be an AWS account ID
+    Default: '159527342995'
+  Branch:
+    Description: Repository branch name
+    Type: String
+    Default: master
+  Suffix:
+    Description: Repository branch name (adapted to use in CloudFormation stack name)
+    Type: String
+    Default: master
+  ArtifactBucket:
+    Description: Artifact S3 bucket
+    Type: String
+  ArtifactBucketKeyArn:
+    Description: ARN of the artifact bucket KMS key
+    Type: String
+  PipelineServiceRoleArn:
+    Description: Pipeline service role ARN
+    Type: String
+  SamTranslationBucket:
+    Description: S3 bucket for SAM translations
+    Type: String
+  DynamicPipelineCleanupLambdaArn:
+    Description: ARN of Lambda function to clean up dynamic pipeline
+    Type: String
+  SecretArnDev:
+    Description: ARN for Secrets Manager secret for dev
+    Type: String
+  SecretArnProd:
+    Description: ARN for Secrets Manager secret for production
+    Type: String
+    Default: ''
+  SecretsManagerKey:
+    Description: KMS key for the use of secrets across accounts
+    Type: String
+
+Conditions:
+  IsProdStage: !Equals [ !Ref Branch, 'master' ]
+
+Resources:
+  PipelineNotificationsTopic:
+    Condition: IsProdStage
+    Type: AWS::SNS::Topic
+    Properties:
+      DisplayName: !Sub ${AppName}-notifications-${AWS::Region}
+
+  DynamicPipelineCleanupDev:
+    Type: "AWS::CloudFormation::CustomResource"
+    Version: '1.0'
+    Properties:
+      ServiceToken: !Ref DynamicPipelineCleanupLambdaArn
+      RoleArn: !Sub arn:aws:iam::${DevAwsAccountId}:role/CodePipelineServiceRole-${AWS::Region}-${DevAwsAccountId}-dev
+      Region: !Ref AWS::Region
+      StackName:
+        !If
+          - IsProdStage
+          - !Sub ${AppName}-dev
+          - !Sub ${AppName}-dev-${Suffix}
+
+  DynamicPipelineCleanupProd:
+    Condition: IsProdStage
+    Type: "AWS::CloudFormation::CustomResource"
+    Version: '1.0'
+    Properties:
+      ServiceToken: !Ref DynamicPipelineCleanupLambdaArn
+      RoleArn: !Sub arn:aws:iam::${ProdAwsAccountId}:role/CodePipelineServiceRole-${AWS::Region}-${ProdAwsAccountId}-prod
+      Region: !Ref AWS::Region
+      StackName: !Sub ${AppName}-prod
+
+  Pipeline:
+    Type: AWS::CodePipeline::Pipeline
+    Properties:
+      RoleArn: !Ref PipelineServiceRoleArn
+      Stages:
+        - Name: Source
+          Actions:
+            - Name: CodeCommitSourceAction
+              RunOrder: 1
+              ActionTypeId:
+                Category: Source
+                Provider: CodeCommit
+                Owner: AWS
+                Version: '1'
+              OutputArtifacts:
+                - Name: Source
+              Configuration:
+                RepositoryName: !Ref AppName
+                BranchName: !Ref Branch
+        - Name: Build
+          Actions:
+            - Name: Build
+              RunOrder: 1
+              InputArtifacts:
+                - Name: Source
+              ActionTypeId:
+                Category: Build
+                Provider: CodeBuild
+                Owner: AWS
+                Version: '1'
+              Configuration:
+                ProjectName: !Ref BuildProject
+              OutputArtifacts:
+                - Name: BuildArtifact
+        - Name: DeployToDev
+          Actions:
+            - Name: CreateChangeSet
+              RunOrder: 1
+              InputArtifacts:
+                - Name: BuildArtifact
+              ActionTypeId:
+                Category: Deploy
+                Provider: CloudFormation
+                Owner: AWS
+                Version: '1'
+              Configuration:
+                ActionMode: CHANGE_SET_REPLACE
+                Capabilities: CAPABILITY_IAM
+                ChangeSetName: !Sub ${AppName}-change-set-${Suffix}
+                RoleArn: !Sub arn:aws:iam::${DevAwsAccountId}:role/CodePipelineDeploymentRole-${AWS::Region}-${DevAwsAccountId}-dev
+                StackName:
+                  !If
+                    - IsProdStage
+                    - !Sub ${AppName}-dev
+                    - !Sub ${AppName}-dev-${Suffix}
+                TemplatePath: BuildArtifact::sample-transformed.yaml
+                TemplateConfiguration: BuildArtifact::sample-configuration-dev.json
+              RoleArn: !Sub arn:aws:iam::${DevAwsAccountId}:role/CodePipelineServiceRole-${AWS::Region}-${DevAwsAccountId}-dev
+            - Name: DeployChangeSet
+              RunOrder: 2
+              ActionTypeId:
+                Category: Deploy
+                Provider: CloudFormation
+                Owner: AWS
+                Version: '1'
+              Configuration:
+                ActionMode: CHANGE_SET_EXECUTE
+                Capabilities: CAPABILITY_IAM
+                ChangeSetName: !Sub ${AppName}-change-set-${Suffix}
+                RoleArn: !Sub arn:aws:iam::${DevAwsAccountId}:role/CodePipelineDeploymentRole-${AWS::Region}-${DevAwsAccountId}-dev
+                StackName:
+                  !If
+                    - IsProdStage
+                    - !Sub ${AppName}-dev
+                    - !Sub ${AppName}-dev-${Suffix}
+              RoleArn: !Sub arn:aws:iam::${DevAwsAccountId}:role/CodePipelineServiceRole-${AWS::Region}-${DevAwsAccountId}-dev
+            - Name: SmokeTest
+              RunOrder: 4
+              InputArtifacts:
+                - Name: Source
+              ActionTypeId:
+                Category: Build
+                Provider: CodeBuild
+                Owner: AWS
+                Version: '1'
+              Configuration:
+                ProjectName: !Ref SmokeTestDevProject
+        - !If
+          - IsProdStage
+          - Name: DeployToProd
+            Actions:
+              - Name: CreateChangeSet
+                RunOrder: 1
+                InputArtifacts:
+                  - Name: BuildArtifact
+                ActionTypeId:
+                  Category: Deploy
+                  Provider: CloudFormation
+                  Owner: AWS
+                  Version: '1'
+                Configuration:
+                  ActionMode: CHANGE_SET_REPLACE
+                  Capabilities: CAPABILITY_IAM
+                  ChangeSetName: !Sub ${AppName}-change-set
+                  RoleArn: !Sub arn:aws:iam::${ProdAwsAccountId}:role/CodePipelineDeploymentRole-${AWS::Region}-${ProdAwsAccountId}-prod
+                  StackName:
+                     !Sub ${AppName}-prod
+                  TemplatePath: BuildArtifact::sample-transformed.yaml
+                  TemplateConfiguration: BuildArtifact::sample-configuration-prod.json
+                RoleArn: !Sub arn:aws:iam::${ProdAwsAccountId}:role/CodePipelineServiceRole-${AWS::Region}-${ProdAwsAccountId}-prod
+              - Name: Approval
+                RunOrder: 2
+                ActionTypeId:
+                  Category: Approval
+                  Provider: Manual
+                  Owner: AWS
+                  Version: '1'
+                Configuration:
+                  NotificationArn: !Ref PipelineNotificationsTopic
+                  # ExternalEntityLink: "http://example.com"
+                  # CustomData: "The latest changes include feedback from Bob."
+              - Name: DeployChangeSet
+                RunOrder: 3
+                ActionTypeId:
+                  Category: Deploy
+                  Provider: CloudFormation
+                  Owner: AWS
+                  Version: '1'
+                Configuration:
+                  ActionMode: CHANGE_SET_EXECUTE
+                  Capabilities: CAPABILITY_IAM
+                  ChangeSetName: !Sub ${AppName}-change-set
+                  RoleArn: !Sub arn:aws:iam::${ProdAwsAccountId}:role/CodePipelineDeploymentRole-${AWS::Region}-${ProdAwsAccountId}-prod
+                  StackName: !Sub ${AppName}-prod
+                RoleArn: !Sub arn:aws:iam::${ProdAwsAccountId}:role/CodePipelineServiceRole-${AWS::Region}-${ProdAwsAccountId}-prod
+              - Name: SmokeTest
+                RunOrder: 5
+                InputArtifacts:
+                  - Name: Source
+                ActionTypeId:
+                  Category: Build
+                  Provider: CodeBuild
+                  Owner: AWS
+                  Version: '1'
+                Configuration:
+                  ProjectName: !Ref SmokeTestProdProject
+          - !Ref AWS::NoValue
+      ArtifactStore:
+        Type: S3
+        Location: !Ref ArtifactBucket
+        EncryptionKey:
+          Id: !Ref ArtifactBucketKeyArn
+          Type: KMS
+
+  BuildProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Artifacts:
+        Type: CODEPIPELINE
+      Source:
+        Type: CODEPIPELINE
+        BuildSpec: buildspec.build.yaml
+      Environment:
+        ComputeType: BUILD_GENERAL1_SMALL
+        Type: LINUX_CONTAINER
+        Image: !Ref BuildImageName
+        EnvironmentVariables:
+          - Name: AWS_ACCOUNT_ID
+            Value: !Ref AWS::AccountId
+          - Name: SAM_BUCKET
+            Value: !Ref SamTranslationBucket
+          - Name: SECRET_ARN_DEV
+            Value: !Ref SecretArnDev
+          - Name: SECRET_ARN_PROD
+            Value: !Ref SecretArnProd
+          - Name: SECRET_MANAGER_KEY
+            Value: !Ref SecretsManagerKey
+      ServiceRole: !Ref PipelineServiceRoleArn
+      EncryptionKey: !Ref ArtifactBucketKeyArn
+
+  SmokeTestDevProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Artifacts:
+        Type: CODEPIPELINE
+      Source:
+        Type: CODEPIPELINE
+        BuildSpec: buildspec.smoketest.yaml
+      Environment:
+        ComputeType: BUILD_GENERAL1_SMALL
+        Type: LINUX_CONTAINER
+        Image: !Ref BuildImageName
+        EnvironmentVariables:
+          - Name: STACK_NAME
+            Type: PLAINTEXT
+            Value:
+              !If
+                - IsProdStage
+                - !Sub ${AppName}-dev
+                - !Sub ${AppName}-dev-${Suffix}
+          - Name: ROLE_ARN
+            Type: PLAINTEXT
+            Value: !Sub arn:aws:iam::${DevAwsAccountId}:role/CodePipelineServiceRole-${AWS::Region}-${DevAwsAccountId}-dev
+      ServiceRole: !Ref PipelineServiceRoleArn
+
+  SmokeTestProdProject:
+    Condition: IsProdStage
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Artifacts:
+        Type: CODEPIPELINE
+      Source:
+        Type: CODEPIPELINE
+        BuildSpec: buildspec.smoketest.yaml
+      Environment:
+        ComputeType: BUILD_GENERAL1_SMALL
+        Type: LINUX_CONTAINER
+        Image: !Ref BuildImageName
+        EnvironmentVariables:
+          - Name: STACK_NAME
+            Type: PLAINTEXT
+            Value: !Sub ${AppName}-prod
+          - Name: ROLE_ARN
+            Type: PLAINTEXT
+            Value: !Sub arn:aws:iam::${ProdAwsAccountId}:role/CodePipelineServiceRole-${AWS::Region}-${ProdAwsAccountId}-prod
+      ServiceRole: !Ref PipelineServiceRoleArn
+
+Outputs:
+  PipelineNotificationTopic:
+    Condition: IsProdStage
+    Description: Notification SNS ARN for shared pipeline notificiations
+    Value: !Ref PipelineNotificationsTopic
+    Export:
+      Name: !Sub ${AWS::StackName}-PipelineNotificationTopic
+  PipelineNotificationTopicName:
+    Condition: IsProdStage
+    Description: Repo activity notifications topic name
+    Value: !GetAtt PipelineNotificationsTopic.TopicName
+    Export:
+      Name: !Sub ${AWS::StackName}-PipelineNotificationTopicName
+  DevAccountId:
+    Condition: IsProdStage
+    Description: AWS account ID for dev that was passed in as a parameter
+    Value: !Ref DevAwsAccountId
+    Export:
+      Name: !Sub ${AppName}-DevAwsAccountId
+  ProdAccountId:
+    Condition: IsProdStage
+    Description: AWS account ID for prod that was passed in as a parameter
+    Value: !Ref ProdAwsAccountId
+    Export:
+      Name: !Sub ${AppName}-ProdAwsAccountId

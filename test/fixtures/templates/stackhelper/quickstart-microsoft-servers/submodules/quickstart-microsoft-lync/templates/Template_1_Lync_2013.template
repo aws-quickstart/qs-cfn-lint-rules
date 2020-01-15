@@ -1,0 +1,2328 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "QS(0010) - This template deploys two Lync Server 2013 Standard Edition servers. This template also deploys the required AD architecture outlined in \"Implementing Active Directory Domain Services in the AWS Cloud\" **WARNING** This template creates Amazon EC2 Windows instance and related resources. You will be billed for the AWS resources used if you create a stack from this template.",
+    "Parameters": {
+        "KeyPairName": {
+            "Description": "Public/private key pairs allow you to securely connect to your instance after it launches",
+            "Type": "AWS::EC2::KeyPair::KeyName"
+        },
+        "DomainMemberSGID": {
+            "Description": "ID of the Domain Member Security Group (e.g., sg-7f16e910)",
+            "Type": "AWS::EC2::SecurityGroup::Id"
+        },
+        "VPC": {
+            "Description": "ID of the VPC (e.g., vpc-0343606e)",
+            "Type": "AWS::EC2::VPC::Id"
+        },
+        "PublicSubnet1": {
+            "Description": "ID of the public subnet in AZ1 (e.g., subnet-a0246dcd)",
+            "Type": "AWS::EC2::Subnet::Id"
+        },
+        "PublicSubnet2": {
+            "Description": "ID of the public subnet in AZ2 (e.g., subnet-a0246dcd)",
+            "Type": "AWS::EC2::Subnet::Id"
+        },
+        "PrivateSubnet1": {
+            "Description": "ID of the private subnet in AZ1 (e.g., subnet-a0246dcd)",
+            "Type": "AWS::EC2::Subnet::Id"
+        },
+        "PrivateSubnet2": {
+            "Description": "ID of the private subnet in AZ2 (e.g., subnet-a0246dcd)",
+            "Type": "AWS::EC2::Subnet::Id"
+        },
+        "ADServer1PrivateIp": {
+            "Description": "Fixed private IP for the first existing Active Directory server located in AZ1",
+            "Type": "String",
+            "Default": "10.0.0.10"
+        },
+        "ADServer2PrivateIp": {
+            "Description": "Fixed private IP for the second existing Active Directory serverr located in AZ2",
+            "Type": "String",
+            "Default": "10.0.64.10"
+        },
+        "DomainDNSName": {
+            "Description": "Fully qualified domain name (FQDN) of the forest root domain e.g. corp.example.com",
+            "Type": "String",
+            "Default": "example.com",
+            "MinLength": "3",
+            "MaxLength": "25",
+            "AllowedPattern": "[a-zA-Z0-9]+\\..+"
+        },
+        "DomainNetBIOSName": {
+            "Description": "NetBIOS name of the domain (upto 15 characters) for users of earlier versions of Windows e.g. CORP",
+            "Type": "String",
+            "Default": "example",
+            "MinLength": "1",
+            "MaxLength": "15",
+            "AllowedPattern": "[a-zA-Z0-9]+"
+        },
+        "DomainAdminUser": {
+            "Description": "User name for the account that will be added as Domain Administrator. This is separate from the default \"Administrator\" account",
+            "Type": "String",
+            "Default": "StackAdmin",
+            "MinLength": "5",
+            "MaxLength": "25",
+            "AllowedPattern": "[a-zA-Z0-9]*"
+        },
+        "DomainAdminPassword": {
+            "Description": "Password for the domain admin user. Must be at least 8 characters containing letters, numbers and symbols. This password will also be set for the local administrator account on each Lync edge server, if configured.",
+            "Type": "String",
+            "MinLength": "8",
+            "MaxLength": "32",
+            "AllowedPattern": "(?=^.{6,255}$)((?=.*\\d)(?=.*[A-Z])(?=.*[a-z])|(?=.*\\d)(?=.*[^A-Za-z0-9])(?=.*[a-z])|(?=.*[^A-Za-z0-9])(?=.*[A-Z])(?=.*[a-z])|(?=.*\\d)(?=.*[A-Z])(?=.*[^A-Za-z0-9]))^.*",
+            "NoEcho": "true"
+        },
+        "ADServerNetBIOSName1": {
+            "Description": "NetBIOS name of the existing Domain Controller in AZ1",
+            "Type": "String",
+            "Default": "DC1",
+            "MinLength": "1",
+            "MaxLength": "15",
+            "AllowedPattern": "[a-zA-Z0-9]+"
+        },
+        "ADServerNetBIOSName2": {
+            "Description": "NetBIOS name of the existing Domain Controller in AZ2",
+            "Type": "String",
+            "Default": "DC2",
+            "MinLength": "1",
+            "MaxLength": "15",
+            "AllowedPattern": "[a-zA-Z0-9]+"
+        },
+        "FE1PrivateIp": {
+            "Description": "Primary private IP for the first Lync Front-End Server",
+            "Type": "String",
+            "Default": "10.0.0.160"
+        },
+        "FE2PrivateIp": {
+            "Description": "Primary private IP for the second Lync Front-End Server",
+            "Type": "String",
+            "Default": "10.0.64.160"
+        },
+        "LE1PrivateIp": {
+            "Description": "Primary private IP for the first Lync Edge Server",
+            "Type": "String",
+            "Default": "10.0.0.161"
+        },
+        "LE2PrivateIp": {
+            "Description": "Primary private IP for the second Edge Server",
+            "Type": "String",
+            "Default": "10.0.64.161"
+        },
+        "LE1PublicIp": {
+            "Description": "Primary public subnet IP for the first Lync Edge Server",
+            "Type": "String",
+            "Default": "10.0.32.161"
+        },
+        "LE2PublicIp": {
+            "Description": "Primary public subnet IP for the second Edge Server",
+            "Type": "String",
+            "Default": "10.0.96.161"
+        },
+        "LyncFEInstanceType": {
+            "Description": "Amazon EC2 instance type for the Lync Standard Edition Front End Servers",
+            "Type": "String",
+            "Default": "m4.2xlarge",
+            "AllowedValues": [
+                "m4.2xlarge"
+            ]
+        },
+        "LyncEdgeInstanceType": {
+            "Description": "Amazon EC2 instance type for the Lync Edge Servers",
+            "Type": "String",
+            "Default": "m4.xlarge",
+            "AllowedValues": [
+                "m4.xlarge"
+            ]
+        },
+        "IncludeEdge": {
+            "Description": "Set this parameter to true to include Lync Edge servers in the public subnets",
+            "AllowedValues": [
+                "true",
+                "false"
+            ],
+            "Type": "String",
+            "Default": "false"
+        },
+        "VPCCIDR": {
+            "Description": "CIDR Block for the VPC",
+            "Type": "String",
+            "Default": "10.0.0.0/16",
+            "AllowedPattern": "[a-zA-Z0-9]+\\..+"
+        },
+        "LyncISOImageURI": {
+            "AllowedPattern": "^(?i)(s3|http|https):\\/\\/.+",
+            "Description": "S3 URI to an S3 bucket containing the Lync Server 2013 Standard Edition installation media ISO image file (e.g., s3://sample-bucket/microsoft/lync/installation-media.iso). An HTTP/HTTPS URI can also be used (e.g., https://example.com/microsoft/lync/installation-media.iso)",
+            "Type": "String"
+        }
+    },
+    "Mappings": {
+        "AWSAMIRegionMap": {
+            "AMI": {
+                "WS2012R2": "Windows_Server-2012-R2_RTM-English-64Bit-Base-2018.05.09"
+            },
+            "ap-northeast-1": {
+                "WS2012R2": "ami-9be803e4"
+            },
+            "ap-northeast-2": {
+                "WS2012R2": "ami-4a1eb724"
+            },
+            "ap-south-1": {
+                "WS2012R2": "ami-2289aa4d"
+            },
+            "ap-southeast-1": {
+                "WS2012R2": "ami-14a89d68"
+            },
+            "ap-southeast-2": {
+                "WS2012R2": "ami-c971a6ab"
+            },
+            "eu-central-1": {
+                "WS2012R2": "ami-3c0f22d7"
+            },
+            "eu-west-1": {
+                "WS2012R2": "ami-4390a43a"
+            },
+            "sa-east-1": {
+                "WS2012R2": "ami-b9df82d5"
+            },
+            "us-east-1": {
+                "WS2012R2": "ami-2a9a1655"
+            },
+            "us-east-2": {
+                "WS2012R2": "ami-ee112c8b"
+            },
+            "us-west-1": {
+                "WS2012R2": "ami-63253b03"
+            },
+            "us-west-2": {
+                "WS2012R2": "ami-bbd6a7c3"
+            }
+        }
+    },
+    "Conditions": {
+        "DeployEdge": {
+            "Fn::Equals": [
+                {
+                    "Ref": "IncludeEdge"
+                },
+                "true"
+            ]
+        }
+    },
+    "Resources": {
+        "FE1": {
+            "Type": "AWS::EC2::Instance",
+            "Metadata": {
+                "AWS::CloudFormation::Init": {
+                    "configSets": {
+                        "config": [
+                            "setup",
+                            "prep",
+                            "install"
+                        ]
+                    },
+                    "setup": {
+                        "files": {
+                            "c:\\cfn\\cfn-hup.conf": {
+                                "content": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "[main]\n",
+                                            "stack=",
+                                            {
+                                                "Ref": "AWS::StackId"
+                                            },
+                                            "\n",
+                                            "region=",
+                                            {
+                                                "Ref": "AWS::Region"
+                                            },
+                                            "\n"
+                                        ]
+                                    ]
+                                }
+                            },
+                            "c:\\cfn\\hooks.d\\cfn-auto-reloader.conf": {
+                                "content": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "[cfn-auto-reloader-hook]\n",
+                                            "triggers=post.update\n",
+                                            "path=Resources.FE1.Metadata.AWS::CloudFormation::Init\n",
+                                            "action=cfn-init.exe -v -s ",
+                                            {
+                                                "Ref": "AWS::StackId"
+                                            },
+                                            " -r FE1",
+                                            " --region ",
+                                            {
+                                                "Ref": "AWS::Region"
+                                            },
+                                            "\n"
+                                        ]
+                                    ]
+                                }
+                            },
+                            "c:\\cfn\\scripts\\Unzip-Archive.ps1": {
+                                "source": "https://s3.amazonaws.com/aws-quickstart/quickstart-microsoft-lync/submodules/quickstart-microsoft-utilities/scripts/Unzip-Archive.ps1"
+                            },
+                            "c:\\cfn\\downloads\\Silverlight_x64.exe": {
+                                "source": "http://go.microsoft.com/fwlink/?LinkID=229321"
+                            },
+                            "c:\\cfn\\modules\\AWSQuickStart.zip": {
+                                "source": "https://s3.amazonaws.com/aws-quickstart/quickstart-microsoft-lync/submodules/quickstart-microsoft-utilities/modules/AWSQuickStart.zip"
+                            },
+                            "c:\\cfn\\scripts\\Join-Domain.ps1": {
+                                "source": "https://s3.amazonaws.com/aws-quickstart/quickstart-microsoft-lync/submodules/quickstart-microsoft-utilities/scripts/Join-Domain.ps1"
+                            },
+                            "c:\\cfn\\scripts\\Download-File.ps1": {
+                                "source": "https://s3.amazonaws.com/aws-quickstart/quickstart-microsoft-lync/submodules/quickstart-microsoft-utilities/scripts/Download-File.ps1"
+                            },
+                            "c:\\cfn\\scripts\\Mount-DiskImage.ps1": {
+                                "source": "https://s3.amazonaws.com/aws-quickstart/quickstart-microsoft-lync/submodules/quickstart-microsoft-utilities/scripts/Mount-DiskImage.ps1"
+                            },
+                            "c:\\cfn\\scripts\\Disable-AutoLogon.ps1": {
+                                "source": "https://s3.amazonaws.com/aws-quickstart/quickstart-microsoft-lync/submodules/quickstart-microsoft-utilities/scripts/Disable-AutoLogon.ps1"
+                            },
+                            "c:\\cfn\\scripts\\Enable-AutoLogon.ps1": {
+                                "source": "https://s3.amazonaws.com/aws-quickstart/quickstart-microsoft-lync/submodules/quickstart-microsoft-utilities/scripts/Enable-AutoLogon.ps1"
+                            },
+                            "c:\\cfn\\scripts\\Invoke-ADReplication.ps1": {
+                                "source": "https://s3.amazonaws.com/aws-quickstart/quickstart-microsoft-lync/submodules/quickstart-microsoft-utilities/scripts/Invoke-ADReplication.ps1"
+                            },
+                            "c:\\cfn\\scripts\\Topology.xml": {
+                                "source": "https://s3.amazonaws.com/aws-quickstart/quickstart-microsoft-lync/scripts/Topology.xml"
+                            },
+                            "c:\\cfn\\scripts\\Topology-Edge.xml": {
+                                "source": "https://s3.amazonaws.com/aws-quickstart/quickstart-microsoft-lync/scripts/Topology-Edge.xml"
+                            },
+                            "c:\\cfn\\scripts\\Install-Lync2013.ps1": {
+                                "source": "https://s3.amazonaws.com/aws-quickstart/quickstart-microsoft-lync/scripts/Install-Lync2013.ps1"
+                            },
+                            "c:\\cfn\\scripts\\Install.bat": {
+                                "content": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "powershell.exe -Command \"C:\\cfn\\scripts\\Mount-DiskImage.ps1 -ImagePath 'C:\\cfn\\downloads\\lync.iso'\"",
+                                            "\n",
+                                            "powershell.exe -command c:\\cfn\\scripts\\Install-Lync2013.ps1 -DomainDNSName ",
+                                            {
+                                                "Ref": "DomainDNSName"
+                                            },
+                                            " -DCName ",
+                                            {
+                                                "Ref": "ADServerNetBIOSName1"
+                                            },
+                                            " -DomainNetBIOSName ",
+                                            {
+                                                "Ref": "DomainNetBIOSName"
+                                            },
+                                            " -FEIPAddress1 ",
+                                            {
+                                                "Ref": "FE1PrivateIp"
+                                            },
+                                            " -FEIPAddress2 ",
+                                            {
+                                                "Ref": "FE2PrivateIp"
+                                            },
+                                            " -FirstFrontEnd ",
+                                            " -IncludeEdge ",
+                                            {
+                                                "Ref": "IncludeEdge"
+                                            },
+                                            " -Edge1InternalIPAddress ",
+                                            {
+                                                "Ref": "LE1PrivateIp"
+                                            },
+                                            " -Edge2InternalIPAddress ",
+                                            {
+                                                "Ref": "LE2PrivateIp"
+                                            },
+                                            " -Edge1ExternalIPAddress ",
+                                            {
+                                                "Ref": "LE1PublicIp"
+                                            },
+                                            " -Edge2ExternalIPAddress ",
+                                            {
+                                                "Ref": "LE2PublicIp"
+                                            },
+                                            " -Verbose",
+                                            "\n"
+                                        ]
+                                    ]
+                                }
+                            }
+                        },
+                        "commands": {
+                            "a-set-execution-policy": {
+                                "command": "powershell.exe -command Set-ExecutionPolicy RemoteSigned -Force",
+                                "waitAfterCompletion": "0"
+                            },
+                            "b-unpack-quickstart-module": {
+                                "command": "powershell.exe -command c:\\cfn\\scripts\\Unzip-Archive.ps1 -Source c:\\cfn\\modules\\AWSQuickStart.zip -Destination C:\\Windows\\system32\\WindowsPowerShell\\v1.0\\Modules\\",
+                                "waitAfterCompletion": "0"
+                            },
+                            "c-init-quickstart-module": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "powershell.exe -Command \"",
+                                            "New-AWSQuickStartResourceSignal -Stack '",
+                                            {
+                                                "Ref": "AWS::StackName"
+                                            },
+                                            "' -Resource 'FE1' -Region '",
+                                            {
+                                                "Ref": "AWS::Region"
+                                            },
+                                            "'\""
+                                        ]
+                                    ]
+                                },
+                                "waitAfterCompletion": "0"
+                            },
+                            "d-download-media": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "powershell.exe -Command \"C:\\cfn\\scripts\\Download-File.ps1 -Source '",
+                                            {
+                                                "Ref": "LyncISOImageURI"
+                                            },
+                                            "' -Destination 'C:\\cfn\\downloads\\lync.iso'\""
+                                        ]
+                                    ]
+                                },
+                                "waitAfterCompletion": "0"
+                            }
+                        },
+                        "services": {
+                            "windows": {
+                                "cfn-hup": {
+                                    "enabled": "true",
+                                    "ensureRunning": "true",
+                                    "files": [
+                                        "c:\\cfn\\cfn-hup.conf",
+                                        "c:\\cfn\\hooks.d\\cfn-auto-reloader.conf"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "prep": {
+                        "commands": {
+                            "a-rename-computer": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "powershell.exe -Command Rename-Computer -NewName FE1 -Restart"
+                                        ]
+                                    ]
+                                },
+                                "waitAfterCompletion": "forever"
+                            },
+                            "b-set-dns-servers": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "powershell.exe -Command ",
+                                            "\"",
+                                            "Get-NetAdapter | Set-DnsClientServerAddress -ServerAddresses ",
+                                            {
+                                                "Ref": "ADServer1PrivateIp"
+                                            },
+                                            ",",
+                                            {
+                                                "Ref": "ADServer2PrivateIp"
+                                            },
+                                            "\""
+                                        ]
+                                    ]
+                                },
+                                "waitAfterCompletion": "30"
+                            },
+                            "c-disable-win-fw": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "powershell.exe -Command \"Get-NetFirewallProfile | Set-NetFirewallProfile -Enabled False\""
+                                        ]
+                                    ]
+                                },
+                                "waitAfterCompletion": "0"
+                            },
+                            "d-join-domain": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "powershell.exe -Command c:\\cfn\\scripts\\Join-Domain.ps1 -DomainName ",
+                                            {
+                                                "Ref": "DomainDNSName"
+                                            },
+                                            " -UserName ",
+                                            {
+                                                "Ref": "DomainNetBIOSName"
+                                            },
+                                            "\\",
+                                            {
+                                                "Ref": "DomainAdminUser"
+                                            },
+                                            " -Password ",
+                                            {
+                                                "Ref": "DomainAdminPassword"
+                                            }
+                                        ]
+                                    ]
+                                },
+                                "waitAfterCompletion": "forever"
+                            },
+                            "e-win-prereq": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "powershell.exe -ExecutionPolicy RemoteSigned -Command \"Install-WindowsFeature Web-Server, Web-Static-Content, Web-Default-Doc, Web-Http-Errors, Web-Asp-Net, Web-Net-Ext, Web-ISAPI-Ext, Web-ISAPI-Filter, Web-Http-Logging, Web-Log-Libraries, Web-Request-Monitor, Web-Http-Tracing, Web-Basic-Auth, Web-Windows-Auth, Web-Client-Auth, Web-Filtering, Web-Stat-Compression, Web-Dyn-Compression, NET-WCF-HTTP-Activation45, Web-Asp-Net45, Web-Mgmt-Tools, Web-Scripting-Tools, Web-Mgmt-Compat, Desktop-Experience, RSAT-ADDS, Windows-Identity-Foundation, telnet-client, BITS,RSAT-DNS-Server -Restart\""
+                                        ]
+                                    ]
+                                },
+                                "waitAfterCompletion": "forever"
+                            }
+                        }
+                    },
+                    "install": {
+                        "commands": {
+                            "a-enable-autologon": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "powershell.exe -Command c:\\cfn\\scripts\\Enable-AutoLogon.ps1",
+                                            " -UserName ",
+                                            {
+                                                "Ref": "DomainNetBIOSName"
+                                            },
+                                            "\\",
+                                            {
+                                                "Ref": "DomainAdminUser"
+                                            },
+                                            " -Password ",
+                                            {
+                                                "Ref": "DomainAdminPassword"
+                                            },
+                                            " -StartupScript c:\\cfn\\scripts\\Install.bat"
+                                        ]
+                                    ]
+                                },
+                                "waitAfterCompletion": "0"
+                            },
+                            "b-reboot": {
+                                "command": "powershell.exe -command Restart-Computer -Force",
+                                "waitAfterCompletion": "forever"
+                            },
+                            "c-disable-autologon": {
+                                "command": "powershell.exe -command c:\\cfn\\scripts\\Disable-AutoLogon.ps1",
+                                "waitAfterCompletion": "0"
+                            },
+                            "d-wait": {
+                                "command": "powershell.exe -command Start-Sleep -Seconds 1800",
+                                "waitAfterCompletion": "0"
+                            }
+                        }
+                    }
+                }
+            },
+            "Properties": {
+                "ImageId": {
+                    "Fn::FindInMap": [
+                        "AWSAMIRegionMap",
+                        {
+                            "Ref": "AWS::Region"
+                        },
+                        "WS2012R2"
+                    ]
+                },
+                "InstanceType": {
+                    "Ref": "LyncFEInstanceType"
+                },
+                "NetworkInterfaces": [
+                    {
+                        "DeleteOnTermination": "true",
+                        "DeviceIndex": 0,
+                        "SubnetId": {
+                            "Ref": "PrivateSubnet1"
+                        },
+                        "PrivateIpAddresses": [
+                            {
+                                "Primary": "true",
+                                "PrivateIpAddress": {
+                                    "Ref": "FE1PrivateIp"
+                                }
+                            }
+                        ],
+                        "GroupSet": [
+                            {
+                                "Ref": "DomainMemberSGID"
+                            },
+                            {
+                                "Ref": "LyncSecurityGroup"
+                            }
+                        ]
+                    }
+                ],
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": "FE1"
+                    }
+                ],
+                "BlockDeviceMappings": [
+                    {
+                        "DeviceName": "/dev/sda1",
+                        "Ebs": {
+                            "VolumeSize": "100",
+                            "VolumeType": "gp2"
+                        }
+                    }
+                ],
+                "IamInstanceProfile": {
+                    "Ref": "FEInstanceProfile"
+                },
+                "Volumes": [
+                    {
+                        "VolumeId": {
+                            "Ref": "LyncVolume1"
+                        },
+                        "Device": "/dev/xvdf"
+                    }
+                ],
+                "KeyName": {
+                    "Ref": "KeyPairName"
+                },
+                "UserData": {
+                    "Fn::Base64": {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "<script>\n",
+                                "cfn-init.exe -v -c config -s ",
+                                {
+                                    "Ref": "AWS::StackId"
+                                },
+                                " -r FE1",
+                                " --region ",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                "\n",
+                                "</script>\n"
+                            ]
+                        ]
+                    }
+                }
+            },
+            "CreationPolicy": {
+                "ResourceSignal": {
+                    "Count": "1",
+                    "Timeout": "PT75M"
+                }
+            }
+        },
+        "FE2": {
+            "Type": "AWS::EC2::Instance",
+            "DependsOn": "FE1",
+            "Metadata": {
+                "AWS::CloudFormation::Init": {
+                    "configSets": {
+                        "config": [
+                            "setup",
+                            "prep",
+                            "install"
+                        ]
+                    },
+                    "setup": {
+                        "files": {
+                            "c:\\cfn\\cfn-hup.conf": {
+                                "content": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "[main]\n",
+                                            "stack=",
+                                            {
+                                                "Ref": "AWS::StackId"
+                                            },
+                                            "\n",
+                                            "region=",
+                                            {
+                                                "Ref": "AWS::Region"
+                                            },
+                                            "\n"
+                                        ]
+                                    ]
+                                }
+                            },
+                            "c:\\cfn\\hooks.d\\cfn-auto-reloader.conf": {
+                                "content": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "[cfn-auto-reloader-hook]\n",
+                                            "triggers=post.update\n",
+                                            "path=Resources.FE2.Metadata.AWS::CloudFormation::Init\n",
+                                            "action=cfn-init.exe -v -s ",
+                                            {
+                                                "Ref": "AWS::StackId"
+                                            },
+                                            " -r FE2",
+                                            " --region ",
+                                            {
+                                                "Ref": "AWS::Region"
+                                            },
+                                            "\n"
+                                        ]
+                                    ]
+                                }
+                            },
+                            "c:\\cfn\\scripts\\Unzip-Archive.ps1": {
+                                "source": "https://s3.amazonaws.com/aws-quickstart/quickstart-microsoft-lync/submodules/quickstart-microsoft-utilities/scripts/Unzip-Archive.ps1"
+                            },
+                            "c:\\cfn\\downloads\\Silverlight_x64.exe": {
+                                "source": "http://go.microsoft.com/fwlink/?LinkID=229321"
+                            },
+                            "c:\\cfn\\modules\\AWSQuickStart.zip": {
+                                "source": "https://s3.amazonaws.com/aws-quickstart/quickstart-microsoft-lync/submodules/quickstart-microsoft-utilities/modules/AWSQuickStart.zip"
+                            },
+                            "c:\\cfn\\scripts\\Join-Domain.ps1": {
+                                "source": "https://s3.amazonaws.com/aws-quickstart/quickstart-microsoft-lync/submodules/quickstart-microsoft-utilities/scripts/Join-Domain.ps1"
+                            },
+                            "c:\\cfn\\scripts\\Download-File.ps1": {
+                                "source": "https://s3.amazonaws.com/aws-quickstart/quickstart-microsoft-lync/submodules/quickstart-microsoft-utilities/scripts/Download-File.ps1"
+                            },
+                            "c:\\cfn\\scripts\\Mount-DiskImage.ps1": {
+                                "source": "https://s3.amazonaws.com/aws-quickstart/quickstart-microsoft-lync/submodules/quickstart-microsoft-utilities/scripts/Mount-DiskImage.ps1"
+                            },
+                            "c:\\cfn\\scripts\\Disable-AutoLogon.ps1": {
+                                "source": "https://s3.amazonaws.com/aws-quickstart/quickstart-microsoft-lync/submodules/quickstart-microsoft-utilities/scripts/Disable-AutoLogon.ps1"
+                            },
+                            "c:\\cfn\\scripts\\Enable-AutoLogon.ps1": {
+                                "source": "https://s3.amazonaws.com/aws-quickstart/quickstart-microsoft-lync/submodules/quickstart-microsoft-utilities/scripts/Enable-AutoLogon.ps1"
+                            },
+                            "c:\\cfn\\scripts\\Invoke-ADReplication.ps1": {
+                                "source": "https://s3.amazonaws.com/aws-quickstart/quickstart-microsoft-lync/submodules/quickstart-microsoft-utilities/scripts/Invoke-ADReplication.ps1"
+                            },
+                            "c:\\cfn\\scripts\\Topology.xml": {
+                                "source": "https://s3.amazonaws.com/aws-quickstart/quickstart-microsoft-lync/scripts/Topology.xml"
+                            },
+                            "c:\\cfn\\scripts\\Install-Lync2013.ps1": {
+                                "source": "https://s3.amazonaws.com/aws-quickstart/quickstart-microsoft-lync/scripts/Install-Lync2013.ps1"
+                            },
+                            "c:\\cfn\\scripts\\Install.bat": {
+                                "content": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "powershell.exe -Command \"C:\\cfn\\scripts\\Mount-DiskImage.ps1 -ImagePath 'C:\\cfn\\downloads\\lync.iso'\"",
+                                            "\n",
+                                            "powershell.exe -command c:\\cfn\\scripts\\Install-Lync2013.ps1 -DomainDNSName ",
+                                            {
+                                                "Ref": "DomainDNSName"
+                                            },
+                                            " -DCName ",
+                                            {
+                                                "Ref": "ADServerNetBIOSName1"
+                                            },
+                                            " -DomainNetBIOSName ",
+                                            {
+                                                "Ref": "DomainNetBIOSName"
+                                            },
+                                            " -FEIPAddress2 ",
+                                            {
+                                                "Ref": "FE2PrivateIp"
+                                            },
+                                            " -Verbose",
+                                            "\n"
+                                        ]
+                                    ]
+                                }
+                            }
+                        },
+                        "commands": {
+                            "a-set-execution-policy": {
+                                "command": "powershell.exe -command Set-ExecutionPolicy RemoteSigned -Force",
+                                "waitAfterCompletion": "0"
+                            },
+                            "b-unpack-quickstart-module": {
+                                "command": "powershell.exe -command c:\\cfn\\scripts\\Unzip-Archive.ps1 -Source c:\\cfn\\modules\\AWSQuickStart.zip -Destination C:\\Windows\\system32\\WindowsPowerShell\\v1.0\\Modules\\",
+                                "waitAfterCompletion": "0"
+                            },
+                            "c-init-quickstart-module": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "powershell.exe -Command \"",
+                                            "New-AWSQuickStartResourceSignal -Stack '",
+                                            {
+                                                "Ref": "AWS::StackName"
+                                            },
+                                            "' -Resource 'FE2' -Region '",
+                                            {
+                                                "Ref": "AWS::Region"
+                                            },
+                                            "'\""
+                                        ]
+                                    ]
+                                },
+                                "waitAfterCompletion": "0"
+                            },
+                            "d-download-media": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "powershell.exe -Command \"C:\\cfn\\scripts\\Download-File.ps1 -Source '",
+                                            {
+                                                "Ref": "LyncISOImageURI"
+                                            },
+                                            "' -Destination 'C:\\cfn\\downloads\\lync.iso'\""
+                                        ]
+                                    ]
+                                },
+                                "waitAfterCompletion": "0"
+                            }
+                        },
+                        "services": {
+                            "windows": {
+                                "cfn-hup": {
+                                    "enabled": "true",
+                                    "ensureRunning": "true",
+                                    "files": [
+                                        "c:\\cfn\\cfn-hup.conf",
+                                        "c:\\cfn\\hooks.d\\cfn-auto-reloader.conf"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "prep": {
+                        "commands": {
+                            "a-rename-computer": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "powershell.exe -Command Rename-Computer -NewName FE2 -Restart"
+                                        ]
+                                    ]
+                                },
+                                "waitAfterCompletion": "forever"
+                            },
+                            "b-set-dns-servers": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "powershell.exe -Command ",
+                                            "\"",
+                                            "Get-NetAdapter | Set-DnsClientServerAddress -ServerAddresses ",
+                                            {
+                                                "Ref": "ADServer2PrivateIp"
+                                            },
+                                            ",",
+                                            {
+                                                "Ref": "ADServer1PrivateIp"
+                                            },
+                                            "\""
+                                        ]
+                                    ]
+                                },
+                                "waitAfterCompletion": "30"
+                            },
+                            "c-disable-win-fw": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "powershell.exe -Command \"Get-NetFirewallProfile | Set-NetFirewallProfile -Enabled False\""
+                                        ]
+                                    ]
+                                },
+                                "waitAfterCompletion": "0"
+                            },
+                            "d-join-domain": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "powershell.exe -Command c:\\cfn\\scripts\\Join-Domain.ps1 -DomainName ",
+                                            {
+                                                "Ref": "DomainDNSName"
+                                            },
+                                            " -UserName ",
+                                            {
+                                                "Ref": "DomainNetBIOSName"
+                                            },
+                                            "\\",
+                                            {
+                                                "Ref": "DomainAdminUser"
+                                            },
+                                            " -Password ",
+                                            {
+                                                "Ref": "DomainAdminPassword"
+                                            }
+                                        ]
+                                    ]
+                                },
+                                "waitAfterCompletion": "forever"
+                            },
+                            "e-win-prereq": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "powershell.exe -ExecutionPolicy RemoteSigned -Command \"Install-WindowsFeature Web-Server, Web-Static-Content, Web-Default-Doc, Web-Http-Errors, Web-Asp-Net, Web-Net-Ext, Web-ISAPI-Ext, Web-ISAPI-Filter, Web-Http-Logging, Web-Log-Libraries, Web-Request-Monitor, Web-Http-Tracing, Web-Basic-Auth, Web-Windows-Auth, Web-Client-Auth, Web-Filtering, Web-Stat-Compression, Web-Dyn-Compression, NET-WCF-HTTP-Activation45, Web-Asp-Net45, Web-Mgmt-Tools, Web-Scripting-Tools, Web-Mgmt-Compat, Desktop-Experience, RSAT-ADDS, Windows-Identity-Foundation, telnet-client, BITS,RSAT-DNS-Server -Restart\""
+                                        ]
+                                    ]
+                                },
+                                "waitAfterCompletion": "forever"
+                            }
+                        }
+                    },
+                    "install": {
+                        "commands": {
+                            "a-enable-autologon": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "powershell.exe -Command c:\\cfn\\scripts\\Enable-AutoLogon.ps1",
+                                            " -UserName ",
+                                            {
+                                                "Ref": "DomainNetBIOSName"
+                                            },
+                                            "\\",
+                                            {
+                                                "Ref": "DomainAdminUser"
+                                            },
+                                            " -Password ",
+                                            {
+                                                "Ref": "DomainAdminPassword"
+                                            },
+                                            " -StartupScript c:\\cfn\\scripts\\Install.bat"
+                                        ]
+                                    ]
+                                },
+                                "waitAfterCompletion": "0"
+                            },
+                            "b-reboot": {
+                                "command": "powershell.exe -command Restart-Computer -Force",
+                                "waitAfterCompletion": "forever"
+                            },
+                            "c-disable-autologon": {
+                                "command": "powershell.exe -command c:\\cfn\\scripts\\Disable-AutoLogon.ps1",
+                                "waitAfterCompletion": "0"
+                            },
+                            "d-wait": {
+                                "command": "powershell.exe -command Start-Sleep -Seconds 1800",
+                                "waitAfterCompletion": "0"
+                            }
+                        }
+                    }
+                }
+            },
+            "Properties": {
+                "ImageId": {
+                    "Fn::FindInMap": [
+                        "AWSAMIRegionMap",
+                        {
+                            "Ref": "AWS::Region"
+                        },
+                        "WS2012R2"
+                    ]
+                },
+                "InstanceType": {
+                    "Ref": "LyncFEInstanceType"
+                },
+                "NetworkInterfaces": [
+                    {
+                        "DeleteOnTermination": "true",
+                        "DeviceIndex": 0,
+                        "SubnetId": {
+                            "Ref": "PrivateSubnet2"
+                        },
+                        "PrivateIpAddresses": [
+                            {
+                                "Primary": "true",
+                                "PrivateIpAddress": {
+                                    "Ref": "FE2PrivateIp"
+                                }
+                            }
+                        ],
+                        "GroupSet": [
+                            {
+                                "Ref": "DomainMemberSGID"
+                            },
+                            {
+                                "Ref": "LyncSecurityGroup"
+                            }
+                        ]
+                    }
+                ],
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": "FE2"
+                    }
+                ],
+                "BlockDeviceMappings": [
+                    {
+                        "DeviceName": "/dev/sda1",
+                        "Ebs": {
+                            "VolumeSize": "100",
+                            "VolumeType": "gp2"
+                        }
+                    }
+                ],
+                "IamInstanceProfile": {
+                    "Ref": "FEInstanceProfile"
+                },
+                "Volumes": [
+                    {
+                        "VolumeId": {
+                            "Ref": "LyncVolume2"
+                        },
+                        "Device": "/dev/xvdf"
+                    }
+                ],
+                "KeyName": {
+                    "Ref": "KeyPairName"
+                },
+                "UserData": {
+                    "Fn::Base64": {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "<script>\n",
+                                "cfn-init.exe -v -c config -s ",
+                                {
+                                    "Ref": "AWS::StackId"
+                                },
+                                " -r FE2",
+                                " --region ",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                "\n",
+                                "</script>\n"
+                            ]
+                        ]
+                    }
+                }
+            },
+            "CreationPolicy": {
+                "ResourceSignal": {
+                    "Count": "1",
+                    "Timeout": "PT75M"
+                }
+            }
+        },
+        "LyncVolume1": {
+            "Type": "AWS::EC2::Volume",
+            "Properties": {
+                "Size": "100",
+                "VolumeType": "gp2",
+                "AvailabilityZone": {
+                    "Fn::Select": [
+                        0,
+                        {
+                            "Fn::GetAZs": ""
+                        }
+                    ]
+                }
+            }
+        },
+        "LyncVolume2": {
+            "Type": "AWS::EC2::Volume",
+            "Properties": {
+                "Size": "100",
+                "VolumeType": "gp2",
+                "AvailabilityZone": {
+                    "Fn::Select": [
+                        1,
+                        {
+                            "Fn::GetAZs": ""
+                        }
+                    ]
+                }
+            }
+        },
+        "Edge1EIP": {
+            "Type": "AWS::EC2::EIP",
+            "Condition": "DeployEdge",
+            "Properties": {
+                "Domain": "vpc"
+            }
+        },
+        "Edge2EIP": {
+            "Type": "AWS::EC2::EIP",
+            "Condition": "DeployEdge",
+            "Properties": {
+                "Domain": "vpc"
+            }
+        },
+        "Edge1InternalInterface": {
+            "Type": "AWS::EC2::NetworkInterface",
+            "Condition": "DeployEdge",
+            "Properties": {
+                "SubnetId": {
+                    "Ref": "PrivateSubnet1"
+                },
+                "PrivateIpAddresses": [
+                    {
+                        "Primary": "true",
+                        "PrivateIpAddress": {
+                            "Ref": "LE1PrivateIp"
+                        }
+                    }
+                ],
+                "Description": "Lync Edge 1 internal network interface",
+                "GroupSet": [
+                    {
+                        "Ref": "LyncSecurityGroup"
+                    },
+                    {
+                        "Ref": "DomainMemberSGID"
+                    }
+                ],
+                "Tags": [
+                    {
+                        "Key": "Network",
+                        "Value": "EdgeInternal"
+                    }
+                ]
+            }
+        },
+        "Edge1ExternalInterface": {
+            "Type": "AWS::EC2::NetworkInterface",
+            "Condition": "DeployEdge",
+            "Properties": {
+                "SubnetId": {
+                    "Ref": "PublicSubnet1"
+                },
+                "PrivateIpAddresses": [
+                    {
+                        "Primary": "true",
+                        "PrivateIpAddress": {
+                            "Ref": "LE1PublicIp"
+                        }
+                    }
+                ],
+                "Description": "Lync Edge 1 external network interface",
+                "GroupSet": [
+                    {
+                        "Ref": "LyncEdgeSecurityGroup"
+                    }
+                ],
+                "SourceDestCheck": "true",
+                "Tags": [
+                    {
+                        "Key": "Network",
+                        "Value": "EdgeExternal"
+                    }
+                ]
+            }
+        },
+        "Edge2InternalInterface": {
+            "Type": "AWS::EC2::NetworkInterface",
+            "Condition": "DeployEdge",
+            "Properties": {
+                "SubnetId": {
+                    "Ref": "PrivateSubnet2"
+                },
+                "PrivateIpAddresses": [
+                    {
+                        "Primary": "true",
+                        "PrivateIpAddress": {
+                            "Ref": "LE2PrivateIp"
+                        }
+                    }
+                ],
+                "Description": "Lync Edge 2 internal network interface",
+                "GroupSet": [
+                    {
+                        "Ref": "LyncSecurityGroup"
+                    },
+                    {
+                        "Ref": "DomainMemberSGID"
+                    }
+                ],
+                "Tags": [
+                    {
+                        "Key": "Network",
+                        "Value": "EdgeInternal"
+                    }
+                ]
+            }
+        },
+        "Edge2ExternalInterface": {
+            "Type": "AWS::EC2::NetworkInterface",
+            "Condition": "DeployEdge",
+            "Properties": {
+                "SubnetId": {
+                    "Ref": "PublicSubnet2"
+                },
+                "PrivateIpAddresses": [
+                    {
+                        "Primary": "true",
+                        "PrivateIpAddress": {
+                            "Ref": "LE2PublicIp"
+                        }
+                    }
+                ],
+                "Description": "Lync Edge 2 external network interface",
+                "GroupSet": [
+                    {
+                        "Ref": "LyncEdgeSecurityGroup"
+                    }
+                ],
+                "SourceDestCheck": "true",
+                "Tags": [
+                    {
+                        "Key": "Network",
+                        "Value": "EdgeExternal"
+                    }
+                ]
+            }
+        },
+        "AssociateEdge1EIP": {
+            "Type": "AWS::EC2::EIPAssociation",
+            "Condition": "DeployEdge",
+            "Properties": {
+                "AllocationId": {
+                    "Fn::GetAtt": [
+                        "Edge1EIP",
+                        "AllocationId"
+                    ]
+                },
+                "NetworkInterfaceId": {
+                    "Ref": "Edge1ExternalInterface"
+                }
+            }
+        },
+        "AssociateEdge2EIP": {
+            "Type": "AWS::EC2::EIPAssociation",
+            "Condition": "DeployEdge",
+            "Properties": {
+                "AllocationId": {
+                    "Fn::GetAtt": [
+                        "Edge2EIP",
+                        "AllocationId"
+                    ]
+                },
+                "NetworkInterfaceId": {
+                    "Ref": "Edge2ExternalInterface"
+                }
+            }
+        },
+        "Edge1InternalInterfaceAttachment": {
+            "Type": "AWS::EC2::NetworkInterfaceAttachment",
+            "Condition": "DeployEdge",
+            "Properties": {
+                "InstanceId": {
+                    "Ref": "LE1"
+                },
+                "NetworkInterfaceId": {
+                    "Ref": "Edge1InternalInterface"
+                },
+                "DeviceIndex": "1"
+            }
+        },
+        "Edge2InternalInterfaceAttachment": {
+            "Type": "AWS::EC2::NetworkInterfaceAttachment",
+            "Condition": "DeployEdge",
+            "Properties": {
+                "InstanceId": {
+                    "Ref": "LE2"
+                },
+                "NetworkInterfaceId": {
+                    "Ref": "Edge2InternalInterface"
+                },
+                "DeviceIndex": "1"
+            }
+        },
+        "Edge1WaitCondition": {
+            "Type": "AWS::CloudFormation::WaitCondition",
+            "Condition": "DeployEdge",
+            "DependsOn": "LE1",
+            "Properties": {
+                "Handle": {
+                    "Ref": "Edge1WaitHandle"
+                },
+                "Timeout": "3600"
+            }
+        },
+        "Edge1WaitHandle": {
+            "Type": "AWS::CloudFormation::WaitConditionHandle",
+            "Condition": "DeployEdge"
+        },
+        "Edge2WaitCondition": {
+            "Type": "AWS::CloudFormation::WaitCondition",
+            "Condition": "DeployEdge",
+            "DependsOn": "LE2",
+            "Properties": {
+                "Handle": {
+                    "Ref": "Edge2WaitHandle"
+                },
+                "Timeout": "3600"
+            }
+        },
+        "Edge2WaitHandle": {
+            "Type": "AWS::CloudFormation::WaitConditionHandle",
+            "Condition": "DeployEdge"
+        },
+        "LE1": {
+            "Type": "AWS::EC2::Instance",
+            "DependsOn": [
+                "FE1",
+                "AssociateEdge1EIP"
+            ],
+            "Condition": "DeployEdge",
+            "Metadata": {
+                "AWS::CloudFormation::Init": {
+                    "configSets": {
+                        "config": [
+                            "setup",
+                            "prep",
+                            "install"
+                        ]
+                    },
+                    "setup": {
+                        "files": {
+                            "c:\\cfn\\cfn-hup.conf": {
+                                "content": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "[main]\n",
+                                            "stack=",
+                                            {
+                                                "Ref": "AWS::StackName"
+                                            },
+                                            "\n",
+                                            "region=",
+                                            {
+                                                "Ref": "AWS::Region"
+                                            },
+                                            "\n"
+                                        ]
+                                    ]
+                                }
+                            },
+                            "c:\\cfn\\hooks.d\\cfn-auto-reloader.conf": {
+                                "content": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "[cfn-auto-reloader-hook]\n",
+                                            "triggers=post.update\n",
+                                            "path=Resources.LE1.Metadata.AWS::CloudFormation::Init\n",
+                                            "action=cfn-init.exe -v -c config -s ",
+                                            {
+                                                "Ref": "AWS::StackId"
+                                            },
+                                            " -r LE1",
+                                            " --region ",
+                                            {
+                                                "Ref": "AWS::Region"
+                                            },
+                                            "\n"
+                                        ]
+                                    ]
+                                }
+                            },
+                            "c:\\cfn\\scripts\\Unzip-Archive.ps1": {
+                                "source": "https://s3.amazonaws.com/aws-quickstart/quickstart-microsoft-lync/submodules/quickstart-microsoft-utilities/scripts/Unzip-Archive.ps1"
+                            },
+                            "c:\\cfn\\modules\\AWSQuickStart.zip": {
+                                "source": "https://s3.amazonaws.com/aws-quickstart/quickstart-microsoft-lync/submodules/quickstart-microsoft-utilities/modules/AWSQuickStart.zip"
+                            },
+                            "c:\\cfn\\scripts\\Download-File.ps1": {
+                                "source": "https://s3.amazonaws.com/aws-quickstart/quickstart-microsoft-lync/submodules/quickstart-microsoft-utilities/scripts/Download-File.ps1"
+                            },
+                            "c:\\cfn\\scripts\\Mount-DiskImage.ps1": {
+                                "source": "https://s3.amazonaws.com/aws-quickstart/quickstart-microsoft-lync/submodules/quickstart-microsoft-utilities/scripts/Mount-DiskImage.ps1"
+                            },
+                            "c:\\cfn\\scripts\\Disable-AutoLogon.ps1": {
+                                "source": "https://s3.amazonaws.com/aws-quickstart/quickstart-microsoft-lync/submodules/quickstart-microsoft-utilities/scripts/Disable-AutoLogon.ps1"
+                            },
+                            "c:\\cfn\\scripts\\Enable-AutoLogon.ps1": {
+                                "source": "https://s3.amazonaws.com/aws-quickstart/quickstart-microsoft-lync/submodules/quickstart-microsoft-utilities/scripts/Enable-AutoLogon.ps1"
+                            },
+                            "c:\\cfn\\scripts\\Set-PrimaryDNSSuffix.ps1": {
+                                "source": "https://s3.amazonaws.com/aws-quickstart/quickstart-microsoft-lync/submodules/quickstart-microsoft-utilities/scripts/Set-PrimaryDNSSuffix.ps1"
+                            },
+                            "c:\\cfn\\scripts\\Set-LyncEdgeNetwork.ps1": {
+                                "source": "https://s3.amazonaws.com/aws-quickstart/quickstart-microsoft-lync/scripts/Set-LyncEdgeNetwork.ps1"
+                            },
+                            "c:\\cfn\\scripts\\Reset-LocalAdminPassword.ps1": {
+                                "source": "https://s3.amazonaws.com/aws-quickstart/quickstart-microsoft-lync/submodules/quickstart-microsoft-utilities/scripts/Reset-LocalAdminPassword.ps1"
+                            },
+                            "c:\\cfn\\scripts\\New-LyncEdge.ps1": {
+                                "source": "https://s3.amazonaws.com/aws-quickstart/quickstart-microsoft-lync/scripts/New-LyncEdge.ps1"
+                            },
+                            "c:\\cfn\\scripts\\Install.bat": {
+                                "content": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "powershell.exe -Command \"C:\\cfn\\scripts\\Mount-DiskImage.ps1 -ImagePath 'C:\\cfn\\downloads\\lync.iso'\"",
+                                            "\n",
+                                            "powershell.exe -command c:\\cfn\\scripts\\New-LyncEdge.ps1 -DomainDNSName ",
+                                            {
+                                                "Ref": "DomainDNSName"
+                                            },
+                                            " -DCName ",
+                                            {
+                                                "Ref": "ADServerNetBIOSName1"
+                                            },
+                                            " -DomainNetBIOSName ",
+                                            {
+                                                "Ref": "DomainNetBIOSName"
+                                            },
+                                            " -Username ",
+                                            {
+                                                "Ref": "DomainAdminUser"
+                                            },
+                                            " -Password ",
+                                            {
+                                                "Ref": "DomainAdminPassword"
+                                            },
+                                            " -Edge1EIP ",
+                                            {
+                                                "Ref": "Edge1EIP"
+                                            },
+                                            " -Edge2EIP ",
+                                            {
+                                                "Ref": "Edge2EIP"
+                                            },
+                                            " -FirstEdge ",
+                                            " -Verbose",
+                                            "\n"
+                                        ]
+                                    ]
+                                }
+                            }
+                        },
+                        "services": {
+                            "windows": {
+                                "cfn-hup": {
+                                    "enabled": "true",
+                                    "ensureRunning": "true",
+                                    "files": [
+                                        "c:\\cfn\\cfn-hup.conf",
+                                        "c:\\cfn\\hooks.d\\cfn-auto-reloader.conf"
+                                    ]
+                                }
+                            }
+                        },
+                        "commands": {
+                            "a-set-execution-policy": {
+                                "command": "powershell.exe -command Set-ExecutionPolicy RemoteSigned -Force",
+                                "waitAfterCompletion": "0"
+                            },
+                            "b-unpack-quickstart-module": {
+                                "command": "powershell.exe -command c:\\cfn\\scripts\\Unzip-Archive.ps1 -Source c:\\cfn\\modules\\AWSQuickStart.zip -Destination C:\\Windows\\system32\\WindowsPowerShell\\v1.0\\Modules\\",
+                                "waitAfterCompletion": "0"
+                            },
+                            "c-init-quickstart-module": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "powershell.exe -Command \"",
+                                            "New-AWSQuickStartResourceSignal -Stack '",
+                                            {
+                                                "Ref": "AWS::StackName"
+                                            },
+                                            "' -Resource 'LE1' -Region '",
+                                            {
+                                                "Ref": "AWS::Region"
+                                            },
+                                            "'\""
+                                        ]
+                                    ]
+                                },
+                                "waitAfterCompletion": "0"
+                            },
+                            "d-download-media": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "powershell.exe -Command \"C:\\cfn\\scripts\\Download-File.ps1 -Source '",
+                                            {
+                                                "Ref": "LyncISOImageURI"
+                                            },
+                                            "' -Destination 'C:\\cfn\\downloads\\lync.iso'\""
+                                        ]
+                                    ]
+                                },
+                                "waitAfterCompletion": "0"
+                            },
+                            "e-reset-local-admin": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "powershell.exe -command C:\\cfn\\scripts\\Reset-LocalAdminPassword.ps1 -password '",
+                                            {
+                                                "Ref": "DomainAdminPassword"
+                                            },
+                                            "'"
+                                        ]
+                                    ]
+                                },
+                                "waitAfterCompletion": "0"
+                            }
+                        }
+                    },
+                    "prep": {
+                        "commands": {
+                            "a-rename-computer": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "powershell.exe -Command Rename-Computer -NewName LE1 -Restart"
+                                        ]
+                                    ]
+                                },
+                                "waitAfterCompletion": "forever"
+                            },
+                            "b-execute-powershell-script-SetDNSSuffix": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "powershell.exe -command \"c:\\cfn\\scripts\\Set-PrimaryDNSSuffix.ps1 -Suffix '",
+                                            {
+                                                "Ref": "DomainDNSName"
+                                            },
+                                            "'\""
+                                        ]
+                                    ]
+                                },
+                                "waitAfterCompletion": "forever"
+                            },
+                            "c-win-prereq": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "powershell.exe -ExecutionPolicy RemoteSigned -Command \"Install-WindowsFeature NET-Framework-45-Core,Windows-Identity-Foundation\""
+                                        ]
+                                    ]
+                                },
+                                "waitAfterCompletion": "0"
+                            },
+                            "d-wait-handle-and-resource-signal": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "powershell.exe -Command \"Write-AWSQuickStartStatus; Remove-AWSQuickStartResourceSignal; New-AWSQuickStartWaitHandle -Handle '",
+                                            {
+                                                "Ref": "Edge1WaitHandle"
+                                            },
+                                            "'\""
+                                        ]
+                                    ]
+                                },
+                                "waitAfterCompletion": "0"
+                            },
+                            "e-set-static-ip": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "powershell.exe -Command \"C:\\cfn\\scripts\\Set-LyncEdgeNetwork.ps1 -VPCCIDR '",
+                                            {
+                                                "Ref": "VPCCIDR"
+                                            },
+                                            "' -DNSAddresses '",
+                                            {
+                                                "Ref": "ADServer1PrivateIp"
+                                            },
+                                            "','",
+                                            {
+                                                "Ref": "ADServer2PrivateIp"
+                                            },
+                                            "' -ExternalIPAddress '",
+                                            {
+                                                "Ref": "LE1PublicIp"
+                                            },
+                                            "' -InternalIPAddress '",
+                                            {
+                                                "Ref": "LE1PrivateIp"
+                                            },
+                                            "'\""
+                                        ]
+                                    ]
+                                },
+                                "waitAfterCompletion": "0"
+                            }
+                        }
+                    },
+                    "install": {
+                        "commands": {
+                            "a-enable-autologon": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "powershell.exe -Command c:\\cfn\\scripts\\Enable-AutoLogon.ps1",
+                                            " -UserName LE1\\Administrator",
+                                            " -Password ",
+                                            {
+                                                "Ref": "DomainAdminPassword"
+                                            },
+                                            " -StartupScript c:\\cfn\\scripts\\Install.bat"
+                                        ]
+                                    ]
+                                },
+                                "waitAfterCompletion": "0"
+                            },
+                            "c-reboot": {
+                                "command": "powershell.exe -command Restart-Computer -Force",
+                                "waitAfterCompletion": "forever"
+                            }
+                        }
+                    }
+                }
+            },
+            "Properties": {
+                "ImageId": {
+                    "Fn::FindInMap": [
+                        "AWSAMIRegionMap",
+                        {
+                            "Ref": "AWS::Region"
+                        },
+                        "WS2012R2"
+                    ]
+                },
+                "InstanceType": {
+                    "Ref": "LyncEdgeInstanceType"
+                },
+                "NetworkInterfaces": [
+                    {
+                        "NetworkInterfaceId": {
+                            "Ref": "Edge1ExternalInterface"
+                        },
+                        "DeviceIndex": "0"
+                    }
+                ],
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": "LE1"
+                    }
+                ],
+                "BlockDeviceMappings": [
+                    {
+                        "DeviceName": "/dev/sda1",
+                        "Ebs": {
+                            "VolumeSize": "100",
+                            "VolumeType": "gp2"
+                        }
+                    }
+                ],
+                "IamInstanceProfile": {
+                    "Ref": "LEInstanceProfile"
+                },
+                "KeyName": {
+                    "Ref": "KeyPairName"
+                },
+                "UserData": {
+                    "Fn::Base64": {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "<script>\n",
+                                "cfn-init.exe -v -c config -s ",
+                                {
+                                    "Ref": "AWS::StackId"
+                                },
+                                " -r LE1",
+                                " --region ",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                "\n",
+                                "</script>\n"
+                            ]
+                        ]
+                    }
+                }
+            },
+            "CreationPolicy": {
+                "ResourceSignal": {
+                    "Count": "1",
+                    "Timeout": "PT75M"
+                }
+            }
+        },
+        "LE2": {
+            "Type": "AWS::EC2::Instance",
+            "DependsOn": [
+                "Edge1WaitCondition",
+                "AssociateEdge2EIP"
+            ],
+            "Condition": "DeployEdge",
+            "Metadata": {
+                "AWS::CloudFormation::Init": {
+                    "configSets": {
+                        "config": [
+                            "setup",
+                            "prep",
+                            "install"
+                        ]
+                    },
+                    "setup": {
+                        "files": {
+                            "c:\\cfn\\cfn-hup.conf": {
+                                "content": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "[main]\n",
+                                            "stack=",
+                                            {
+                                                "Ref": "AWS::StackName"
+                                            },
+                                            "\n",
+                                            "region=",
+                                            {
+                                                "Ref": "AWS::Region"
+                                            },
+                                            "\n"
+                                        ]
+                                    ]
+                                }
+                            },
+                            "c:\\cfn\\hooks.d\\cfn-auto-reloader.conf": {
+                                "content": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "[cfn-auto-reloader-hook]\n",
+                                            "triggers=post.update\n",
+                                            "path=Resources.LE2.Metadata.AWS::CloudFormation::Init\n",
+                                            "action=cfn-init.exe -v -c config -s ",
+                                            {
+                                                "Ref": "AWS::StackId"
+                                            },
+                                            " -r LE2",
+                                            " --region ",
+                                            {
+                                                "Ref": "AWS::Region"
+                                            },
+                                            "\n"
+                                        ]
+                                    ]
+                                }
+                            },
+                            "c:\\cfn\\scripts\\Unzip-Archive.ps1": {
+                                "source": "https://s3.amazonaws.com/aws-quickstart/quickstart-microsoft-lync/submodules/quickstart-microsoft-utilities/scripts/Unzip-Archive.ps1"
+                            },
+                            "c:\\cfn\\modules\\AWSQuickStart.zip": {
+                                "source": "https://s3.amazonaws.com/aws-quickstart/quickstart-microsoft-lync/submodules/quickstart-microsoft-utilities/modules/AWSQuickStart.zip"
+                            },
+                            "c:\\cfn\\scripts\\Download-File.ps1": {
+                                "source": "https://s3.amazonaws.com/aws-quickstart/quickstart-microsoft-lync/submodules/quickstart-microsoft-utilities/scripts/Download-File.ps1"
+                            },
+                            "c:\\cfn\\scripts\\Mount-DiskImage.ps1": {
+                                "source": "https://s3.amazonaws.com/aws-quickstart/quickstart-microsoft-lync/submodules/quickstart-microsoft-utilities/scripts/Mount-DiskImage.ps1"
+                            },
+                            "c:\\cfn\\scripts\\Disable-AutoLogon.ps1": {
+                                "source": "https://s3.amazonaws.com/aws-quickstart/quickstart-microsoft-lync/submodules/quickstart-microsoft-utilities/scripts/Disable-AutoLogon.ps1"
+                            },
+                            "c:\\cfn\\scripts\\Enable-AutoLogon.ps1": {
+                                "source": "https://s3.amazonaws.com/aws-quickstart/quickstart-microsoft-lync/submodules/quickstart-microsoft-utilities/scripts/Enable-AutoLogon.ps1"
+                            },
+                            "c:\\cfn\\scripts\\Set-PrimaryDNSSuffix.ps1": {
+                                "source": "https://s3.amazonaws.com/aws-quickstart/quickstart-microsoft-lync/submodules/quickstart-microsoft-utilities/scripts/Set-PrimaryDNSSuffix.ps1"
+                            },
+                            "c:\\cfn\\scripts\\Set-LyncEdgeNetwork.ps1": {
+                                "source": "https://s3.amazonaws.com/aws-quickstart/quickstart-microsoft-lync/scripts/Set-LyncEdgeNetwork.ps1"
+                            },
+                            "c:\\cfn\\scripts\\Reset-LocalAdminPassword.ps1": {
+                                "source": "https://s3.amazonaws.com/aws-quickstart/quickstart-microsoft-lync/submodules/quickstart-microsoft-utilities/scripts/Reset-LocalAdminPassword.ps1"
+                            },
+                            "c:\\cfn\\scripts\\New-LyncEdge.ps1": {
+                                "source": "https://s3.amazonaws.com/aws-quickstart/quickstart-microsoft-lync/scripts/New-LyncEdge.ps1"
+                            },
+                            "c:\\cfn\\scripts\\Install.bat": {
+                                "content": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "powershell.exe -Command \"C:\\cfn\\scripts\\Mount-DiskImage.ps1 -ImagePath 'C:\\cfn\\downloads\\lync.iso'\"",
+                                            "\n",
+                                            "powershell.exe -command c:\\cfn\\scripts\\New-LyncEdge.ps1 -DomainDNSName ",
+                                            {
+                                                "Ref": "DomainDNSName"
+                                            },
+                                            " -DCName ",
+                                            {
+                                                "Ref": "ADServerNetBIOSName1"
+                                            },
+                                            " -DomainNetBIOSName ",
+                                            {
+                                                "Ref": "DomainNetBIOSName"
+                                            },
+                                            " -Username ",
+                                            {
+                                                "Ref": "DomainAdminUser"
+                                            },
+                                            " -Password ",
+                                            {
+                                                "Ref": "DomainAdminPassword"
+                                            },
+                                            " -Verbose",
+                                            "\n"
+                                        ]
+                                    ]
+                                }
+                            }
+                        },
+                        "services": {
+                            "windows": {
+                                "cfn-hup": {
+                                    "enabled": "true",
+                                    "ensureRunning": "true",
+                                    "files": [
+                                        "c:\\cfn\\cfn-hup.conf",
+                                        "c:\\cfn\\hooks.d\\cfn-auto-reloader.conf"
+                                    ]
+                                }
+                            }
+                        },
+                        "commands": {
+                            "a-set-execution-policy": {
+                                "command": "powershell.exe -command Set-ExecutionPolicy RemoteSigned -Force",
+                                "waitAfterCompletion": "0"
+                            },
+                            "b-unpack-quickstart-module": {
+                                "command": "powershell.exe -command c:\\cfn\\scripts\\Unzip-Archive.ps1 -Source c:\\cfn\\modules\\AWSQuickStart.zip -Destination C:\\Windows\\system32\\WindowsPowerShell\\v1.0\\Modules\\",
+                                "waitAfterCompletion": "0"
+                            },
+                            "c-init-quickstart-module": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "powershell.exe -Command \"",
+                                            "New-AWSQuickStartResourceSignal -Stack '",
+                                            {
+                                                "Ref": "AWS::StackName"
+                                            },
+                                            "' -Resource 'LE2' -Region '",
+                                            {
+                                                "Ref": "AWS::Region"
+                                            },
+                                            "'\""
+                                        ]
+                                    ]
+                                },
+                                "waitAfterCompletion": "0"
+                            },
+                            "d-download-media": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "powershell.exe -Command \"C:\\cfn\\scripts\\Download-File.ps1 -Source '",
+                                            {
+                                                "Ref": "LyncISOImageURI"
+                                            },
+                                            "' -Destination 'C:\\cfn\\downloads\\lync.iso'\""
+                                        ]
+                                    ]
+                                },
+                                "waitAfterCompletion": "0"
+                            },
+                            "e-reset-local-admin": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "powershell.exe -command C:\\cfn\\scripts\\Reset-LocalAdminPassword.ps1 -password '",
+                                            {
+                                                "Ref": "DomainAdminPassword"
+                                            },
+                                            "'"
+                                        ]
+                                    ]
+                                },
+                                "waitAfterCompletion": "0"
+                            }
+                        }
+                    },
+                    "prep": {
+                        "commands": {
+                            "a-rename-computer": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "powershell.exe -Command Rename-Computer -NewName LE2 -Restart"
+                                        ]
+                                    ]
+                                },
+                                "waitAfterCompletion": "forever"
+                            },
+                            "b-execute-powershell-script-SetDNSSuffix": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "powershell.exe -command \"c:\\cfn\\scripts\\Set-PrimaryDNSSuffix.ps1 -Suffix '",
+                                            {
+                                                "Ref": "DomainDNSName"
+                                            },
+                                            "'\""
+                                        ]
+                                    ]
+                                },
+                                "waitAfterCompletion": "forever"
+                            },
+                            "c-win-prereq": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "powershell.exe -ExecutionPolicy RemoteSigned -Command \"Install-WindowsFeature NET-Framework-45-Core,Windows-Identity-Foundation\""
+                                        ]
+                                    ]
+                                },
+                                "waitAfterCompletion": "0"
+                            },
+                            "d-wait-handle-and-resource-signal": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "powershell.exe -Command \"Write-AWSQuickStartStatus; Remove-AWSQuickStartResourceSignal; New-AWSQuickStartWaitHandle -Handle '",
+                                            {
+                                                "Ref": "Edge2WaitHandle"
+                                            },
+                                            "'\""
+                                        ]
+                                    ]
+                                },
+                                "waitAfterCompletion": "0"
+                            },
+                            "e-set-static-ip": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "powershell.exe -Command \"C:\\cfn\\scripts\\Set-LyncEdgeNetwork.ps1 -VPCCIDR '",
+                                            {
+                                                "Ref": "VPCCIDR"
+                                            },
+                                            "' -DNSAddresses '",
+                                            {
+                                                "Ref": "ADServer2PrivateIp"
+                                            },
+                                            "','",
+                                            {
+                                                "Ref": "ADServer1PrivateIp"
+                                            },
+                                            "' -ExternalIPAddress '",
+                                            {
+                                                "Ref": "LE2PublicIp"
+                                            },
+                                            "' -InternalIPAddress '",
+                                            {
+                                                "Ref": "LE2PrivateIp"
+                                            },
+                                            "'\""
+                                        ]
+                                    ]
+                                },
+                                "waitAfterCompletion": "0"
+                            }
+                        }
+                    },
+                    "install": {
+                        "commands": {
+                            "a-enable-autologon": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "powershell.exe -Command c:\\cfn\\scripts\\Enable-AutoLogon.ps1",
+                                            " -UserName LE2\\Administrator",
+                                            " -Password ",
+                                            {
+                                                "Ref": "DomainAdminPassword"
+                                            },
+                                            " -StartupScript c:\\cfn\\scripts\\Install.bat"
+                                        ]
+                                    ]
+                                },
+                                "waitAfterCompletion": "0"
+                            },
+                            "c-reboot": {
+                                "command": "powershell.exe -command Restart-Computer -Force",
+                                "waitAfterCompletion": "forever"
+                            }
+                        }
+                    }
+                }
+            },
+            "Properties": {
+                "ImageId": {
+                    "Fn::FindInMap": [
+                        "AWSAMIRegionMap",
+                        {
+                            "Ref": "AWS::Region"
+                        },
+                        "WS2012R2"
+                    ]
+                },
+                "InstanceType": {
+                    "Ref": "LyncEdgeInstanceType"
+                },
+                "NetworkInterfaces": [
+                    {
+                        "NetworkInterfaceId": {
+                            "Ref": "Edge2ExternalInterface"
+                        },
+                        "DeviceIndex": "0"
+                    }
+                ],
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": "LE2"
+                    }
+                ],
+                "BlockDeviceMappings": [
+                    {
+                        "DeviceName": "/dev/sda1",
+                        "Ebs": {
+                            "VolumeSize": "100",
+                            "VolumeType": "gp2"
+                        }
+                    }
+                ],
+                "IamInstanceProfile": {
+                    "Ref": "LEInstanceProfile"
+                },
+                "KeyName": {
+                    "Ref": "KeyPairName"
+                },
+                "UserData": {
+                    "Fn::Base64": {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "<script>\n",
+                                "cfn-init.exe -v -c config -s ",
+                                {
+                                    "Ref": "AWS::StackId"
+                                },
+                                " -r LE2",
+                                " --region ",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                "\n",
+                                "</script>\n"
+                            ]
+                        ]
+                    }
+                }
+            },
+            "CreationPolicy": {
+                "ResourceSignal": {
+                    "Count": "1",
+                    "Timeout": "PT75M"
+                }
+            }
+        },
+        "LyncSecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "GroupDescription": "Enable communications between Lync Servers and Lync Clients",
+                "VpcId": {
+                    "Ref": "VPC"
+                },
+                "SecurityGroupIngress": [
+                    {
+                        "IpProtocol": "-1",
+                        "FromPort": "1",
+                        "ToPort": "65535",
+                        "CidrIp": {
+                            "Fn::Join": [
+                                "",
+                                [
+                                    {
+                                        "Ref": "FE1PrivateIp"
+                                    },
+                                    "/32"
+                                ]
+                            ]
+                        }
+                    },
+                    {
+                        "IpProtocol": "-1",
+                        "FromPort": "1",
+                        "ToPort": "65535",
+                        "CidrIp": {
+                            "Fn::Join": [
+                                "",
+                                [
+                                    {
+                                        "Ref": "FE2PrivateIp"
+                                    },
+                                    "/32"
+                                ]
+                            ]
+                        }
+                    },
+                    {
+                        "IpProtocol": "-1",
+                        "FromPort": "1",
+                        "ToPort": "65535",
+                        "CidrIp": {
+                            "Fn::Join": [
+                                "",
+                                [
+                                    {
+                                        "Ref": "LE1PrivateIp"
+                                    },
+                                    "/32"
+                                ]
+                            ]
+                        }
+                    },
+                    {
+                        "IpProtocol": "-1",
+                        "FromPort": "1",
+                        "ToPort": "65535",
+                        "CidrIp": {
+                            "Fn::Join": [
+                                "",
+                                [
+                                    {
+                                        "Ref": "LE2PrivateIp"
+                                    },
+                                    "/32"
+                                ]
+                            ]
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "5061",
+                        "ToPort": "5061",
+                        "CidrIp": {
+                            "Ref": "VPCCIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "8057",
+                        "ToPort": "8057",
+                        "CidrIp": {
+                            "Ref": "VPCCIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "443",
+                        "ToPort": "443",
+                        "CidrIp": {
+                            "Ref": "VPCCIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "448",
+                        "ToPort": "448",
+                        "CidrIp": {
+                            "Ref": "VPCCIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "49152",
+                        "ToPort": "65535",
+                        "CidrIp": {
+                            "Ref": "VPCCIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "UDP",
+                        "FromPort": "49152",
+                        "ToPort": "57500",
+                        "CidrIp": {
+                            "Ref": "VPCCIDR"
+                        }
+                    }
+                ]
+            }
+        },
+        "LyncEdgeSecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Condition": "DeployEdge",
+            "Properties": {
+                "GroupDescription": "Enable communications for Lync Edge Servers",
+                "VpcId": {
+                    "Ref": "VPC"
+                },
+                "SecurityGroupIngress": [
+                    {
+                        "IpProtocol": "udp",
+                        "FromPort": "3478",
+                        "ToPort": "3478",
+                        "CidrIp": "0.0.0.0/0"
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "443",
+                        "ToPort": "443",
+                        "CidrIp": "0.0.0.0/0"
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "444",
+                        "ToPort": "444",
+                        "CidrIp": "0.0.0.0/0"
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "5061",
+                        "ToPort": "5061",
+                        "CidrIp": "0.0.0.0/0"
+                    },
+                    {
+                        "IpProtocol": "-1",
+                        "FromPort": "1",
+                        "ToPort": "65535",
+                        "CidrIp": {
+                            "Fn::Join": [
+                                "",
+                                [
+                                    {
+                                        "Ref": "FE1PrivateIp"
+                                    },
+                                    "/32"
+                                ]
+                            ]
+                        }
+                    },
+                    {
+                        "IpProtocol": "-1",
+                        "FromPort": "1",
+                        "ToPort": "65535",
+                        "CidrIp": {
+                            "Fn::Join": [
+                                "",
+                                [
+                                    {
+                                        "Ref": "FE2PrivateIp"
+                                    },
+                                    "/32"
+                                ]
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        "FERole": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "AssumeRolePolicyDocument": {
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Principal": {
+                                "Service": [
+                                    "ec2.amazonaws.com"
+                                ]
+                            },
+                            "Action": [
+                                "sts:AssumeRole"
+                            ]
+                        }
+                    ]
+                },
+                "ManagedPolicyArns": [
+                    "arn:aws:iam::aws:policy/service-role/AmazonEC2RoleforSSM"
+                ],
+                "Path": "/"
+            }
+        },
+        "FEInstanceProfile": {
+            "Type": "AWS::IAM::InstanceProfile",
+            "Properties": {
+                "Path": "/",
+                "Roles": [
+                    {
+                        "Ref": "FERole"
+                    }
+                ]
+            }
+        },
+        "LERole": {
+            "Type": "AWS::IAM::Role",
+            "Condition": "DeployEdge",
+            "Properties": {
+                "AssumeRolePolicyDocument": {
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Principal": {
+                                "Service": [
+                                    "ec2.amazonaws.com"
+                                ]
+                            },
+                            "Action": [
+                                "sts:AssumeRole"
+                            ]
+                        }
+                    ]
+                },
+                "ManagedPolicyArns": [
+                    "arn:aws:iam::aws:policy/service-role/AmazonEC2RoleforSSM"
+                ],
+                "Path": "/"
+            }
+        },
+        "LEInstanceProfile": {
+            "Type": "AWS::IAM::InstanceProfile",
+            "Condition": "DeployEdge",
+            "Properties": {
+                "Path": "/",
+                "Roles": [
+                    {
+                        "Ref": "LERole"
+                    }
+                ]
+            }
+        }
+    }
+}

@@ -1,0 +1,117 @@
+---
+AWSTemplateFormatVersion: 2010-09-09
+
+Description: This template creates the Security Groups related to Citrix ADC.
+
+Parameters:
+  VPCID:
+    Description: VPC ID
+    Type: String
+  BastionSecurityGroupID:
+    Description: Bastion Security Group ID
+    Type: AWS::EC2::SecurityGroup::Id
+  RestrictedWebAppCIDR:
+    Type: String
+    MinLength: 9
+    MaxLength: 18
+    Description:
+      "A CIDR block that is allowed to access the ADC on tcp ports 80, 443.
+      We recommend that you use a constrained CIDR range to
+      reduce the potential of inbound attacks from unknown IP addresses."
+    AllowedPattern: '(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})'
+    ConstraintDescription: Must be a valid IP CIDR range of the form x.x.x.x/x.
+
+Resources:
+  ManagementSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName} SecurityGroup
+      GroupDescription: "Allow everything from management security group and bastion security group"
+      VpcId: !Ref VPCID
+
+  ManagementInboundRule:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      IpProtocol: tcp
+      FromPort: 0
+      ToPort: 65535
+      SourceSecurityGroupId: !GetAtt ManagementSecurityGroup.GroupId
+      GroupId: !GetAtt ManagementSecurityGroup.GroupId
+
+  ManagementBastionInboundRule:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      IpProtocol: tcp
+      FromPort: 0
+      ToPort: 65535
+      SourceSecurityGroupId: !Ref BastionSecurityGroupID
+      GroupId: !GetAtt ManagementSecurityGroup.GroupId
+
+  ClientSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName} SecurityGroup
+      GroupDescription: "Enable HTTP and HTTPs from RestrictedWebAppCIDR and everything from bastion security group."
+      VpcId: !Ref VPCID
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: !Ref RestrictedWebAppCIDR
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: !Ref RestrictedWebAppCIDR
+
+  ClientBastionInboundRule:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      IpProtocol: tcp
+      FromPort: 0
+      ToPort: 65535
+      SourceSecurityGroupId: !Ref BastionSecurityGroupID
+      GroupId: !GetAtt ClientSecurityGroup.GroupId
+
+  ServerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName} SecurityGroup
+      GroupDescription: "Allow everything from within the server and bastion security group."
+      VpcId: !Ref VPCID
+
+  ServerInboundRule:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      IpProtocol: tcp
+      FromPort: 0
+      ToPort: 65535
+      SourceSecurityGroupId: !GetAtt ServerSecurityGroup.GroupId
+      GroupId: !GetAtt ServerSecurityGroup.GroupId
+
+  ServerBastionInboundRule:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      IpProtocol: tcp
+      FromPort: 0
+      ToPort: 65535
+      SourceSecurityGroupId: !Ref BastionSecurityGroupID
+      GroupId: !GetAtt ServerSecurityGroup.GroupId
+
+Outputs:
+  ManagementSecurityGroupID:
+    Description: Management Security Group ID
+    Value: !Ref ManagementSecurityGroup
+
+  ClientSecurityGroupID:
+    Description: Management Security Group ID
+    Value: !Ref ClientSecurityGroup
+
+  ServerSecurityGroupID:
+    Description: Management Security Group ID
+    Value: !Ref ServerSecurityGroup

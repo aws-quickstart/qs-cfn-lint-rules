@@ -1,0 +1,159 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Aspect WFM Agent Productivity Report Generator integration and
+  Real-Time Adherence integration
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+    - Label:
+        default: Aspect WFM Configuration
+      Parameters:
+      - KdaApplicationName
+      - AspectApDataS3Prefix
+    - Label:
+        default: Amazon Connect Configuration
+      Parameters:
+      - ConnectS3Bucket
+      - ConnectS3Prefix
+      - AgentEventStreamArn
+    - Label:
+        default: AWS Quick Start configuration
+      Parameters:
+      - QSS3BucketName
+      - QSS3KeyPrefix
+    ParameterLabels:
+      KdaApplicationName:
+        default: Aspect Kinesis Application Name
+      AspectApDataS3Prefix:
+        default: Aspect WFM Report Prefix
+      ConnectS3Bucket:
+        default: Amazon Connect Exported Reports Bucket
+      ConnectS3Prefix:
+        default: Amazon Connect Exported Reports Prefix
+      AgentEventStreamArn:
+        default: Agent Event Kinesis Stream ARN
+      QSS3BucketName:
+        default: QuickStart S3 bucket name
+      QSS3KeyPrefix:
+        default: QuickStart S3 key prefix
+Parameters:
+  KdaApplicationName:
+    Type: String
+    Default: aspect-wfm-ap
+    AllowedPattern: ^[0-9a-zA-Z]+([0-9a-zA-Z-.]*[0-9a-zA-Z])*$
+    Description: Enter the name of the Kinesis Data Analytics application to create.  This
+      string can include numbers, lowercase letters, uppercase letters, and hyphens
+      (-). It cannot start or end with a hyphen (-).  If you have multiple Amazon
+      Connect instances in your AWS account, you will need to create a Kinesis Data
+      Analytics application for each Amazon Connect instance and give each application
+      a unique name.  The Kinesis Firehose Data Delivery stream that writes agent
+      status reports to S3 is named based on the application name.  The name of the
+      Firehose stream determines the filenames of agent productivity report files
+      written to S3.  By default, WFM Adapter expects the report files to be named
+      based on an application name of "aspect-wfm-ap". If you specify a different
+      application name, be sure to update the WFM Adapter configuration for the corresponding
+      data source to match your application name, in the Firehose Report Mapping data
+      source parameter.  Consult the WFM Adapter help for more information.
+  AspectApDataS3Prefix:
+    Type: String
+    Default: OUTPUT/
+    Description: Enter the prefix for Aspect WFM Agent Productivity reports written
+      to S3.  You should configure the corresponding WFM Adapter data source to match
+      this value, in the Firehose Report Root Path data source parameter.
+  ConnectS3Bucket:
+    Type: String
+    Description: Enter the name of the Exported reports S3 bucket of your Amazon Connect instance.
+  ConnectS3Prefix:
+    Type: String
+    Default: connect/directory/Reports/Aspect/
+    Description: Enter the prefix under which the exported reports read by WFM Adapter will be
+      exported, in the Exported reports bucket of your Amazon Connect instance.
+  AgentEventStreamArn:
+    Type: String
+    Description: Enter the Amazon Resource Name (ARN) of the Amazon Kinesis Data Stream to which Amazon Connect delivers Agent Events.
+  QSS3BucketName:
+    AllowedPattern: ^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$
+    ConstraintDescription: Quick Start bucket name can include numbers, lowercase
+      letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen
+      (-).
+    Default: aws-quickstart
+    Description: S3 bucket name for the Quick Start assets. This string can include
+      numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start
+      or end with a hyphen (-).
+    Type: String
+  QSS3KeyPrefix:
+    AllowedPattern: ^[0-9a-zA-Z-/]*$
+    ConstraintDescription: Quick Start key prefix can include numbers, lowercase letters,
+      uppercase letters, hyphens (-), and forward slash (/).
+    Default: connect-integration-aspect-wfm/
+    Description: S3 key prefix for the Quick Start assets. Quick Start key prefix
+      can include numbers, lowercase letters, uppercase letters, hyphens (-), and
+      forward slash (/).
+    Type: String
+Rules:
+  ParameterDefaults:
+    Assertions:
+    - Assert:
+        Fn::Not:
+        - Fn::Equals:
+          - Ref: ConnectS3Prefix
+          - connect/directory/Reports/Aspect/
+      AssertDescription: Replace directory with the directory name of your Amazon Connect instance.
+Resources:
+  ApStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: https://aws-quickstart.s3.amazonaws.com/connect-integration-aspect-wfm/templates/aspect-wfm-ap-kda.template
+      Parameters:
+        KdaApplicationName: !Ref KdaApplicationName
+        AspectApDataS3Prefix: !Ref AspectApDataS3Prefix
+        ConnectS3Bucket: !Ref ConnectS3Bucket
+        ConnectS3Prefix: !Ref ConnectS3Prefix
+        AgentEventStreamArn: !Ref AgentEventStreamArn
+        QSS3BucketName: !Ref QSS3BucketName
+        QSS3KeyPrefix: !Ref QSS3KeyPrefix
+  RtaStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: https://aws-quickstart.s3.amazonaws.com/connect-integration-aspect-wfm/templates/aspect-wfm-rta.template
+      Parameters:
+        AgentEventStreamArn: !Ref AgentEventStreamArn
+        QSS3BucketName: !Ref QSS3BucketName
+        QSS3KeyPrefix: !Ref QSS3KeyPrefix
+Outputs:
+  APS3BucketName:
+    Value:
+      Fn::GetAtt:
+      - ApStack
+      - Outputs.APS3BucketName
+  ApplicationPhysicalResourceId:
+    Value:
+      Fn::GetAtt:
+      - ApStack
+      - Outputs.ApplicationPhysicalResourceId
+  WFMAdapterUserName:
+    Value:
+      Fn::GetAtt:
+      - ApStack
+      - Outputs.WFMAdapterUserName
+  DynamoDbTableName:
+    Value:
+      Fn::GetAtt:
+      - RtaStack
+      - Outputs.DynamoDbTableName
+  SqsQueueUrl:
+    Value:
+      Fn::GetAtt:
+      - RtaStack
+      - Outputs.SqsQueueUrl
+  LambdaFunctionName:
+    Value:
+      Fn::GetAtt:
+      - RtaStack
+      - Outputs.LambdaFunctionName
+  RTAUserName:
+    Value:
+      Fn::GetAtt:
+      - RtaStack
+      - Outputs.RTAUserName
+...

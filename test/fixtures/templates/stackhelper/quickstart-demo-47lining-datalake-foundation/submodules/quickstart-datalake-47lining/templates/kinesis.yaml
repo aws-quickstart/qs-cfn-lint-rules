@@ -1,0 +1,51 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description:
+  AWS CloudFormation templates to create AWS Kinesis Firehose endpoints.
+  (qs-1nlkhq1ot)
+Parameters:
+  KinesisStreamBucketName:
+    Description: Kinesis stream bucket name
+    Type: String
+  KinesisStreamBucketRoleARN:
+    Description: Kinesis stream bucket role ARN
+    Type: String
+  KinesisStreamKeyPrefix:
+    Description: Kinesis stream S3 key prefix
+    Type: String
+  KinesisStreamName:
+    Description: Kinesis stream name
+    Type: String
+  RandomStringArn:
+    Description: The ARN for the function that will generate the random value to be used in the naming of the S3 Buckets
+    Type: String
+Resources:
+  RandomString:
+    Type: Custom::RandomString
+    Properties:
+      ServiceToken: !Ref RandomStringArn
+      Number: 8
+  KinesisStream:
+    Properties:
+      DeliveryStreamName: !Join
+        - "-"
+        - - !Ref "KinesisStreamName"
+          - !Sub ${RandomString}
+      S3DestinationConfiguration:
+        BucketARN: !Join
+          - ""
+          - - "arn:aws:s3:::"
+            - !Ref "KinesisStreamBucketName"
+        BufferingHints:
+          IntervalInSeconds: 60
+          SizeInMBs: 60
+        CompressionFormat: UNCOMPRESSED
+        Prefix: !Join
+          - ""
+          - - !Ref "KinesisStreamKeyPrefix"
+            - /
+        RoleARN: !Ref "KinesisStreamBucketRoleARN"
+    Type: AWS::KinesisFirehose::DeliveryStream
+Outputs:
+  KinesisDataStreamName:
+    Description: Kinesis data stream name
+    Value: !Ref "KinesisStream"

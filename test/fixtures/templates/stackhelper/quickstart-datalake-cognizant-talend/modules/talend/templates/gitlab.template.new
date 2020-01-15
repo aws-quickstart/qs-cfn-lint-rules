@@ -1,0 +1,527 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "GitLab CE",
+    "Metadata": {
+        "AWS::CloudFormation::Interface": {
+            "ParameterGroups": [
+                {
+                    "Label": {
+                        "default": "Network Configuration"
+                    },
+                    "Parameters": [
+                        "SubnetId"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "Server Configuration"
+                    },
+                    "Parameters": [
+                        "InstanceType",
+                        "KeyPairName",
+                        "VolumeType",
+                        "ProvisionedIops",
+                        "VolumeSize"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "Git Configuration"
+                    },
+                    "Parameters": [
+                        "GitRepo",
+                        "GitAdmiUserid",
+                        "GitAdminPassword",
+                        "GitAdminEmail",
+                        "GitTacUserid",
+                        "GitTacPassword",
+                        "GitTacEmail"
+                    ]
+                }
+            ],
+            "ParameterLabels": {
+                "KeyPairName": {
+                    "default": "AWS Key Pair Name"
+                },
+                "VolumeType": {
+                    "default": "Volume Type"
+                },
+                "InstanceType": {
+                    "default": "Instance Type"
+                },
+                "ProvisionedIops": {
+                    "default": "Provisioned IOPS"
+                },
+                "VolumeSize": {
+                    "default": "Volume Size"
+                },
+                "SubnetId": {
+                    "default": "Subnet Id"
+                }
+            }
+        }
+    },
+    "Parameters": {
+        "QSS3URL": {
+            "Description": "Encapsulate variation in s3 root url for commercial or gov-cloud",
+            "Type": "String",
+            "Default": "s3.amazonaws.com",
+            "AllowedValues": [ "s3.amazonaws.com", "s3-us-gov-west-1.amazonaws.com" ]
+        },
+        "QSS3BucketName": {
+            "AllowedPattern": "^[0-9a-zA-Z]+([0-9a-zA-Z-.]*[0-9a-zA-Z])*$",
+            "ConstraintDescription": "Quick Start bucket name can include numbers, lowercase letters, uppercase letters, periods (.), and hyphens (-). It cannot start or end with a hyphen (-).",
+            "Description": "S3 bucket name for the Quick Start assets. Quick Start bucket name can include numbers, lowercase letters, uppercase letters, periods (.), and hyphens (-). It cannot start or end with a hyphen (-).",
+            "Type": "String"
+        },
+        "QSS3KeyPrefix": {
+            "AllowedPattern": "^[0-9a-zA-Z-/]*$",
+            "ConstraintDescription": "Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).  Prefix cannot start with a slash but must end with a slash unless it is the empty string.",
+            "Description": "S3 key prefix for the Quick Start assets. Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).  Prefix cannot start with a slash but must end with a slash unless it is the empty string.",
+            "Type": "String"
+        },
+        "InstanceRole": {
+            "Description": "Talend Server EC2 IAM Role",
+            "Type": "String"
+        },
+        "InstanceProfile": {
+            "Description": "Talend Server EC2 Instance Profile",
+            "Type": "String"
+        },
+        "InstanceType": {
+            "Default": "m4.large",
+            "Description": "WebServer EC2 instance type",
+            "Type": "String",
+            "AllowedValues": [
+                "m4.large",
+                "m4.xlarge",
+                "m4.2xlarge",
+                "m4.4xlarge",
+                "c4.large",
+                "c4.xlarge",
+                "c4.2xlarge",
+                "c4.4xlarge",
+                "c4.8xlarge",
+                "i3.large",
+                "i3.xlarge",
+                "i3.2xlarge"
+            ],
+            "ConstraintDescription": "must be a valid EC2 instance type for GitLab CE c4.large is recommended"
+        },
+        "KeyPairName": {
+            "ConstraintDescription": "must be the name of an existing EC2 KeyPair.",
+            "Description": "Name of an existing EC2 KeyPair to enable SSH access to the instance",
+            "Type": "AWS::EC2::KeyPair::KeyName"
+        },
+        "ProvisionedIops": {
+            "ConstraintDescription": "Range is 100 to 20000 for Provisioned IOPS SSD volumes",
+            "Default": "100",
+            "Description": "Set the provisioned IOPs between 100 and 20000. Only set if you are choosing io1 for your volume type",
+            "Type": "String"
+        },
+        "SubnetId": {
+            "Description": "The subnet where the GitLab CE instance will be launched",
+            "Type": "AWS::EC2::Subnet::Id"
+        },
+		"PrivateSubnet": {
+            "Description": "Is this is a private subnet.",
+            "Type": "String",
+			"Default": "public",
+            "AllowedValues": [ "private", "public" ]
+		},
+        "VolumeSize": {
+            "Default": "100",
+            "Description": "The size of the EBS attached volume",
+            "Type": "String"
+        },
+        "GitSecurityGroupID": {
+            "Type": "AWS::EC2::SecurityGroup::Id",
+            "Description": "Gitlab Security Group"
+        },
+        "VolumeType": {
+            "AllowedValues": [
+                "gp2",
+                "io1"
+            ],
+            "Description": "Choose either GP2 or IO1. IO1 is recommended for more than 500 users",
+            "Default": "gp2",
+            "Type": "String"
+        },
+        "GitAdminUserid": {
+            "Description": "Git admin userid.",
+            "Type": "String",
+            "Default": "tadmin"
+        },
+        "GitAdminPassword": {
+            "Description": "Git admin password.",
+            "Type": "String",
+            "NoEcho": "true"
+        },
+        "GitAdminEmail": {
+            "Description": "Git admin contact email.",
+            "Type": "String",
+            "Default": ""
+        },
+        "GitTacUserid": {
+            "Description": "Git TAC userid.",
+            "Type": "String",
+            "Default": "tac"
+        },
+        "GitTacPassword": {
+            "Description": "Git TAC password.",
+            "Type": "String",
+            "NoEcho": "true"
+        },
+        "GitTacEmail": {
+            "Description": "TAC contact email.",
+            "Type": "String",
+            "Default": ""
+        },
+        "GitRepo": {
+            "Description": "Initial Git repository.",
+            "Type": "String",
+            "Default": "oodlejobs"
+        }
+    },
+    "Mappings": {
+        "AWSAMIRegionMap": {
+            "AMI": {
+                "GHE29": "GitLab CE 8.17.2"
+            },
+            "ap-northeast-1": {
+                "AMI": "ami-1b30677c"
+            },
+            "ap-northeast-2": {
+                "AMI": "ami-5544943b"
+            },
+            "ap-south-1": {
+                "AMI": "ami-f07f0f9f"
+            },
+            "ap-southeast-1": {
+                "AMI": "ami-34893957"
+            },
+            "ap-southeast-2": {
+                "AMI": "ami-eebbb88d"
+            },
+            "ca-central-1": {
+                "AMI": "ami-7e64d91a"
+            },
+            "eu-central-1": {
+                "AMI": "ami-8666b3e9"
+            },
+            "eu-west-1": {
+                "AMI": "ami-35c4ed53"
+            },
+            "eu-west-2": {
+                "AMI": "ami-49f1e42d"
+            },
+            "sa-east-1": {
+                "AMI": "ami-96c7a1fa"
+            },
+            "us-east-1": {
+                "AMI": "ami-2b31ea3d"
+            },
+            "us-east-2": {
+                "AMI": "ami-0a8bae6f"
+            },
+            "us-west-1": {
+                "AMI": "ami-35fda355"
+            },
+            "us-west-2": {
+                "AMI": "ami-ad860bcd"
+            }
+        }
+    },
+    "Conditions": {
+        "isPrivateSubnet": {
+            "Fn::Equals": [
+                { "Ref": "PrivateSubnet" },
+                "private"
+            ]
+        },
+		"isPublicSubnet": {
+			"Fn::Not": [ { "Condition": "isPrivateSubnet" } ]
+		},
+        "GovCloudCondition": {
+            "Fn::Equals": [
+                {
+                    "Ref": "AWS::Region"
+                },
+                "us-gov-west-1"
+            ]
+        },
+        "Io1Set": {
+            "Fn::Equals": [
+                {
+                    "Ref": "VolumeType"
+                },
+                "io1"
+            ]
+        }
+    },
+    "Resources": {
+        "GitReady" : {
+            "Type" : "AWS::CloudFormation::WaitCondition",
+            "CreationPolicy" : {
+                "ResourceSignal" : {
+                    "Timeout": "PT15M",
+                    "Count"  : "1"
+                }
+            }
+        },
+        "GitInstance": {
+            "Type": "AWS::EC2::Instance",
+            "Properties": {
+                "InstanceType": { "Ref": "InstanceType" },
+                "KeyName": { "Ref": "KeyPairName" },
+                "SecurityGroupIds": [ { "Ref": "GitSecurityGroupID" } ],
+                "SubnetId": { "Ref": "SubnetId" },
+                "Tags": [ { "Key": "Name", "Value": "GitLab CE" } ],
+                "BlockDeviceMappings": [
+                    {
+                        "DeviceName": "/dev/xvdf",
+                        "Ebs": {
+                            "Encrypted": "true",
+                            "Iops": {
+                                "Fn::If": [
+                                    "Io1Set",
+                                    {
+                                        "Ref": "ProvisionedIops"
+                                    },
+                                    {
+                                        "Ref": "AWS::NoValue"
+                                    }
+                                ]
+                            },
+                            "VolumeSize": {
+                                "Ref": "VolumeSize"
+                            },
+                            "VolumeType": {
+                                "Ref": "VolumeType"
+                            }
+                        }
+                    }
+                ],
+                "EbsOptimized": "true",
+                "IamInstanceProfile": {
+                    "Ref": "InstanceProfile"
+                },
+                "ImageId": {
+                    "Fn::FindInMap": [
+                        "AWSAMIRegionMap",
+                        {
+                            "Ref": "AWS::Region"
+                        },
+                        "AMI"
+                    ]
+                },
+                "UserData": {
+                    "Fn::Base64": {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "#!/bin/bash -xe\n",
+                                "while ! apt-get update -q ; do sleep 10; done\n",
+                                "wget ",
+                                { "Fn::Sub": "http://${QSS3BucketName}.${QSS3URL}/${QSS3KeyPrefix}scripts/bootstrap/ec2-metadata" },
+                                "\n",
+								"chmod +x ec2-metadata\n",
+                                "wget ",
+                                { "Fn::Sub": "http://${QSS3BucketName}.${QSS3URL}/${QSS3KeyPrefix}scripts/bootstrap/update_hosts_ubuntu.sh" },
+                                "\n",
+								"chmod +x update_hosts_ubuntu.sh\n",
+                                "./update_hosts_ubuntu.sh\n",
+                                "while ! apt-get -y install python-setuptools; do sleep 10; done\n",
+                                "easy_install https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-latest.tar.gz\n",
+                                "# Install the files and packages from the metadata\n",
+                                "cfn-init -v ",
+                                "         --stack ",
+                                {
+                                    "Ref": "AWS::StackName"
+                                },
+                                "         --resource GitInstance ",
+                                "         --configsets All ",
+                                "         --region ",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                "\n",
+                                "cfn-signal -e $? ",
+                                "         --stack ",
+                                {
+                                    "Ref": "AWS::StackName"
+                                },
+                                "         --resource GitInstance ",
+                                "         --region ",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                "\n"
+                            ]
+                        ]
+                    }
+                }
+            },
+            "Metadata": {
+                "AWS::CloudFormation::Authentication": {
+                    "S3AccessCreds": {
+                        "type": "S3",
+                        "roleName": { "Ref": "InstanceRole" }
+                    }
+                },
+                "AWS::CloudFormation::Init": {
+                    "configSets": {
+                        "All": [
+                            "Download",
+                            "Configure",
+                            "Install"
+                        ]
+                    },
+                    "Download": {
+                        "files": {
+                            "/home/ubuntu/talend-gitlab.sh": {
+                                "source": {
+                                    "Fn::Sub": "http://${QSS3BucketName}.${QSS3URL}/${QSS3KeyPrefix}scripts/git/talend-gitlab.sh"
+                                },
+                                "owner": "ubuntu",
+                                "group": "ubuntu",
+                                "mode": "000500",
+                                "authentication": "S3AccessCreds"
+                            },
+                            "/home/ubuntu/talend-gitlab-external-url.sh": {
+                                "source": {
+                                    "Fn::Sub": "http://${QSS3BucketName}.${QSS3URL}/${QSS3KeyPrefix}scripts/git/talend-gitlab-external-url.sh"
+                                },
+                                "owner": "ubuntu",
+                                "group": "ubuntu",
+                                "mode": "000500",
+                                "authentication": "S3AccessCreds"
+                            },
+                            "/home/ubuntu/isGitStarted.sh": {
+                                "source": {
+                                    "Fn::Sub": "http://${QSS3BucketName}.${QSS3URL}/${QSS3KeyPrefix}scripts/git/isGitStarted.sh"
+                                },
+                                "owner": "ubuntu",
+                                "group": "ubuntu",
+                                "mode": "000500",
+                                "authentication": "S3AccessCreds"
+                            },
+                            "/home/ubuntu/ec2-metadata": {
+                                "source": {
+                                    "Fn::Sub": "http://${QSS3BucketName}.${QSS3URL}/${QSS3KeyPrefix}scripts/bootstrap/ec2-metadata"
+                                },
+                                "owner": "ubuntu",
+                                "group": "ubuntu",
+                                "mode": "000500",
+                                "authentication": "S3AccessCreds"
+                            }
+                        }
+                    },
+                    "Configure": {
+                        "files": {
+                            "/home/ubuntu/gitlab-config.sh": {
+                                "content": {
+                                    "Fn::Join": [
+                                        "\n",
+                                        [
+                                            "#!/bin/bash",
+                                            "", 
+                                            "function gitlab_conf() { ",
+                                            { "Fn::Sub": "    local git_admin_userid=\"${GitAdminUserid}\"" },
+                                            { "Fn::Sub": "    local git_admin_password=\"${GitAdminPassword}\"" },
+                                            { "Fn::Sub": "    local git_admin_email=\"${GitAdminEmail}\"" },
+                                            { "Fn::Sub": "    local git_tac_userid=\"${GitTacUserid}\"" },
+                                            { "Fn::Sub": "    local git_tac_password=\"${GitTacPassword}\"" },
+                                            { "Fn::Sub": "    local git_tac_email=\"${GitTacEmail}\"" },
+                                            { "Fn::Sub": "    local git_repo=\"${GitRepo}\"" },
+                                            "\"${@}\"",
+                                            "}",
+                                            ""
+                                        ]
+                                    ]
+                                },
+                                "owner": "root",
+                                "group": "root",
+                                "mode": "000400"
+                            }
+                        },
+                        "commands": {
+                            "00-external-url": {
+                                "command": "/bin/bash -c /home/ubuntu/talend-gitlab-external-url.sh"
+                            }
+                        }
+                    },
+                    "Install": {
+                        "commands": {
+                            "01-install-ruby": {
+                                "command": "while ! apt-get install -y ruby ; do sleep 10; done"
+                            },
+                            "02-install-jq": {
+                                "command": "while ! apt-get install -y jq ; do sleep 10; done"
+                            },
+                            "03-gitlab-reconfigure": {
+                                "command": "gitlab-ctl reconfigure"
+                            },
+                            "04-install-gitlab-gem": {
+                                "command": "while ! gem install gitlab ; do sleep 10; done"
+                            },
+                            "05-install-gitlab": {
+                                "command": "/bin/bash -c \". /home/ubuntu/gitlab-config.sh; . /home/ubuntu/talend-gitlab.sh; gitlab_conf gitlab_init;\""
+                            },
+                            "06-git-started": {
+                                "command": {
+                                    "Fn::Sub": "/home/ubuntu/isGitStarted.sh http://localhost/${GitRepo} GitLab /home/ubuntu"
+                                }
+                            },
+                            "07-git-ready": {
+                                "command": {
+                                    "Fn::Sub": "cfn-signal -e 0 --stack ${AWS::StackName} --resource GitReady --region ${AWS::Region}"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "Outputs": {
+        "publicIp": {
+			"Condition": "isPublicSubnet",
+            "Value": { "Fn::GetAtt": [ "GitInstance", "PublicIp" ] },
+            "Description": "Talend public IP",
+			"Export": {
+				"Name": {
+					"Fn::Sub": "${AWS::StackName}:publicIp" 
+				} 
+			}
+        },
+        "privateIp": {
+            "Value": { "Fn::GetAtt": [ "GitInstance", "PrivateIp" ] },
+            "Description": "Talend private IP",
+			"Export": {
+				"Name": {
+					"Fn::Sub": "${AWS::StackName}:privateIp" 
+				}
+			}
+        },
+        "publicDnsName": {
+			"Condition": "isPublicSubnet",
+            "Value": { "Fn::GetAtt": [ "GitInstance", "PublicDnsName" ] },
+            "Description": "Talend public DNS",
+			"Export": {
+				"Name": {
+					"Fn::Sub": "${AWS::StackName}:publicDnsName"
+				}
+			}
+        },
+        "privateDnsName": {
+            "Value": { "Fn::GetAtt": [ "GitInstance", "PrivateDnsName" ] },
+            "Description": "Talend private DNS",
+			"Export": {
+				"Name": {
+					"Fn::Sub": "${AWS::StackName}:privateDnsName" 
+				}
+			}
+        }
+    }
+}

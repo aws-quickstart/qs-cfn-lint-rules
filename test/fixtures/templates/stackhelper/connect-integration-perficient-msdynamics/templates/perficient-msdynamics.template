@@ -1,0 +1,437 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Microsoft Dynamics Data Integration Quick Start for Amazon Connect (qs-1o7u5ld9c)
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+    - Label:
+        default: Dynamics 365 Configuration
+      Parameters:
+      - AzureADDomain
+      - DynamicsHostDomain
+      - DynamicsClientId
+      - DynamicsClientSecret
+      - NotificationEmailAddress
+      - FunctionKeepWarmInterval
+    - Label:
+        default: AWS Quick Start Configuration
+      Parameters:
+      - QSS3BucketName
+      - QSS3KeyPrefix
+    ParameterLabels:
+      AzureADDomain:
+        default: Azure AD Domain
+      DynamicsHostDomain:
+        default: Dynamics 365 Domain
+      DynamicsClientId:
+        default: Azure AD App Client Id
+      DynamicsClientSecret:
+        default: Azure AD App Secret
+      NotificationEmailAddress:
+        default: Error Notification Email Address
+      FunctionKeepWarmInterval:
+        default: Dynamics Functions Keep Warm Interval (minutes)
+      QSS3BucketName:
+        default: Quick Start S3 Bucket Name
+      QSS3KeyPrefix:
+        default: Quick Start S3 Key Prefix
+Parameters:
+  AzureADDomain:
+    Type: String
+    Description: The domain of you Azure Active Directory instance, i.e. mycompany.onmicrosoft.com
+    Default: mycompany.onmicrosoft.com
+  DynamicsHostDomain:
+    Type: String
+    Description: The domain of your Microsoft Dynamics instance, i.e. mycompany.crm.dynamics.com
+    Default: mycompany.crm.dynamics.com
+  DynamicsClientId:
+    Type: String
+    Description: The client id of the Azure AD app registration you created with access
+      to Dynamics
+    Default: 72fe49e1-ab2c-47fb-ac8c-e65821391006
+  DynamicsClientSecret:
+    Type: String
+    Description: The client secret of the Azure AD app registration you created with
+      access to Dynamics
+    Default: bb
+    NoEcho: true
+  FunctionKeepWarmInterval:
+    Type: Number
+    Description: How often (minutes) to invoke the Dynamics Data Dip functions to
+      keep them ready
+    Default: '5'
+  NotificationEmailAddress:
+    Type: String
+    Description: The email address to send notifications if Dynamics Web API authentication
+      fails. The notifications will also be from this email address
+    Default: me@mycompany.com
+  QSS3BucketName:
+    AllowedPattern: ^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$
+    ConstraintDescription: Quick Start bucket name can include numbers, lowercase
+      letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen
+      (-)
+    Description: S3 bucket name for the Quick Start assets. This string can include
+      numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start
+      or end with a hyphen (-)
+    Default: aws-quickstart
+    Type: String
+  QSS3KeyPrefix:
+    AllowedPattern: ^[0-9a-zA-Z-/]*$
+    ConstraintDescription: Quick Start key prefix can include numbers, lowercase letters,
+      uppercase letters, hyphens (-), and forward slash (/)
+    Description: S3 key prefix for the Quick Start assets. Quick Start key prefix
+      can include numbers, lowercase letters, uppercase letters, hyphens (-), and
+      forward slash (/)
+    Type: String
+    Default: connect-integration-perficient-msdynamics/
+Rules:
+  RegionSupport:
+    Assertions:
+    - Assert:
+        Fn::Equals:
+        - Ref: AWS::Region
+        - us-east-1
+      AssertDescription: Region must be US East (N. Virginia) - us-east-1
+  ParameterDefaults:
+    Assertions:
+    - Assert:
+        Fn::Not:
+        - Fn::Equals:
+          - Ref: AzureADDomain
+          - mycompany.onmicrosoft.com
+      AssertDescription: Azure AD Domain parameter cannot be the default value
+    - Assert:
+        Fn::Not:
+        - Fn::Equals:
+          - Ref: DynamicsHostDomain
+          - mycompany.crm.dynamics.com
+      AssertDescription: Dynamics 365 Domain parameter cannot be the default value
+    - Assert:
+        Fn::Not:
+        - Fn::Equals:
+          - Ref: DynamicsClientId
+          - 72fe49e1-ab2c-47fb-ac8c-e65821391006
+      AssertDescription: Dynamics Client Id parameter cannot be the default value
+    - Assert:
+        Fn::Not:
+        - Fn::Equals:
+          - Ref: DynamicsClientSecret
+          - bb
+      AssertDescription: Dynamics Client Secret parameter cannot be the default value
+    - Assert:
+        Fn::Not:
+        - Fn::Equals:
+          - Ref: NotificationEmailAddress
+          - me@mycompany.com
+      AssertDescription: Error Notification Email Address parameter cannot be the
+        default value
+Resources:
+  TestFunctionExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Path: /
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+  TestGetDynamicsTokenFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Description: Quick Start test function for getting a Dynamics 365 API access
+        token
+      Handler: getDynamicsToken-test.handler
+      MemorySize: 128
+      Role:
+        Fn::GetAtt: TestFunctionExecutionRole.Arn
+      Runtime: nodejs6.10
+      Timeout: 8
+      Code:
+        S3Bucket:
+          Ref: QSS3BucketName
+        S3Key:
+          Fn::Sub: ${QSS3KeyPrefix}functions/packages/getDynamicsToken-test/lambda.zip
+    DependsOn:
+    - TestFunctionExecutionRole
+  InvokeTestGetDynamicsTokenFunction:
+    Type: Custom::InvokeTestGetDynamicsTokenFunction
+    Version: '1.0'
+    Properties:
+      ServiceToken:
+        Fn::GetAtt: TestGetDynamicsTokenFunction.Arn
+      AzureADDomain:
+        Ref: AzureADDomain
+      DynamicsHostDomain:
+        Ref: DynamicsHostDomain
+      DynamicsClientId:
+        Ref: DynamicsClientId
+      DynamicsClientSecret:
+        Ref: DynamicsClientSecret
+    DependsOn:
+    - TestGetDynamicsTokenFunction
+  GetDynamicsTokenFunctionExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+      - PolicyName: sendSES
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action: ses:SendEmail
+            Resource: '*'
+    DependsOn:
+    - InvokeTestGetDynamicsTokenFunction
+  GetDynamicsTokenFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Description: Gets a Dynamics 365 API access token
+      Handler: getDynamicsToken.handler
+      MemorySize: 256
+      Role:
+        Fn::GetAtt: GetDynamicsTokenFunctionExecutionRole.Arn
+      Runtime: nodejs6.10
+      Timeout: 8
+      Code:
+        S3Bucket:
+          Ref: QSS3BucketName
+        S3Key:
+          Fn::Sub: ${QSS3KeyPrefix}functions/packages/getDynamicsToken/lambda.zip
+      Environment:
+        Variables:
+          AzureADDomain: !Sub ${AzureADDomain}
+          DynamicsHostDomain: !Sub ${DynamicsHostDomain}
+          DynamicsClientId: !Sub ${DynamicsClientId}
+          DynamicsClientSecret: !Sub ${DynamicsClientSecret}
+    DependsOn:
+    - GetDynamicsTokenFunctionExecutionRole
+  TestLookupDynamicsAccountFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Description: Quick Start test function for hitting the Dynamics 365 API
+      Handler: lookupDynamicsAccount-test.handler
+      MemorySize: 128
+      Role:
+        Fn::GetAtt: TestFunctionExecutionRole.Arn
+      Runtime: nodejs6.10
+      Timeout: 8
+      Code:
+        S3Bucket:
+          Ref: QSS3BucketName
+        S3Key:
+          Fn::Sub: ${QSS3KeyPrefix}functions/packages/lookupDynamicsAccount-test/lambda.zip
+    DependsOn:
+    - GetDynamicsTokenFunction
+  InvokeTestLookupDynamicsAccountFunction:
+    Type: Custom::InvokeTestLookupDynamicsAccountFunction
+    Version: '1.0'
+    Properties:
+      ServiceToken:
+        Fn::GetAtt: TestLookupDynamicsAccountFunction.Arn
+      DynamicsHostDomain:
+        Ref: DynamicsHostDomain
+    DependsOn:
+    - TestLookupDynamicsAccountFunction
+  DynamicsDataDipFunctionExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+      - PolicyName: invokeTokenLambda
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action: lambda:InvokeFunction
+            Resource:
+            - !GetAtt
+              - GetDynamicsTokenFunction
+              - Arn
+    DependsOn:
+    - InvokeTestLookupDynamicsAccountFunction
+  LookupDynamicsAccountFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Description: Looks up a Dynamics 365 Account based on a contact's phone number
+      Handler: lookupDynamicsAccount.handler
+      MemorySize: 256
+      Role:
+        Fn::GetAtt: DynamicsDataDipFunctionExecutionRole.Arn
+      Runtime: nodejs6.10
+      Timeout: 8
+      Code:
+        S3Bucket:
+          Ref: QSS3BucketName
+        S3Key:
+          Fn::Sub: ${QSS3KeyPrefix}functions/packages/lookupDynamicsAccount/lambda.zip
+      Environment:
+        Variables:
+          GetDynamicsTokenLambdaName: !Sub ${GetDynamicsTokenFunction}
+          AWSRegion: !Sub ${AWS::Region}
+          DynamicsHostDomain: !Sub ${DynamicsHostDomain}
+    DependsOn:
+    - DynamicsDataDipFunctionExecutionRole
+  LookupDynamicsAccountFunctionAmazonConnectInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName:
+        Ref: LookupDynamicsAccountFunction
+      Action: lambda:InvokeFunction
+      Principal: connect.amazonaws.com
+      SourceAccount:
+        Ref: AWS::AccountId
+    DependsOn:
+    - LookupDynamicsAccountFunction
+  TestAddDynamicsAccountNoteFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Description: Quick Start test function for hitting the Dynamics 365 API
+      Handler: addDynamicsAccountNote-test.handler
+      MemorySize: 128
+      Role:
+        Fn::GetAtt: TestFunctionExecutionRole.Arn
+      Runtime: nodejs6.10
+      Timeout: 8
+      Code:
+        S3Bucket:
+          Ref: QSS3BucketName
+        S3Key:
+          Fn::Sub: ${QSS3KeyPrefix}functions/packages/addDynamicsAccountNote-test/lambda.zip
+    DependsOn:
+    - LookupDynamicsAccountFunctionAmazonConnectInvokePermission
+  InvokeTestAddDynamicsAccountNoteFunction:
+    Type: Custom::InvokeTestAddDynamicsAccountNoteFunction
+    Version: '1.0'
+    Properties:
+      ServiceToken:
+        Fn::GetAtt: TestAddDynamicsAccountNoteFunction.Arn
+      DynamicsHostDomain:
+        Ref: DynamicsHostDomain
+    DependsOn:
+    - TestAddDynamicsAccountNoteFunction
+  AddDynamicsAccountNoteFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Description: Adds a Note to Dynamics 365 Account for an Amazon Connect contact
+      Handler: addDynamicsAccountNote.handler
+      MemorySize: 256
+      Role:
+        Fn::GetAtt: DynamicsDataDipFunctionExecutionRole.Arn
+      Runtime: nodejs6.10
+      Timeout: 8
+      Code:
+        S3Bucket:
+          Ref: QSS3BucketName
+        S3Key:
+          Fn::Sub: ${QSS3KeyPrefix}functions/packages/addDynamicsAccountNote/lambda.zip
+      Environment:
+        Variables:
+          GetDynamicsTokenLambdaName: !Sub ${GetDynamicsTokenFunction}
+          AWSRegion: !Sub ${AWS::Region}
+          DynamicsHostDomain: !Sub ${DynamicsHostDomain}
+    DependsOn:
+    - InvokeTestAddDynamicsAccountNoteFunction
+  AddDynamicsAccountNoteFunctionAmazonConnectInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName:
+        Ref: AddDynamicsAccountNoteFunction
+      Action: lambda:InvokeFunction
+      Principal: connect.amazonaws.com
+      SourceAccount:
+        Ref: AWS::AccountId
+    DependsOn:
+    - AddDynamicsAccountNoteFunction
+  DynamicsFunctionsKeepWarmTrigger:
+    Type: AWS::Events::Rule
+    Properties:
+      ScheduleExpression: !Sub rate(${FunctionKeepWarmInterval} minutes)
+      State: ENABLED
+      Targets:
+      - Arn:
+          Fn::GetAtt:
+          - LookupDynamicsAccountFunction
+          - Arn
+        Input: '{ "Name": "CloudWatchEvent", "Type": "KeepWarm"}'
+        Id: LookupDynamicsAccountTarget1
+      - Arn:
+          Fn::GetAtt:
+          - AddDynamicsAccountNoteFunction
+          - Arn
+        Input: '{ "Name": "CloudWatchEvent", "Type": "KeepWarm"}'
+        Id: AddDynamicsAccountNoteTarget1
+    DependsOn:
+    - AddDynamicsAccountNoteFunctionAmazonConnectInvokePermission
+  LookupDynamicsAccountFunctionTriggerInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName:
+        Ref: LookupDynamicsAccountFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn:
+        Fn::GetAtt:
+        - DynamicsFunctionsKeepWarmTrigger
+        - Arn
+    DependsOn:
+    - DynamicsFunctionsKeepWarmTrigger
+  AddDynamicsAccountNoteFunctionTriggerInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName:
+        Ref: AddDynamicsAccountNoteFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn:
+        Fn::GetAtt:
+        - DynamicsFunctionsKeepWarmTrigger
+        - Arn
+    DependsOn:
+    - LookupDynamicsAccountFunctionTriggerInvokePermission
+Outputs:
+  LookupDynamicsAccountFunctionARN:
+    Description: ARN of the Lookup Dynamics Account function
+    Value:
+      Fn::GetAtt:
+      - LookupDynamicsAccountFunction
+      - Arn
+  AddDynamicsAccountNoteFunctionARN:
+    Description: ARN of the Add Dynamics Account Note function
+    Value:
+      Fn::GetAtt:
+      - AddDynamicsAccountNoteFunction
+      - Arn
+  DynamicsDataDipFunctionExecutionRoleARN:
+    Description: ARN of the Dynamics Data Dip Function Execution IAM role
+    Value:
+      Fn::GetAtt:
+      - DynamicsDataDipFunctionExecutionRole
+      - Arn
+...

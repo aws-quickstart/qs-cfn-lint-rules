@@ -1,0 +1,578 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "This template deploys an MSBuild server and AWS CodeDeploy server with a supporting VPC and RDGateway for isolating and accessing the instances for an automated Microsoft .NET build pipeline. **WARNING** This template creates Amazon EC2 Windows instance and related resources. You will be billed for the AWS resources used if you create a stack from this template. ",
+    "Metadata": {
+        "AWS::CloudFormation::Interface": {
+            "ParameterGroups": [
+                {
+                    "Label": {
+                        "default": "Network Configuration"
+                    },
+                    "Parameters": [
+                        "AvailabilityZones",
+                        "VPCCIDR",
+                        "PrivateSubnet1CIDR",
+                        "PrivateSubnet2CIDR",
+                        "PublicSubnet1CIDR",
+                        "PublicSubnet2CIDR",
+                        "RDGWCIDR"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "Amazon EC2 Configuration"
+                    },
+                    "Parameters": [
+                        "KeyPairName",
+                        "RDGWInstanceType"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "Microsoft Remote Desktop Gateway Configuration"
+                    },
+                    "Parameters": [
+                        "AdminUser",
+                        "AdminPassword",
+                        "DomainDNSName"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "CodeDeploy and DemoApp Configuration"
+                    },
+                    "Parameters": [
+                        "CodeDeployAppName",
+                        "CodeDeployDeploymentGroupName",
+                        "CodeDeployNumberOfServers",
+                        "DemoAppInclude",
+                        "DemoAppDBUserName",
+                        "DemoAppDBPassword",
+                        "CodePackageFileName"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "Jenkins Build Configuration"
+                    },
+                    "Parameters": [
+                        "JenkinsCustomActionVersionNumber",
+                        "ELBServerCertificateName",
+                        "JenkinsUserName",
+                        "JenkinsPassword",
+                        "SourceFolder",
+                        "ReleaseFolder",
+                        "MSBuildProjectOrSolutionFileName"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "AWS Quick Start Configuration"
+                    },
+                    "Parameters": [
+                        "QSS3BucketName",
+                        "QSS3KeyPrefix"
+                    ]
+                }
+            ],
+            "ParameterLabels": {
+                "AdminPassword": {
+                    "default": "Admin Password"
+                },
+                "AdminUser": {
+                    "default": "Admin User Name"
+                },
+                "AvailabilityZones": {
+                    "default": "Availability Zones"
+                },
+                "CodeDeployAppName": {
+                    "default": "Application name"
+                },
+                "CodeDeployDeploymentGroupName": {
+                    "default": "DeploymentGroup name"
+                },
+                "CodeDeployNumberOfServers": {
+                    "default": "Number of CodeDeploy servers"
+                },
+                "CodePackageFileName": {
+                    "default": "Code Package Filename"
+                },
+                "DemoAppDBPassword": {
+                    "default": "Password for demo app db"
+                },
+                "DemoAppDBUserName": {
+                    "default": "Username for demo app db"
+                },
+                "DemoAppInclude": {
+                    "default": "Deploy the demo application"
+                },
+                "DomainDNSName": {
+                    "default": "Domain DNS Name"
+                },
+                "ELBServerCertificateName": {
+                    "default": "Certificate Name for ELBs"
+                },
+                "JenkinsCustomActionVersionNumber": {
+                    "default": "Jenkins Custom Action Version Number"
+                },
+                "JenkinsPassword": {
+                    "default": "Jenkins Password"
+                },
+                "JenkinsUserName": {
+                    "default": "Jenkins User"
+                },
+                "KeyPairName": {
+                    "default": "Key Pair Name"
+                },
+                "MSBuildProjectOrSolutionFileName": {
+                    "default": ".proj or .sln"
+                },
+                "PrivateSubnet1CIDR": {
+                    "default": "Private Subnet 1 CIDR"
+                },
+                "PrivateSubnet2CIDR": {
+                    "default": "Private Subnet 2 CIDR"
+                },
+                "PublicSubnet1CIDR": {
+                    "default": "Public Subnet 1 CIDR"
+                },
+                "PublicSubnet2CIDR": {
+                    "default": "Public Subnet 2 CIDR"
+                },
+                "QSS3BucketName": {
+                    "default": "Quick Start S3 Bucket Name"
+                },
+                "QSS3KeyPrefix": {
+                    "default": "Quick Start S3 Key Prefix"
+                },
+                "RDGWCIDR": {
+                    "default": "Allowed Remote Desktop Gateway External Access CIDR"
+                },
+                "RDGWInstanceType": {
+                    "default": "Remote Desktop Gateway Instance Type"
+                },
+                "ReleaseFolder": {
+                    "default": "Release Folder"
+                },
+                "SourceFolder": {
+                    "default": "Path to Source Code"
+                },
+                "VPCCIDR": {
+                    "default": "VPC CIDR"
+                }
+            }
+        }
+    },
+    "Parameters": {
+        "AdminPassword": {
+            "AllowedPattern": "(?=^.{6,255}$)((?=.*\\d)(?=.*[A-Z])(?=.*[a-z])|(?=.*\\d)(?=.*[^A-Za-z0-9])(?=.*[a-z])|(?=.*[^A-Za-z0-9])(?=.*[A-Z])(?=.*[a-z])|(?=.*\\d)(?=.*[A-Z])(?=.*[^A-Za-z0-9]))^.*",
+            "Description": "Password for the administrative account. Must be at least 8 characters containing letters, numbers, and symbols.",
+            "MaxLength": "32",
+            "MinLength": "8",
+            "NoEcho": "true",
+            "Type": "String"
+        },
+        "AdminUser": {
+            "AllowedPattern": "[a-zA-Z0-9]*",
+            "Default": "StackAdmin",
+            "Description": "User name for the new local administrator account",
+            "MaxLength": "25",
+            "MinLength": "5",
+            "Type": "String"
+        },
+        "AvailabilityZones": {
+            "Description": "Choose two Availability Zones that will be used to deploy your Windows servers for this template. The Quick Start preserves the logical order you specify.",
+            "Type": "List<AWS::EC2::AvailabilityZone::Name>"
+        },
+        "CodeDeployAppName": {
+            "AllowedPattern": "[-_a-zA-Z0-9]*",
+            "ConstraintDescription": "can contain only alphanumeric characters, dashes, and underscores.",
+            "Default": "DemoApp",
+            "Description": "Application name that will be used by AWS CodeDeploy.",
+            "MaxLength": "22",
+            "MinLength": "1",
+            "Type": "String"
+        },
+        "CodeDeployDeploymentGroupName": {
+            "AllowedPattern": "[-_a-zA-Z0-9]*",
+            "ConstraintDescription": "can contain only alphanumeric characters, dashes, and underscores.",
+            "Default": "DemoApp-DG",
+            "Description": "Deployment group name that will be used by AWS CodeDeploy. This group name can be used to modify how the application is deployed after the stack is deployed.",
+            "MaxLength": "100",
+            "MinLength": "1",
+            "Type": "String"
+        },
+        "CodeDeployNumberOfServers": {
+            "AllowedValues": [
+                "1",
+                "2"
+            ],
+            "Default": "1",
+            "Description": "The number of test servers you want to deploy with AWS CodeDeploy. An ELB load balancer is put in front of these servers so you can deploy the application to multiple servers to test a load-balanced configuration or rolling upgrades. You can choose one or two servers.",
+            "Type": "String"
+        },
+        "CodePackageFileName": {
+            "AllowedPattern": "^[\\w,\\s-]+\\.zip$",
+            "ConstraintDescription": "must be alphanumeric with dashes(-) or underscores(_) and end with .zip",
+            "Description": "Use this option if you are bringing your own code package to deploy through the pipeline. The package you specify must be found in the S3 bucket created by this template. This must be a .zip file with .NET source code inside. If you are deploying the sample application provided with this Quick Start, this value is ignored.",
+            "MaxLength": "50",
+            "MinLength": "0",
+            "Default": "DemoApp-Source.zip",
+            "Type": "String"
+        },
+        "DemoAppDBPassword": {
+            "AllowedPattern": "[!#$%^&*a-zA-Z0-9]*",
+            "ConstraintDescription": "Minimum of 8 alphanumeric characters and any of the following special characters (!,#,$,%,^,&,*)",
+            "Description": "The password for the database administrator account in the sample application. This parameter is necessary only if you choose to deploy the sample application. You'll use the credentials to validate the deployment.",
+            "MaxLength": "128",
+            "MinLength": "0",
+            "NoEcho": "true",
+            "Type": "String"
+        },
+        "DemoAppDBUserName": {
+            "AllowedPattern": "[a-zA-Z][a-zA-Z0-9]*",
+            "ConstraintDescription": "must begin with a letter and contain only alphanumeric characters.",
+            "Default": "awsuser",
+            "Description": "The user name for the database administrator account in the sample application. This parameter is necessary only if you choose to deploy the sample application. You'll use the credentials to validate the deployment.",
+            "MaxLength": "16",
+            "MinLength": "0",
+            "Type": "String"
+        },
+        "DemoAppInclude": {
+            "AllowedValues": [
+                "true",
+                "false"
+            ],
+            "Default": "true",
+            "Description": "Keep this setting to include a sample application that will be built and deployed for testing. This will download a simple two-tier ASP.NET web application that includes a custom MSBuild project that works with AWS CodeDeploy. If you set this parameter to false, you should upload your own source code package to the S3 bucket created by this template. Otherwise, the CI/CD pipeline will be broken. For details, see deployment scenario 2 in the deployment guide.",
+            "Type": "String"
+        },
+        "DomainDNSName": {
+            "Description": "Fully qualified domain name (FQDN). This is not a required parameter and will not be used if the Remote Gateway servers are not joined to a domain.",
+            "Type": "String",
+            "Default": "example.com",
+            "MinLength": "3",
+            "MaxLength": "25",
+            "AllowedPattern": "[a-zA-Z0-9]+\\..+"
+        },
+        "ELBServerCertificateName": {
+            "AllowedPattern": "[-a-zA-Z0-9]*",
+            "Default": "QuickStartCICDCert",
+            "ConstraintDescription": "can only contain alphanumeric characters and dashes.",
+            "Description": "The name of the certificate that will be created and used by the ELB for the web application deployed to the build and test servers. Choose a unique name so the self-signed certificate for *.<region>.elb.amazonaws.com can be generated without any conflicts. If a certificate already exists with the same name, the AWS CloudFormation template will try and use the existing certificate, which might create an error if the certificate doesn't support ELB CNAMEs. This resource is not controlled by the CloudFormation template and will need to be cleaned up manually.",
+            "MaxLength": "64",
+            "MinLength": "1",
+            "Type": "String"
+        },
+        "JenkinsCustomActionVersionNumber": {
+            "AllowedPattern": "[0-9]*",
+            "ConstraintDescription": "can only contain a numeric between 1 and 999.",
+            "Description": "The version number for the custom action that is created for AWS CodePipeline. If you redeploy the stack, you must increment the version number or change the application name. The combination of the application name and version number creates a provider for the custom action that must be unique even after you delete the custom action. For details, see the API documentation.",
+            "MaxLength": "3",
+            "MinLength": "1",
+            "Type": "String"
+        },
+        "JenkinsPassword": {
+            "ConstraintDescription": "Minimum of 8 characters",
+            "Description": "The password for the Jenkins user account you created. You'll use the credentials to access the Jenkins dashboard.",
+            "MaxLength": "41",
+            "MinLength": "8",
+            "NoEcho": "true",
+            "Type": "String"
+        },
+        "JenkinsUserName": {
+            "AllowedPattern": "[a-zA-Z][a-zA-Z0-9]*",
+            "ConstraintDescription": "must begin with a letter and contain only alphanumeric characters.",
+            "Default": "JenkinsUser",
+            "Description": "The user account that should be given access to Jenkins to configure and run builds. You'll use the credentials to access the Jenkins dashboard.",
+            "MaxLength": "16",
+            "MinLength": "1",
+            "Type": "String"
+        },
+        "KeyPairName": {
+            "Description": "Name of an existing Amazon EC2 public/private key pair to enable remote access to instances.",
+            "Type": "AWS::EC2::KeyPair::KeyName"
+        },
+        "MSBuildProjectOrSolutionFileName": {
+            "Description": "The name of the .proj or .sln file used to drive the MSBuild step in Jenkins. This will be concatenated to the MSBuild plugin for Jenkins to run the build task. If you make a mistake when typing the name, you can modify the configuration in your Jenkins project.",
+            "Default": "SoccerTeamWeb.csproj",
+            "MaxLength": "100",
+            "MinLength": "1",
+            "Type": "String"
+        },
+        "PrivateSubnet1CIDR": {
+            "AllowedPattern": "^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\\/([0-9]|[1-2][0-9]|3[0-2]))$",
+            "Default": "10.0.0.0/19",
+            "Description": "CIDR block for private subnet 1 located in Availability Zone 1.",
+            "Type": "String"
+        },
+        "PrivateSubnet2CIDR": {
+            "AllowedPattern": "^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\\/([0-9]|[1-2][0-9]|3[0-2]))$",
+            "Default": "10.0.32.0/19",
+            "Description": "CIDR block for private subnet 2 located in Availability Zone 2.",
+            "Type": "String"
+        },
+        "PublicSubnet1CIDR": {
+            "AllowedPattern": "^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\\/([0-9]|[1-2][0-9]|3[0-2]))$",
+            "Default": "10.0.128.0/20",
+            "Description": "CIDR Block for the public DMZ subnet 1 located in Availability Zone 1",
+            "Type": "String"
+        },
+        "PublicSubnet2CIDR": {
+            "AllowedPattern": "^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\\/([0-9]|[1-2][0-9]|3[0-2]))$",
+            "Default": "10.0.144.0/20",
+            "Description": "CIDR Block for the public DMZ subnet 2 located in Availability Zone 2",
+            "Type": "String"
+        },
+        "QSS3BucketName": {
+            "AllowedPattern": "^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$",
+            "ConstraintDescription": "Quick Start bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-).",
+            "Default": "aws-quickstart",
+            "Description": "S3 bucket name for the Quick Start assets. This bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-), but should not start or end with a hyphen. You can specify your own bucket if you copy all of the assets and submodules into it, if you want to override the Quick Start behavior for your specific implementation.",
+            "Type": "String"
+        },
+        "QSS3KeyPrefix": {
+            "AllowedPattern": "^[0-9a-zA-Z-/]*$",
+            "ConstraintDescription": "Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).",
+            "Default": "quickstart-cicd-windows/",
+            "Description": "S3 key prefix for the Quick Start assets. Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).",
+            "Type": "String"
+        },
+        "RDGWCIDR": {
+            "AllowedPattern": "^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\\/([0-9]|[1-2][0-9]|3[0-2]))$",
+            "Description": "CIDR block that's allowed external access to the Remote Desktop gateways. We recommend that you use a constrained CIDR range to reduce the potential of inbound attacks from unknown IP addresses.",
+            "Type": "String"
+        },
+        "RDGWInstanceType": {
+            "Description": "Amazon EC2 instance type for the Remote Desktop Gateway instances",
+            "Type": "String",
+            "Default": "t2.large",
+            "AllowedValues": [
+                "t2.large",
+                "m3.large",
+                "m3.xlarge",
+                "m3.2xlarge",
+                "m4.large",
+                "m4.xlarge",
+                "m4.2xlarge",
+                "m4.4xlarge"
+            ]
+        },
+        "ReleaseFolder": {
+            "Description": "The release folder that can be used by the Jenkins job to copy the binaries to the test server. All content copied into this folder will be zipped and shipped via AWS CodeDeploy. This is a unique option available in the AWS CodePipeline for Jenkins and is not required. The default setting is for the sample application and can be used as an example for your own MSBuild jobs. The .csproj or .sln file must include steps to copy the binaries from the source folders into this release folder, and must include the same parameters as the sample application if you want to use the same technique.",
+            "Default": "Release",
+            "MaxLength": "100",
+            "MinLength": "0",
+            "Type": "String"
+        },
+        "SourceFolder": {
+            "Description": "The path to the source code to build after your sample application package is unzipped. Note    You must include the root folder from the .zip file in your path and use a backslash between folders. The default setting specifies the sample application and can be used as an example if you are trying to set the parameter for your own source package.",
+            "Default": "DemoApp\\SoccerTeamWeb",
+            "MaxLength": "100",
+            "MinLength": "1",
+            "Type": "String"
+        },
+        "VPCCIDR": {
+            "AllowedPattern": "^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\\/([0-9]|[1-2][0-9]|3[0-2]))$",
+            "Default": "10.0.0.0/16",
+            "Description": "CIDR Block for the VPC.",
+            "Type": "String"
+        }
+    },
+    "Resources": {
+        "VPCStack": {
+            "Type": "AWS::CloudFormation::Stack",
+            "Properties": {
+                "TemplateURL": {
+                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}submodules/quickstart-aws-vpc/templates/aws-vpc.template"
+                },
+                "Parameters": {
+                    "AvailabilityZones": {
+                        "Fn::Join": [
+                            ",",
+                            {
+                                "Ref": "AvailabilityZones"
+                            }
+                        ]
+                    },
+                    "KeyPairName": {
+                        "Ref": "KeyPairName"
+                    },
+                    "NumberOfAZs": "2",
+                    "PrivateSubnet1ACIDR": {
+                        "Ref": "PrivateSubnet1CIDR"
+                    },
+                    "PrivateSubnet2ACIDR": {
+                        "Ref": "PrivateSubnet2CIDR"
+                    },
+                    "PublicSubnet1CIDR": {
+                        "Ref": "PublicSubnet1CIDR"
+                    },
+                    "PublicSubnet2CIDR": {
+                        "Ref": "PublicSubnet2CIDR"
+                    },
+                    "VPCCIDR": {
+                        "Ref": "VPCCIDR"
+                    }
+                }
+            }
+        },
+        "RDGWStack": {
+            "Type": "AWS::CloudFormation::Stack",
+            "DependsOn": "VPCStack",
+            "Properties": {
+                "TemplateURL": {
+                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}submodules/quickstart-microsoft-rdgateway/templates/rdgw-standalone.template"
+                },
+                "Parameters": {
+                    "AdminPassword": {
+                        "Ref": "AdminPassword"
+                    },
+                    "AdminUser": {
+                        "Ref": "AdminUser"
+                    },
+                    "DomainDNSName": {
+                        "Ref": "DomainDNSName"
+                    },
+                    "KeyPairName": {
+                        "Ref": "KeyPairName"
+                    },
+                    "PublicSubnet1ID": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.PublicSubnet1ID"
+                        ]
+                    },
+                    "PublicSubnet2ID": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.PublicSubnet2ID"
+                        ]
+                    },
+                    "QSS3BucketName": {
+                        "Ref": "QSS3BucketName"
+                    },
+                    "QSS3KeyPrefix": {
+                        "Fn::Sub": "${QSS3KeyPrefix}submodules/quickstart-microsoft-rdgateway/"
+                    },
+                    "RDGWInstanceType": {
+                        "Ref": "RDGWInstanceType"
+                    },
+                    "RDGWCIDR": {
+                        "Ref": "RDGWCIDR"
+                    },
+                    "VPCID": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.VPCID"
+                        ]
+                    }
+                }
+            }
+        },
+        "CICDStack": {
+            "Type": "AWS::CloudFormation::Stack",
+            "DependsOn": "RDGWStack",
+            "Properties": {
+                "TemplateURL": {
+                    "Fn::Sub": "https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}templates/cicd-windows.template"
+                },
+                "Parameters": {
+                    "CodeDeployAppName": {
+                        "Ref": "CodeDeployAppName"
+                    },
+                    "CodeDeployDeploymentGroupName": {
+                        "Ref": "CodeDeployDeploymentGroupName"
+                    },
+                    "CodeDeployNumberOfServers": {
+                        "Ref": "CodeDeployNumberOfServers"
+                    },
+                    "CodePackageFileName": {
+                        "Ref": "CodePackageFileName"
+                    },
+                    "DemoAppDBPassword": {
+                        "Ref": "DemoAppDBPassword"
+                    },
+                    "DemoAppDBUserName": {
+                        "Ref": "DemoAppDBUserName"
+                    },
+                    "DemoAppInclude": {
+                        "Ref": "DemoAppInclude"
+                    },
+                    "ELBServerCertificateName": {
+                        "Ref": "ELBServerCertificateName"
+                    },
+                    "JenkinsCustomActionVersionNumber": {
+                        "Ref": "JenkinsCustomActionVersionNumber"
+                    },
+                    "JenkinsPassword": {
+                        "Ref": "JenkinsPassword"
+                    },
+                    "JenkinsUserName": {
+                        "Ref": "JenkinsUserName"
+                    },
+                    "KeyPairName": {
+                        "Ref": "KeyPairName"
+                    },
+                    "MSBuildProjectOrSolutionFileName": {
+                        "Ref": "MSBuildProjectOrSolutionFileName"
+                    },
+                    "PrivateSubnet1ID": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.PrivateSubnet1AID"
+                        ]
+                    },
+                    "PrivateSubnet2ID": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.PrivateSubnet2AID"
+                        ]
+                    },
+                    "PublicSubnet1ID": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.PublicSubnet1ID"
+                        ]
+                    },
+                    "PublicSubnet2ID": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.PublicSubnet2ID"
+                        ]
+                    },
+                    "QSS3BucketName": {
+                        "Ref": "QSS3BucketName"
+                    },
+                    "QSS3KeyPrefix": {
+                        "Ref": "QSS3KeyPrefix"
+                    },
+                    "RDGWSecurityGroupID": {
+                        "Fn::GetAtt": [
+                            "RDGWStack",
+                            "Outputs.RemoteDesktopGatewaySGID"
+                        ]
+                    },
+                    "ReleaseFolder": {
+                        "Ref": "ReleaseFolder"
+                    },
+                    "SourceFolder": {
+                        "Ref": "SourceFolder"
+                    },
+                    "VPCID": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.VPCID"
+                        ]
+                    },
+                    "VPCCIDR": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.VPCCIDR"
+                        ]
+                    }
+                }
+            }
+        }
+    }
+}

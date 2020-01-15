@@ -1,0 +1,1837 @@
+{  
+   "AWSTemplateFormatVersion":"2010-09-09",
+   "Description":"Informatica EDC. This template Installs Informatica EDC. You will be billed for the AWS resources used if you create a stack from this template.",
+   "Parameters":{  
+      "KeyPairName":{  
+         "Description":"Name of an existing Amazon EC2 keypair. You must specify this option to enable SSH access to Informatica domain and cluster instances",
+         "Type":"AWS::EC2::KeyPair::KeyName"
+      },
+      "InformaticaKeyS3Bucket":{  
+         "Type":"String",
+         "Description":"Name of the Amazon S3 bucket that contains the Informatica Trial Key"
+      },
+      "InformaticaKeyName":{  
+         "Type":"String",
+         "Description":"The Informatica license key name. For example, <license key name> or <bucket sub folder/license key name>"
+      },
+      "InformaticaAdminUsername":{  
+         "Description":"Username to access Informatica Administrator",
+         "Type":"String"
+      },
+      "InformaticaAdminPassword":{  
+         "Description":"Password to access Informatica Administrator",
+         "Type":"String",
+         "NoEcho":"True"
+      },
+      "InformaticaServerInstanceType":{  
+         "Type":"String",
+         "Default":"c4.4xlarge",
+         "Description":"The EC2 instance type for the instance that hosts the Informatica domain. Default is c4.4xlarge"
+      },
+      "RedshiftDatabaseName":{  
+         "Description":"The name of the first database to be created when the cluster is created",
+         "Type":"String",
+         "Default":"dev"
+	 },
+      "RedshiftUsername":{  
+         "Description":"The user name that is associated with the master user account for the cluster that is being created",
+         "Type":"String",
+         "Default":"defaultuser"
+      },
+      "RedshiftPassword":{  
+         "Description":"The password that is associated with the master user account for the cluster that is being created. Must be 8 to 64 characters in length and contain at least one uppercase letter, one lowercase letter, and one number",
+         "Type":"String",
+         "NoEcho":"true"
+      },
+      "RedshiftDatabasePort":{  
+         "Description":"The port number on which the cluster accepts incoming connections. Default is 5439",
+         "Type":"Number",
+         "Default":"5439"
+      },
+      "RedshiftHost":{  
+         "Description":"Redshift Endpoint Address",
+         "Type":"String"
+      },
+      "InformaticaInstanceProfile":{  
+         "Description":"Informatica Server EC2 Instance Profile",
+         "Type":"String"
+      },
+      "InformaticaInstanceRole":{  
+         "Description":"Informatica Server EC2 Instance Role",
+         "Type":"String"
+      },
+      "HadoopGatewayPublicDNSName":{  
+         "Description":"Hadoop Gateway Server Public DNS Name",
+         "Type":"String"
+      },
+      "DBEndpointAddress":{  
+         "Description":"Database Endpoint Address",
+         "Type":"String"
+      },
+      "AdministrationServerNetInterface":{  
+         "Description":"Network Interface for EDC Node",
+         "Type":"String"
+      },
+      "HadoopGatewayPrivateDNSName":{  
+         "Description":"Hadoop Gateway Server Private DNS Name",
+         "Type":"String"
+      },
+      "HadoopGatewayPrivateIp":{  
+         "Description":"Hadoop Gateway Server Private IP",
+         "Type":"String"
+      },
+      "IICSTaskBucketName":{  
+         "Description":"S3 Bucket used for Informatica Intelligent Cloud Services Mapping Jobs",
+         "Type":"String"
+      },
+      "Username":{  
+         "Description":"ICS Username",
+         "Type":"String"
+      },
+      "ICSPassword":{  
+         "Description":"The password associated with the informatica cloud services. The password should not contain username",
+         "NoEcho":"true",
+         "Type":"String"
+      },
+      "ICSPodLocation":{  
+         "Default":"North America",
+         "Description":"The IICS Data Center in which your user is registered.",
+         "Type":"String"
+      },
+      "RedshiftNodeType":{  
+         "ConstraintDescription":"must be a valid RedShift node type.",
+         "Default":"dc1.large",
+         "Description":"The node type to be provisioned for the redshift cluster",
+         "Type":"String"
+      },
+      "RedshiftNumberOfNodes":{  
+         "Default":"1",
+         "Description":"The number of compute nodes in the redshift cluster",
+         "Type":"Number"
+      },
+      "TableauPassword":{  
+         "Description":"The password for the initial Admin user for Tableau server",
+         "NoEcho":"true",
+         "Type":"String"
+      },
+      "TableauUsername":{  
+         "Default":"admin",
+         "Description":"The name of the initial Admin user for Tableau server",
+         "Type":"String"
+      },
+      "TableauPrivateIp":{  
+         "Description":"Public IP of Tableau Server",
+         "Type":"String"
+      },
+      "DBUsername":{  
+         "Default":"awsquickstart",
+         "Description":"Username for the database instance associated with Informatica domain and services (such as Model Repository Service, Data Integration Service, Content Management Service)",
+         "Type":"String"
+      },
+      "DBPassword":{  
+         "Description":"Password for the database instance associated with Informatica domain and services (such as Model Repository Service, Data Integration Service, Content Management Service)",
+         "Type":"String",
+         "NoEcho":"True"
+      }
+   },
+   "Conditions":{  
+
+   },
+   "Mappings":{  
+      "S3ConnectionMap":{  
+         "ap-northeast-1":{  
+            "REGION":"Asia Pacific(Tokyo)"
+         },
+         "ap-northeast-2":{  
+            "REGION":"Asia Pacific(Seoul)"
+         },
+         "ap-south-1":{  
+            "REGION":"Asia Pacific(Mumbai)"
+         },
+         "ap-southeast-1":{  
+            "REGION":"Asia Pacific(Singapore)"
+         },
+         "ap-southeast-2":{  
+            "REGION":"Asia Pacific(Sydney)"
+         },
+         "ca-central-1":{  
+            "REGION":"Canada(Central)"
+         },
+         "eu-central-1":{  
+            "REGION":"EU(Frankfurt)"
+         },
+         "eu-west-1":{  
+            "REGION":"EU(Ireland)"
+         },
+         "eu-west-2":{  
+            "REGION":"EU(London)"
+         },
+         "sa-east-1":{  
+            "REGION":"South America(Sao Paulo)"
+         },
+         "us-east-1":{  
+            "REGION":"US East(N. Virginia)"
+         },
+         "us-east-2":{  
+            "REGION":"US East(Ohio)"
+         },
+         "us-west-1":{  
+            "REGION":"US West(N. California)"
+         },
+         "us-west-2":{  
+            "REGION":"US West(Oregon)"
+         }
+      },
+      "AWSAMIRegionMap":{  
+         "AMI":{  
+            "INFAADMINHVM":"Administrator-Server Image Data Lake on AWS"
+         },
+         "ap-northeast-1":{  
+            "INFAADMINHVM":"ami-0a9fd582f5c2c0b0a"
+         },
+         "ap-northeast-2":{  
+            "INFAADMINHVM":"ami-05a529b6cb4e7c214"
+         },
+         "ap-south-1":{  
+            "INFAADMINHVM":"ami-044e7494385fb1c33"
+         },
+         "ap-southeast-1":{  
+            "INFAADMINHVM":"ami-00271e899f674f461"
+         },
+         "ap-southeast-2":{  
+            "INFAADMINHVM":"ami-01558f02aded735e6"
+         },
+         "ca-central-1":{  
+            "INFAADMINHVM":"ami-01b2d36e37fadf65c"
+         },
+         "eu-central-1":{  
+            "INFAADMINHVM":"ami-0601091e8ede5aef8"
+         },
+         "eu-west-1":{  
+            "INFAADMINHVM":"ami-0d7ac53fe41a4d8c4"
+         },
+         "eu-west-2":{  
+            "INFAADMINHVM":"ami-003ccf5276e12a0c3"
+         },
+         "sa-east-1":{  
+            "INFAADMINHVM":"ami-0d7ce29d0fc00c094"
+         },
+         "us-east-1":{  
+            "INFAADMINHVM":"ami-06afec63f3b576ae1"
+         },
+         "us-east-2":{  
+            "INFAADMINHVM":"ami-0f30864016e80129e"
+         },
+         "us-west-1":{  
+            "INFAADMINHVM":"ami-042ad8803364310d6"
+         },
+         "us-west-2":{  
+            "INFAADMINHVM":"ami-0e74dfd75512e8942"
+         }
+      }
+   },
+   "Resources":{  
+     "EDCRecoveryTestAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmDescription": "Trigger a recovery when EDC instance status check fails for 5 consecutive minutes.",
+        "Namespace": "AWS/EC2" ,
+        "MetricName": "StatusCheckFailed_System",
+        "Statistic": "Minimum",
+        "Period": "60",
+        "EvaluationPeriods": "5",
+        "ComparisonOperator": "GreaterThanThreshold",
+        "Threshold": "0",
+        "AlarmActions": [ {"Fn::Join" : ["", ["arn:aws:automate:", { "Ref" : "AWS::Region" }, ":ec2:recover" ]]} ],
+        "Dimensions": [{"Name": "InstanceId","Value": {"Ref": "AdministrationServer"}}]
+      }
+    },
+      "InformaticaS3User":{  
+         "Type":"AWS::IAM::User",
+         "Properties":{  
+            "Policies":[  
+               {  
+                  "PolicyName":"S3DatalakeAccessPolicy",
+                  "PolicyDocument":{  
+                     "Version":"2012-10-17",
+                     "Statement":[  
+                        {  
+                           "Action":[  
+                              "s3:List*",
+                              "s3:Get*",
+                              "s3:Put*"
+                           ],
+                           "Resource":[  
+                              {  
+                                 "Fn::Sub":"arn:aws:s3:::${IICSTaskBucketName}"
+                              },
+                              {  
+                                 "Fn::Sub":"arn:aws:s3:::${IICSTaskBucketName}/*"
+                              }
+                           ],
+                           "Effect":"Allow"
+                        }
+                     ]
+                  }
+               }
+            ]
+         }
+      },
+      "InformaticaS3UserAccessKey":{  
+         "Type":"AWS::IAM::AccessKey",
+         "Properties":{  
+            "UserName":{  
+               "Ref":"InformaticaS3User"
+            }
+         }
+      },
+      "AdministrationServer":{  
+         "Type":"AWS::EC2::Instance",
+         "Metadata":{  
+            "AWS::CloudFormation::Authentication":{  
+               "S3AccessCreds":{  
+                  "type":"S3",
+                  "roleName":{  
+                     "Ref":"InformaticaInstanceRole"
+                  },
+                  "buckets":[  
+                     {  
+                        "Ref":"InformaticaKeyS3Bucket"
+                     }
+                  ]
+               }
+            },
+            "AWS::CloudFormation::Init":{  
+               "configSets":{  
+                  "InstallAndRun":[  
+                     "Install",
+                     "Configure1",
+                     "Configure2"
+                  ]
+               },
+               "Install":{  
+                  "files":{  
+                     "/etc/cfn/cfn-hup.conf":{  
+                        "content":{  
+                           "Fn::Join":[  
+                              "",
+                              [  
+                                 "[main]\n",
+                                 "stack=",
+                                 {  
+                                    "Ref":"AWS::StackName"
+                                 },
+                                 "\n",
+                                 "interval=1\n",
+                                 "region=",
+                                 {  
+                                    "Ref":"AWS::Region"
+                                 },
+                                 "\n"
+                              ]
+                           ]
+                        },
+                        "mode":"000400",
+                        "owner":"ec2-user",
+                        "group":"ec2-user"
+                     },
+                     "/etc/cfn/hooks.d/cfn-auto-reloader.conf":{  
+                        "content":{  
+                           "Fn::Join":[  
+                              "",
+                              [  
+                                 "[cfn-auto-reloader-hook]\n",
+                                 "triggers=post.update\n",
+                                 "path=Resources.AdministrationServer.Metadata.AWS::CloudFormation::Init\n",
+                                 "action=/opt/aws/bin/cfn-init -s ",
+                                 {  
+                                    "Ref":"AWS::StackId"
+                                 },
+                                 " -r AdministrationServer ",
+                                 " --region ",
+                                 {  
+                                    "Ref":"AWS::Region"
+                                 },
+                                 "\n",
+                                 "runas=root\n"
+                              ]
+                           ]
+                        },
+                        "mode":"000400",
+                        "owner":"ec2-user",
+                        "group":"ec2-user"
+                     },
+                     "/home/ec2-user/Mercury_Setup/replaceHostname.sh":{  
+                        "content":{  
+                           "Fn::Join":[  
+                              "",
+                              [  
+                                 "#!/bin/bash\n",
+                                 "sudo chmod -R 777 /var/log/ \n",
+                                 "sudo chown -R root /opt/informatica \n",
+                                 "sudo chgrp -R root /opt/informatica \n",
+                                 "privateIp=$(curl http://169.254.169.254/latest/meta-data/local-ipv4) \n",
+                                 "Adminpublicip=$(curl http://169.254.169.254/latest/meta-data/public-hostname) \n",
+                                 "sudo su -c \"sed -i '$ a $privateIp $Adminpublicip  infadomain.infa.com  infadomain' /etc/hosts \" \n",
+                                 "oracleaddress=",
+                                 {  
+                                    "Ref":"DBEndpointAddress"
+                                 },
+                                 "\n",
+                                 "oracleip=$(ping -c 1 $oracleaddress | grep 'bytes' | cut -d '(' -f2 | cut -d ')' -f1) \n",
+                                 "sudo su -c \"sed -i '$ a $oracleip $oracleaddress domaindb' /etc/hosts \" \n",
+                                 "\n",
+                                 "region=",
+                                 {  
+                                    "Ref":"AWS::Region"
+                                 },
+                                 "\n",
+                                 "etcHostsConfigOfCluster=\"",
+                                 {  
+                                    "Fn::Join":[  
+                                       " ",
+                                       [  
+                                          {  
+                                             "Ref":"HadoopGatewayPrivateIp"
+                                          },
+                                          {  
+                                             "Ref":"HadoopGatewayPublicDNSName"
+                                          },
+                                          {  
+                                             "Ref":"HadoopGatewayPublicDNSName"
+                                          },
+                                          {  
+                                             "Ref":"HadoopGatewayPrivateDNSName"
+                                          }
+                                       ]
+                                    ]
+                                 },
+                                 "\"\n",
+                                 "sudo su -c \"echo -e $etcHostsConfigOfCluster >> /etc/hosts \"  \n",
+                                 {  
+                                    "Fn::Join":[  
+                                       "",
+                                       [  
+                                          "sudo ssh -o StrictHostKeyChecking=no -o PasswordAuthentication=no ",
+                                          {  
+                                             "Ref":"HadoopGatewayPublicDNSName"
+                                          },
+                                          " \"sudo su -c 'echo -e $etcHostsConfigOfCluster >> /etc/hosts'\" \n"
+                                       ]
+                                    ]
+                                 },
+                                 "\n",
+                                 "sudo yum -y install ntp \n",
+                                 "sudo service ntpd start \n",
+                                 "sudo service ntpd status \n",
+								 "echo \"ec2-user        soft    nproc           128000\"  >> /etc/security/limits.conf",
+								 "\n",
+                                 "echo \"ec2-user        hard    nproc           128000\"  >> /etc/security/limits.conf",
+								 "\n"
+                              ]
+                           ]
+                        },
+                        "mode":"000770",
+                        "owner":"ec2-user",
+                        "group":"ec2-user"
+                     },
+                     "/home/ec2-user/Mercury_Setup/infastartservice.sh":{  
+                        "content":{  
+                           "Fn::Join":[  
+                              "",
+                              [  
+                                 "#!/bin/bash\n",
+                                 "INFA_HOME=/opt/informatica \n",
+                                 "export ORACLE_BASE=/usr/lib/oracle/12.2/client64 \n",
+                                 "export ORACLE_HOME=/usr/lib/oracle/12.2/client64 \n",
+                                 "export ODBCHOME=/opt/informatica/ODBC7.1 \n",
+                                 "export ODBCINI=/opt/informatica/ODBC7.1/odbc.ini \n",
+                                 "export ORACLE_INVENTORY=/opt/oracle/oraInventory \n",
+                                 "export LANG=C \n",
+                                 "export LC_ALL=C \n",
+                                 "export TNS_ADMIN=/usr/lib/oracle/12.2/client64/ \n",
+                                 "export ORACLE_INVENTORY=/opt/oracle/oraInventory \n",
+                                 "export JAVA_HOME=/opt/informatica/java \n",
+                                 "export JRE_HOME=/opt/informatica/java/jre \n",
+                                 "export INFA_JDK_HOME=/opt/informatica/java \n",
+                                 "export INFA_HOME=/opt/informatica \n",
+                                 "export PM_HOME=/opt/informatica/server/bin \n",
+                                 "export INFA_RESOURSES=/opt/informatica/services/shared/bin \n",
+                                 "export PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin:/root/bin:/usr/lib/oracle/12.2/client64/bin:/usr/sbin:/opt/informatica/ODBC7.1:/opt/informatica/ODBC7.1/odbc.ini:/opt/informatica/java/lib:/opt/informatica/java/jre/lib:/opt/informatica/services/shared/bin:/opt/informatica/server/bin:/opt/informatica/java/bin:~/.local/bin \n",
+                                 "export LD_LIBRARY_PATH=/usr/lib/oracle/12.2/client64/lib:/lib:/usr/lib:/usr/lib/oracle/12.2/client64/bin:/usr/lib/oracle/12.2/client64/lib:/opt/informatica/ODBC7.1/lib:/opt/informatica/java/lib:/opt/informatica/java/jre/lib:/opt/informatica/services/shared/bin:/opt/informatica/server/bin \n",
+                                 "export HOME=/root \n",
+                                 "export LANG=en_US.UTF-8 \n",
+                                 "export USER=root \n",
+                                 "export SHELL=/bin/bash \n",
+                                 "export HOSTNAME=infadomain.infa.com \n",
+                                 "cd $INFA_HOME/isp/bin \n",
+                                 "LICENSE_NAME=EICLicense.key",
+                                 "\n",
+                                 "administratorName=",
+                                 {  
+                                    "Ref":"InformaticaAdminUsername"
+                                 },
+                                 "\n",
+                                 "administratorPassword=",
+                                 {  
+                                    "Ref":"InformaticaAdminPassword"
+                                 },
+                                 "\n",
+                                 "echo \"Changing the Doamin Hostname\" \n",
+                                 "Adminpublicip=$(curl http://169.254.169.254/latest/meta-data/public-hostname) \n",
+                                 "/opt/informatica/isp/bin/infasetup.sh  updateGatewayNode -na $Adminpublicip:6005 -rst \n",
+                                 "sleep 30  \n",
+                                 "/sbin/service infaservice start  \n",
+								 "sleep 180  \n",
+								 "/opt/informatica/isp/bin/infacmd.sh isp UpdateDomainOptions -dn Domain -un Administrator  -pd Administrator  -do TLSMode=true \n",
+								 "/opt/informatica/isp/bin/infacmd.sh UpdateDomainOptions -dn Domain -un Administrator -pd Administrator -do MasterDBRefreshInterval=180 \n",
+								 "/sbin/service infaservice stop  \n",
+								 "sleep 180  \n",
+								 "/opt/informatica/java/jre/bin/keytool  -genkey -alias infa_dflt -keyalg RSA -keypass changeit -storepass changeit -keystore /opt/informatica//tomcat/conf/Default.keystore -dname CN=$Adminpublicip,OU=Informatica,O=Informatica,L=RedwoodCity,S=California,C=US -validity 365  \n",
+								 "/opt/informatica/isp/bin/infasetup.sh  updateGatewayNode -tls true -hs 8443 -kf /opt/informatica/tomcat/conf/Default.keystore -rst \n",
+								 "/opt/informatica/java/jre/bin/keytool  -export -keystore /opt/informatica/tomcat/conf/Default.keystore -alias infa_dflt -storepass changeit -file /opt/informatica/tomcat/conf/infa_dflt.cert \n",
+								 "/opt/informatica/java/jre/bin/keytool  -import -noprompt -file /opt/informatica/tomcat/conf/infa_dflt.cert -alias infa_dflt -keystore /opt/informatica/services/shared/security/infa_truststore.jks -storepass pass2038@infaSSL \n",
+								 "rm -rf /opt/informatica/tomcat/work/* \n",
+                                 "rm -rf /opt/informatica/tomcat/temp/* \n",
+                                 "rm -rf /opt/informatica/tomcat/webapps/ROOT \n",
+                                 "rm -rf /opt/informatica/tomcat/webapps/adminconsole \n",
+                                 "rm -rf /opt/informatica/tomcat/webapps/coreservices \n",
+                                 "rm -rf /opt/informatica/tomcat/webapps/csm \n",
+                                 "rm -rf /opt/informatica/services/AdministratorConsole/webapps/ROOT \n",
+                                 "rm -rf /opt/informatica/services/AdministratorConsole/webapps/adminconsole \n",
+                                 "rm -rf /opt/informatica/services/AdministratorConsole/webapps/adminhelp/  \n",
+                                 "rm -rf /opt/informatica/services/AdministratorConsole/webapps/administrator \n",
+                                 "rm -rf /opt/informatica/services/AdministratorConsole/webapps/monitoring \n",
+                                 "rm -rf /opt/informatica/services/AdministratorConsole/webapps/ows \n",
+                                 "rm -rf /opt/informatica/services/AdministratorConsole/webapps/passwordchange \n",
+                                 "rm -rf /opt/informatica/logs/node01/services/AdministratorConsole/ \n",
+                                 "rm -rf   /opt/informatica/logs/node01/ \n",
+								 "scp -o StrictHostKeyChecking=no -o PasswordAuthentication=no /opt/informatica/services/shared/security/infa_truststore.jks root@",
+                                  {  
+                                    "Ref":"HadoopGatewayPublicDNSName"
+                                  },
+								 ":/opt/",
+								 "\n",
+                                 "/sbin/service infaservice start  \n",
+								 "sleep 180  \n",
+                                 
+								 
+								 "echo \"Creating users for EDC\"  \n",
+								 "/opt/informatica/isp/bin/infacmd.sh createUser -dn Domain -un Administrator -pd Administrator -nu ITQS-Steward -np ITQS-Steward -nf ITQS-Steward  \n",
+								 "/opt/informatica/isp/bin/infacmd.sh assignRoleTouser -dn Domain -un Administrator -pd Administrator -eu ITQS-Steward -rn Administrator -sn Domain  \n",                                 
+								 "/opt/informatica/isp/bin/infacmd.sh addUserToGroup -dn Domain -un Administrator -pd Administrator -eu ITQS-Steward -gn Administrator  \n", 
+								 "/opt/informatica/isp/bin/infacmd.sh createUser -dn Domain -un Administrator -pd Administrator -nu ITQS-Owner -np ITQS-Owner -nf ITQS-Owner  \n",
+								 "/opt/informatica/isp/bin/infacmd.sh assignRoleTouser -dn Domain -un Administrator -pd Administrator -eu ITQS-Owner -rn Administrator -sn Domain  \n",                                 
+								 "/opt/informatica/isp/bin/infacmd.sh addUserToGroup -dn Domain -un Administrator -pd Administrator -eu ITQS-Owner -gn Administrator \n",              
+								 				 
+								 								 
+                                 "echo \"Creating Infa user\"  \n",
+                                 "if [[ $administratorName == \"Administrator\" ]] && [[ $administratorPassword == \"Administrator\" ]] \n",
+                                 "then\n",
+                                 "echo \"No Change\" \n",
+                                 "elif [[ $administratorName == \"Administrator\"  ]] \n",
+                                 "then\n",
+                                 "/opt/informatica/isp/bin/infacmd.sh  resetPassword -dn Domain -un Administrator -pd Administrator -ru Administrator -rp $administratorPassword \n",
+                                 "/opt/informatica/isp/bin/infacmd.sh dis updateServiceOptions -dn Domain -sn DIS -un Administrator -pd $administratorPassword -nn node01 -o \"RepositoryOptions.RepositoryPassword='$administratorPassword'\"",
+                                 "\n",
+                                 "/opt/informatica/isp/bin/infacmd.sh CMS updateServiceOptions -dn Domain -sn CMS -un Administrator -pd $administratorPassword -o \"DataServiceOptions.RepositoryPassword='$administratorPassword'\"",
+                                 "\n",
+                                 "else \n",
+                                 "/opt/informatica/isp/bin/infacmd.sh createUser -dn Domain -un Administrator -pd Administrator -nu $administratorName -np $administratorPassword -nf $administratorName  \n",
+                                 "echo \"Creating roles and gropus to user\"  \n",
+                                 "/opt/informatica/isp/bin/infacmd.sh assignRoleTouser -dn Domain -un Administrator -pd Administrator -eu $administratorName -rn Administrator -sn Domain  \n",
+                                 "/opt/informatica/isp/bin/infacmd.sh addUserToGroup -dn Domain -un Administrator -pd Administrator -eu $administratorName -gn Administrator  \n",
+                                 "fi \n",
+                                 "/opt/informatica/isp/bin/infacmd.sh addLicense -dn Domain -un $administratorName -pd $administratorPassword -ln ${LICENSE_NAME} -lf /mnt1/EICLicense.key  \n",
+                                 "echo \"Assigning the New licenses to MRS , DIS and CMS \"  \n",
+                                 "/opt/informatica/isp/bin/infacmd.sh assignLicense -dn Domain -un $administratorName -pd $administratorPassword -sn MRS -ln ${LICENSE_NAME}  \n",
+                                 "/opt/informatica/isp/bin/infacmd.sh assignLicense -dn Domain -un $administratorName -pd $administratorPassword -sn DIS -ln ${LICENSE_NAME}  \n",
+                                 "/opt/informatica/isp/bin/infacmd.sh assignLicense -dn Domain -un $administratorName -pd $administratorPassword -sn CMS -ln ${LICENSE_NAME}  \n",
+                                 "echo \"Enabling the to MRS , DIS and CMS \"  \n",
+                                 "/opt/informatica/isp/bin/infacmd.sh enableservice -dn Domain -un $administratorName -pd $administratorPassword -sn MRS  \n",
+                                 "/opt/informatica/isp/bin/infacmd.sh enableservice -dn Domain -un $administratorName -pd $administratorPassword -sn DIS  \n",
+                                 "/opt/informatica/isp/bin/infacmd.sh enableservice -dn Domain -un $administratorName -pd $administratorPassword -sn CMS  \n"
+                              ]
+                           ]
+                        },
+                        "mode":"000770",
+                        "owner":"ec2-user",
+                        "group":"ec2-user"
+                     },
+                     "/home/ec2-user/Mercury_Setup/oracle.sql":{  
+                        "content":{  
+                           "Fn::Join":[  
+                              "",
+                              [  
+                                 "create table store_sales_aggregates (cd_credit_rating char(10),i_category varchar(50),cd_education_status char(20),ca_state char(2),d_date_week date,ss_ticket_number integer,number_of_rows integer,ss_ext_discount_amt NUMERIC,ss_net_paid NUMERIC);",
+                                 "\n",
+                                 "CREATE INDEX idx_clustered_cover_query2_3 ON store_sales_aggregates (cd_education_status , cd_credit_rating , d_date_week, i_category );",
+                                 "\n",
+                                 "CREATE INDEX idx_coverq1 ON store_sales_aggregates (cd_education_status , ca_state , cd_credit_rating , d_date_week, i_category );",
+                                 "\n",
+                                 "CREATE INDEX idx_date ON store_sales_aggregates (d_date_week);"
+                              ]
+                           ]
+                        },
+                        "mode":"000770",
+                        "owner":"ec2-user",
+                        "group":"ec2-user"
+                     },
+					 "/home/ec2-user/Mercury_Setup/create_database.sql":{  
+                        "content":{  
+                           "Fn::Join":[  
+                              "",
+                              [  
+                                
+								"CREATE DATABASE ",
+								{
+								
+								"Ref":"RedshiftDatabaseName"
+								},
+								";"
+                              ]
+                           ]
+                        },
+                        "mode":"000770",
+                        "owner":"ec2-user",
+                        "group":"ec2-user"
+                     },
+                     "/home/ec2-user/Mercury_Setup/iicssetup.sh":{  
+                        "content":{  
+                           "Fn::Join":[  
+                              "",
+                              [  
+                                 "export ICS_HOME=/opt/infaagent",
+                                 "\n",
+                                 "export ORACLE_BASE=/usr/lib/oracle/12.2/client64",
+                                 "\n",
+                                 "export ORACLE_HOME=/usr/lib/oracle/12.2/client64",
+                                 "\n",
+                                 "export ODBCHOME=/opt/informatica/ODBC7.1",
+                                 "\n",
+                                 "export ODBCINI=/opt/informatica/ODBC7.1/odbc.ini",
+                                 "\n",
+                                 "export ORACLE_INVENTORY=/opt/oracle/oraInventory",
+                                 "\n",
+                                 "export LANG=C",
+                                 "\n",
+                                 "export LC_ALL=C",
+                                 "\n",
+                                 "export TNS_ADMIN=/usr/lib/oracle/12.2/client64/",
+                                 "\n",
+                                 "export ORACLE_INVENTORY=/opt/oracle/oraInventory",
+                                 "\n",
+                                 "export JAVA_HOME=/opt/informatica/java",
+                                 "\n",
+                                 "export JRE_HOME=/opt/informatica/java/jre",
+                                 "\n",
+                                 "export INFA_JDK_HOME=/opt/informatica/java",
+                                 "\n",
+                                 "export INFA_HOME=/opt/informatica",
+                                 "\n",
+                                 "export PM_HOME=/opt/informatica/server/bin",
+                                 "\n",
+                                 "export INFA_RESOURSES=/opt/informatica/services/shared/bin",
+                                 "\n",
+                                 "export PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin:/root/bin:/usr/lib/oracle/12.2/client64/bin:/usr/sbin:/opt/informatica/ODBC7.1:/opt/informatica/ODBC7.1/odbc.ini:/opt/informatica/java/lib:/opt/informatica/java/jre/lib:/opt/informatica/services/shared/bin:/opt/informatica/server/bin:/opt/informatica/java/bin:~/.local/bin",
+                                 "\n",
+                                 "export LD_LIBRARY_PATH=/usr/lib/oracle/12.2/client64/lib:/lib:/usr/lib:/usr/lib/oracle/12.2/client64/bin:/usr/lib/oracle/12.2/client64/lib:/opt/informatica/ODBC7.1/lib:/opt/informatica/java/lib:/opt/informatica/java/jre/lib:/opt/informatica/services/shared/bin:/opt/informatica/server/bin",
+                                 "\n",
+                                 "export HOME=/root",
+                                 "\n",
+                                 "export LANG=en_US.UTF-8",
+                                 "\n",
+                                 "export USER=root",
+                                 "\n",
+                                 "export SHELL=/bin/bash",
+                                 "\n",
+                                 "export HOSTNAME=infadomain.infa.com",
+                                 "\n",
+                                 "DataCenter='",
+                                 {  
+                                    "Ref":"ICSPodLocation"
+                                 },
+                                 "'",
+                                 "\n",
+                                 "POD=us",
+                                 "\n",
+                                 "echo \"Configuring Secure agent with the ICS User\" ",
+                                 "\n",
+                                 "if [ \"$DataCenter\" == \"North America\" ] ",
+                                 "\n",
+                                 "then",
+                                 "\n",
+                                 "POD=us",
+                                 "\n",
+                                 "elif [ \"$DataCenter\" == \"Europe\" ]",
+                                 "\n",
+                                 "then",
+                                 "\n",
+                                 "POD=em",
+                                 "\n",
+                                 "else",
+                                 "\n",
+                                 "POD=ap",
+                                 "\n",
+                                 "fi",
+                                 "\n",
+                                 "sed -i \"s/us/$POD/g\" /opt/infaagent/apps/agentcore/conf/infaagent.ini",
+                                 "\n",
+                                 "chown -R ec2-user /opt/infaagent/",
+                                 "\n",
+                                 "chmod -R 777 /opt/infaagent/",
+                                 "\n",
+                                 "echo \"Starting ICS Agent\" ",
+                                 "\n",
+                                 "username=",
+                                 {  
+                                    "Ref":"Username"
+                                 },
+                                 "\n",
+                                 "password=",
+                                 {  
+                                    "Ref":"ICSPassword"
+                                 },
+                                 "\n",
+                                 "cd /opt/infaagent/apps/agentcore/",
+                                 "\n",
+                                 "sudo su ec2-user -c \"./infaagent startup\"",
+                                 "\n",
+                                 "sleep 3m",
+                                 "\n",
+                                 "cd /opt/infaagent/apps/agentcore/",
+                                 "\n",
+                                 "chown -R ec2-user:ec2-user /opt/infaagent/",
+                                 "\n",
+                                 "chmod -R 777 /opt/infaagent/",
+                                 "\n",
+                                 "./consoleAgentManager.sh configure $username $password",
+                                 "\n",
+                                 "exit 0",
+                                 "\n"
+                              ]
+                           ]
+                        },
+                        "mode":"000770",
+                        "owner":"ec2-user",
+                        "group":"ec2-user"
+                     },
+                     "/home/ec2-user/Mercury_Setup/iics_connections.sh":{  
+                        "content":{  
+                           "Fn::Join":[  
+                              "",
+                              [  
+                                 "export ICS_HOME=/opt/infaagent",
+                                 "\n",
+                                 "export ORACLE_BASE=/usr/lib/oracle/12.2/client64",
+                                 "\n",
+                                 "export ORACLE_HOME=/usr/lib/oracle/12.2/client64",
+                                 "\n",
+                                 "export ODBCHOME=/opt/informatica/ODBC7.1",
+                                 "\n",
+                                 "export ODBCINI=/opt/informatica/ODBC7.1/odbc.ini",
+                                 "\n",
+                                 "export ORACLE_INVENTORY=/opt/oracle/oraInventory",
+                                 "\n",
+                                 "export LANG=C",
+                                 "\n",
+                                 "export LC_ALL=C",
+                                 "\n",
+                                 "export TNS_ADMIN=/usr/lib/oracle/12.2/client64/",
+                                 "\n",
+                                 "export ORACLE_INVENTORY=/opt/oracle/oraInventory",
+                                 "\n",
+                                 "export JAVA_HOME=/opt/informatica/java",
+                                 "\n",
+                                 "export JRE_HOME=/opt/informatica/java/jre",
+                                 "\n",
+                                 "export INFA_JDK_HOME=/opt/informatica/java",
+                                 "\n",
+                                 "export INFA_HOME=/opt/informatica",
+                                 "\n",
+                                 "export PM_HOME=/opt/informatica/server/bin",
+                                 "\n",
+                                 "export INFA_RESOURSES=/opt/informatica/services/shared/bin",
+                                 "\n",
+                                 "export PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin:/root/bin:/usr/lib/oracle/12.2/client64/bin:/usr/sbin:/opt/informatica/ODBC7.1:/opt/informatica/ODBC7.1/odbc.ini:/opt/informatica/java/lib:/opt/informatica/java/jre/lib:/opt/informatica/services/shared/bin:/opt/informatica/server/bin:/opt/informatica/java/bin:~/.local/bin",
+                                 "\n",
+                                 "export LD_LIBRARY_PATH=/usr/lib/oracle/12.2/client64/lib:/lib:/usr/lib:/usr/lib/oracle/12.2/client64/bin:/usr/lib/oracle/12.2/client64/lib:/opt/informatica/ODBC7.1/lib:/opt/informatica/java/lib:/opt/informatica/java/jre/lib:/opt/informatica/services/shared/bin:/opt/informatica/server/bin",
+                                 "\n",
+                                 "export HOME=/root",
+                                 "\n",
+                                 "export LANG=en_US.UTF-8",
+                                 "\n",
+                                 "export USER=root",
+                                 "\n",
+                                 "export SHELL=/bin/bash",
+                                 "\n",
+                                 "export HOSTNAME=infadomain.infa.com",
+                                 "\n",
+                                 "DataCenter='",
+                                 {  
+                                    "Ref":"ICSPodLocation"
+                                 },
+                                 "'",
+                                 "\n",
+                                 "secretKey=",
+                                 {  
+                                    "Fn::GetAtt":[  
+                                       "InformaticaS3UserAccessKey",
+                                       "SecretAccessKey"
+                                    ]
+                                 },
+                                 "\n",
+                                 "accessKey=",
+                                 {  
+                                    "Ref":"InformaticaS3UserAccessKey"
+                                 },
+                                 "\n",
+                                 "username=",
+                                 {  
+                                    "Ref":"Username"
+                                 },
+                                 "\n",
+                                 "password=",
+                                 {  
+                                    "Ref":"ICSPassword"
+                                 },
+                                 "\n",
+                                 "rUsername=",
+                                 {  
+                                    "Ref":"RedshiftUsername"
+                                 },
+                                 "\n",
+                                 "rpassWord=",
+                                 {  
+                                    "Ref":"RedshiftPassword"
+                                 },
+                                 "\n",
+                                 "nodes=",
+                                 {  
+                                    "Ref":"RedshiftNumberOfNodes"
+                                 },
+                                 "\n",
+                                 "nodeType=",
+                                 {  
+                                    "Ref":"RedshiftNodeType"
+                                 },
+                                 "\n",
+                                 "bucketName=",
+                                 {  
+                                    "Ref":"IICSTaskBucketName"
+                                 },
+                                 "\n",
+                                 "regionName='",
+                                 {  
+                                    "Fn::FindInMap":[  
+                                       "S3ConnectionMap",
+                                       {  
+                                          "Ref":"AWS::Region"
+                                       },
+                                       "REGION"
+                                    ]
+                                 },
+                                 "'",
+                                 "\n",
+                                 "redshiftdb=",
+                                 {  
+                                    "Ref":"RedshiftDatabaseName"
+                                 },
+                                 "\n",
+                                 "redshifthost=",
+                                 {  
+                                    "Ref":"RedshiftHost"
+                                 },
+                                 "\n",
+                                 "export PGPASSWORD=$rpassWord",
+                                 "\n",
+								 "psql -h $redshifthost -p 5439 -U $rUsername -l -d dev -w > checkDatabaseexists.txt",
+								 "\n",
+								 "grep '$redshiftdb' checkDatabaseexists.txt > database.txt",
+								 "\n",
+								 "echo \"Checking if user provided database exists or not\" ",
+								 "\n",
+								 "if [[ -s database.txt ]]; then echo \"Connected\" ; else psql -h $redshifthost -p 5439 -U $rUsername -d dev -w -f /home/ec2-user/Mercury_Setup/create_database.sql; fi",
+								 "\n",
+                                 "psql -h $redshifthost -p 5439 -U $rUsername -d $redshiftdb -w -f /home/ec2-user/IICS/seeddata/create_redshift.sql",
+                                 "\n",
+                                 "POD=us",
+                                 "\n",
+                                 "if [ \"$DataCenter\" == \"North America\" ] ",
+                                 "\n",
+                                 "then",
+                                 "\n",
+                                 "POD=us",
+                                 "\n",
+                                 "elif [ \"$DataCenter\" == \"Europe\" ]",
+                                 "\n",
+                                 "then",
+                                 "\n",
+                                 "POD=em",
+                                 "\n",
+                                 "else",
+                                 "\n",
+                                 "POD=ap",
+                                 "\n",
+                                 "fi",
+                                 "\n",
+                                 "echo \"Creating connections\" ",
+                                 "\n",
+                                 "curl -k1 -d '{\"@type\": \"login\",\"username\": \"'$username'\",\"password\": \"'$password'\"}' -H \"Content-Type: application/json\" -H \"Accept: application/json\" -X POST https://dm-$POD.informaticacloud.com/ma/api/v2/user/login > Login.json",
+                                 "\n",
+                                 "jsonlint -f Login.json > Login_New.json",
+                                 "\n",
+                                 "icSessionId=`cat Login_New.json | grep icSessionId | cut -d \":\" -f2 | sed 's/[ ,\"]//g'`",
+                                 "\n",
+                                 "serverUrl=`cat Login_New.json | grep serverUrl | cut -d \":\" -f3 | sed 's/[ ,\"]//g'`",
+                                 "\n",
+                                 "curl -k1 -H \"Content-Type: application/json\" -H \"Accept: application/json\" -H \"icSessionId:$icSessionId\" -X GET https:$serverUrl/api/v2/runtimeEnvironment/name/infadomain.infa.com/ > RuntimeEnv.json",
+                                 "\n",
+                                 "jsonlint -f RuntimeEnv.json > RuntimeEnv_New.json",
+                                 "\n",
+                                 "RuntimeIds=`cat RuntimeEnv_New.json | grep id | cut -d \":\" -f2 | sed 's/[ ,\"]//g'`",
+                                 "\n",
+                                 "RuntimeId1=(`echo $RuntimeIds | sed 's/\\n/\\n/g'`)",
+                                 "\n",
+                                 "RuntimeId=${RuntimeId1[1]}",
+                                 "\n",
+                                 "echo '{\"@type\": \"connection\",\"name\": \"AWS Redshift Quick Start_ITQS\",\"runtimeEnvironmentId\": \"'$RuntimeId'\",\"instanceName\": \"Amazon Redshift v2\",\"type\": \"TOOLKIT_CCI\",\"connParams\": {\"Schema\": \"public\",\"AWSAccessKeyID\": \"'$accessKey'\",\"JDBCURL\": \"jdbc:redshift://'$redshifthost':5439/'$redshiftdb'\",\"AWSSecretAccessKey\": \"'$secretKey'\",\"Username\": \"'$rUsername'\",\"Password\": \"'$rpassWord'\",\"NumberOfNodesinCluster\": \"'$nodes'\",\"ClusterNodeType\": \"'$nodeType'\"}}' > rsdata.json",
+                                 "\n",
+                                 "curl -k1 --data @rsdata.json  -H \"Content-Type: application/json\" -H \"Accept: application/json\" -H \"icSessionId:$icSessionId\" -X POST https:$serverUrl/api/v2/connection > RS_Connection.json",
+								 "\n",
+                                 "jsonlint -f RS_Connection.json > RS_Connection_New.json",
+                                 "\n",
+                                 "echo '{\"@type\": \"connection\",\"name\": \"AWS S3 Quick Start_ITQS\",\"runtimeEnvironmentId\": \"'$RuntimeId'\",\"instanceName\": \"Amazon S3 v2\",\"type\":\"TOOLKIT_CCI\",\"connParams\": {\"AccessKey\": \"'$accessKey'\",\"SecretKey\":\"'$secretKey'\",\"RegionName\": \"'$regionName'\",\"FolderPath\": \"'$bucketName'\"}}' > s3data.json",
+                                 "\n",
+                                 "echo \"INFA-TABLEAU CLOUDFORMATION BUCKET\" >> infa.txt ",
+                                 "\n",
+                                 "aws s3 cp infa.txt s3://$bucketName",
+                                 "\n",
+                                 "curl -k1 --data @s3data.json -H \"Content-Type: application/json\" -H \"Accept: application/json\" -H \"icSessionId:$icSessionId\" -X POST https:$serverUrl/api/v2/connection > S3_Connection.json",
+                                 "\n",
+                                 "jsonlint -f S3_Connection.json > S3_Connection_New.json",
+                                 "\n",
+                                 "tableauPublicDnsName=",
+                                 {  
+                                    "Ref":"TableauPrivateIp"
+                                 },
+                                 "\n",
+                                 "tableauUsername=",
+                                 {  
+                                    "Ref":"TableauUsername"
+                                 },
+                                 "\n",
+                                 "tableauPassword=",
+                                 {  
+                                    "Ref":"TableauPassword"
+                                 },
+                                 "\n",
+                                 "echo '{\"@type\": \"connection\",\"name\": \"AWS Tableau QuickStart_ITQS\",\"runtimeEnvironmentId\": \"'$RuntimeId'\",\"instanceName\": \"Tableau V3\",\"type\": \"TOOLKIT_CCI\",\"connParams\": {\"tableauProduct\": \"Tableau Server\",\"connectionURL\": \"http://'$tableauPublicDnsName':'80'\",\"username\": \"'$tableauUsername'\",\"password\": \"'$tableauPassword'\"}}' > tableaudata.json",
+                                 "\n",
+                                 "curl -k1 --data @tableaudata.json  -H \"Content-Type: application/json\" -H \"Accept: application/json\" -H \"icSessionId:$icSessionId\" -X POST https:$serverUrl/api/v2/connection > tableau_Connection.json",
+                                 "\n",
+                                 "jsonlint -f tableau_Connection.json > tableau_Connection_New.json",
+                                 "\n",
+                                 "rdsHostName=",
+                                 {  
+                                    "Ref":"DBEndpointAddress"
+                                 },
+                                 "\n",
+                                 "rdsUserName=",
+                                 {  
+                                    "Ref":"DBUsername"
+                                 },
+                                 "\n",
+                                 "rdsPassword=",
+                                 {  
+                                    "Ref":"DBPassword"
+                                 },
+                                 "\n",
+                                 "echo '{\"@type\":\"connection\",\"name\":\"AWS Oracle Quick Start_ITQS\",\"runtimeEnvironmentId\":\"'$RuntimeId'\",\"host\":\"'$rdsHostName'\",\"database\":\"orcl\",\"codepage\":\"MS1252\",\"type\":\"Oracle\",\"port\":\"1521\",\"password\":\"'$rdsPassword'\",\"username\":\"'$rdsUserName'\",\"connParams\":{\"CryptoProtocolVersion\":\"TLSv1\",\"keyStore\":null,\"trustStore\":null,\"HostNameInCertificate\":null,\"encryptionMethod\":\"NoEncryption\",\"ValidateServerCertificate\":\"False\"}}' > oracle.json",
+                                 "\n",
+                                 "curl -k1 --data @oracle.json  -H \"Content-Type: application/json\" -H \"Accept: application/json\" -H \"icSessionId:$icSessionId\" -X POST https:$serverUrl/api/v2/connection > oracle_Connection.json",
+                                 "\n",
+                                 "jsonlint -f oracle_Connection.json > oracle_Connection_New.json",
+                                 "\n",
+                                 "sqlplus $rdsUserName/$rdsPassword@orcl @/home/ec2-user/Mercury_Setup/oracle.sql"
+                              ]
+                           ]
+                        },
+                        "mode":"000770",
+                        "owner":"ec2-user",
+                        "group":"ec2-user"
+                     },
+                     "/home/ec2-user/Mercury_Setup/iics_mappings.sh":{  
+                        "content":{  
+                           "Fn::Join":[  
+                              "",
+                              [  
+                                 "export SHELL=/bin/bash",
+                                 "\n",
+                                 "sh /home/ec2-user/IICS/importMapping.sh ",
+                                 {  
+                                    "Ref":"Username"
+                                 },
+                                 " ",
+                                 {  
+                                    "Ref":"ICSPassword"
+                                 },
+                                 " ",
+                                 {  
+                                    "Ref":"IICSTaskBucketName"
+                                 }
+                              ]
+                           ]
+                        },
+                        "mode":"000770",
+                        "owner":"ec2-user",
+                        "group":"ec2-user"
+                     },
+					 
+					  "/home/ec2-user/Mercury_Setup/run_mappings.sh":{  
+                        "content":{  
+                           "Fn::Join":[  
+                              "",
+                              [  
+                                 "export SHELL=/bin/bash",
+                                 "\n",
+								 "username=",
+                                 {  
+                                    "Ref":"Username"
+                                 },
+								 "\n",
+                                 "password=",
+                                 {  
+                                    "Ref":"ICSPassword"
+                                 },
+								 "\n",
+								 "POD=us",
+								 "\n",
+								 "curl -k1 -d '{\"@type\": \"login\",\"username\": \"'$username'\",\"password\": \"'$password'\"}' -H \"Content-Type: application/json\" -H \"Accept: application/json\" -X POST https://dm-$POD.informaticacloud.com/ma/api/v2/user/login > Login.json",
+								 "\n",
+								 "jsonlint -f Login.json > Login_New.json",
+								 "\n",
+								 "icSessionId=`cat Login_New.json | grep icSessionId | cut -d \":\" -f2 | sed 's/[ ,\"]//g'`",
+								 "\n",
+								 "serverUrl=`cat Login_New.json | grep serverUrl | cut -d \":\" -f3 | sed 's/[ ,\"]//g'`",
+								 "\n",
+								 "echo \"executing mapping : S3 to Redshift\"",
+								 "\n",
+							     "echo '{\"@type\": \"job\",\"taskName\": \"S3 to Redshift_ITQS\",\"taskType\": \"MTT\"}' > s3toredshift.json",
+								 "\n",
+								 "curl -k1 --data @s3toredshift.json -H \"Content-Type: application/json\" -H \"Accept: application/json\" -H \"icSessionId:$icSessionId\" -X POST https:$serverUrl/api/v2/job > Jubsubmit_S3toRedshift.json",
+								 "\n",
+								 "jsonlint -f Jubsubmit_S3toRedshift.json > Jubsubmit_S3toRedshift_New.json",
+								 "\n",
+								 "taskIdS3toRedshift=`cat Jubsubmit_S3toRedshift_New.json | grep taskId | cut -d \":\" -f2 | sed 's/[ ,\"]//g'`",
+								 "\n",
+								 "sleep 5m",
+								 "\n",
+								 "curl -k1 -H \"Content-Type: application/json\" -H \"Accept: application/json\" -H \"icSessionId:$icSessionId\" -X GET https:$serverUrl/api/v2/activity/activityMonitor?details=false > Jobstatus.json",
+								 "\n",
+								 "jsonlint -f Jobstatus.json > Jobstatus_New.json",
+								 "\n",
+								 "jobstatus=`cat Jobstatus_New.json | grep executionState | cut -d \":\" -f2 | sed 's/[ ,\"]//g'`",
+								 "\n",
+								 "while [[ $jobstatus == \"RUNNING\" ]]",
+								 "\n",
+								 "do",
+								 "\n",
+								 " echo \"JOB is still running : $jobstatus \"",
+								 "\n",
+								 " sleep 2m",
+								 "\n",
+                                 " curl -k1 -H \"Content-Type: application/json\" -H \"Accept: application/json\" -H \"icSessionId:$icSessionId\" -X GET https:$serverUrl/api/v2/activity/activityMonitor?details=false > Jobstatus.json",
+								 "\n",
+                                 " jsonlint -f Jobstatus.json > Jobstatus_New.json",
+								 "\n",
+                                 " jobstatus=`cat Jobstatus_New.json | grep executionState | cut -d \":\" -f2 | sed 's/[ ,\"]//g'`",
+								 "\n",
+                                 "done",
+								 "\n",
+								 "echo \"executing mapping : Aggregate Store Sales - Publish to Oracle RDS\"",
+								 "\n",
+                                 "echo '{\"@type\": \"job\",\"taskName\": \"Aggregate Store Sales_ITQS\",\"taskType\": \"MTT\"}' > aggregates.json",
+								 "\n",
+                                 "curl -k1 --data @aggregates.json -H \"Content-Type: application/json\" -H \"Accept: application/json\" -H \"icSessionId:$icSessionId\" -X POST https:$serverUrl/api/v2/job > Jubsubmit_aggregates.json",
+								 "\n",
+                                 "jsonlint -f Jubsubmit_aggregates.json > Jubsubmit_aggregates_New.json",
+								 "\n",
+								 "taskIdagg=`cat Jubsubmit_aggregates_New.json | grep taskId | cut -d \":\" -f2 | sed 's/[ ,\"]//g'`",
+								 "\n",
+                                 "sleep 5m",
+								 "\n",
+                                 "curl -k1 -H \"Content-Type: application/json\" -H \"Accept: application/json\" -H \"icSessionId:$icSessionId\" -X GET https:$serverUrl/api/v2/activity/activityMonitor?details=false > Jobstatus.json",
+								 "\n",
+                                 "jsonlint -f Jobstatus.json > Jobstatus_New.json",
+								 "\n",
+                                 "jobstatus=`cat Jobstatus_New.json | grep executionState | cut -d \":\" -f2 | sed 's/[ ,\"]//g'`",
+								 "\n",
+                                 "while [[ $jobstatus == \"RUNNING\" ]]",
+								 "\n",
+                                 "do",
+								 "\n",
+                                 " echo \"JOB is still running : $jobstatus \"",
+								 "\n",
+								 " sleep 2m",
+								 "\n",
+								 " curl -k1 -H \"Content-Type: application/json\" -H \"Accept: application/json\" -H \"icSessionId:$icSessionId\" -X GET https:$serverUrl/api/v2/activity/activityMonitor?details=false > Jobstatus.json",
+								 "\n",
+                                 " jsonlint -f Jobstatus.json > Jobstatus_New.json",
+								 "\n",
+                                 " jobstatus=`cat Jobstatus_New.json | grep executionState | cut -d \":\" -f2 | sed 's/[ ,\"]//g'`",
+								 "\n",
+                                 "done",
+								 "\n",
+                                 "echo \"Mappings executed\"",
+								 "\n",
+                                 "curl -k1 -H \"Content-Type: application/json\" -H \"Accept: application/json\" -H \"icSessionId:$icSessionId\" -X GET https:$serverUrl/api/v2/activity/activityLog?taskId=$taskIdagg > TaskStatus.json",
+								 "\n",
+								 "jsonlint -f TaskStatus.json > TaskStatus_New.json",
+								 "\n",
+                                 "taskstatus=`cat TaskStatus_New.json | grep state | cut -d \":\" -f2 | sed 's/[ ,\"]//g'`",
+								 "\n",
+								 "if [[ $taskstatus != \"1\" ]]",
+								 "\n",
+								 "then",
+								 "\n",
+								 "errMsg=`cat TaskStatus_New.json | grep errorMsg | cut -d \":\" -f2 | sed 's/[ ,\"]//g'`",
+								 "\n",
+								 "echo \"Error Message is :\"",
+								 "\n",
+								 "echo $errMsg",
+								 "\n",
+								 "fi",
+								 "\n",
+								 "curl -k1 -H \"Content-Type: application/json\" -H \"Accept: application/json\" -H \"icSessionId:$icSessionId\" -X GET https:$serverUrl/api/v2/activity/activityLog?taskId=$taskIdS3toRedshift > TaskStatus.json",
+								 "\n",
+								 "jsonlint -f TaskStatus.json > TaskStatus_New.json",
+								 "\n",
+                                 "taskstatus=`cat TaskStatus_New.json | grep state | cut -d \":\" -f2 | sed 's/[ ,\"]//g'`",
+								 "\n",
+								 "if [[ $taskstatus != \"1\" ]]",
+								 "\n",
+								 "then",
+								 "\n",
+								 "errMsg=`cat TaskStatus_New.json | grep errorMsg | cut -d \":\" -f2 | sed 's/[ ,\"]//g'`",
+								 "\n",
+								 "echo \"Error Message is :\"",
+								 "\n",
+								 "echo $errMsg",
+								 "\n",
+								 "fi",
+								 "\n"
+								 
+                              ]
+                           ]
+                        },
+                        "mode":"000770",
+                        "owner":"ec2-user",
+                        "group":"ec2-user"
+                     },
+                     "/home/ec2-user/Mercury_Setup/createConnections.sh":{  
+                        "content":{  
+                           "Fn::Join":[  
+                              "",
+                              [  
+                                 "administratorName=",
+                                 {  
+                                    "Ref":"InformaticaAdminUsername"
+                                 },
+                                 "\n",
+                                 "administratorPassword=",
+                                 {  
+                                    "Ref":"InformaticaAdminPassword"
+                                 },
+                                 "\n",
+                                 "/opt/informatica/isp/bin/infacmd.sh isp createConnection -dn Domain -un $administratorName -pd $administratorPassword -cn RedShift -ct AMAZONREDSHIFT -o username=",
+                                 {  
+                                    "Ref":"RedshiftUsername"
+                                 },
+                                 " password=",
+                                 {  
+                                    "Ref":"RedshiftPassword"
+                                 },
+                                 "  CLUSTERNODETYPE=dc1.large NUMBEROFNODESINCLUSTER=1 JDBCURL=jdbc:redshift://",
+                                 {  
+                                    "Ref":"RedshiftHost"
+                                 },
+                                 ":",
+                                 {  
+                                    "Ref":"RedshiftDatabasePort"
+                                 },
+                                 "/",
+                                 {  
+                                    "Ref":"RedshiftDatabaseName"
+                                 },
+                                 "\n"
+                              ]
+                           ]
+                        },
+                        "mode":"000770",
+                        "owner":"ec2-user",
+                        "group":"ec2-user"
+                     },
+                     "/home/ec2-user/Mercury_Setup/ldmstartup.sh":{  
+                        "content":{  
+                           "Fn::Join":[  
+                              "",
+                              [  
+                                 "LICENSE_NAME=EICLicense.key",
+                                 "\n",
+                                 "administratorName=",
+                                 {  
+                                    "Ref":"InformaticaAdminUsername"
+                                 },
+                                 "\n",
+                                 "administratorPassword=",
+                                 {  
+                                    "Ref":"InformaticaAdminPassword"
+                                 },
+                                 "\n",
+                                 "IHSHOSTNAME=",
+                                 {  
+                                    "Ref":"HadoopGatewayPublicDNSName"
+                                 },
+                                 "\n",
+                                 "IHSNODES=",
+                                 {  
+                                    "Ref":"HadoopGatewayPublicDNSName"
+                                 },
+                                 "\n",
+                                 "echo \"Creating the IHS \"  \n",
+                                "/opt/informatica/isp/bin/infacmd.sh ihs createService -dn Domain -nn node01 -un $administratorName -pd $administratorPassword -sn IHS -sp 9085 -tls true -kf /opt/informatica/tomcat/conf/Default.keystore -kp changeit -hgh $IHSHOSTNAME -hgp 8080 -hn $IHSNODES -gu root -dssl true -tf /opt/infa_truststore.jks -tp pass2038@infaSSL \n",
+                                 "/opt/informatica/isp/bin/infacmd.sh assignLicense -dn Domain -un $administratorName -pd $administratorPassword -ln ${LICENSE_NAME} -sn IHS  \n",
+                                 "/opt/informatica/isp/bin/infacmd.sh ihs updateServiceOptions -dn Domain -un $administratorName -pd $administratorPassword -sn IHS -o IcsCustomOptions.ihs.enable.memcheck=false  \n",
+                                 "/opt/informatica/isp/bin/infacmd.sh ihs updateServiceOptions -dn Domain -un $administratorName -pd $administratorPassword -sn IHS -o IcsCustomOptions.ihs.enable.cpucheck=false  \n",
+                                 "/opt/informatica/isp/bin/infacmd.sh ihs updateServiceOptions -dn Domain -un $administratorName -pd $administratorPassword -sn IHS -o IcsCustomOptions.ihs.enable.diskcheck=false  \n",
+                                 "/opt/informatica/isp/bin/infacmd.sh ihs updateServiceOptions -dn Domain -un $administratorName -pd $administratorPassword -sn IHS -o IcsCustomOptions.ihs.ambari.testing=true  \n",
+                                 "echo \"Creating the LDM \"  \n",
+                                 "/opt/informatica/isp/bin/infacmd.sh ldm createService -dn Domain  -nn node01 -un $administratorName -pd $administratorPassword -sn LDM -mrs MRS -mrsun $administratorName -mrspd $administratorPassword -sp 8085 -tls true -kf /opt/informatica/tomcat/conf/Default.keystore -kp changeit -ise false -ihsn IHS -isc false -cssl true  \n",
+                                 "/opt/informatica/isp/bin/infacmd.sh assignlicense -dn Domain -un $administratorName -pd $administratorPassword -sn LDM -ln ${LICENSE_NAME}  \n",
+                                 "/opt/informatica/isp/bin/infacmd.sh ldm updateServiceOptions -dn Domain -un $administratorName -pd $administratorPassword -sn LDM -o LdmCustomOptions.ldm.repo.content.create.timeout.millis=1200000  \n",
+                                 "loadType=low",
+                                 "\n",
+                                 "/opt/informatica/isp/bin/infacmd.sh ldm updateServiceOptions -dn Domain -un $administratorName -pd $administratorPassword -sn LDM -o LdmCustomOptions.loadType=$loadType  \n",
+                                 "echo \"Creating the AS \"  \n",
+                                 "/opt/informatica/isp/bin/infacmd.sh as createService -dn Domain -nn node01 -sn AS -un $administratorName -pd $administratorPassword -rs MRS -ds DIS -ffl /tmp -cs LDM -csau $administratorName -csap $administratorPassword -au $administratorName -ap $administratorPassword -bgefd /tmp -HttpPort 8089 >> /installation.log \n",
+                                 "/opt/informatica/isp/bin/infacmd.sh assignLicense -dn Domain -un $administratorName -pd $administratorPassword -ln $LICENSE_NAME -sn AS >> /installation.log \n",
+                                 "/opt/informatica/isp/bin/infacmd.sh as updateServiceOptions -dn Domain -sn AS -un $administratorName -pd $administratorPassword  -o BGExport.BGPermanentAttachmentFileLocation=/tmp  \n",
+                                 "\n",
+                                 "echo \"Enabling the IHS , LDM and AS \"  \n",
+                                 "/opt/informatica/isp/bin/infacmd.sh enableService -dn Domain -un $administratorName -pd $administratorPassword -sn IHS  \n",
+								 "status=\"$(/opt/informatica/isp/bin/infacmd.sh isp getServiceStatus -dn Domain -un $administratorName -pd $administratorPassword -sn IHS)\"",
+                                 "\n",
+                                 "echo $status",
+                                 "\n",
+                                 "while [ ! -z \"${status##*Enabled*}\" ]",
+                                 "\n",
+                                 "do",
+                                 "\n",
+								 "/opt/informatica/isp/bin/infacmd.sh enableService -dn Domain -un $administratorName -pd $administratorPassword -sn IHS",
+								 "\n",
+								 "sleep 2m",
+								 "\n",
+                                 "status=\"$(/opt/informatica/isp/bin/infacmd.sh isp getServiceStatus -dn Domain -un $administratorName -pd $administratorPassword -sn IHS)\"",
+                                 "\n",
+                                 "done",
+                                 "\n",
+								 "/opt/informatica/isp/bin/infacmd.sh enableservice -dn Domain -un $administratorName -pd $administratorPassword -sn LDM \n",
+								 "status=\"$(/opt/informatica/isp/bin/infacmd.sh isp getServiceStatus -dn Domain -un $administratorName -pd $administratorPassword -sn LDM)\"",
+                                 "\n",
+                                 "echo $status",
+                                 "\n",
+                                 "while [ ! -z \"${status##*Enabled*}\" ]",
+                                 "\n",
+                                 "do",
+                                 "\n",
+								 "/opt/informatica/isp/bin/infacmd.sh enableService -dn Domain -un $administratorName -pd $administratorPassword -sn LDM",
+								 "\n",
+								 "sleep 2m",
+								 "\n",
+                                 "status=\"$(/opt/informatica/isp/bin/infacmd.sh isp getServiceStatus -dn Domain -un $administratorName -pd $administratorPassword -sn LDM)\"",
+                                 "\n",
+                                 "done",
+                                 "\n",
+                                 "/opt/informatica/isp/bin/infacmd.sh enableService -dn Domain -un $administratorName -pd $administratorPassword -sn AS \n"
+                              ]
+                           ]
+                        },
+                        "mode":"000770",
+                        "owner":"ec2-user",
+                        "group":"ec2-user"
+                     },
+                     "/home/ec2-user/Mercury_Setup/scanner_creation.sh":{  
+                        "content":{  
+                           "Fn::Join":[  
+                              "",
+                              [  
+                                 "#!/bin/bash\n",
+                                 "DataCenter='",
+                                 {  
+                                    "Ref":"ICSPodLocation"
+                                 },
+                                 "'",
+                                 "\n",
+                                 "LICENSE_NAME=",
+                                 {  
+                                    "Ref":"InformaticaKeyName"
+                                 },
+                                 "\n",
+                                 "administratorName=",
+                                 {  
+                                    "Ref":"InformaticaAdminUsername"
+                                 },
+                                 "\n",
+                                 "administratorPassword=",
+                                 {  
+                                    "Ref":"InformaticaAdminPassword"
+                                 },
+                                 "\n",
+                                 "POD=us",
+                                 "\n",
+                                 "if [ \"$DataCenter\" == \"North America\" ] ",
+                                 "\n",
+                                 "then",
+                                 "\n",
+                                 "POD=us",
+                                 "\n",
+                                 "elif [ \"$DataCenter\" == \"Europe\" ]",
+                                 "\n",
+                                 "then",
+                                 "\n",
+                                 "POD=em",
+                                 "\n",
+                                 "else",
+                                 "\n",
+                                 "POD=ap",
+                                 "\n",
+                                 "fi",
+                                 "\n",
+                                 "status=\"$(/opt/informatica/isp/bin/infacmd.sh isp getServiceStatus -dn Domain -un $administratorName -pd $administratorPassword -sn LDM)\"",
+                                 "\n",
+                                 "echo $status",
+                                 "\n",
+                                 "if [ -z \"${status##*Enabled*}\" ]",
+                                 "\n",
+                                 "then",
+                                 "\n",
+                                 "echo \"connected to LDM.Starting scanner creation\"",
+                                 "\n",
+                                 "else",
+                                 "\n",
+                                 "echo \"Waiting for LDM to come up\"",
+                                 "\n",
+                                 "sleep 20m",
+                                 "\n",
+                                 "/opt/informatica/isp/bin/infacmd.sh enableService -dn Domain -un $administratorName -pd $administratorPassword -sn AS",
+                                 "\n",
+                                 "fi",
+                                 "\n",
+                                 "bucketName=",
+                                 {  
+                                    "Ref":"IICSTaskBucketName"
+                                 },
+                                 "\n",
+                                 "redshiftDbName=",
+                                 {  
+                                    "Ref":"RedshiftDatabaseName"
+                                 },
+                                 "\n",
+                                 "redshiftHost=",
+                                 {  
+                                    "Ref":"RedshiftHost"
+                                 },
+                                 "\n",
+                                 "redshiftPort=",
+                                 {  
+                                    "Ref":"RedshiftDatabasePort"
+                                 },
+                                 "\n",
+                                 "redshiftUserName=",
+                                 {  
+                                    "Ref":"RedshiftUsername"
+                                 },
+                                 "\n",
+                                 "redshiftPassword=",
+                                 {  
+                                    "Ref":"RedshiftPassword"
+                                 },
+                                 "\n",
+                                 "host=infadomain.infa.com",
+                                 "\n",
+                                 "secretKey=",
+                                 {  
+                                    "Fn::GetAtt":[  
+                                       "InformaticaS3UserAccessKey",
+                                       "SecretAccessKey"
+                                    ]
+                                 },
+                                 "\n",
+                                 "accessKey=",
+                                 {  
+                                    "Ref":"InformaticaS3UserAccessKey"
+                                 },
+                                 "\n",
+                                 "icsUsername=",
+                                 {  
+                                    "Ref":"Username"
+                                 },
+                                 "\n",
+                                 "pod=$POD",
+                                 "\n",
+                                 "icsPassword=",
+                                 {  
+                                    "Ref":"ICSPassword"
+                                 },
+                                 "\n",
+                                 "tableauIP=",
+                                 {  
+                                    "Ref":"TableauPrivateIp"
+                                 },
+                                 "\n",
+                                 "tableauUserName=",
+                                 {  
+                                    "Ref":"TableauUsername"
+                                 },
+                                 "\n",
+                                 "tableauPassword=",
+                                 {  
+                                    "Ref":"TableauPassword"
+                                 },
+                                 "\n",
+                                 "rdsHostName=",
+                                 {  
+                                    "Ref":"DBEndpointAddress"
+                                 },
+                                 "\n",
+                                 "rdsUserName=",
+                                 {  
+                                    "Ref":"DBUsername"
+                                 },
+                                 "\n",
+                                 "rdsPassword=",
+                                 {  
+                                    "Ref":"DBPassword"
+                                 },
+                                 "\n",
+                                 "curl -k1 -u $administratorName:$administratorPassword -H \"Content-Type: application/json\" -H \"Accept: application/json\"  -X POST -d  '{\"resourceIdentifier\":{\"resourceName\":\"AWSQuickstartS3_ITQS\",\"description\":\" \",\"resourceTypeId\":\"amazons3\",\"resourceTypeName\":\"Amazon S3\",\"resourceTypeVersion\":\"\"},\"scannerConfigurations\":[{\"scanner\":{\"scannerId\":\"AmazonS3Scanner\",\"providerTypeId\":\"CORE\",\"providerTypeName\":\"Source Metadata\"},\"enabled\":true,\"configOptions\":[{\"optionId\":\"URI\",\"optionValues\":[\"'$bucketName'.s3.amazonaws.com\"]},{\"optionId\":\"SourceDirectory\",\"optionValues\":[\"/\"]},{\"optionId\":\"FileType\",\"optionValues\":[\"All\"]},{\"optionId\":\"IncludeUnsupportedTypes\",\"optionValues\":[false]},{\"optionId\":\"IncludeSubdirectory\",\"optionValues\":[false]},{\"optionId\":\"Memory\",\"optionValues\":[\"Low\"]},{\"optionId\":\"Bucket\",\"optionValues\":[\"'$bucketName'\"]},{\"optionId\":\"AWSAccessKeyID\",\"optionValues\":[\"'$accessKey'\"]},{\"optionId\":\"AWSSecretAccessKey\",\"optionValues\":[\"'$secretKey'\"]}]},{\"scanner\":{\"scannerId\":\"CompositeDomainScanner\",\"providerTypeId\":\"CompositeDomainDiscovery\",\"providerTypeName\":\"Composite Domain Discovery\"},\"enabled\":false,\"configOptions\":[{\"optionId\":\"SelectCompositeDataDomains\",\"optionValues\":[\"AllCompositeDataDomains\"]}]},{\"scanner\":{\"scannerId\":\"ProfileScanner\",\"providerTypeId\":\"Profiling\",\"providerTypeName\":\"Data Discovery\"},\"enabled\":false,\"configOptions\":[{\"optionId\":\"ProfilingRunOptions\",\"optionValues\":[\"ColumnProfiling\"]},{\"optionId\":\"SamplingOptions\",\"optionValues\":[\"FirstNRowsSampling\"]},{\"optionId\":\"runOnHadoop\",\"optionValues\":[\"Native\"]},{\"optionId\":\"RunSimilarityProfile\",\"optionValues\":[\"false\"]},{\"optionId\":\"securityDomain\",\"optionValues\":[\"Native\"]},{\"optionId\":\"Priority\",\"optionValues\":[\"low\"]},{\"optionId\":\"FirstNNumberOfSampleRows\",\"optionValues\":[10000]},{\"optionId\":\"ExcludeViews\",\"optionValues\":[false]},{\"optionId\":\"Incremental\",\"optionValues\":[false]},{\"optionId\":\"domainName\",\"optionValues\":[]},{\"optionId\":\"DomainDiscoveryType\",\"optionValues\":[]},{\"optionId\":\"SelectDataDomains\",\"optionValues\":[]},{\"optionId\":\"DataDomainConformanceOption\",\"optionValues\":[\"DataDomain\"]},{\"optionId\":\"SamplingOptions1\",\"optionValues\":[]},{\"optionId\":\"SimilarityDISConnectionOption\",\"optionValues\":[\"SameAsProfileConfiguration\"]}]}]}' https://$host:8085/access/1/catalog/resources",
+                                 "\n",
+                                 "curl -k1 -u $administratorName:$administratorPassword -H \"Content-Type: application/json\" -H \"Accept: application/json\"  -X POST -d  '{\"resourceIdentifier\":{\"resourceName\":\"AWSQuickstartIICS_ITQS\",\"description\":\" \",\"resourceTypeId\":\"ICSScanner\",\"resourceTypeName\":\"Informatica Cloud Service\",\"resourceTypeVersion\":\"\"},\"scannerConfigurations\":[{\"scanner\":{\"scannerId\":\"ICSScanner\",\"providerTypeId\":\"CORE\",\"providerTypeName\":\"Metadata Load\"},\"enabled\":true,\"configOptions\":[{\"optionId\":\"saasURI\",\"optionValues\":[\"https://dm-'$pod'.informaticacloud.com/ma\"]},{\"optionId\":\"AutoAssignConnections\",\"optionValues\":[true]},{\"optionId\":\"username\",\"optionValues\":[\"'$icsUsername'\"]},{\"optionId\":\"DetailedLineage\",\"optionValues\":[true]},{\"optionId\":\"Memory\",\"optionValues\":[\"Low\"]},{\"optionId\":\"password\",\"optionValues\":[\"'$icsPassword'\"]}]}]}' https://$host:8085/access/1/catalog/resources",
+                                 "\n",
+                                 "curl -k1 -u $administratorName:$administratorPassword -H \"Content-Type: application/json\" -H \"Accept: application/json\"  -X POST -d  '{\"resourceIdentifier\":{\"resourceName\":\"AWSQuickstartTableau_ITQS\",\"description\":\" \",\"resourceTypeId\":\"Tableau\",\"resourceTypeName\":\"Tableau Server\",\"resourceTypeVersion\":\"\"},\"scannerConfigurations\":[{\"scanner\":{\"scannerId\":\"TableauScanner\",\"providerTypeId\":\"CORE\",\"providerTypeName\":\"Source Metadata\"},\"enabled\":true,\"configOptions\":[{\"optionId\":\"Server\",\"optionValues\":[\"http://'$tableauIP':80\"]},{\"optionId\":\"Incremental import\",\"optionValues\":[true]},{\"optionId\":\"AutoAssignConnections\",\"optionValues\":[true]},{\"optionId\":\"User Name\",\"optionValues\":[\"'$tableauUserName'\"]},{\"optionId\":\"Group By\",\"optionValues\":[\"Project\"]},{\"optionId\":\"Memory\",\"optionValues\":[\"Low\"]},{\"optionId\":\"Password\",\"optionValues\":[\"'$tableauPassword'\"]}]}]}' https://$host:8085/access/1/catalog/resources",
+                                 "\n",
+                                 "curl -k1 -u $administratorName:$administratorPassword -H \"Content-Type: application/json\" -H \"Accept: application/json\"  -X POST -d '{\"resourceIdentifier\":{\"resourceName\":\"AWSQuickstartRedshift_ITQS\",\"description\":\" \",\"resourceTypeId\":\"REDSHIFT\",\"resourceTypeName\":\"Amazon Redshift\",\"resourceTypeVersion\":\"\"},\"scannerConfigurations\":[{\"scanner\":{\"scannerId\":\"RedShiftScanner\",\"providerTypeId\":\"CORE\",\"providerTypeName\":\"Source Metadata\"},\"enabled\":true,\"configOptions\":[{\"optionId\":\"Host\",\"optionValues\":[\"'$redshiftHost'\"]},{\"optionId\":\"Port\",\"optionValues\":['$redshiftPort']},{\"optionId\":\"Database\",\"optionValues\":[\"'$redshiftDbName'\"]},{\"optionId\":\"User\",\"optionValues\":[\"'$redshiftUserName'\"]},{\"optionId\":\"Import system objects\",\"optionValues\":[false]},{\"optionId\":\"S3BucketName\",\"optionValues\":[\"'$bucketName'\"]},{\"optionId\":\"Memory\",\"optionValues\":[\"Low\"]},{\"optionId\":\"Password\",\"optionValues\":[\"'$redshiftPassword'\"]}]},{\"scanner\":{\"scannerId\":\"CompositeDomainScanner\",\"providerTypeId\":\"CompositeDomainDiscovery\",\"providerTypeName\":\"Composite Domain Discovery\"},\"enabled\":true,\"configOptions\":[{\"optionId\":\"SelectCompositeDataDomains\",\"optionValues\":[\"AllCompositeDataDomains\"]}]},{\"scanner\":{\"scannerId\":\"ProfileScanner\",\"providerTypeId\":\"Profiling\",\"providerTypeName\":\"Data Discovery\"},\"enabled\":false,\"configOptions\":[{\"optionId\":\"ProfilingRunOptions\",\"optionValues\":[\"ColumnProfiling\"]},{\"optionId\":\"SamplingOptions\",\"optionValues\":[\"FirstNRowsSampling\"]},{\"optionId\":\"runOnHadoop\",\"optionValues\":[\"Native\"]},{\"optionId\":\"RunSimilarityProfile\",\"optionValues\":[\"false\"]},{\"optionId\":\"securityDomain\",\"optionValues\":[\"Native\"]},{\"optionId\":\"Priority\",\"optionValues\":[\"low\"]},{\"optionId\":\"FirstNNumberOfSampleRows\",\"optionValues\":[10000]},{\"optionId\":\"ExcludeViews\",\"optionValues\":[false]},{\"optionId\":\"Incremental\",\"optionValues\":[false]}]}]}'  https://$host:8085/access/1/catalog/resources ",
+                                 "\n",
+                                 "curl -k1 -u $administratorName:$administratorPassword -H \"Content-Type: application/json\" -H \"Accept: application/json\"  -X POST -d '{\"resourceIdentifier\":{\"resourceName\":\"AWSQuickstartOracle_ITQS\",\"description\":\" \",\"resourceTypeId\":\"Oracle\",\"resourceTypeName\":\"Oracle\",\"resourceTypeVersion\":\"\"},\"scannerConfigurations\":[{\"scanner\":{\"scannerId\":\"OracleScanner\",\"providerTypeId\":\"CORE\",\"providerTypeName\":\"Source Metadata\"},\"enabled\":true,\"configOptions\":[{\"optionId\":\"Host\",\"optionValues\":[\"'$rdsHostName'\"]},{\"optionId\":\"Port\",\"optionValues\":[1521]},{\"optionId\":\"Service\",\"optionValues\":[\"orcl\"]},{\"optionId\":\"User\",\"optionValues\":[\"'$rdsUserName'\"]},{\"optionId\":\"Import system objects\",\"optionValues\":[false]},{\"optionId\":\"Import stored procedures\",\"optionValues\":[true]},{\"optionId\":\"Import Private and Public Synonyms\",\"optionValues\":[true]},{\"optionId\":\"Memory\",\"optionValues\":[\"Low\"]},{\"optionId\":\"Schema\",\"optionValues\":[\"AWSQUICKSTART\"]},{\"optionId\":\"Password\",\"optionValues\":[\"'$rdsPassword'\"]}]},{\"scanner\":{\"scannerId\":\"CompositeDomainScanner\",\"providerTypeId\":\"CompositeDomainDiscovery\",\"providerTypeName\":\"Composite Domain Discovery\"},\"enabled\":true,\"configOptions\":[{\"optionId\":\"SelectCompositeDataDomains\",\"optionValues\":[\"AllCompositeDataDomains\"]}]},{\"scanner\":{\"scannerId\":\"ProfileScanner\",\"providerTypeId\":\"Profiling\",\"providerTypeName\":\"Data Discovery\"},\"enabled\":false,\"configOptions\":[{\"optionId\":\"ProfilingRunOptions\",\"optionValues\":[\"ColumnProfiling\"]},{\"optionId\":\"SamplingOptions\",\"optionValues\":[\"FirstNRowsSampling\"]},{\"optionId\":\"runOnHadoop\",\"optionValues\":[\"Native\"]},{\"optionId\":\"RunSimilarityProfile\",\"optionValues\":[\"false\"]},{\"optionId\":\"securityDomain\",\"optionValues\":[\"Native\"]},{\"optionId\":\"Priority\",\"optionValues\":[\"low\"]},{\"optionId\":\"FirstNNumberOfSampleRows\",\"optionValues\":[10000]},{\"optionId\":\"ExcludeViews\",\"optionValues\":[false]},{\"optionId\":\"Incremental\",\"optionValues\":[false]}]}]}'  https://$host:8085/access/1/catalog/resources ",
+                                 "\n"
+                              ]
+                           ]
+                        },
+                        "mode":"000770",
+                        "owner":"ec2-user",
+                        "group":"ec2-user"
+                     },
+					  "/home/ec2-user/Mercury_Setup/scanner_run.sh":{  
+                        "content":{  
+                           "Fn::Join":[  
+                              "",
+                              [  
+                                 "#!/bin/bash\n",
+								 "\n",
+								  "bucketName=",
+                                 {  
+                                    "Ref":"IICSTaskBucketName"
+                                 },
+                                 "\n",
+                                 "redshiftDbName=",
+                                 {  
+                                    "Ref":"RedshiftDatabaseName"
+                                 },
+                                 "\n",
+								 "administratorName=",
+                                 {  
+                                    "Ref":"InformaticaAdminUsername"
+                                 },
+                                 "\n",
+                                 "administratorPassword=",
+                                 {  
+                                    "Ref":"InformaticaAdminPassword"
+                                 },
+								 "\n",
+								 " curl -k1 -u $administratorName:$administratorPassword  -H \"Content-Type: application/json\" -H \"Accept: application/json\" -X POST   https://infadomain.infa.com:8085/access/1/catalog/resources/AWSQuickstartS3_ITQS/execute",
+								 "\n",
+								 "curl -k1 -u $administratorName:$administratorPassword  -H \"Content-Type: application/json\" -H \"Accept: application/json\" -X POST https://infadomain.infa.com:8085/access/1/catalog/resources/AWSQuickstartRedshift_ITQS/execute",
+								 "\n",
+								 "curl -k1 -u $administratorName:$administratorPassword  -H \"Content-Type: application/json\" -H \"Accept: application/json\" -X POST https://infadomain.infa.com:8085/access/1/catalog/resources/AWSQuickstartOracle_ITQS/execute",
+								 "\n",
+								 "curl -k1 -u $administratorName:$administratorPassword -H \"Content-Type: application/json\" -H \"Accept: application/json\" -X POST https://infadomain.infa.com:8085/access/1/catalog/resources/AWSQuickstartTableau_ITQS/execute",
+								 "\n",
+								 "curl -k1 -u $administratorName:$administratorPassword -H \"Content-Type: application/json\" -H \"Accept: application/json\" -X POST https://infadomain.infa.com:8085/access/1/catalog/resources/AWSQuickstartIICS_ITQS/execute",
+								 "\n",
+								 "curl -k1 -u $administratorName:$administratorPassword -H \"Content-Type: application/json\" -H \"Accept: application/json\" -X POST https://infadomain.infa.com:8085/access/1/catalog/resources/DomainUsers/execute",
+								 "\n",
+								 "curl -k1 -u $administratorName:$administratorPassword -H \"Content-Type: application/json\" -H \"Accept: application/json\" -X POST https://infadomain.infa.com:8085/access/1/catalog/resources/SimilarityDiscovery/execute",
+								 "\n",
+							     "curl -k1 -u $administratorName:$administratorPassword -H \"Content-Type: application/json\" -H \"Accept: application/json\" -X POST https://infadomain.infa.com:8085/access/1/catalog/resources/SystemLocations/execute",
+								 "\n",
+								 "sleep 15m",
+								 "\n"
+                              ]
+                           ]
+                        },
+                        "mode":"000770",
+                        "owner":"ec2-user",
+                        "group":"ec2-user"
+                     },
+                     "/home/ec2-user/Mercury_Setup/cleanupScripts.sh":{  
+                        "content":{  
+                           "Fn::Join":[  
+                              "",
+                              [  
+                                 "#!/bin/bash\n",
+                                 "rm -f /home/ec2-user/Mercury_Setup/infastartservice.sh \n",
+                                 "rm -f /home/ec2-user/Mercury_Setup/iicsstartservice.sh \n",
+                                 "rm -f /home/ec2-user/Mercury_Setup/replaceHostname.sh \n",
+                                 "rm -f /home/ec2-user/Mercury_Setup/mercury_setup.jar \n",
+                                 "rm -f /home/ec2-user/Mercury_Setup/scanner1.sh \n",
+                                 "rm -f /home/ec2-user/Mercury_Setup/mercury_setup.jar \n",
+                                 "rm -f /home/ec2-user/Mercury_Setup/scanner.sh \n",
+                                 "rm -f /home/ec2-user/Mercury_Setup/ldmstartup.sh \n",
+                                 "rm -f /home/ec2-user/Mercury_Setup/createConnections.sh \n",
+                                 "rm -f /home/ec2-user/Mercury_Setup/iics_connections.sh \n",
+								 "rm -f /home/ec2-user/Mercury_Setup/create_database.sql \n",
+								 "rm -f /home/ec2-user/Mercury_Setup/scanner_creation.sh \n",
+								 "rm -f /home/ec2-user/Mercury_Setup/scanner_run.sh \n",
+								 "rm -f /home/ec2-user/Mercury_Setup/iicssetup.sh \n",
+								 "rm -f /home/ec2-user/Mercury_Setup/iics_mappings.sh \n",
+								 "rm -f /home/ec2-user/Mercury_Setup/run_mappings.sh \n",
+								 "rm -f /home/ec2-user/Mercury_Setup/oracle.sql \n",
+								 "rm -rf /home/ec2-user/IICS/* \n"
+
+
+
+                              ]
+                           ]
+                        },
+                        "mode":"000770",
+                        "owner":"ec2-user",
+                        "group":"ec2-user"
+                     },
+                     "/mnt1/EICLicense.key":{  
+                        "source":{  
+                           "Fn::Join":[  
+                              "",
+                              [  
+                                 "https://",
+                                 {  
+                                    "Ref":"InformaticaKeyS3Bucket"
+                                 },
+                                 ".s3.amazonaws.com/",
+                                 {  
+                                    "Ref":"InformaticaKeyName"
+                                 }
+                              ]
+                           ]
+                        },
+                        "mode":"000400",
+                        "owner":"ec2-user",
+                        "group":"ec2-user",
+                        "authentication":"S3AccessCreds"
+                     }
+                  }
+               },
+               "Configure1":{  
+                  "commands":{  
+                     "01_ReplaceHostname":{  
+                        "command":" /home/ec2-user/Mercury_Setup/replaceHostname.sh"
+                     }
+                  },
+                  "services":{  
+                     "sysvinit":{  
+                        "infaservice":{  
+                           "enabled":"true",
+                           "ensureRunning":"true"
+                        },
+                        "icsservice":{  
+                           "enabled":"true",
+                           "ensureRunning":"true"
+                        },
+                        "cfn-hup":{  
+                           "enabled":"true",
+                           "ensureRunning":"true",
+                           "files":[  
+                              "/etc/cfn/cfn-hup.conf",
+                              "/etc/cfn/hooks.d/cfn-auto-reloader.conf"
+                           ]
+                        }
+                     }
+                  }
+               },
+               "Configure2":{  
+                  "commands":{  
+                     "01_ICSSetup":{  
+                        "command":"/home/ec2-user/Mercury_Setup/iicssetup.sh"
+                     },
+                     "02_ICSConnections":{  
+                        "command":"/home/ec2-user/Mercury_Setup/iics_connections.sh"                     },
+					 "03_ICSMapping":{  
+                        "command":"/home/ec2-user/Mercury_Setup/iics_mappings.sh"                     },
+                     "04_MercurySetup":{  
+                        "command":" /home/ec2-user/Mercury_Setup/infastartservice.sh"
+                     },
+                     "05_Connections":{  
+                        "command":" /home/ec2-user/Mercury_Setup/createConnections.sh"
+                     },
+					 
+                     "06_LDMSetup":{  
+                        "command":" /home/ec2-user/Mercury_Setup/ldmstartup.sh",
+                        "ignoreErrors":"true"
+                     },
+                     "07_LDMScanner":{  
+                        "command":" /home/ec2-user/Mercury_Setup/scanner_creation.sh"
+                     },
+					 "08_RunMapping":{  
+                        "command":" /home/ec2-user/Mercury_Setup/run_mappings.sh"
+                     },
+					 "09_RunScanner":{  
+                        "command":" /home/ec2-user/Mercury_Setup/scanner_run.sh"
+                     },
+					 
+                     "10_cleanupScripts":{  
+                        "command":" /home/ec2-user/Mercury_Setup/cleanupScripts.sh"
+                     }
+                  }
+               }
+            }
+         },
+         "Properties":{  
+            "IamInstanceProfile":{  
+               "Ref":"InformaticaInstanceProfile"
+            },
+            "ImageId":{  
+               "Fn::FindInMap":[  
+                  "AWSAMIRegionMap",
+                  {  
+                     "Ref":"AWS::Region"
+                  },
+                  "INFAADMINHVM"
+               ]
+            },
+            "InstanceType":{  
+               "Ref":"InformaticaServerInstanceType"
+            },
+            "KeyName":{  
+               "Ref":"KeyPairName"
+            },
+            "InstanceInitiatedShutdownBehavior":"stop",
+            "NetworkInterfaces":[  
+               {  
+                  "NetworkInterfaceId":{  
+                     "Ref":"AdministrationServerNetInterface"
+                  },
+                  "DeviceIndex":"0"
+               }
+            ],
+            "Tags":[  
+               {  
+                  "Key":"Name",
+                  "Value":{  
+                     "Fn::Join":[  
+                        "",
+                        [  
+                           "InformaticaDomain-",
+                           {  
+                              "Ref":"AWS::StackName"
+                           }
+                        ]
+                     ]
+                  }
+               }
+            ],
+            "UserData":{  
+               "Fn::Base64":{  
+                  "Fn::Join":[  
+                     "",
+                     [  
+                        "#!/bin/bash\n",
+                        "sudo yum update -y aws-cfn-bootstrap\n",
+                        "sudo wget -O /home/ec2-user/Mercury_Setup/awslogs-agent-setup.py https://s3.amazonaws.com/aws-cloudwatch/downloads/latest/awslogs-agent-setup.py \n",
+                        "sudo chmod +x /home/ec2-user/Mercury_Setup/awslogs-agent-setup.py \n",
+                        "sudo python /home/ec2-user/Mercury_Setup/awslogs-agent-setup.py -n -r ",
+                        {  
+                           "Ref":"AWS::Region"
+                        },
+                        " -c https://aws-quickstart-informatica-tableau.s3.amazonaws.com/awsCloudwatchLogs.conf \n",
+                        "service awslogs start \n",
+                        "# Install the files and packages from the metadata\n",
+                        "/opt/aws/bin/cfn-init -v ",
+                        "         --stack ",
+                        {  
+                           "Ref":"AWS::StackName"
+                        },
+                        "         --resource AdministrationServer ",
+                        "         --configsets InstallAndRun ",
+                        "         --region ",
+                        {  
+                           "Ref":"AWS::Region"
+                        },
+                        "\n",
+                        "# Signal the status from cfn-init\n",
+                        "/opt/aws/bin/cfn-signal -e $? ",
+                        " --stack ",
+                        {  
+                           "Ref":"AWS::StackName"
+                        },
+                        " --resource AdministrationServer ",
+                        " --region ",
+                        {  
+                           "Ref":"AWS::Region"
+                        },
+                        "\n"
+                     ]
+                  ]
+               }
+            }
+         },
+         "CreationPolicy":{  
+            "ResourceSignal":{  
+               "Timeout":"PT5H"
+            }
+         }
+      }
+   },
+   "Outputs":{  
+      "InstanceID":{  
+         "Description":"Informatica Domain Host Name",
+         "Value":{  
+            "Ref":"AdministrationServer"
+         }
+      },
+      "InformaticaPrivateDNSName":{  
+         "Value":{  
+            "Fn::GetAtt":[  
+               "AdministrationServer",
+               "PrivateDnsName"
+            ]
+         },
+         "Description":"Private DNS Name of the Informatica Domain EC2 instances",
+         "Export":{  
+            "Name":{  
+               "Fn::Sub":"${AWS::StackName}:InformaticaPrivateDNSName"
+            }
+         }
+      },
+      "InformaticaPublicDNSName":{  
+         "Value":{  
+            "Fn::GetAtt":[  
+               "AdministrationServer",
+               "PublicDnsName"
+            ]
+         },
+         "Description":"Public DNS Name of the Informatica Domain EC2 instances",
+         "Export":{  
+            "Name":{  
+               "Fn::Sub":"${AWS::StackName}:InformaticaPublicDNSName"
+            }
+         }
+      },
+      "InformaticaAdminConsoleURL":{  
+         "Description":"Informatica Administrator Console",
+         "Value":{  
+            "Fn::Join":[  
+               "",
+               [  
+                  "https://",
+                  {  
+                     "Fn::GetAtt":[  
+                        "AdministrationServer",
+                        "PublicDnsName"
+                     ]
+                  },
+                  ":8443"
+               ]
+            ]
+         }
+      },
+      "EDCAdminURL":{  
+         "Description":"EDC Administrator URL",
+         "Value":{  
+            "Fn::Join":[  
+               "",
+               [  
+                  "https://",
+                  {  
+                     "Fn::GetAtt":[  
+                        "AdministrationServer",
+                        "PublicDnsName"
+                     ]
+                  },
+                  ":8085",
+                  "/ldmadmin"
+               ]
+            ]
+         }
+      },
+      "EDCCatalogURL":{  
+         "Description":"Informatica EDC User Console",
+         "Value":{  
+            "Fn::Join":[  
+               "",
+               [  
+                  "https://",
+                  {  
+                     "Fn::GetAtt":[  
+                        "AdministrationServer",
+                        "PublicDnsName"
+                     ]
+                  },
+                  ":8085",
+                  "/ldmcatalog"
+               ]
+            ]
+         }
+      },
+      "InformaticaHadoopClusterURL":{  
+         "Description":"IHS Hadoop Gateway node",
+         "Value":{  
+            "Fn::Join":[  
+               "",
+               [  
+                  "https://",
+                  {  
+                     "Ref":"HadoopGatewayPublicDNSName"
+                  },
+                  ":8080"
+               ]
+            ]
+         }
+      },
+      "InformaticaDomainDatabaseEndPoint":{  
+         "Description":"Informatica Domain Database Endpoint",
+         "Value":{  
+            "Fn::Join":[  
+               "",
+               [  
+                  {  
+                     "Ref":"DBEndpointAddress"
+                  },
+                  ":1521"
+               ]
+            ]
+         }
+      },
+      "InstanceSetupLogs":{  
+         "Description":"Informatica Domain EC2 Instance setup Log Location",
+         "Value":"/var/log/cfn-init-cmd.log"
+      },
+      "CloudFormationLogs":{  
+         "Description":"Cloud Formation Installation Log Location",
+         "Value":"/var/log/cfn-init-cmd.log"
+      },
+      "InformaticaHadoopInstallLogs":{  
+         "Description":"Master Node Hadoop Installation Log Location",
+         "Value":"/mnt/var/log/bootstrap-actions"
+      }
+   }
+}

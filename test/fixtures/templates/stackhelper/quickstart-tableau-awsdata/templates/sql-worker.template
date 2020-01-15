@@ -1,0 +1,902 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "AWS Cloudformation template to create an EC2 instance, install PSQL client for connecting to Redshift cluster. It also loads the data into target Redshift cluser by loading DDL and sample data from the specified Quick Start S3 bucket.  **WARNING** This template creates an Amazon EC2 instance. You will be billed for the AWS resources used if you create a stack from this template. (qs-1ndudd5bb)",
+    "Parameters": {
+        "DatasetS3BucketName": {
+            "AllowedPattern": "^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$",
+            "ConstraintDescription": "Dataset bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-).",
+            "Default": "aws-quickstart-datasets",
+            "Description": "Dataset bucket name for the Quick Start dataset. Dataset bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-).",
+            "Type": "String"
+        },
+        "DatasetS3KeyPrefix": {
+            "AllowedPattern": "^[0-9a-zA-Z-/]*$",
+            "ConstraintDescription": "Dataset key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).",
+            "Default": "tableau-awsdata/flat-tpcds/v1/",
+            "Description": "S3 key prefix for the Quick Start dataset. Dataset key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).",
+            "Type": "String"
+        },
+        "DatasetS3Region": {
+            "Default": "us-east-1",
+            "Description": "The AWS region where the dataset S3 bucket is located and is used with the Redshift COPY command.",
+            "Type": "String"
+        },
+        "IAMRoleEc2Worker": {
+            "Description": "IAM role to allows EC2 access to S3 and Redshift role association",
+            "Type": "String"
+        },
+        "IAMRoleEc2WorkerArn": {
+            "Description": "ARN of IAM role to allows EC2 access to S3 and Redshift role association",
+            "Type": "String"
+        },
+        "IAMRoleRedshiftWorker": {
+            "Description": "IAM role to allows Redshift access to S3",
+            "Type": "String"
+        },
+        "IAMRoleRedshiftWorkerArn": {
+            "Description": "ARN of IAM role to allows Redshift access to S3",
+            "Type": "String"
+        },
+        "IamInstanceProfile": {
+            "Description": "IAM Instance profile to allow EC2 copy from S3",
+            "Type": "String"
+        },
+        "InstanceType": {
+            "AllowedValues": [
+                "t1.micro",
+                "t2.nano",
+                "t2.micro",
+                "t2.small",
+                "t2.medium",
+                "t2.large",
+                "m1.small",
+                "m1.medium",
+                "m1.large",
+                "m1.xlarge",
+                "m2.xlarge",
+                "m2.2xlarge",
+                "m2.4xlarge",
+                "m3.medium",
+                "m3.large",
+                "m3.xlarge",
+                "m3.2xlarge",
+                "m4.large",
+                "m4.xlarge",
+                "m4.2xlarge",
+                "m4.4xlarge",
+                "m4.10xlarge",
+                "c1.medium",
+                "c1.xlarge",
+                "c3.large",
+                "c3.xlarge",
+                "c3.2xlarge",
+                "c3.4xlarge",
+                "c3.8xlarge",
+                "c4.large",
+                "c4.xlarge",
+                "c4.2xlarge",
+                "c4.4xlarge",
+                "c4.8xlarge",
+                "g2.2xlarge",
+                "g2.8xlarge",
+                "r3.large",
+                "r3.xlarge",
+                "r3.2xlarge",
+                "r3.4xlarge",
+                "r3.8xlarge",
+                "i2.xlarge",
+                "i2.2xlarge",
+                "i2.4xlarge",
+                "i2.8xlarge",
+                "d2.xlarge",
+                "d2.2xlarge",
+                "d2.4xlarge",
+                "d2.8xlarge",
+                "hi1.4xlarge",
+                "hs1.8xlarge",
+                "cr1.8xlarge",
+                "cc2.8xlarge",
+                "cg1.4xlarge"
+            ],
+            "ConstraintDescription": "must be a valid EC2 instance type.",
+            "Default": "t2.small",
+            "Description": "SQL Worker EC2 instance type",
+            "Type": "String"
+        },
+        "KeyPairName": {
+            "ConstraintDescription": "must be the name of an existing EC2 KeyPair.",
+            "Description": "Name of an existing EC2 KeyPair to enable SSH access to the instances",
+            "Type": "AWS::EC2::KeyPair::KeyName"
+        },
+        "LoadDataset": {
+            "AllowedValues": [
+                "true",
+                "false"
+            ],
+            "Default": "true",
+            "Description": "To load and configure the dataset in Amazon Redshift, Amazon RDS PostgresSQL, and Tableau Server using the dataset S3 bucket name and key prefix, set this parameter to true.",
+            "Type": "String"
+        },
+        "QSS3BucketName": {
+            "AllowedPattern": "^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$",
+            "ConstraintDescription": "Quick Start bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-).",
+            "Default": "aws-quickstart",
+            "Description": "S3 bucket name for the Quick Start assets. Quick Start bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-).",
+            "Type": "String"
+        },
+        "QSS3KeyPrefix": {
+            "AllowedPattern": "^[0-9a-zA-Z-/]*$",
+            "ConstraintDescription": "Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).",
+            "Default": "quickstart-tableau-awsdata/",
+            "Description": "S3 key prefix for the Quick Start assets. Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).",
+            "Type": "String"
+        },
+        "RDSDBName": {
+            "AllowedPattern": "([a-z]|[A-Z]|[0-9])+",
+            "ConstraintDescription": "must contain a-z or 0-9 only.",
+            "Default": "quickstart",
+            "Description": "The name of the first database to be created when the redshift cluster is created",
+            "Type": "String"
+        },
+        "RDSDatabasePort": {
+            "Default": "5432",
+            "Description": "The port that Redshift will listen on and that will be allowed through the Security Group. ",
+            "Type": "String"
+        },
+        "RDSHost": {
+            "Description": "Redshift host to connect to",
+            "Type": "String"
+        },
+        "RDSPassword": {
+            "AllowedPattern": "[a-zA-Z0-9]*",
+            "ConstraintDescription": "must contain only alphanumeric characters.",
+            "Description": "The Postgres DB Password  database admin account password",
+            "MaxLength": "41",
+            "MinLength": "8",
+            "NoEcho": "true",
+            "Type": "String"
+        },
+        "RDSUsername": {
+            "AllowedPattern": "[a-zA-Z][a-zA-Z0-9]*",
+            "ConstraintDescription": "must begin with a letter and contain only alphanumeric characters.",
+            "Description": "The Postgres database admin account username",
+            "MaxLength": "16",
+            "MinLength": "1",
+            "Type": "String"
+        },
+        "RedshiftClusterId": {
+            "Description": "Redshift ClusterId for the Redshift Cluster created",
+            "Type": "String"
+        },
+        "RedshiftDBName": {
+            "AllowedPattern": "([a-z]|[A-Z]|[0-9])+",
+            "ConstraintDescription": "must contain a-z or 0-9 only.",
+            "Default": "defaultdb",
+            "Description": "The name of the first database to be created when the redshift cluster is created",
+            "Type": "String"
+        },
+        "RedshiftDatabasePort": {
+            "Default": "5439",
+            "Description": "The port that Redshift will listen on and that will be allowed through the Security Group. ",
+            "Type": "String"
+        },
+        "RedshiftHost": {
+            "Description": "Redshift host to connect to",
+            "Type": "String"
+        },
+        "RedshiftPassword": {
+            "AllowedPattern": "[a-zA-Z0-9]*",
+            "ConstraintDescription": "must contain only alphanumeric characters.",
+            "Description": "The Redshift DB Password database admin account password",
+            "MaxLength": "41",
+            "MinLength": "8",
+            "NoEcho": "true",
+            "Type": "String"
+        },
+        "RedshiftUsername": {
+            "AllowedPattern": "[a-zA-Z][a-zA-Z0-9]*",
+            "ConstraintDescription": "must begin with a letter and contain only alphanumeric characters.",
+            "Description": "The Redshift database admin account username",
+            "MaxLength": "16",
+            "MinLength": "1",
+            "Type": "String"
+        },
+        "SSHLocation": {
+            "AllowedPattern": "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})",
+            "ConstraintDescription": "must be a valid IP CIDR range of the form x.x.x.x/x.",
+            "Default": "10.0.128.0/20",
+            "Description": "The IP address range that can be used to SSH to the EC2 instances",
+            "MaxLength": "18",
+            "MinLength": "9",
+            "Type": "String"
+        },
+        "SubnetId": {
+            "Description": "SubnetId of an existing subnet in your Virtual Private Cloud (VPC)",
+            "Type": "String"
+        },
+        "VpcId": {
+            "Description": "SubnetId of an existing subnet in your Virtual Private Cloud (VPC)",
+            "Type": "String"
+        }
+    },
+    "Conditions": {
+        "LoadDatasetCondition": {
+            "Fn::Equals": [
+                {
+                    "Ref": "LoadDataset"
+                },
+                "true"
+            ]
+        },
+        "GovCloudCondition": {
+            "Fn::Equals": [
+                {
+                    "Ref": "AWS::Region"
+                },
+                "us-gov-west-1"
+            ]
+        }
+    },
+    "Mappings": {
+        "AWSAMIRegionMap": {
+            "AMI": {
+                "AMZNLINUXHVM": "amzn-ami-hvm-2018.03.0.20181129-x86_64-gp2"
+            },
+            "ap-northeast-1": {
+                "AMZNLINUXHVM": "ami-00a5245b4816c38e6"
+            },
+            "ap-northeast-2": {
+                "AMZNLINUXHVM": "ami-00dc207f8ba6dc919"
+            },
+            "ap-south-1": {
+                "AMZNLINUXHVM": "ami-0ad42f4f66f6c1cc9"
+            },
+            "ap-southeast-1": {
+                "AMZNLINUXHVM": "ami-05b3bcf7f311194b3"
+            },
+            "ap-southeast-2": {
+                "AMZNLINUXHVM": "ami-02fd0b06f06d93dfc"
+            },
+            "ca-central-1": {
+                "AMZNLINUXHVM": "ami-07423fb63ea0a0930"
+            },
+            "eu-central-1": {
+                "AMZNLINUXHVM": "ami-0cfbf4f6db41068ac"
+            },
+            "eu-west-1": {
+                "AMZNLINUXHVM": "ami-08935252a36e25f85"
+            },
+            "eu-west-2": {
+                "AMZNLINUXHVM": "ami-01419b804382064e4"
+            },
+            "sa-east-1": {
+                "AMZNLINUXHVM": "ami-05145e0b28ad8e0b2"
+            },
+            "us-east-1": {
+                "AMZNLINUXHVM": "ami-0080e4c5bc078760e"
+            },
+            "us-east-2": {
+                "AMZNLINUXHVM": "ami-0cd3dfa4e37921605"
+            },
+            "us-west-1": {
+                "AMZNLINUXHVM": "ami-0ec6517f6edbf8044"
+            },
+            "us-west-2": {
+                "AMZNLINUXHVM": "ami-01e24be29428c15b2"
+            }
+        }
+    },
+    "Resources": {
+        "SecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "GroupDescription": "Enable HTTP access via port 80 locked down to the load balancer + SSH access",
+                "VpcId": {
+                    "Ref": "VpcId"
+                },
+                "SecurityGroupIngress": [
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "80",
+                        "ToPort": "80",
+                        "CidrIp": "0.0.0.0/0"
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "22",
+                        "ToPort": "22",
+                        "CidrIp": {
+                            "Ref": "SSHLocation"
+                        }
+                    }
+                ]
+            }
+        },
+        "SQLWorker": {
+            "Type": "AWS::EC2::Instance",
+            "Metadata": {
+                "AWS::CloudFormation::Authentication": {
+                    "S3Access": {
+                        "type": "S3",
+                        "roleName": {
+                            "Ref": "IAMRoleEc2Worker"
+                        }
+                    }
+                },
+                "AWS::CloudFormation::Init": {
+                    "configSets": {
+                        "install_data": {
+                            "Fn::If": [
+                                "LoadDatasetCondition",
+                                [
+                                    "install_psql",
+                                    "localize_scripts",
+                                    "execute_scripts"
+                                ],
+                                [
+                                    "install_psql"
+                                ]
+                            ]
+                        }
+                    },
+                    "install_psql": {
+                        "packages": {
+                            "yum": {
+                                "gcc": [],
+                                "python27-devel": [],
+                                "postgresql92-devel": [],
+                                "postgresql8.x86_64": []
+                            }
+                        }
+                    },
+                    "localize_scripts": {
+                        "files": {
+                            "/home/ec2-user/.pgpass": {
+                                "content": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            {
+                                                "Ref": "RedshiftHost"
+                                            },
+                                            ":",
+                                            {
+                                                "Ref": "RedshiftDatabasePort"
+                                            },
+                                            ":",
+                                            {
+                                                "Ref": "RedshiftDBName"
+                                            },
+                                            ":",
+                                            {
+                                                "Ref": "RedshiftUsername"
+                                            },
+                                            ":",
+                                            {
+                                                "Ref": "RedshiftPassword"
+                                            },
+                                            "\n"
+                                        ]
+                                    ]
+                                },
+                                "mode": "000600",
+                                "owner": "root",
+                                "group": "root"
+                            },
+                            "/home/ec2-user/setup-redshift.sql": {
+                                "source": {
+                                    "Fn::Sub": [
+                                        "https://${DatasetS3BucketName}.${QSS3Region}.amazonaws.com/${DatasetS3KeyPrefix}sql/setup-redshift.sql",
+                                        {
+                                            "QSS3Region": {
+                                                "Fn::If": [
+                                                    "GovCloudCondition",
+                                                    "s3-us-gov-west-1",
+                                                    "s3"
+                                                ]
+                                            }
+                                        }
+                                    ]
+                                },
+                                "mode": "000600",
+                                "owner": "root",
+                                "group": "root",
+                                "authentication": "S3Access"
+                            },
+                            "/home/ec2-user/interpolate-setup-redshift-sql.sh": {
+                                "source": {
+                                    "Fn::Sub": [
+                                        "https://${QSS3BucketName}.${QSS3Region}.amazonaws.com/${QSS3KeyPrefix}scripts/interpolate-setup-redshift-sql.sh",
+                                        {
+                                            "QSS3Region": {
+                                                "Fn::If": [
+                                                    "GovCloudCondition",
+                                                    "s3-us-gov-west-1",
+                                                    "s3"
+                                                ]
+                                            }
+                                        }
+                                    ]
+                                },
+                                "mode": "000700",
+                                "owner": "root",
+                                "group": "root",
+                                "authentication": "S3Access"
+                            },
+                            "/home/ec2-user/runsql.sh": {
+                                "content": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "export PGPASSWORD='",
+                                            {
+                                                "Ref": "RedshiftPassword"
+                                            },
+                                            "';",
+                                            "psql -h ",
+                                            {
+                                                "Ref": "RedshiftHost"
+                                            },
+                                            " -p ",
+                                            {
+                                                "Ref": "RedshiftDatabasePort"
+                                            },
+                                            " -U ",
+                                            {
+                                                "Ref": "RedshiftUsername"
+                                            },
+                                            " -d ",
+                                            {
+                                                "Ref": "RedshiftDBName"
+                                            },
+                                            "< /home/ec2-user/setup-redshift-intermediate.sql;\n"
+                                        ]
+                                    ]
+                                },
+                                "mode": "000700",
+                                "owner": "root",
+                                "group": "root"
+                            },
+                            "/home/ec2-user/create-aggregate-sql.sh": {
+                                "content": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "export PGPASSWORD='",
+                                            {
+                                                "Ref": "RedshiftPassword"
+                                            },
+                                            "';",
+                                            "psql -h ",
+                                            {
+                                                "Ref": "RedshiftHost"
+                                            },
+                                            " -p ",
+                                            {
+                                                "Ref": "RedshiftDatabasePort"
+                                            },
+                                            " -U ",
+                                            {
+                                                "Ref": "RedshiftUsername"
+                                            },
+                                            " -d ",
+                                            {
+                                                "Ref": "RedshiftDBName"
+                                            },
+                                            "< /home/ec2-user/create-aggregates.sql;\n"
+                                        ]
+                                    ]
+                                },
+                                "mode": "000700",
+                                "owner": "root",
+                                "group": "root"
+                            },
+                            "/home/ec2-user/setup-postgres-intermediate-sql.sh": {
+                                "content": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "export PGPASSWORD='",
+                                            {
+                                                "Ref": "RDSPassword"
+                                            },
+                                            "';",
+                                            "psql -h ",
+                                            {
+                                                "Ref": "RDSHost"
+                                            },
+                                            " -p ",
+                                            {
+                                                "Ref": "RDSDatabasePort"
+                                            },
+                                            " -U ",
+                                            {
+                                                "Ref": "RDSUsername"
+                                            },
+                                            " -d ",
+                                            {
+                                                "Ref": "RDSDBName"
+                                            },
+                                            "< /home/ec2-user/setup-postgres-intermediate.sql;\n"
+                                        ]
+                                    ]
+                                },
+                                "mode": "000700",
+                                "owner": "root",
+                                "group": "root"
+                            },
+                            "/home/ec2-user/publish-aggregate-sql.sh": {
+                                "content": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "export PGPASSWORD='",
+                                            {
+                                                "Ref": "RDSPassword"
+                                            },
+                                            "';",
+                                            "psql -h ",
+                                            {
+                                                "Ref": "RDSHost"
+                                            },
+                                            " -p ",
+                                            {
+                                                "Ref": "RDSDatabasePort"
+                                            },
+                                            " -U ",
+                                            {
+                                                "Ref": "RDSUsername"
+                                            },
+                                            " -d ",
+                                            {
+                                                "Ref": "RDSDBName"
+                                            },
+                                            "< /home/ec2-user/publish-aggregates.sql;\n"
+                                        ]
+                                    ]
+                                },
+                                "mode": "000700",
+                                "owner": "root",
+                                "group": "root"
+                            },
+                            "/home/ec2-user/setup-postgres.sql": {
+                                "source": {
+                                    "Fn::Sub": [
+                                        "https://${DatasetS3BucketName}.${QSS3Region}.amazonaws.com/${DatasetS3KeyPrefix}sql/setup-postgres.sql",
+                                        {
+                                            "QSS3Region": {
+                                                "Fn::If": [
+                                                    "GovCloudCondition",
+                                                    "s3-us-gov-west-1",
+                                                    "s3"
+                                                ]
+                                            }
+                                        }
+                                    ]
+                                },
+                                "mode": "000600",
+                                "owner": "root",
+                                "group": "root",
+                                "authentication": "S3Access"
+                            },
+                            "/home/ec2-user/interpolate-setup-postgres-sql.sh": {
+                                "source": {
+                                    "Fn::Sub": [
+                                        "https://${QSS3BucketName}.${QSS3Region}.amazonaws.com/${QSS3KeyPrefix}scripts/interpolate-setup-postgres-sql.sh",
+                                        {
+                                            "QSS3Region": {
+                                                "Fn::If": [
+                                                    "GovCloudCondition",
+                                                    "s3-us-gov-west-1",
+                                                    "s3"
+                                                ]
+                                            }
+                                        }
+                                    ]
+                                },
+                                "mode": "000700",
+                                "owner": "root",
+                                "group": "root",
+                                "authentication": "S3Access"
+                            },
+                            "/home/ec2-user/create-aggregates.sql": {
+                                "source": {
+                                    "Fn::Sub": [
+                                        "https://${DatasetS3BucketName}.${QSS3Region}.amazonaws.com/${DatasetS3KeyPrefix}sql/create-aggregates.sql",
+                                        {
+                                            "QSS3Region": {
+                                                "Fn::If": [
+                                                    "GovCloudCondition",
+                                                    "s3-us-gov-west-1",
+                                                    "s3"
+                                                ]
+                                            }
+                                        }
+                                    ]
+                                },
+                                "mode": "000700",
+                                "owner": "root",
+                                "group": "root",
+                                "authentication": "S3Access"
+                            },
+                            "/home/ec2-user/publish-aggregates.sql": {
+                                "source": {
+                                    "Fn::Sub": [
+                                        "https://${DatasetS3BucketName}.${QSS3Region}.amazonaws.com/${DatasetS3KeyPrefix}sql/publish-aggregates.sql",
+                                        {
+                                            "QSS3Region": {
+                                                "Fn::If": [
+                                                    "GovCloudCondition",
+                                                    "s3-us-gov-west-1",
+                                                    "s3"
+                                                ]
+                                            }
+                                        }
+                                    ]
+                                },
+                                "mode": "000700",
+                                "owner": "root",
+                                "group": "root",
+                                "authentication": "S3Access"
+                            }
+                        }
+                    },
+                    "execute_scripts": {
+                        "commands": {
+                            "00-apply-iam-role-redshift-cluster": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "aws",
+                                            " --region ",
+                                            {
+                                                "Ref": "AWS::Region"
+                                            },
+                                            " redshift modify-cluster-iam-roles",
+                                            " --cluster-identifier ",
+                                            {
+                                                "Ref": "RedshiftClusterId"
+                                            },
+                                            " --add-iam-roles ",
+                                            {
+                                                "Ref": "IAMRoleRedshiftWorkerArn"
+                                            }
+                                        ]
+                                    ]
+                                },
+                                "cwd": "/home/ec2-user"
+                            },
+                            "01-wait-for-cluster-available": {
+                                "command": {
+                                    "Fn::Join": [
+                                        " ",
+                                        [
+                                            "aws",
+                                            " --region ",
+                                            {
+                                                "Ref": "AWS::Region"
+                                            },
+                                            " redshift wait cluster-available",
+                                            " --cluster-identifier ",
+                                            {
+                                                "Ref": "RedshiftClusterId"
+                                            }
+                                        ]
+                                    ]
+                                },
+                                "cwd": "/home/ec2-user"
+                            },
+                            "02-pip-install-psycopg2": {
+                                "command": "sudo pip install psycopg2",
+                                "cwd": "/home/ec2-user"
+                            },
+                            "03-interpolate-setup-postgres-sql": {
+                                "command": {
+                                    "Fn::Join": [
+                                        " ",
+                                        [
+                                            " sh interpolate-setup-postgres-sql.sh setup-postgres.sql ",
+                                            {
+                                                "Ref": "RedshiftHost"
+                                            },
+                                            {
+                                                "Ref": "RedshiftDatabasePort"
+                                            },
+                                            {
+                                                "Ref": "RedshiftDBName"
+                                            },
+                                            {
+                                                "Ref": "RDSUsername"
+                                            },
+                                            {
+                                                "Ref": "RedshiftUsername"
+                                            },
+                                            {
+                                                "Ref": "RedshiftPassword"
+                                            },
+                                            ">/home/ec2-user/setup-postgres-intermediate.sql"
+                                        ]
+                                    ]
+                                },
+                                "cwd": "/home/ec2-user"
+                            },
+                            "04-setup-postgres": {
+                                "command": {
+                                    "Fn::Join": [
+                                        " ",
+                                        [
+                                            " sh /home/ec2-user/setup-postgres-intermediate-sql.sh > /home/ec2-user/setup-postgres-intermediate-sql.log\n"
+                                        ]
+                                    ]
+                                },
+                                "cwd": "/home/ec2-user"
+                            },
+                            "05-interpolate-setup-redshift-sql": {
+                                "command": {
+                                    "Fn::Join": [
+                                        " ",
+                                        [
+                                            " sh interpolate-setup-redshift-sql.sh setup-redshift.sql ",
+                                            {
+                                                "Fn::Sub": "s3://${DatasetS3BucketName}/${DatasetS3KeyPrefix}"
+                                            },
+                                            {
+                                                "Ref": "IAMRoleRedshiftWorkerArn"
+                                            },
+                                            {
+                                                "Ref": "DatasetS3Region"
+                                            },
+                                            ">/home/ec2-user/setup-redshift-intermediate.sql"
+                                        ]
+                                    ]
+                                },
+                                "cwd": "/home/ec2-user"
+                            },
+                            "06-create-tables-redshift": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            " sh runsql.sh > /home/ec2-user/runsql.log\n"
+                                        ]
+                                    ]
+                                },
+                                "cwd": "/home/ec2-user"
+                            },
+                            "07-create-aggregates-redshift": {
+                                "command": {
+                                    "Fn::Join": [
+                                        " ",
+                                        [
+                                            " sh /home/ec2-user/create-aggregate-sql.sh > /home/ec2-user/create-aggregate-sql.log"
+                                        ]
+                                    ]
+                                },
+                                "cwd": "/home/ec2-user"
+                            },
+                            "08-publish-aggregates-to-postgres": {
+                                "command": {
+                                    "Fn::Join": [
+                                        " ",
+                                        [
+                                            " sh /home/ec2-user/publish-aggregate-sql.sh ",
+                                            "> /home/ec2-user/publish-aggregates.log\n"
+                                        ]
+                                    ]
+                                },
+                                "cwd": "/home/ec2-user"
+                            }
+                        }
+                    }
+                }
+            },
+            "Properties": {
+                "ImageId": {
+                    "Fn::FindInMap": [
+                        "AWSAMIRegionMap",
+                        {
+                            "Ref": "AWS::Region"
+                        },
+                        "AMZNLINUXHVM"
+                    ]
+                },
+                "IamInstanceProfile": {
+                    "Ref": "IamInstanceProfile"
+                },
+                "InstanceType": {
+                    "Ref": "InstanceType"
+                },
+                "KeyName": {
+                    "Ref": "KeyPairName"
+                },
+                "NetworkInterfaces": [
+                    {
+                        "AssociatePublicIpAddress": false,
+                        "DeleteOnTermination": "true",
+                        "DeviceIndex": 0,
+                        "SubnetId": {
+                            "Ref": "SubnetId"
+                        },
+                        "GroupSet": [
+                            {
+                                "Ref": "SecurityGroup"
+                            }
+                        ]
+                    }
+                ],
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": "SQLWorker"
+                    }
+                ],
+                "UserData": {
+                    "Fn::Base64": {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "#!/bin/bash\n",
+                                "yum update -y aws-cfn-bootstrap\n",
+                                "/opt/aws/bin/cfn-init -v ",
+                                "         --stack ",
+                                {
+                                    "Ref": "AWS::StackName"
+                                },
+                                "         --resource SQLWorker ",
+                                "         --configsets install_data ",
+                                "         --region ",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                "\n",
+                                "/opt/aws/bin/cfn-signal -e $? ",
+                                "         --stack ",
+                                {
+                                    "Ref": "AWS::StackName"
+                                },
+                                "         --resource SQLWorker ",
+                                "         --region ",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                "\n"
+                            ]
+                        ]
+                    }
+                }
+            },
+            "CreationPolicy": {
+                "ResourceSignal": {
+                    "Timeout": "PT12H"
+                }
+            }
+        }
+    },
+    "Outputs": {
+        "InstanceID": {
+            "Description": "EC2 InstanceID of the SQL Worker instance",
+            "Value": {
+                "Ref": "SQLWorker"
+            }
+        },
+        "PrivateIpAddress": {
+            "Description": "Private IP Address of the SQL Worker instance",
+            "Value": {
+                "Fn::GetAtt": [
+                    "SQLWorker",
+                    "PrivateIp"
+                ]
+            }
+        },
+        "PrivateDnsName": {
+            "Value": {
+                "Fn::GetAtt": [
+                    "SQLWorker",
+                    "PrivateDnsName"
+                ]
+            },
+            "Description": "Private DNS Name of SQL Worker Instance"
+        }
+    }
+}

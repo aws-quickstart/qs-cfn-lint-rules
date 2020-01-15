@@ -1,0 +1,388 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "Acqueon Engagement Cloud (Worker Template) for Amazon Connect (qs-1onqkqsc4)",
+    "Metadata": {
+        "AWS::CloudFormation::Interface": {
+            "ParameterGroups": [
+                {
+                    "Label": {
+                        "default": "Amazon VPC Configuration"
+                    },
+                    "Parameters": [
+                        "AECVPC",
+						"VPCCIDR"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "SecurityGroup Configuration"
+                    },
+                    "Parameters": [
+                        "RDPFrom"
+                    ]
+                }
+            ],
+            "ParameterLabels": {
+                "AECVPC": {
+                    "default": "Select VPC"
+                },
+				"VPCCIDR": {
+                    "default": "VPC CIDR"
+                },
+				"AECSubnetPublic1": {
+					"default": "Public Subnet 1"
+				},
+				"AECSubnetPublic2": {
+					"default": "Public Subnet 2"
+				},
+				"AECSubnetPrivate1": {
+					"default": "Private Subnet 1"
+				},
+				"AECSubnetPrivate2": {
+					"default": "Private Subnet 2"
+				},
+                "RDPFrom": {
+                    "default": "RDP From"
+                }
+            }
+        }
+    },
+    "Parameters": {
+		"AECVPC": {
+            "Type": "AWS::EC2::VPC::Id"
+        },
+		"VPCCIDR": {
+            "Type": "String",
+			"Description": "CIDR of selected VPC"
+        },
+        "RDPFrom": {
+            "Description": "The IP address range with access to BastionHost",
+            "Type": "String",
+            "MinLength": "9",
+            "MaxLength": "18",
+            "AllowedPattern": "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})",
+            "ConstraintDescription": "must be a valid IP CIDR range of the form x.x.x.x/x."
+        }
+    },
+    "Resources": {
+        "AECPrivateGroup": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "GroupDescription": "For EC2 in private subnet",
+                "VpcId": {
+                    "Ref": "AECVPC"
+                },
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": {
+                            "Fn::Join": [
+                                "-",
+                                [
+                                    "AEC-EC2",
+                                    {
+                                        "Ref": "AWS::StackName"
+                                    }
+                                ]
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        "AECWeb": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "GroupDescription": "AEC-1-Web Loadbalancer",
+                "VpcId": {
+                    "Ref": "AECVPC"
+                },
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": {
+                            "Fn::Join": [
+                                "-",
+                                [
+                                    "AEC-Web",
+                                    {
+                                        "Ref": "AWS::StackName"
+                                    }
+                                ]
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        "AECRDP": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "GroupDescription": "For Bastion Host",
+                "VpcId": {
+                    "Ref": "AECVPC"
+                },
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": {
+                            "Fn::Join": [
+                                "-",
+                                [
+                                    "AEC-RDP",
+                                    {
+                                        "Ref": "AWS::StackName"
+                                    }
+                                ]
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        "ingress1": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "Properties": {
+                "GroupId": {
+                    "Ref": "AECPrivateGroup"
+                },
+                "IpProtocol": "tcp",
+                "FromPort": "1433",
+                "ToPort": "1433",
+                "CidrIp": {
+                    "Ref": "VPCCIDR"
+                }
+            }
+        },
+        "ingress3": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "Properties": {
+                "GroupId": {
+                    "Ref": "AECPrivateGroup"
+                },
+                "IpProtocol": "tcp",
+                "FromPort": "80",
+                "ToPort": "80",
+                "CidrIp": {
+                    "Ref": "VPCCIDR"
+                }
+            }
+        },
+        "ingress4": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "Properties": {
+                "GroupId": {
+                    "Ref": "AECPrivateGroup"
+                },
+                "IpProtocol": "tcp",
+                "FromPort": "85",
+                "ToPort": "85",
+                "CidrIp": {
+                    "Ref": "VPCCIDR"
+                }
+            }
+        },
+        "ingress7": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "Properties": {
+                "GroupId": {
+                    "Ref": "AECPrivateGroup"
+                },
+                "IpProtocol": "tcp",
+                "FromPort": "35000",
+                "ToPort": "35050",
+                "CidrIp": {
+                    "Ref": "VPCCIDR"
+                }
+            }
+        },
+        "ingress8": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "Properties": {
+                "GroupId": {
+                    "Ref": "AECPrivateGroup"
+                },
+                "IpProtocol": "tcp",
+                "FromPort": "5555",
+                "ToPort": "5555",
+                "CidrIp": {
+                    "Ref": "VPCCIDR"
+                }
+            }
+        },
+        "ingress9": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "Properties": {
+                "GroupId": {
+                    "Ref": "AECPrivateGroup"
+                },
+                "IpProtocol": "tcp",
+                "FromPort": "3389",
+                "ToPort": "3389",
+                "CidrIp": {
+                    "Ref": "VPCCIDR"
+                }
+            }
+        },
+        "ingress10": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "Properties": {
+                "GroupId": {
+                    "Ref": "AECPrivateGroup"
+                },
+                "IpProtocol": "tcp",
+                "FromPort": "445",
+                "ToPort": "445",
+                "CidrIp": {
+                    "Ref": "VPCCIDR"
+                }
+            }
+        },
+        "ingress11": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "Properties": {
+                "GroupId": {
+                    "Ref": "AECPrivateGroup"
+                },
+                "IpProtocol": "tcp",
+                "FromPort": "443",
+                "ToPort": "443",
+                "CidrIp": {
+                    "Ref": "VPCCIDR"
+                }
+            }
+        },
+        "ingress12": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "Properties": {
+                "GroupId": {
+                    "Ref": "AECPrivateGroup"
+                },
+                "IpProtocol": "icmp",
+                "FromPort": "-1",
+                "ToPort": "-1",
+                "CidrIp": {
+                    "Ref": "VPCCIDR"
+                }
+            }
+        },
+        "ingress13": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "Properties": {
+                "GroupId": {
+                    "Ref": "AECPrivateGroup"
+                },
+                "IpProtocol": "tcp",
+                "FromPort": "36000",
+                "ToPort": "36050",
+                "CidrIp": {
+                    "Ref": "VPCCIDR"
+                }
+            }
+        },
+        "ingress14": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "Properties": {
+                "GroupId": {
+                    "Ref": "AECPrivateGroup"
+                },
+                "IpProtocol": "tcp",
+                "FromPort": "2049",
+                "ToPort": "2049",
+                "CidrIp": {
+                    "Ref": "VPCCIDR"
+                }
+            }
+        },
+        "ingress15": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "Properties": {
+                "GroupId": {
+                    "Ref": "AECWeb"
+                },
+                "IpProtocol": "tcp",
+                "FromPort": "80",
+                "ToPort": "80",
+                "CidrIp": "0.0.0.0/0"
+            }
+        },
+        "ingress17": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "Properties": {
+                "GroupId": {
+                    "Ref": "AECWeb"
+                },
+                "IpProtocol": "tcp",
+                "FromPort": "443",
+                "ToPort": "443",
+                "CidrIp": "0.0.0.0/0"
+            }
+        },
+        "ingress16": {
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "Properties": {
+                "GroupId": {
+                    "Ref": "AECRDP"
+                },
+                "IpProtocol": "tcp",
+                "FromPort": "3389",
+                "ToPort": "3389",
+                "CidrIp": {
+                    "Ref": "RDPFrom"
+                }
+            }
+        },
+        "egress1": {
+            "Type": "AWS::EC2::SecurityGroupEgress",
+            "Properties": {
+                "GroupId": {
+                    "Ref": "AECPrivateGroup"
+                },
+                "IpProtocol": "-1",
+                "CidrIp": "0.0.0.0/0"
+            }
+        },
+        "egress2": {
+            "Type": "AWS::EC2::SecurityGroupEgress",
+            "Properties": {
+                "GroupId": {
+                    "Ref": "AECWeb"
+                },
+                "IpProtocol": "-1",
+                "CidrIp": "0.0.0.0/0"
+            }
+        },
+        "egress3": {
+            "Type": "AWS::EC2::SecurityGroupEgress",
+            "Properties": {
+                "GroupId": {
+                    "Ref": "AECRDP"
+                },
+                "IpProtocol": "-1",
+                "CidrIp": "0.0.0.0/0"
+            }
+        }
+    },
+    "Outputs": {
+        "AECPrivateGroup": {
+            "Value": {
+                "Ref": "AECPrivateGroup"
+            }
+        },
+        "AECWeb": {
+            "Value": {
+                "Ref": "AECWeb"
+            }
+        },
+        "AECVPC": {
+            "Value": {
+                "Ref": "AECVPC"
+            }
+        },
+        "AECRDP": {
+            "Value": {
+                "Ref": "AECRDP"
+            }
+        }
+    }
+}

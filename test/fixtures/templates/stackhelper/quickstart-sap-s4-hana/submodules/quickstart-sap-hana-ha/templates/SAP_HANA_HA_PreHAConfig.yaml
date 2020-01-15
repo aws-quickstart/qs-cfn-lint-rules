@@ -1,0 +1,193 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Pre HA Configuration Steps
+Parameters:
+  HANAPrimaryIPAddress:
+    Type: String
+    AllowedPattern: '(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})'
+    Description: IP address of HANA Primary Instance
+  HANASecondaryIPAddress:
+    Type: String
+    AllowedPattern: '(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})'
+    Description: IP address of HANA Secondary Instance
+  HANAPrimaryInstanceId:
+     Description : Instance ID of Primary Instance
+     Type: String
+  HANASecondaryInstanceId:
+     Description : Instance ID of Secondary Instance
+     Type: String
+  LambdaBucket:
+    Description: S3 Bucket to that stores Lambda Functions (s3://bucket/).
+    Type: String
+  LambdaBucketPreFix:
+    Description: S3 Prefix for lambda
+    Type: String
+  SID:
+    Type: String
+    Description: SAP HANA system ID for installation and setup.
+    AllowedPattern: '([A-Z]{1}[0-9A-Z]{2})'
+    ConstraintDescription: This value must consist of 3 characters.
+  SAPInstanceNum:
+    Type: String
+    Description: SAP HANA instance number.
+    AllowedPattern: '([0-8]{1}[0-9]{1}|[9]{1}[0-7]{1})'
+    ConstraintDescription: Instance number must be between 00 and 97.
+  HANAMasterPass:
+    Type: String
+    Description: SAP HANA password to use during installation.
+    NoEcho: 'true'
+    MinLength: '8'
+    AllowedPattern: '^(?=.*?[a-z])(?=.*?[A-Z])(?=.*[0-9]).*'
+    ConstraintDescription: This must be at least 8 characters, including uppercase, lowercase, and numeric values.
+  PrivSubnet1:
+    Description: 'Private Subnet for HANA Primary Instance'
+    Type: String
+    Default: ''
+  PrivSubnet2:
+    Description: 'Private Subnet for HANA Secondary Instance'
+    Type: String
+    Default: ''
+  HANAPrimarySecurityGroup:
+     Description : Security Group ID for HANA Primary Instance
+     Type: String
+  HANASecondarySecurityGroup:
+     Description : Security Group ID for HANA Secondary Instance
+     Type: String
+  MyOS:
+     Description : Operating System for HANA instances
+     Type: String
+
+Metadata:
+  'AWS::CloudFormation::Interface':
+    ParameterGroups:
+      - Label:
+          default: VPC infrastructure details
+        Description:
+          default: ''
+        Parameters:
+          - HANAPrimaryInstanceId
+          - HANASecondaryInstanceId
+          - HANAPrimaryIPAddress
+          - HANASecondaryIPAddress
+          - SAPInstanceNum
+          - HANAMasterPass
+          - PrivSubnet1
+          - PrivSubnet2
+          - HANAPrimarySecurityGroup
+          - HANASecondarySecurityGroup
+          - SID
+          - MyOS
+      - Label:
+          default: S3 Bucket
+        Description:
+          default: ''
+        Parameters:
+          - LambdaBucket
+          - LambdaBucketPreFix
+
+    ParameterLabels:
+      HANAPrimaryIPAddress:
+        default: Primary HANA IP Address
+      HANASecondaryIPAddress:
+        default: Secondary HANA IP Address
+      HANAPrimaryInstanceId:
+        default: Primary HANA Instance ID
+      HANASecondaryInstanceId:
+        default: Secondary HANA Instance ID
+      LambdaBucket:
+        default: S3 Bucket with Lambda Functions
+      LambdaBucketPreFix:
+        default: S3 Prefix
+      SAPInstanceNum:
+        default: HANA Instance number
+      SID:
+        default: HANA SID
+      HANAMasterPass:
+        default: HANA Master password
+      PrivSubnet1:
+        default: Private Subnet for HANA Primary
+      PrivSubnet2:
+        default: Private Subnet for HANA Secondary
+      HANAPrimarySecurityGroup:
+        default: Primary HANA Security GroupId
+      HANASecondarySecurityGroup:
+        default: Secondary HANA Security GroupId
+      MyOS:
+        default: Operating system for HANA instances
+
+Resources:
+
+  PreHAConfigLambdaRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole
+      Path: "/"
+      Policies:
+         - PolicyName: LambdaHAPolicy
+           PolicyDocument:
+             Version: 2012-10-17
+             Statement:
+                 - Action:
+                     - 'ssm:sendCommand'
+                     - 'ssm:GetDocument'
+                   Resource: 
+                      - !Sub "arn:aws:ssm:${AWS::Region}::document/AWS-RunShellScript"
+                      - !Sub "arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:instance/${HANAPrimaryInstanceId}"
+                      - !Sub "arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:instance/${HANASecondaryInstanceId}"
+                   Effect: Allow
+                 - Action:
+                     - 'ssm:ListCommands'
+                   Resource: "*"
+                   Effect: Allow
+
+  PreHAConfigLambdaFunction:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      Handler: PreHAConfig.lambda_handler
+      Runtime: python3.6
+      VpcConfig:
+        SecurityGroupIds:
+           - Ref: HANAPrimarySecurityGroup
+           - Ref: HANASecondarySecurityGroup
+        SubnetIds:
+           - Ref: PrivSubnet1
+           - Ref: PrivSubnet2
+      Timeout: '300'
+      Role: !GetAtt [ PreHAConfigLambdaRole, Arn ]
+      Code:
+        S3Bucket: !Ref LambdaBucket
+        S3Key: !Join ['', [!Ref LambdaBucketPreFix, '/PreHAConfig.zip']]
+
+  InvokePreHAConfigLambdaFunction:
+    Type: 'Custom::LambdaCallout'
+    DependsOn:
+      - PreHAConfigLambdaFunction
+    Properties:
+      ServiceToken: !GetAtt 
+        - PreHAConfigLambdaFunction
+        - Arn
+      PrimaryInstanceId: !Ref HANAPrimaryInstanceId
+      SecondaryInstanceId: !Ref HANASecondaryInstanceId
+      AWSRegion: !Ref 'AWS::Region'
+      HANAPrimaryIPAddress: !Ref HANAPrimaryIPAddress
+      HANASecondaryIPAddress: !Ref HANASecondaryIPAddress
+      SID: !Ref SID
+      InstanceNo: !Ref SAPInstanceNum
+      HANAMasterPass : !Ref HANAMasterPass
+      MyOS : !Ref MyOS
+
+Outputs:
+  ResultsPreHAConfig:
+    Description: Pre HANA HA Config Results
+    Value: !GetAtt 
+      - InvokePreHAConfigLambdaFunction
+      - Status

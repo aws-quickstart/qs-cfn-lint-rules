@@ -1,0 +1,569 @@
+{
+	"AWSTemplateFormatVersion": "2010-09-09",
+	"Description": "TeleOpti WFM integration for Amazon Connect (qs-1ofbedn5h)",
+	"Metadata": {
+		"AWS::CloudFormation::Interface": {
+			"ParameterGroups": [{
+				"Label": {
+					"default": "Teleopti SFTP Credentials"
+				},
+				"Parameters": ["SFTPHostname",
+				"SFTPUserName",
+				"SFTPPassword"]
+			}],
+			"ParameterLabels": {
+				"SFTPUserName": {
+					"default": "Teleopti SFTP User ID:"
+				},
+				"SFTPPassword": {
+					"default": "Teleopti SFTP User Password:"
+				},
+				"SFTPHostname": {
+					"default": "Teleopti SFTP Hostname:"
+				}
+			}
+		}
+	},
+	"Parameters": {
+		"SFTPUserName": {
+			"AllowedPattern": "^[a-zA-Z0-9_]+$",
+			"ConstraintDescription": " Password must contain only alphanumeric and underscore characters.",
+			"Type": "String",
+			"Description": "The Teleopti provided username for your SFTP account."
+		},
+		"SFTPPassword": {
+			"AllowedPattern": "^(?=.*[0-9])(?=.*[a-z])(?=.*[A-Z]).{8,}$",
+			"ConstraintDescription": " Password must be at least 8 characters, and contain uppercase and lowercase letters, and at least one numeric.",
+			"Type": "String",
+			"Description": "The Teleopti provided password for your SFTP account.",
+			"NoEcho": true
+		},
+		"SFTPHostname": {
+			"Type": "String",
+			"Description": "The Teleopti provided hostname of your SFTP server."
+		},
+		"QSS3BucketName": {
+			"AllowedPattern": "^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$",
+			"ConstraintDescription": "Quick Start bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-).",
+			"Default": "aws-quickstart",
+			"Description": "S3 bucket name for the Quick Start assets. Quick Start bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-).",
+			"Type": "String"
+		},
+		"QSS3KeyPrefix": {
+			"AllowedPattern": "^[0-9a-zA-Z-/]*$",
+			"ConstraintDescription": "Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).",
+			"Default": "connect-integration-teleopti-wfm/",
+			"Description": "S3 key prefix for the Quick Start assets. Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).",
+			"Type": "String"
+		}
+	},
+	"Rules": {
+		"RegionSupport": {
+			"Assertions": [{
+				"Assert": {
+					"Fn::Contains": [["us-east-1",
+					"us-west-2",
+					"eu-central-1",
+					"ap-southeast-2"],
+					{
+						"Ref": "AWS::Region"
+					}]
+				},
+				"AssertDescription": "Region must be either US East (N. Virginia) - us-east-1, US West (Oregon) - us-west-2, EU (Frankfurt) - eu-central-1, Asia Pacific (Sydney) - ap-southeast-2"
+			}]
+		}
+	},
+	"Resources": {
+		"TeleoptiMessageQueue": {
+			"Type": "AWS::SQS::Queue",
+			"Properties": {
+				"MessageRetentionPeriod": 1209600,
+				"QueueName": {
+					"Ref": "AWS::StackName"
+				},
+				"VisibilityTimeout": 180
+			}
+		},
+		"S3ToSQSPolicy": {
+			"Type": "AWS::SQS::QueuePolicy",
+			"Properties": {
+				"PolicyDocument": {
+					"Id": "PushMessageToSQSPolicy",
+					"Version": "2012-10-17",
+					"Statement": [{
+						"Sid": "allow-s3-to-send-message-to-sqs",
+						"Effect": "Allow",
+						"Action": ["sqs:SendMessage",
+						"sqs:ReceiveMessage"],
+						"Principal": "*",
+						"Resource": "*",
+						"Condition": {
+							"ArnLike": {
+								"aws:SourceArn": "arn:aws:s3:::*"
+							}
+						}
+					}]
+				},
+				"Queues": [{
+					"Ref": "TeleoptiMessageQueue"
+				}]
+			},
+			"DependsOn": ["TeleoptiMessageQueue"]
+		},
+		"TeleoptiIntegrationTestRole": {
+			"Type": "AWS::IAM::Role",
+			"Properties": {
+				"AssumeRolePolicyDocument": {
+					"Version": "2012-10-17",
+					"Statement": [{
+						"Effect": "Allow",
+						"Principal": {
+							"Service": ["lambda.amazonaws.com"]
+						},
+						"Action": ["sts:AssumeRole"]
+					}]
+				},
+				"Path": "/",
+				"ManagedPolicyArns": ["arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"]
+			}
+		},
+		"TeleoptiIntegrationTestFunction": {
+			"Type": "AWS::Lambda::Function",
+			"Properties": {
+				"Code": {
+					"S3Bucket": {
+						"Ref": "QSS3BucketName"
+					},
+					"S3Key": {
+						"Fn::Sub": "${QSS3KeyPrefix}functions/packages/integration-test/lambda.zip"
+					}
+				},
+				"Handler": "main.handle",
+				"MemorySize": "256",
+				"Role": {
+					"Fn::GetAtt": ["TeleoptiIntegrationTestRole",
+					"Arn"]
+				},
+				"Runtime": "nodejs8.10",
+				"Timeout": 300
+			},
+			"DependsOn": ["TeleoptiIntegrationTestRole"]
+		},
+		"TeleoptiIntegrationTest": {
+			"Type": "Custom::IntegrationTest",
+			"Version": "1.0",
+			"Properties": {
+				"ServiceToken": {
+					"Fn::GetAtt": ["TeleoptiIntegrationTestFunction",
+					"Arn"]
+				},
+				"host": {
+					"Ref": "SFTPHostname"
+				},
+				"port": 22,
+				"password": {
+					"Ref": "SFTPPassword"
+				},
+				"username": {
+					"Ref": "SFTPUserName"
+				},
+				"sftpLocation": ""
+			},
+			"DependsOn": ["TestTeleoptiLambdaLogGroup"]
+		},
+		"TeleoptiLambdaRole": {
+			"Type": "AWS::IAM::Role",
+			"Properties": {
+				"AssumeRolePolicyDocument": {
+					"Version": "2012-10-17",
+					"Statement": [{
+						"Effect": "Allow",
+						"Principal": {
+							"Service": ["lambda.amazonaws.com"]
+						},
+						"Action": ["sts:AssumeRole"]
+					},
+					{
+						"Effect": "Allow",
+						"Principal": {
+							"Service": ["firehose.amazonaws.com"]
+						},
+						"Action": ["sts:AssumeRole"]
+					}]
+				},
+				"Policies": [{
+					"PolicyName": "LogWriter",
+					"PolicyDocument": {
+						"Version": "2012-10-17",
+						"Statement": [{
+							"Effect": "Allow",
+							"Action": ["logs:CreateLogGroup",
+							"logs:CreateLogStream",
+							"logs:PutLogEvents"],
+							"Resource": "arn:aws:logs:*:*:*"
+						}]
+					}
+				},
+				{
+					"PolicyName": "FileSyncher",
+					"PolicyDocument": {
+						"Version": "2012-10-17",
+						"Statement": [{
+							"Effect": "Allow",
+							"Action": ["s3:*"],
+							"Resource": [{
+								"Fn::GetAtt": ["TeleoptiIntegrationBucket",
+								"Arn"]
+							},
+							{
+								"Fn::Join": ["",
+								["arn:aws:s3:::",
+								{
+									"Ref": "TeleoptiIntegrationBucket"
+								},
+								"/*"]]
+							}]
+						}]
+					}
+				},
+				{
+					"PolicyName": "EventQueuer",
+					"PolicyDocument": {
+						"Version": "2012-10-17",
+						"Statement": [{
+							"Effect": "Allow",
+							"Action": ["sqs:DeleteMessage",
+							"sqs:GetQueueUrl",
+							"sqs:ReceiveMessage",
+							"sqs:SendMessage"],
+							"Resource": {
+								"Fn::GetAtt": ["TeleoptiMessageQueue",
+								"Arn"]
+							}
+						}]
+					}
+				}]
+			},
+			"DependsOn": ["TeleoptiIntegrationBucket",
+			"TeleoptiMessageQueue"]
+		},
+		"TeleoptiIntegrationFunction": {
+			"Type": "AWS::Lambda::Function",
+			"Properties": {
+				"Code": {
+					"S3Bucket": {
+						"Ref": "QSS3BucketName"
+					},
+					"S3Key": {
+						"Fn::Sub": "${QSS3KeyPrefix}functions/packages/integration/lambda.zip"
+					}
+				},
+				"FunctionName": {
+					"Ref": "AWS::StackName"
+				},
+				"Description": "Used sync files between S3 and SFTP servers.",
+				"Environment": {
+					"Variables": {
+						"s3Location": {
+							"Ref": "TeleoptiIntegrationBucket"
+						},
+						"host": {
+							"Ref": "SFTPHostname"
+						},
+						"port": 22,
+						"password": {
+							"Ref": "SFTPPassword"
+						},
+						"username": {
+							"Ref": "SFTPUserName"
+						},
+						"sftpLocation": ""
+					}
+				},
+				"Handler": "main.handle",
+				"MemorySize": "256",
+				"Role": {
+					"Fn::GetAtt": ["TeleoptiLambdaRole",
+					"Arn"]
+				},
+				"Runtime": "nodejs8.10",
+				"Timeout": 300
+			},
+			"DependsOn": ["TeleoptiLambdaRole"]
+		},
+		"TeleoptiIntegrationBucket": {
+			"Type": "AWS::S3::Bucket",
+			"DeletionPolicy": "Retain",
+			"Properties": {
+				"LifecycleConfiguration": {
+					"Rules": [{
+						"Status": "Enabled",
+						"ExpirationInDays": "90"
+					}]
+				},
+				"NotificationConfiguration": {
+					"QueueConfigurations": [{
+						"Event": "s3:ObjectCreated:*",
+						"Queue": {
+							"Fn::GetAtt": ["TeleoptiMessageQueue",
+							"Arn"]
+						}
+					}]
+				}
+			},
+			"DependsOn": ["S3ToSQSPolicy",
+			"TeleoptiIntegrationTest"]
+		},
+		"TeleoptiFirehoseDeliveryStream": {
+			"Type": "AWS::KinesisFirehose::DeliveryStream",
+			"Properties": {
+				"DeliveryStreamType": "DirectPut",
+				"S3DestinationConfiguration": {
+					"BucketARN": {
+						"Fn::GetAtt": ["TeleoptiIntegrationBucket",
+						"Arn"]
+					},
+					"BufferingHints": {
+						"IntervalInSeconds": "300",
+						"SizeInMBs": "10"
+					},
+					"CompressionFormat": "UNCOMPRESSED",
+					"RoleARN": {
+						"Fn::GetAtt": ["TeleoptiLambdaRole",
+						"Arn"]
+					}
+				}
+			},
+			"DependsOn": ["TeleoptiLambdaRole",
+			"TeleoptiIntegrationBucket"]
+		},
+		"TeleoptiLambdaLogGroup": {
+			"Type": "AWS::Logs::LogGroup",
+			"Properties": {
+				"LogGroupName": {
+					"Fn::Join": ["",
+					["/aws/lambda/",
+					{
+						"Ref": "TeleoptiIntegrationFunction"
+					}]]
+				},
+				"RetentionInDays": 7
+			}
+		},
+		"TestTeleoptiLambdaLogGroup": {
+			"Type": "AWS::Logs::LogGroup",
+			"Properties": {
+				"LogGroupName": {
+					"Fn::Join": ["",
+					["/aws/lambda/",
+					{
+						"Ref": "TeleoptiIntegrationTestFunction"
+					}]]
+				},
+				"RetentionInDays": 7
+			}
+		},
+		"TeleoptiExecuteEvent": {
+			"Type": "AWS::Events::Rule",
+			"Properties": {
+				"Description": "Scheduled event to run SFTP Lambda for Teleopti Integration",
+				"ScheduleExpression": "rate(30 minutes)",
+				"State": "ENABLED",
+				"Targets": [{
+					"Arn": {
+						"Fn::GetAtt": ["TeleoptiIntegrationFunction",
+						"Arn"]
+					},
+					"Id": {
+							"Ref": "AWS::StackName"
+					}
+				}]
+			}
+		},
+		"TeleoptiResourcePolicy": {
+			"Type": "AWS::Lambda::Permission",
+			"Properties": {
+				"Action": "lambda:InvokeFunction",
+				"FunctionName": {
+					"Fn::GetAtt": ["TeleoptiIntegrationFunction",
+					"Arn"]
+				},
+				"Principal": "events.amazonaws.com",
+				"SourceArn": {
+					"Fn::GetAtt": ["TeleoptiExecuteEvent",
+					"Arn"]
+				}
+			},
+			"DependsOn": ["TeleoptiIntegrationFunction"]
+		},
+		"TeleoptiRTAGroup": {
+			"Type": "AWS::IAM::Group",
+			"Properties": {
+				"Policies": [{
+					"PolicyName": "giveaccesstokinesis",
+					"PolicyDocument": {
+						"Version": "2012-10-17",
+						"Statement": [{
+							"Effect": "Allow",
+							"Action": ["kinesis:Get*",
+							"kinesis:List*",
+							"kinesis:Describe*"],
+							"Resource": "*"
+						}]
+					}
+				}]
+			}
+		},
+		"TeleoptiRTAUser": {
+			"Type": "AWS::IAM::User",
+			"Properties": {
+				"Groups": [{
+					"Ref": "TeleoptiRTAGroup"
+				}]
+			},
+			"DependsOn": ["TeleoptiRTAGroup"]
+		},
+		"TeleoptiRTAAccessKey": {
+			"Type": "AWS::IAM::AccessKey",
+			"Properties": {
+				"UserName": {
+					"Ref": "TeleoptiRTAUser"
+				}
+			},
+			"DependsOn": ["TeleoptiRTAUser"]
+		},
+		"FunctionTimeoutMetric": {
+			"Type": "AWS::Logs::MetricFilter",
+			"Properties": {
+				"FilterPattern": "Task timed out",
+				"LogGroupName": {
+					"Fn::Join": ["",
+					["/aws/lambda/",
+					{
+						"Ref": "TeleoptiIntegrationFunction"
+					}]]
+				},
+				"MetricTransformations": [{
+					"MetricValue": "1",
+					"MetricNamespace": {
+						"Ref": "AWS::StackName"
+					},
+					"MetricName": "lambda-function-timeouts"
+				}]
+			},
+			"DependsOn": ["TeleoptiIntegrationFunction",
+			"TeleoptiLambdaLogGroup"]
+		},
+		"ConnectionTimeoutMetric": {
+			"Type": "AWS::Logs::MetricFilter",
+			"Properties": {
+				"FilterPattern": "ClientTimeoutException",
+				"LogGroupName": {
+					"Fn::Join": ["",
+					["/aws/lambda/",
+					{
+						"Ref": "TeleoptiIntegrationFunction"
+					}]]
+				},
+				"MetricTransformations": [{
+					"MetricValue": "1",
+					"MetricNamespace": {
+						"Ref": "AWS::StackName"
+					},
+					"MetricName": "connection-timeouts"
+				}]
+			},
+			"DependsOn": ["TeleoptiIntegrationFunction",
+			"TeleoptiLambdaLogGroup"]
+		},
+		"ErrorMetric": {
+			"Type": "AWS::Logs::MetricFilter",
+			"Properties": {
+				"FilterPattern": "UnknownException",
+				"LogGroupName": {
+					"Fn::Join": ["",
+					["/aws/lambda/",
+					{
+						"Ref": "TeleoptiIntegrationFunction"
+					}]]
+				},
+				"MetricTransformations": [{
+					"MetricValue": "1",
+					"MetricNamespace": {
+						"Ref": "AWS::StackName"
+					},
+					"MetricName": "errors"
+				}]
+			},
+			"DependsOn": ["TeleoptiIntegrationFunction",
+			"TeleoptiLambdaLogGroup"]
+		},
+		"S3toSFTPMetric": {
+			"Type": "AWS::Logs::MetricFilter",
+			"Properties": {
+				"FilterPattern": "[timestamp, requestId, streamName, colon, moved = Moved, numFiles, files = files, from, orig = S3, to, dest = SFTP]",
+				"LogGroupName": {
+					"Fn::Join": ["",
+					["/aws/lambda/",
+					{
+						"Ref": "TeleoptiIntegrationFunction"
+					}]]
+				},
+				"MetricTransformations": [{
+					"MetricValue": "$numFiles",
+					"MetricNamespace": {
+						"Ref": "AWS::StackName"
+					},
+					"MetricName": "s3-to-sftp"
+				}]
+			},
+			"DependsOn": ["TeleoptiIntegrationFunction",
+			"TeleoptiLambdaLogGroup"]
+		}
+	},
+	"Outputs": {
+		"TeleoptiIntegrationFunctionArn": {
+			"Description": "The ARN of the function that moves files between S3 and SFTP.",
+			"Value": {
+				"Fn::GetAtt": ["TeleoptiIntegrationFunction",
+				"Arn"]
+			}
+		},
+		"TeleoptiIntegrationFunctionName": {
+			"Description": "The Name of the function that moves files between S3 and SFTP.",
+			"Value": {
+				"Ref": "TeleoptiIntegrationFunction"
+			}
+		},
+		"TeleoptiIntegrationFunctionRole": {
+			"Description": "The role used by the generated Lambda function, to be added to any KMS keys.",
+			"Value": {
+				"Ref": "TeleoptiLambdaRole"
+			}
+		},
+		"FirehoseDeliveryStreamName": {
+			"Description": "The Firehose Delivery Stream to assign for CTR and Report Delivery.",
+			"Value": {
+				"Ref": "TeleoptiFirehoseDeliveryStream"
+			}
+		},
+		"RTAIAMUserName": {
+			"Description": "The UserName of the RTA IAM User.",
+			"Value": {
+				"Ref": "TeleoptiRTAUser"
+			}
+		},
+		"AccessKeyforTeleoptiRTA": {
+			"Value": {
+				"Ref": "TeleoptiRTAAccessKey"
+			}
+		},
+		"SecretKeyforTeleoptiRTA": {
+			"Value": {
+				"Fn::GetAtt": ["TeleoptiRTAAccessKey",
+				"SecretAccessKey"]
+			}
+		}
+	}
+}
+

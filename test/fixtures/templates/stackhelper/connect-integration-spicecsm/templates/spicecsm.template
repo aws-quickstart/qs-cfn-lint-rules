@@ -1,0 +1,131 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+Description: SpiceCSM Integration for Amazon Connect Quick Start (qs-1no5j9rq8)
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+    - Label:
+        default: Amazon Connect SpiceCSM Integration
+      Parameters:
+      - SpiceCSMSubdomain
+    ParameterLabels:
+      SpiceCSMSubdomain:
+        default: SpiceCSM Subdomain
+Parameters:
+  SpiceCSMSubdomain:
+    AllowedPattern: ^[a-z][a-z0-9]+$
+    ConstraintDescription: SpiceCSM subdomain must contain all lower case letters
+      with no spaces, underscores or special characters and cannot start with a number
+    Default: yourcompany
+    Description: The subdomain of your SpiceCSM instance
+    Type: String
+Rules:
+  RegionSupport:
+    Assertions:
+    - Assert:
+        Fn::Equals:
+        - Ref: AWS::Region
+        - us-east-1
+      AssertDescription: Region must be US East (N. Virginia) - us-east-1
+  ParameterDefaults:
+    Assertions:
+    - Assert:
+        Fn::Not:
+        - Fn::Equals:
+          - Ref: SpiceCSMSubdomain
+          - yourcompany
+      AssertDescription: Amazon Connect SpiceCSM Integration parameters cannot be
+        defaults
+Resources:
+  SpiceExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Path: /
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+  QuickStartExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Path: /
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+  CFQuickStart:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: test.quickstart
+      Runtime: nodejs6.10
+      Description: Checks for valid Quick Start data
+      MemorySize: 128
+      Timeout: 30
+      Role:
+        Fn::GetAtt: QuickStartExecutionRole.Arn
+      Code:
+        S3Bucket: aws-quickstart
+        S3Key: connect-integration-spicecsm/functions/packages/spicecsm-integration-test/spicecsm-integration-test.zip
+  TestQuickStart:
+    Type: Custom::TestQuickStart
+    Version: '1.0'
+    Properties:
+      ServiceToken:
+        Fn::GetAtt: CFQuickStart.Arn
+      SpiceCSMSubdomain:
+        Ref: SpiceCSMSubdomain
+  SpiceLambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: spicecsm.handler
+      Runtime: nodejs6.10
+      Description: Allows for communication between an Amazon Connect Contact Flow
+        and the SpiceCSM Automated Reader
+      MemorySize: 128
+      Timeout: 30
+      Role:
+        Fn::GetAtt: SpiceExecutionRole.Arn
+      Environment:
+        Variables:
+          spiceSubdomain:
+            Ref: SpiceCSMSubdomain
+      Tags:
+      - Key: Service
+        Value: ContactCenter
+      Code:
+        S3Bucket: aws-quickstart
+        S3Key: connect-integration-spicecsm/functions/packages/spicecsm-integration/spicecsm-integration.zip
+  SpiceInvokePermission:
+    Type: AWS::Lambda::Permission
+    DependsOn: SpiceLambdaFunction
+    Properties:
+      FunctionName:
+        Ref: SpiceLambdaFunction
+      Action: lambda:InvokeFunction
+      Principal: connect.amazonaws.com
+      SourceAccount:
+        Ref: AWS::AccountId
+Outputs:
+  SpiceExecutionRole:
+    Description: Lambda Function Execution Role
+    Value:
+      Fn::GetAtt: SpiceExecutionRole.Arn
+  SpiceLambdaFunction:
+    Description: Lambda Function for SpiceCSM - Amazon Connect Integration
+    Value:
+      Fn::GetAtt: SpiceLambdaFunction.Arn
+...

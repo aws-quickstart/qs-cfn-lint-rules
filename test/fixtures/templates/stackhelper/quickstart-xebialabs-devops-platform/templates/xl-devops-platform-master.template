@@ -1,0 +1,423 @@
+---
+AWSTemplateFormatVersion: 2010-09-09
+Description: >
+  This template will setup the XebiaLabs DevOps Platform in a newly created VPC.
+  It will also create the Bastion Hosts to access the VPC. (qs-1paeiji6j)
+Metadata:
+  'AWS::CloudFormation::Interface':
+    ParameterGroups:
+      - Label:
+          default: Network Configuration
+        Parameters:
+          - RemoteAccessCIDR
+          - AvailabilityZones
+          - VPCCIDR
+          - PrivateSubnet1CIDR
+          - PrivateSubnet2CIDR
+          - DataSubnet1CIDR
+          - DataSubnet2CIDR
+          - PublicSubnet1CIDR
+          - PublicSubnet2CIDR
+      - Label:
+          default: RDS Configuration
+        Parameters:
+          - DBMasterUsername
+          - DBMasterPassword
+          - DBBackupRetentionPeriod
+          - DBInstanceClass
+      - Label:
+          default: HTTP Configuration
+        Parameters:
+          - SslCertificateArn
+      - Label:
+          default: General Settings
+        Parameters:
+          - EnvironmentName
+          - KeyPairName
+      - Label:
+          default: XebiaLabs DevOps Platform Configuration
+        Parameters:
+          - XLPlatformInstanceType
+          - InstallXLDeploy
+          - XLDeployDockerImage
+          - XLDeployVersion
+          - XLDeployPassword
+          - XLDeployClusterMode
+          - XLDeployLicense
+          - InstallXLRelease
+          - XLReleaseDockerImage
+          - XLReleaseVersion
+          - XLReleasePassword
+          - XLReleaseClusterMode
+          - XLReleaseLicense
+      - Label:
+          default: AWS Quick Start Configuration
+        Parameters:
+          - QSS3BucketName
+          - QSS3KeyPrefix
+    ParameterLabels:
+      XLPlatformInstanceType:
+        default: XL DevOps Platform instance type
+      XLDeployDockerImage:
+        default: XL Deploy Docker image
+      XLReleaseDockerImage:
+        default: XL Release Docker image
+      XLDeployVersion:
+        default: XL Deploy version
+      XLReleaseVersion:
+        default: XL Release version
+      XLDeployPassword:
+        default: XL Deploy administrator password
+      XLReleasePassword:
+        default: XL Release administrator password
+      InstallXLRelease:
+        default: Install XL Release
+      InstallXLDeploy:
+        default: Install XL Deploy
+      XLDeployClusterMode:
+        default: XL Deploy cluster mode
+      XLReleaseClusterMode:
+        default: XL Release cluster mode
+      XLDeployLicense:
+        default: XL Deploy license
+      XLReleaseLicense:
+        default: XL Release license
+      SslCertificateArn:
+        default: SSL certificate arn
+      EnvironmentName:
+        default: Environment name
+      VPCCIDR:
+        default: VPC CIDR
+      AvailabilityZones:
+        default: Availability zones
+      RemoteAccessCIDR:
+        default: Remote access CIDR
+      PublicSubnet1CIDR:
+        default: Public subnet 1
+      PublicSubnet2CIDR:
+        default: Public subnet 2
+      PrivateSubnet1CIDR:
+        default: Private subnet 1
+      PrivateSubnet2CIDR:
+        default: Private subnet 2
+      DataSubnet1CIDR:
+        default: Private data subnet 1
+      DataSubnet2CIDR:
+        default: Private data subnet 2
+      DBBackupRetentionPeriod:
+        default: Database backup retention period
+      DBInstanceClass:
+        default: Database instance class
+      KeyPairName:
+        default: Key name
+      DBMasterUsername:
+        default: Database administrator username
+      DBMasterPassword:
+        default: Database administrator password
+      QSS3BucketName:
+        default: Quick Start S3 bucket name
+      QSS3KeyPrefix:
+        default: Quick Start S3 key prefix
+Parameters:
+  XLPlatformInstanceType:
+    AllowedValues:
+      - m5.large
+      - m5.xlarge
+    Description: The instance type the XL DevOps Platform applications are created on
+    Type: String
+    Default: m5.large
+  XLDeployDockerImage:
+    Description: The path to the XL Deploy Docker image (registry/image)
+    Type: String
+    Default: xebialabs/xl-deploy
+  XLReleaseDockerImage:
+    Description: The path to the XL Release Docker image (registry/image)
+    Type: String
+    Default: xebialabs/xl-release
+  XLDeployPassword:
+    Description: The administrator password for XL Deploy
+    MinLength: 8
+    Type: String
+    NoEcho: true
+  XLReleasePassword:
+    Description: The administrator password for XL Release
+    MinLength: 8
+    Type: String
+    NoEcho: true
+  InstallXLRelease:
+    Description: Whether XL Release should be installed in the ECS Cluster.
+    Type: String
+    Default: true
+    AllowedValues:
+      - true
+      - false
+  XLReleaseVersion:
+    Description: The version of XL Release to deploy
+    AllowedPattern: '^[0-9]+\.[0-9+]($|\.[0-9]+$|\.[0-9]+[-+.].+$)'
+    Type: String
+  XLDeployVersion:
+    Description: The version of XL Deploy to deploy
+    AllowedPattern: '^[0-9]+\.[0-9+]($|\.[0-9]+$|\.[0-9]+[-+.].+$)'
+    Type: String
+  InstallXLDeploy:
+    Description: Whether XL Deploy should be installed in the ECS Cluster.
+    Type: String
+    Default: true
+    AllowedValues:
+      - true
+      - false
+  SslCertificateArn:
+    Description: >-
+      The ARN of the SSL certificate used to secure internet access to the
+      XebiaLabs DevOps Platform
+    Type: String
+    Default: ':default'
+  EnvironmentName:
+    AllowedPattern: '^[0-9a-zA-Z]+(-*[0-9a-zA-Z]+)*$'
+    Description: 'The Environment name, defaults to ''xldevops''.'
+    Type: String
+    Default: xldevops
+  VPCCIDR:
+    Description: CIDR block for the VPC
+    Type: String
+    AllowedPattern: '(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})'
+    Default: 10.0.0.0/19
+    ConstraintDescription: CIDR block parameter must be in the form x.x.x.x/16-28
+  RemoteAccessCIDR:
+    Description: CIDR block for remote access
+    Type: String
+    AllowedPattern: '(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})'
+    ConstraintDescription: CIDR block parameter must be in the form x.x.x.x/16-28
+  AvailabilityZones:
+    Description: >-
+      List of Availability Zones (AZs) to use for the subnets in the VPC. Select
+      two.
+    Type: 'List<AWS::EC2::AvailabilityZone::Name>'
+  KeyPairName:
+    Description: >-
+      The name of an existing public/private key pair, which allows you to
+      securely connect to your instance after it launches
+    Type: 'AWS::EC2::KeyPair::KeyName'
+  PrivateSubnet1CIDR:
+    AllowedPattern: >-
+      ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/(1[6-9]|2[0-8]))$
+    ConstraintDescription: CIDR block parameter must be in the form x.x.x.x/16-28
+    Default: 10.0.8.0/24
+    Description: CIDR block for private subnet 1 located in Availability Zone 1
+    Type: String
+  PrivateSubnet2CIDR:
+    AllowedPattern: >-
+      ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/(1[6-9]|2[0-8]))$
+    ConstraintDescription: CIDR block parameter must be in the form x.x.x.x/16-28
+    Default: 10.0.9.0/24
+    Description: CIDR block for private subnet 2 located in Availability Zone 2
+    Type: String
+  DataSubnet1CIDR:
+    AllowedPattern: >-
+      ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/(1[6-9]|2[0-8]))$
+    ConstraintDescription: CIDR block parameter must be in the form x.x.x.x/16-28
+    Default: 10.0.16.0/24
+    Description: CIDR block for private data subnet 1 located in Availability Zone 1
+    Type: String
+  DataSubnet2CIDR:
+    AllowedPattern: >-
+      ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/(1[6-9]|2[0-8]))$
+    ConstraintDescription: CIDR block parameter must be in the form x.x.x.x/16-28
+    Default: 10.0.17.0/24
+    Description: CIDR block for private data subnet 2 located in Availability Zone 2
+    Type: String
+  PublicSubnet1CIDR:
+    AllowedPattern: >-
+      ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/(1[6-9]|2[0-8]))$
+    ConstraintDescription: CIDR block parameter must be in the form x.x.x.x/16-28
+    Default: 10.0.1.0/24
+    Description: CIDR block for the public (DMZ) subnet 1 located in Availability Zone 1
+    Type: String
+  PublicSubnet2CIDR:
+    AllowedPattern: >-
+      ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/(1[6-9]|2[0-8]))$
+    ConstraintDescription: CIDR block parameter must be in the form x.x.x.x/16-28
+    Default: 10.0.2.0/24
+    Description: CIDR block for the public (DMZ) subnet 2 located in Availability Zone 2
+    Type: String
+  QSS3BucketName:
+    AllowedPattern: '^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$'
+    ConstraintDescription: >-
+      Quick Start bucket name can include numbers, lowercase letters, uppercase
+      letters, and hyphens (-). It cannot start or end with a hyphen (-).
+    Default: aws-quickstart
+    Description: >-
+      S3 bucket name for the Quick Start assets. Quick Start bucket name can
+      include numbers, lowercase letters, uppercase letters, and hyphens (-). It
+      cannot start or end with a hyphen (-).
+    Type: String
+  QSS3KeyPrefix:
+    AllowedPattern: '^[0-9a-zA-Z-/]*$'
+    ConstraintDescription: >-
+      Quick Start key prefix can include numbers, lowercase letters, uppercase
+      letters, hyphens (-), and forward slash (/).
+    Default: quickstart-xebialabs-devops-platform/
+    Description: >-
+      S3 key prefix for the Quick Start assets. Quick Start key prefix can
+      include numbers, lowercase letters, uppercase letters, hyphens (-), and
+      forward slash (/).
+    Type: String
+  DBMasterUsername:
+    AllowedPattern: '[a-zA-Z][a-zA-Z0-9]*'
+    ConstraintDescription: must begin with a letter and contain only alphanumeric characters.
+    Default: xldevops
+    Description: The database admin account username
+    MaxLength: '16'
+    MinLength: '1'
+    Type: String
+  DBMasterPassword:
+    AllowedPattern: '(?=\S)[^@/"\r\n\t\f\s]*'
+    ConstraintDescription: 'Min 8 alphanumeric. Cannot contain white space, @, /, "'
+    Description: The database admin account password
+    MaxLength: '41'
+    MinLength: '8'
+    NoEcho: true
+    Type: String
+  DBBackupRetentionPeriod:
+    Default: '7'
+    Description: The number of days for which automatic DB snapshots are retained.
+    Type: String
+  DBInstanceClass:
+    AllowedValues:
+      - db.r4.16xlarge
+      - db.r4.8xlarge
+      - db.r4.4xlarge
+      - db.r4.2xlarge
+      - db.r4.xlarge
+      - db.r4.large
+    ConstraintDescription: Must select a valid database instance type.
+    Default: db.r4.large
+    Description: The name of the compute and memory capacity class of the DB instance.
+    Type: String
+  XLDeployClusterMode:
+    Description: Set the clustermode for XL Deploy
+    AllowedValues:
+      - default
+      - hot-standby
+    Default: default
+    Type: String
+  XLReleaseClusterMode:
+    Description: Set the clustermode for XL Release
+    AllowedValues:
+      - default
+      - hot-standby
+      - full
+    Default: default
+    Type: String
+  XLDeployLicense:
+    Description: The (Base64 encoded) license for XL Deploy
+    Type: String
+    AllowedPattern: '[0-9A-Za-z=+/]*'
+    Default: trial
+  XLReleaseLicense:
+    Description: The (Base64 encoded) license for XL Release
+    Type: String
+    AllowedPattern: '[0-9A-Za-z=+/]*'
+    Default: trial
+Conditions:
+  GovCloudCondition: !Equals 
+    - !Ref 'AWS::Region'
+    - us-gov-west-1
+Resources:
+  VPCStack:
+    Type: 'AWS::CloudFormation::Stack'
+    Properties:
+      TemplateURL: !Sub 
+        - >-
+          https://${QSS3BucketName}.${QSS3Region}.amazonaws.com/${QSS3KeyPrefix}submodules/quickstart-aws-vpc/templates/aws-vpc.template
+        - QSS3Region: !If 
+            - GovCloudCondition
+            - s3-us-gov-west-1
+            - s3
+      Parameters:
+        AvailabilityZones: !Join 
+          - ','
+          - !Ref AvailabilityZones
+        KeyPairName: !Ref KeyPairName
+        NumberOfAZs: '2'
+        CreateAdditionalPrivateSubnets: 'true'
+        PrivateSubnet1ACIDR: !Ref PrivateSubnet1CIDR
+        PrivateSubnet2ACIDR: !Ref PrivateSubnet2CIDR
+        PrivateSubnet1BCIDR: !Ref DataSubnet1CIDR
+        PrivateSubnet2BCIDR: !Ref DataSubnet2CIDR
+        PublicSubnet1CIDR: !Ref PublicSubnet1CIDR
+        PublicSubnet2CIDR: !Ref PublicSubnet2CIDR
+        VPCCIDR: !Ref VPCCIDR
+  LinuxBastionStack:
+    Type: 'AWS::CloudFormation::Stack'
+    Properties:
+      TemplateURL: !Sub 
+        - >-
+          https://${QSS3BucketName}.${QSS3Region}.amazonaws.com/${QSS3KeyPrefix}submodules/quickstart-linux-bastion/templates/linux-bastion.template
+        - QSS3Region: !If 
+            - GovCloudCondition
+            - s3-us-gov-west-1
+            - s3
+      Parameters:
+        RemoteAccessCIDR: !Ref RemoteAccessCIDR
+        VPCID: !GetAtt VPCStack.Outputs.VPCID
+        PublicSubnet1ID: !GetAtt VPCStack.Outputs.PublicSubnet1ID
+        PublicSubnet2ID: !GetAtt VPCStack.Outputs.PublicSubnet2ID
+        QSS3BucketName: !Ref QSS3BucketName
+        BastionInstanceType: t2.small
+        BastionAMIOS: Amazon-Linux-HVM
+        KeyPairName: !Ref KeyPairName
+        QSS3KeyPrefix: !Join 
+          - ''
+          - - !Ref QSS3KeyPrefix
+            - submodules/quickstart-linux-bastion/
+  XLDevOpsPlatformStack:
+    Type: 'AWS::CloudFormation::Stack'
+    Properties:
+      TemplateURL: !Sub 
+        - >-
+          https://${QSS3BucketName}.${QSS3Region}.amazonaws.com/${QSS3KeyPrefix}templates/xl-devops-platform.template
+        - QSS3Region: !If 
+            - GovCloudCondition
+            - s3-us-gov-west-1
+            - s3
+      Parameters:
+        EnvironmentName: !Ref EnvironmentName
+        VPCID: !GetAtt VPCStack.Outputs.VPCID
+        RemoteAccessCIDR: !Ref RemoteAccessCIDR
+        PublicSubnet1ID: !GetAtt VPCStack.Outputs.PublicSubnet1ID
+        PublicSubnet2ID: !GetAtt VPCStack.Outputs.PublicSubnet2ID
+        PrivateSubnet1ID: !GetAtt VPCStack.Outputs.PrivateSubnet1AID
+        PrivateSubnet2ID: !GetAtt VPCStack.Outputs.PrivateSubnet2AID
+        DataSubnet1ID: !GetAtt VPCStack.Outputs.PrivateSubnet1BID
+        DataSubnet2ID: !GetAtt VPCStack.Outputs.PrivateSubnet2BID
+        KeyPairName: !Ref KeyPairName
+        XLPlatformInstanceType: !Ref XLPlatformInstanceType
+        InstallXLDeploy: !Ref InstallXLDeploy
+        XLDeployPassword: !Ref XLDeployPassword
+        XLDeployDockerImage: !Ref XLDeployDockerImage
+        XLDeployVersion: !Ref XLDeployVersion
+        InstallXLRelease: !Ref InstallXLRelease
+        XLReleasePassword: !Ref XLReleasePassword
+        XLReleaseDockerImage: !Ref XLReleaseDockerImage
+        XLReleaseVersion: !Ref XLReleaseVersion
+        DBMasterUsername: !Ref DBMasterUsername
+        DBMasterPassword: !Ref DBMasterPassword
+        DBInstanceClass: !Ref DBInstanceClass
+        DBBackupRetentionPeriod: !Ref DBBackupRetentionPeriod
+        QSS3BucketName: !Ref QSS3BucketName
+        QSS3KeyPrefix: !Ref QSS3KeyPrefix
+        BastionSecurityGroup: !GetAtt LinuxBastionStack.Outputs.BastionSecurityGroupID
+        VPCCIDR: !Ref VPCCIDR
+        XLReleaseClusterMode: !Ref XLReleaseClusterMode
+        XLDeployClusterMode: !Ref XLDeployClusterMode
+        XLReleaseLicense: !Ref XLReleaseLicense
+        XLDeployLicense: !Ref XLDeployLicense
+        SslCertificateArn: !Ref SslCertificateArn
+Outputs:
+  XLDeployURL:
+    Description: The URL where XL Deploy is reachable
+    Value: !GetAtt XLDevOpsPlatformStack.Outputs.XLDeployURL
+  XLReleaseURL:
+    Description: The URL where XL Release is reachable
+    Value: !GetAtt XLDevOpsPlatformStack.Outputs.XLReleaseURL

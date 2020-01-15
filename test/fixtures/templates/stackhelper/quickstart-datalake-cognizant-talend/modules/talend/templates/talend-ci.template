@@ -1,0 +1,847 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "This template will deploy a Talend CI instance into an existing VPC subnet.  **WARNING** This template creates Amazon EC2 instance and related resources. You will be billed for the AWS resources used if you create a stack from this template. QS(9999)",
+    "Parameters": {
+        "InstanceType": {
+            "Description": "Talend Server EC2 instance type",
+            "Type": "String",
+            "Default": "t2.micro",
+            "AllowedValues": [
+                "t1.micro",
+                "t2.micro",
+                "t2.small",
+                "t2.medium",
+                "m1.small",
+                "m1.medium",
+                "m1.large",
+                "m1.xlarge",
+                "m2.xlarge",
+                "m2.2xlarge",
+                "m2.4xlarge",
+                "m3.medium",
+                "m3.large",
+                "m3.xlarge",
+                "m3.2xlarge",
+                "c1.medium",
+                "c1.xlarge",
+                "c3.large",
+                "c3.xlarge",
+                "c3.2xlarge",
+                "c3.4xlarge",
+                "c3.8xlarge",
+                "c4.large",
+                "c4.xlarge",
+                "c4.2xlarge",
+                "c4.4xlarge",
+                "c4.8xlarge",
+                "g2.2xlarge",
+                "r3.large",
+                "r3.xlarge",
+                "r3.2xlarge",
+                "r3.4xlarge",
+                "r3.8xlarge",
+                "i2.xlarge",
+                "i2.2xlarge",
+                "i2.4xlarge",
+                "i2.8xlarge",
+                "d2.xlarge",
+                "d2.2xlarge",
+                "d2.4xlarge",
+                "d2.8xlarge",
+                "hi1.4xlarge",
+                "hs1.8xlarge",
+                "cr1.8xlarge",
+                "cc2.8xlarge",
+                "cg1.4xlarge"
+            ],
+            "ConstraintDescription": "must be a valid EC2 instance type."
+        },
+        "KeyName": {
+            "Description": "Name of an EC2 KeyPair to enable SSH access to the Talend Server instance.",
+            "Type": "AWS::EC2::KeyPair::KeyName",
+            "ConstraintDescription": "must be the name of an existing EC2 KeyPair."
+        },
+		"SubnetId": {
+            "Description": "Talend Server subnet id.",
+            "Type": "AWS::EC2::Subnet::Id"
+		},
+		"PrivateSubnet": {
+            "Description": "Is this is a private subnet.",
+            "Type": "String",
+			"Default": "private",
+            "AllowedValues": [ "private", "public" ]
+		},
+		"SecurityGroupIds": {
+            "Description": "Talend Server Security Group.",
+            "Type": "CommaDelimitedList"
+		},
+        "TalendLicenseUser": {
+            "Description": "The Talend License User is included in the email you received with your eval license.",
+            "Type": "String"
+        },
+        "TalendLicensePassword": {
+            "Description": "The Talend License Password is included in the email you received with your eval license.",
+            "Type": "String",
+            "NoEcho": "true"
+        },
+        "TalendLicenseUrl": {
+            "Description": "Url to license file received in email.",
+            "Type": "String"
+        },
+        "TalendResourceBucket": {
+            "Description": "Talend S3 resources bucket.",
+            "Type": "String",
+            "Default": "repo-quickstart-talend"
+        },  
+        "TalendResourceBucketRepoPath": {
+            "Description": "Path to binary repository in Talend S3 resources bucket.",
+            "Type": "String",
+            "Default": "/"
+        },  
+        "TalendResourceBucketAccessKey": {
+            "Description": "Access Key for Talend S3 resources bucket.",
+            "Type": "String",
+            "NoEcho": "true"
+        },
+        "TalendResourceBucketSecret": {
+            "Description": "Secret for Talend S3 resources bucket.",
+            "Type": "String",
+            "NoEcho": "true"
+        },
+        "NexusPort": {
+            "Description": "Nexus port.",
+            "Type": "Number",
+            "Default": "8081",
+            "MinValue": "1",
+            "MaxValue": "65535"
+        }
+	},
+    "Mappings": {
+        "Talend": {
+            "bootstrap": {
+                "ec2Metadata": "https://s3.amazonaws.com/baseline.quickstart.talend/bootstrap/ec2-metadata",
+                "updateHosts": "https://s3.amazonaws.com/baseline.quickstart.talend/bootstrap/update_hosts.sh"
+            },
+            "tui": {
+                "profile": "ci",
+                "tuiUrl": "https://s3.amazonaws.com/repo-quickstart-talend/tui/TUI-4.5.2.tar",
+                "tuiTarget": "/home/ec2-user/TUI-4.5.2",
+                "baselineUrl": "https://github.com/EdwardOst/baseline.quickstart.talend/archive/0.3.0.tar.gz",
+                "baselineTarget": "/home/ec2-user/baseline.quickstart.talend-0.3.0",
+                "licenseTarget": "/home/ec2-user/TUI-4.5.2/licenses/6.3.1",
+                "s3fsUrl": "https://github.com/s3fs-fuse/s3fs-fuse/archive/v1.82.tar.gz",
+                "s3fsTarget": "/home/ec2-user/s3fs-fuse-1.82",
+                "generatedTarget": "/home/ec2-user/generated",
+				"talendRepoDir": "/opt/repo"
+            }
+        },
+        "AWSInstanceType2Arch": {
+            "t1.micro": {
+                "Arch": "PV64"
+            },
+            "t2.micro": {
+                "Arch": "HVM64"
+            },
+            "t2.small": {
+                "Arch": "HVM64"
+            },
+            "t2.medium": {
+                "Arch": "HVM64"
+            },
+            "m1.small": {
+                "Arch": "PV64"
+            },
+            "m1.medium": {
+                "Arch": "PV64"
+            },
+            "m1.large": {
+                "Arch": "PV64"
+            },
+            "m1.xlarge": {
+                "Arch": "PV64"
+            },
+            "m2.xlarge": {
+                "Arch": "PV64"
+            },
+            "m2.2xlarge": {
+                "Arch": "PV64"
+            },
+            "m2.4xlarge": {
+                "Arch": "PV64"
+            },
+            "m3.medium": {
+                "Arch": "HVM64"
+            },
+            "m3.large": {
+                "Arch": "HVM64"
+            },
+            "m3.xlarge": {
+                "Arch": "HVM64"
+            },
+            "m3.2xlarge": {
+                "Arch": "HVM64"
+            },
+            "c1.medium": {
+                "Arch": "PV64"
+            },
+            "c1.xlarge": {
+                "Arch": "PV64"
+            },
+            "c3.large": {
+                "Arch": "HVM64"
+            },
+            "c3.xlarge": {
+                "Arch": "HVM64"
+            },
+            "c3.2xlarge": {
+                "Arch": "HVM64"
+            },
+            "c3.4xlarge": {
+                "Arch": "HVM64"
+            },
+            "c3.8xlarge": {
+                "Arch": "HVM64"
+            },
+            "c4.large": {
+                "Arch": "HVM64"
+            },
+            "c4.xlarge": {
+                "Arch": "HVM64"
+            },
+            "c4.2xlarge": {
+                "Arch": "HVM64"
+            },
+            "c4.4xlarge": {
+                "Arch": "HVM64"
+            },
+            "c4.8xlarge": {
+                "Arch": "HVM64"
+            },
+            "g2.2xlarge": {
+                "Arch": "HVMG2"
+            },
+            "r3.large": {
+                "Arch": "HVM64"
+            },
+            "r3.xlarge": {
+                "Arch": "HVM64"
+            },
+            "r3.2xlarge": {
+                "Arch": "HVM64"
+            },
+            "r3.4xlarge": {
+                "Arch": "HVM64"
+            },
+            "r3.8xlarge": {
+                "Arch": "HVM64"
+            },
+            "i2.xlarge": {
+                "Arch": "HVM64"
+            },
+            "i2.2xlarge": {
+                "Arch": "HVM64"
+            },
+            "i2.4xlarge": {
+                "Arch": "HVM64"
+            },
+            "i2.8xlarge": {
+                "Arch": "HVM64"
+            },
+            "d2.xlarge": {
+                "Arch": "HVM64"
+            },
+            "d2.2xlarge": {
+                "Arch": "HVM64"
+            },
+            "d2.4xlarge": {
+                "Arch": "HVM64"
+            },
+            "d2.8xlarge": {
+                "Arch": "HVM64"
+            },
+            "hi1.4xlarge": {
+                "Arch": "HVM64"
+            },
+            "hs1.8xlarge": {
+                "Arch": "HVM64"
+            },
+            "cr1.8xlarge": {
+                "Arch": "HVM64"
+            },
+            "cc2.8xlarge": {
+                "Arch": "HVM64"
+            }
+        },
+        "AWSRegionArch2AMI": {
+            "us-east-1": {
+                "PV64": "ami-1ccae774",
+                "HVM64": "ami-1ecae776",
+                "HVMG2": "ami-8c6b40e4"
+            },
+            "us-west-2": {
+                "PV64": "ami-ff527ecf",
+                "HVM64": "ami-e7527ed7",
+                "HVMG2": "ami-abbe919b"
+            },
+            "us-west-1": {
+                "PV64": "ami-d514f291",
+                "HVM64": "ami-d114f295",
+                "HVMG2": "ami-f31ffeb7"
+            },
+            "eu-west-1": {
+                "PV64": "ami-bf0897c8",
+                "HVM64": "ami-a10897d6",
+                "HVMG2": "ami-d5bc24a2"
+            },
+            "eu-central-1": {
+                "PV64": "ami-ac221fb1",
+                "HVM64": "ami-a8221fb5",
+                "HVMG2": "ami-7cd2ef61"
+            },
+            "ap-northeast-1": {
+                "PV64": "ami-27f90e27",
+                "HVM64": "ami-cbf90ecb",
+                "HVMG2": "ami-6318e863"
+            },
+            "ap-southeast-1": {
+                "PV64": "ami-acd9e8fe",
+                "HVM64": "ami-68d8e93a",
+                "HVMG2": "ami-3807376a"
+            },
+            "ap-southeast-2": {
+                "PV64": "ami-ff9cecc5",
+                "HVM64": "ami-fd9cecc7",
+                "HVMG2": "ami-89790ab3"
+            },
+            "sa-east-1": {
+                "PV64": "ami-bb2890a6",
+                "HVM64": "ami-b52890a8",
+                "HVMG2": "NOT_SUPPORTED"
+            },
+            "cn-north-1": {
+                "PV64": "ami-fa39abc3",
+                "HVM64": "ami-f239abcb",
+                "HVMG2": "NOT_SUPPORTED"
+            }
+        }
+    },
+	"Conditions": {
+        "isPrivateSubnet": {
+            "Fn::Equals": [
+                { "Ref": "PrivateSubnet" },
+                "private"
+            ]
+        },
+		"isPublicSubnet": {
+			"Fn::Not": [ { "Condition": "isPrivateSubnet" } ]
+		}
+	},
+    "Resources": {
+        "TalendServerInstance": {
+            "Type": "AWS::EC2::Instance",
+            "Properties": {
+                "InstanceType": {
+                    "Ref": "InstanceType"
+                },
+                "ImageId": {
+                    "Fn::FindInMap": [
+                        "AWSRegionArch2AMI",
+                        {
+                            "Ref": "AWS::Region"
+                        },
+                        {
+                            "Fn::FindInMap": [
+                                "AWSInstanceType2Arch",
+                                {
+                                    "Ref": "InstanceType"
+                                },
+                                "Arch"
+                            ]
+                        }
+                    ]
+                },
+                "Tags": [ { "Key": "Name", "Value": "CI" } ],
+                "KeyName": { "Ref": "KeyName" },
+				"SecurityGroupIds": { "Ref": "SecurityGroupIds" },
+				"SubnetId": { "Ref": "SubnetId" },
+                "UserData": {
+                    "Fn::Base64": {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "#!/bin/bash -xe\n",
+                                "yum install -y aws-cfn-bootstrap\n",
+								"#fix ec2 hostname resolution\n",
+                                "wget ",
+                                { "Fn::FindInMap": [ "Talend", "bootstrap", "ec2Metadata"] },
+                                "\n",
+								"chmod +x ec2-metadata\n",
+                                "wget ",
+                                { "Fn::FindInMap": [ "Talend", "bootstrap", "updateHosts"] },
+                                "\n",
+								"chmod +x update_hosts.sh\n",
+                                "./update_hosts.sh\n",
+                                "# Install the files and packages from the metadata\n",
+                                "/opt/aws/bin/cfn-init -v ",
+                                "         --stack ",
+                                {
+                                    "Ref": "AWS::StackName"
+                                },
+                                "         --resource TalendServerInstance ",
+                                "         --configsets All ",
+                                "         --region ",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                "\n",
+                                "/opt/aws/bin/cfn-signal -e $? ",
+                                "         --stack ",
+                                {
+                                    "Ref": "AWS::StackName"
+                                },
+                                "         --resource TalendServerInstance ",
+                                "         --region ",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                "\n"
+                            ]
+                        ]
+                    }
+                }
+            },
+            "Metadata": {
+                "AWS::CloudFormation::Init": {
+                    "configSets": {
+                        "All": [
+                            "Download",
+                            "Configure",
+                            "Install"
+                        ]
+                    },
+                    "Download": {
+                        "files": {
+                            "/home/ec2-user/s3fs.tgz": {
+                                "source": {
+                                    "Fn::FindInMap": [
+                                        "Talend",
+                                        "tui",
+                                        "s3fsUrl"
+                                    ]
+                                },
+                                "owner": "ec2-user",
+                                "group": "ec2-user",
+                                "mode": "000400"
+                            },
+                            "/home/ec2-user/tui.tar": {
+                                "source": {
+                                    "Fn::FindInMap": [
+                                        "Talend",
+                                        "tui",
+                                        "tuiUrl"
+                                    ]
+                                },
+                                "owner": "ec2-user",
+                                "group": "ec2-user",
+                                "mode": "000400"
+                            },
+                            "/home/ec2-user/baseline.tgz": {
+                                "source": {
+                                    "Fn::FindInMap": [
+                                        "Talend",
+                                        "tui",
+                                        "baselineUrl"
+                                    ]
+                                },
+                                "owner": "ec2-user",
+                                "group": "ec2-user",
+                                "mode": "000400"
+                            },
+                            "/home/ec2-user/generated/licenses/license": {
+                                "source": { "Ref": "TalendLicenseUrl" },
+                                "owner": "ec2-user",
+                                "group": "ec2-user",
+                                "mode": "000400"
+                            }
+                        },
+                        "commands": {
+                            "01-unzip-s3fs": {
+                                "command": "sudo -E -u ec2-user tar xzvpf s3fs.tgz",
+                                "cwd": "/home/ec2-user"
+                            },
+                            "02-unzip-tui": {
+                                "command": "sudo -E -u ec2-user tar xvpf tui.tar",
+                                "cwd": "/home/ec2-user"
+                            },
+                            "03-unzip-baseline": {
+                                "command": "sudo -E -u ec2-user tar xzvpf baseline.tgz",
+                                "cwd": "/home/ec2-user"
+                            }
+                        }
+                    },
+                    "Configure": {
+                        "files": {
+                            "/root/.passwd-s3fs": {
+                                "content": {
+                                    "Fn::Join": [
+                                        ":",
+                                        [
+                                            { "Ref": "TalendResourceBucketAccessKey" },
+                                            { "Ref": "TalendResourceBucketSecret" }
+                                        ]
+                                    ]
+                                },
+                                "owner": "root",
+                                "group": "root",
+                                "mode": "000400"
+                            },
+                            "/etc/passwd-s3fs": {
+                                "content": {
+                                    "Fn::Join": [
+                                        ":",
+                                        [
+                                            { "Ref": "TalendResourceBucketAccessKey" },
+                                            { "Ref": "TalendResourceBucketSecret" }
+                                        ]
+                                    ]
+                                },
+                                "owner": "root",
+                                "group": "root",
+                                "mode": "000400"
+                            },
+                            "/home/ec2-user/generated/licenses/download_credentials.properties": {
+                                "content": {
+                                    "Fn::Join": [
+                                        "\n",
+                                        [
+                                            {
+                                                "Fn::Join": [
+                                                    "",
+                                                    [
+                                                        "TALEND_DOWNLOAD_USER=",
+                                                        {
+                                                            "Ref": "TalendLicenseUser"
+                                                        }
+                                                    ]
+                                                ]
+                                            },
+                                            {
+                                                "Fn::Join": [
+                                                    "",
+                                                    [
+                                                        "TALEND_DOWNLOAD_PASSWORD=",
+                                                        {
+                                                            "Ref": "TalendLicensePassword"
+                                                        }
+                                                    ]
+                                                ]
+                                            }
+                                        ]
+                                    ]
+                                },
+                                "owner": "ec2-user",
+                                "group": "ec2-user",
+                                "mode": "000400"
+                            },
+                            "/home/ec2-user/generated/setenv.sh": {
+                                "content": {
+                                    "Fn::Join": [
+                                        "\n",
+                                        [
+                                            {
+                                                "Fn::Join": [
+                                                    "",
+                                                    [
+                                                        "export TALEND_REPO=",
+                                                        {
+                                                            "Fn::FindInMap": [ "Talend", "tui", "talendRepoDir"]
+                                                        }
+                                                    ]
+                                                ]
+                                            },
+                                            {
+                                                "Fn::Join": [
+                                                    "",
+                                                    [
+                                                        "export TALEND_NEXUS_PORT=",
+                                                        {
+                                                            "Ref": "NexusPort"
+                                                        }
+                                                    ]
+                                                ]
+                                            }
+                                        ]
+                                    ]
+                                },
+                                "mode": "000400",
+								"owner": "ec2-user",
+								"group": "ec2-user"
+                            }
+                        },
+                        "commands": {
+                            "00-prepare": {
+                                "command": {
+                                    "Fn::Join": [
+                                        " ",
+                                        [
+                                            "sudo chown -R ec2-user:ec2-user",
+                                            {
+                                                "Fn::FindInMap": [
+                                                    "Talend",
+                                                    "tui",
+                                                    "generatedTarget"
+                                                ]
+                                            }
+                                        ]
+                                    ]
+                                }
+                            },
+                            "01-load-baseline": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "sudo -E -u ec2-user ",
+                                            "cp -rfT ",
+                                            {
+                                                "Fn::FindInMap": [
+                                                    "Talend",
+                                                    "tui",
+                                                    "baselineTarget"
+                                                ]
+                                            },
+											"/tui/ ",
+                                            {
+                                                "Fn::FindInMap": [
+                                                    "Talend",
+                                                    "tui",
+                                                    "tuiTarget"
+                                                ]
+                                            },
+											"/"
+                                        ]
+                                    ]
+                                }
+                            },
+                            "02-load-license": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "sudo -E -u ec2-user ",
+                                            "cp ",
+                                            {
+                                                "Fn::FindInMap": [
+                                                    "Talend",
+                                                    "tui",
+                                                    "generatedTarget"
+                                                ]
+                                            },
+											"/licenses/* ",
+                                            {
+                                                "Fn::FindInMap": [
+                                                    "Talend",
+                                                    "tui",
+                                                    "licenseTarget"
+                                                ]
+                                            }
+                                        ]
+                                    ]
+                                }
+                            },
+                            "03-load-env": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "sudo -E -u ec2-user ",
+                                            "mv ",
+                                            {
+                                                "Fn::FindInMap": [
+                                                    "Talend",
+                                                    "tui",
+                                                    "generatedTarget"
+                                                ]
+                                            },
+											"/setenv.sh ",
+                                            {
+                                                "Fn::FindInMap": [
+                                                    "Talend",
+                                                    "tui",
+                                                    "tuiTarget"
+                                                ]
+                                            }
+                                        ]
+                                    ]
+                                }
+                            },
+                            "04-load-instance-env": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "sudo -E -u ec2-user ",
+                                            {
+                                                "Fn::FindInMap": [
+                                                    "Talend",
+                                                    "tui",
+                                                    "tuiTarget"
+                                                ]
+                                            },
+											"/scripts/create-instance-env.sh ",
+                                            {
+                                                "Fn::FindInMap": [
+                                                    "Talend",
+                                                    "tui",
+                                                    "tuiTarget"
+                                                ]
+                                            },
+											"/instance-env.sh"
+                                        ]
+                                    ]
+                                }
+                            },
+                            "05-load-server-env": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "sudo -E -u ec2-user ",
+                                            {
+                                                "Fn::FindInMap": [
+                                                    "Talend",
+                                                    "tui",
+                                                    "tuiTarget"
+                                                ]
+                                            },
+											"/scripts/create-",
+                                            { "Fn::FindInMap": [ "Talend", "tui", "profile" ] },
+											"-env.sh ",
+                                            {
+                                                "Fn::FindInMap": [
+                                                    "Talend",
+                                                    "tui",
+                                                    "tuiTarget"
+                                                ]
+                                            },
+											"/server-env.sh"
+                                        ]
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "Install": {
+                        "commands": {
+                            "01-install-s3fs": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "source ",
+                                            { "Fn::FindInMap": [ "Talend", "tui", "baselineTarget" ] },
+                                            "/scripts/factory/s3fs-util.sh",
+                                            "; s3fs_build ",
+                                            { "Fn::FindInMap": [ "Talend", "tui", "s3fsTarget" ] },
+                                            "; s3fs_config",
+                                            "; whoami > /home/ec2-user/01-install-s3fs-whoami",
+                                            "; s3fs_mount",
+                                            " ", { "Ref": "TalendResourceBucket" },
+                                            " ", { "Ref": "TalendResourceBucketRepoPath" },
+                                            " ", { "Fn::FindInMap": [ "Talend", "tui", "talendRepoDir" ] }
+                                        ]
+                                    ]
+                                },
+                                "cwd": { "Fn::FindInMap": [ "Talend", "tui", "s3fsTarget" ] }
+                            },
+                            "02-install-jre": {
+                                "command": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "source ",
+                                            { "Fn::FindInMap": [ "Talend", "tui", "baselineTarget" ] },
+                                            "/java/jre-installer.sh;",
+                                            "jre_installer_install"
+                                        ]
+                                    ]
+                                }
+                            },
+                            "03-install-talend": {
+                                "command": {
+                                    "Fn::Join": [ 
+                                        "", 
+                                        [
+                                            "source /etc/profile.d/jre.sh; ",
+                                            "source ./setenv.sh; ",
+                                            "source ./instance-env.sh; ",
+                                            "source ./server-env.sh; ",
+                                            "./install -q ",
+                                            { "Fn::FindInMap": [ "Talend", "tui", "profile" ] }
+                                        ] 
+                                    ]
+                                },
+                                "cwd": {
+                                    "Fn::FindInMap": [
+                                        "Talend",
+                                        "tui",
+                                        "tuiTarget"
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "Outputs": {
+        "TalendServerInstanceId": {
+            "Value": { "Ref": "TalendServerInstance" },
+            "Description": "Talend Server EC2 resource Id",
+			"Export": {
+				"Name": {
+					"Fn::Sub": "${AWS::StackName}:instanceId"
+				}
+			}
+        },
+        "publicIp": {
+			"Condition": "isPublicSubnet",
+            "Value": { "Fn::GetAtt": [ "TalendServerInstance", "PublicIp" ] },
+            "Description": "Talend public IP",
+			"Export": {
+				"Name": {
+					"Fn::Sub": "${AWS::StackName}:publicIp" 
+				} 
+			}
+        },
+        "privateIp": {
+            "Value": { "Fn::GetAtt": [ "TalendServerInstance", "PrivateIp" ] },
+            "Description": "Talend private IP",
+			"Export": {
+				"Name": {
+					"Fn::Sub": "${AWS::StackName}:privateIp" 
+				}
+			}
+        },
+        "publicDnsName": {
+			"Condition": "isPublicSubnet",
+            "Value": { "Fn::GetAtt": [ "TalendServerInstance", "PublicDnsName" ] },
+            "Description": "Talend public DNS",
+			"Export": {
+				"Name": {
+					"Fn::Sub": "${AWS::StackName}:publicDns"
+				}
+			}
+        },
+        "privateDnsName": {
+            "Value": { "Fn::GetAtt": [ "TalendServerInstance", "PrivateDnsName" ] },
+            "Description": "Talend private DNS",
+			"Export": {
+				"Name": {
+					"Fn::Sub": "${AWS::StackName}:privateDns" 
+				}
+			}
+        }
+    }
+}

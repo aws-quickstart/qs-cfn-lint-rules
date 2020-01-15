@@ -1,0 +1,516 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "TIBCO BW 2.4.2. This template builds a base TIBCO Cloud Integration - BusinessWorks docker image, creates an ECR repo with name 'tibco-tci-bw' and pushes base docker image into the ECR repo. It then deploys a VPC, with a pair of public and private subnets spread across two Availabilty Zones. It deploys an Internet Gateway, with a default route on the public subnets. It deploys a pair of NAT Gateways (one in each AZ), and default routes for them in the private subnets. It then deploys a highly available ECS cluster of EC2 instances (ECS Hosts) launched from the TIBCO Cloud Integration - BusinessWorks AMI in an AutoScaling Group,  with the EC2 instances distributed across multiple Availability Zones. This template also provides you an option to create an S3 bucket and folder structure inside the bucket required for base docker image customization. License: Apache 2.0 (Please do not remove) Apr,2,2018 (qs-1oalbg1k4)",
+    "Metadata": {
+        "AWS::CloudFormation::Interface": {
+            "ParameterGroups": [
+                {
+                    "Label": {
+                        "default": "Network Configuration"
+                    },
+                    "Parameters": [
+                        "AvailabilityZones",
+                        "AdminIngressLocation",
+                        "CIDRBlockCluster",
+                        "PublicSubnet1CIDR",
+                        "PublicSubnet2CIDR",
+                        "PrivateSubnet1CIDR",
+                        "PrivateSubnet2CIDR"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "ECS Cluster + Studio Configuration"
+                    },
+                    "Parameters": [
+                        "KeyName",
+                        "ClusterSize",
+                        "InstanceType",
+                        "VolSize",
+                        "InstanceTypeStudioImage",
+                        "StudioPassword",
+                        "VolSizeStudioImage"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "Base Image Customization Configuration"
+                    },
+                    "Parameters": [
+                        "PluginList",
+                        "ExtBucket"
+                    ]
+                },
+                {
+                    "Label": {
+                        "default": "AWS Quickstart Configuration"
+                    },
+                    "Parameters": [
+                        "QSS3BucketName",
+                        "QSS3KeyPrefix"
+                    ]
+                }
+            ],
+            "ParameterLabels": {
+                "AdminIngressLocation": {
+                    "default": "Admin Ingress Location"
+                },
+                "AvailabilityZones": {
+                    "default": "Availability Zones"
+                },
+                "CIDRBlockCluster": {
+                    "default": "Cluster CIDR Block:"
+                },
+                "ClusterSize": {
+                    "default": "ECS Cluster Size:"
+                },
+                "ExtBucket": {
+                    "default": "Create S3 Bucket for Base Image Customization?"
+                },
+                "InstanceType": {
+                    "default": "ECS Cluster Instance Type:"
+                },
+                "InstanceTypeStudioImage": {
+                    "default": "Studio EC2 Instance Type:"
+                },
+                "KeyName": {
+                    "default": "Key Pair:"
+                },
+                "PluginList": {
+                    "default": "List of Plug-ins:"
+                },
+                "PrivateSubnet1CIDR": {
+                    "default": "Private Subnet 1 CIDR"
+                },
+                "PrivateSubnet2CIDR": {
+                    "default": "Private Subnet 2 CIDR"
+                },
+                "PublicSubnet1CIDR": {
+                    "default": "Public Subnet 1 CIDR"
+                },
+                "PublicSubnet2CIDR": {
+                    "default": "Public Subnet 2 CIDR"
+                },
+                "QSS3BucketName": {
+                    "default": "Quick Start S3 Bucket Name"
+                },
+                "QSS3KeyPrefix": {
+                    "default": "Quick Start S3 Key Prefix"
+                },
+                "StudioPassword": {
+                    "default": "Studio Password:"
+                },
+                "VolSize": {
+                    "default": "ECS Cluster Volume Size:"
+                },
+                "VolSizeStudioImage": {
+                    "default": "Studio EC2 Volume Size:"
+                }
+            }
+        }
+    },
+    "Parameters": {
+        "AdminIngressLocation": {
+            "AllowedPattern": "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})",
+            "ConstraintDescription": "must be a valid IP CIDR range of the form x.x.x.x/x.",
+            "Description": "CIDR block (IP address range) to allow SSH and VNC access to your TCI-BW studio instance. Use 0.0.0.0/0 to allow access from all locations. You can always manually change this later if needed.",
+            "MaxLength": "18",
+            "MinLength": "9",
+            "Type": "String"
+        },
+        "AvailabilityZones": {
+            "Description": "List of Availability Zones to use for the subnets in the VPC. Note: The logical order is preserved. 2 AZs are used for this deployment.",
+            "Type": "List<AWS::EC2::AvailabilityZone::Name>"
+        },
+        "CIDRBlockCluster": {
+            "AllowedPattern": "^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\\/(1[6-9]|2[0-8]))$",
+            "ConstraintDescription": "CIDR block parameter must be in the form x.x.x.x/16-28",
+            "Default": "10.0.0.0/16",
+            "Description": "CIDR block for the VPC",
+            "Type": "String"
+        },
+        "ClusterSize": {
+            "ConstraintDescription": "ClusterSize must be numeric and between 1 and 100.",
+            "Default": 2,
+            "Description": "Number of EC2 instances to be created initially in the ECS Cluster (1-100). This value will be used to set the Min, Max & Desired count of instances in the Auto Scaling Group.",
+            "MaxValue": 100,
+            "MinValue": 1,
+            "Type": "Number"
+        },
+        "ExtBucket": {
+            "AllowedValues": [
+                "Yes",
+                "No"
+            ],
+            "ConstraintDescription": "The value should be Yes/No.",
+            "Default": "No",
+            "Description": "Do you want to create a new S3 bucket & required folder structure for extending base image? You can upload third-party drivers, OSGI bundles, certificates, plugins etc. in this bucket to extend the base image later.",
+            "Type": "String"
+        },
+        "InstanceType": {
+            "AllowedValues": [
+                "t2.micro",
+                "t2.small",
+                "t2.medium",
+                "t2.large",
+                "t2.xlarge",
+                "t2.2xlarge",
+                "m4.large",
+                "m4.xlarge",
+                "m4.2xlarge",
+                "m4.4xlarge",
+                "m4.10xlarge",
+                "m4.16xlarge",
+                "m3.medium",
+                "m3.large",
+                "m3.xlarge",
+                "m3.2xlarge",
+                "c4.large",
+                "c4.xlarge",
+                "c4.2xlarge",
+                "c4.4xlarge",
+                "c4.8xlarge",
+                "c3.large",
+                "c3.xlarge",
+                "c3.2xlarge",
+                "c3.4xlarge",
+                "c3.8xlarge",
+                "f1.2xlarge",
+                "f1.16xlarge",
+                "g3.4xlarge",
+                "g3.8xlarge",
+                "g3.16xlarge",
+                "g2.2xlarge",
+                "g2.8xlarge",
+                "p2.xlarge",
+                "p2.8xlarge",
+                "p2.16xlarge",
+                "r4.large",
+                "r4.xlarge",
+                "r4.2xlarge",
+                "r4.4xlarge",
+                "r4.8xlarge",
+                "r4.16xlarge",
+                "r3.large",
+                "r3.xlarge",
+                "r3.2xlarge",
+                "r3.4xlarge",
+                "r3.8xlarge",
+                "x1.16xlarge",
+                "x1.32xlarge",
+                "d2.xlarge",
+                "d2.2xlarge",
+                "d2.4xlarge",
+                "d2.8xlarge",
+                "i2.xlarge",
+                "i2.2xlarge",
+                "i2.4xlarge",
+                "i2.8xlarge",
+                "i3.large",
+                "i3.xlarge",
+                "i3.2xlarge",
+                "i3.4xlarge",
+                "i3.8xlarge",
+                "i3.16xlarge"
+            ],
+            "ConstraintDescription": "InstanceType must be a valid EC2 instance type.",
+            "Default": "t2.medium",
+            "Description": "Select an instance type for EC2 instances to be created in the ECS cluster.",
+            "Type": "String"
+        },
+        "InstanceTypeStudioImage": {
+            "AllowedValues": [
+                "t2.large",
+                "t2.xlarge",
+                "t2.2xlarge",
+                "m4.large",
+                "m4.xlarge",
+                "m4.2xlarge",
+                "m4.4xlarge",
+                "m4.10xlarge",
+                "m4.16xlarge",
+                "m3.medium",
+                "m3.large",
+                "m3.xlarge",
+                "m3.2xlarge"
+            ],
+            "ConstraintDescription": "InstanceTypeStudioImage must be a valid EC2 instance type.",
+            "Default": "m4.large",
+            "Description": "Select an instance type that runs your TIBCO Cloud Integration - BusinessWorks studio.",
+            "Type": "String"
+        },
+        "KeyName": {
+            "AllowedPattern": "[-_ a-zA-Z0-9]*",
+            "ConstraintDescription": "Must be the name of an existing key pair. It can contain only alphanumeric characters, spaces, dashes and underscores.",
+            "Description": "Select an existing key pair. You must provide existing key pair to be able to SSH into EC2 instances.",
+            "MaxLength": 64,
+            "MinLength": 1,
+            "Type": "AWS::EC2::KeyPair::KeyName"
+        },
+        "PluginList": {
+            "Description": "Provide list of IDs of supported Plug-ins to be added in the customized image, e.g. for including Data Conversion, MongoDB and S3 plug-ins, provide the value as 'DC, MongoDB, S3'. This list should be comma separated and should not include any space inbetween. The list of supported Plug-ins are - AMQP (Plug-in for AMQP), Cassandra (Plug-in for Cassandra), DC (Plug-in for Data Conversion), DCRM (Plug-in for Microsoft Dynamics CRM), FTL (Plug-in for FTL), Kafka (Plug-in for Apache Kafka), Marketo (Plug-in for Marketo), MongoDB (Plug-in for MongoDB), MQ (Plug-in for WebSphere MQ), OData (Plug-in for OData), S3 (Plug-in for Amazon S3), ServiceNow (Plug-in for ServiceNow), SFDC (Plug-in for Salesforce.com), SFTP (Plug-in for SFTP), SQS-SNS (Plugin for SQS-SNS), Workday (Plug-in for Workday), NetSuite (Plug-in for NetSuite), PDF (Plug-in for PDF), Files (Plug-in for Files), SAP (Plug-in for SAP), ADB (Plug-in for ADB), SharePoint (Plug-in for SharePoint), LDAP (Plug-in for LDAP), SWIFT (Plug-in for SWIFT), OracleEBS (Plug-in for OracleEBS), SAP-HANA (Plug-in for SAP-HANA).",
+            "Type": "String"
+        },
+        "PrivateSubnet1CIDR": {
+            "AllowedPattern": "^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\\/(1[6-9]|2[0-8]))$",
+            "ConstraintDescription": "CIDR block parameter must be in the form x.x.x.x/16-28",
+            "Default": "10.0.0.0/19",
+            "Description": "CIDR block for private subnet 1.",
+            "Type": "String"
+        },
+        "PrivateSubnet2CIDR": {
+            "AllowedPattern": "^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\\/(1[6-9]|2[0-8]))$",
+            "ConstraintDescription": "CIDR block parameter must be in the form x.x.x.x/16-28",
+            "Default": "10.0.32.0/19",
+            "Description": "CIDR block for private subnet 2.",
+            "Type": "String"
+        },
+        "PublicSubnet1CIDR": {
+            "AllowedPattern": "^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\\/(1[6-9]|2[0-8]))$",
+            "ConstraintDescription": "CIDR block parameter must be in the form x.x.x.x/16-28",
+            "Default": "10.0.128.0/20",
+            "Description": "CIDR Block for the public subnet 1.",
+            "Type": "String"
+        },
+        "PublicSubnet2CIDR": {
+            "AllowedPattern": "^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\\/(1[6-9]|2[0-8]))$",
+            "ConstraintDescription": "CIDR block parameter must be in the form x.x.x.x/16-28",
+            "Default": "10.0.144.0/20",
+            "Description": "CIDR Block for the public subnet 2",
+            "Type": "String"
+        },
+        "QSS3BucketName": {
+            "AllowedPattern": "^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$",
+            "ConstraintDescription": "Quick Start bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-).",
+            "Default": "aws-quickstart",
+            "Description": "S3 bucket name for the Quick Start assets. Quick Start bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-). Leave this as the default value if you are running the quickstart as is.",
+            "Type": "String"
+        },
+        "QSS3KeyPrefix": {
+            "AllowedPattern": "^[0-9a-zA-Z-/]*$",
+            "ConstraintDescription": "Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/).",
+            "Default": "quickstart-tibco-tci-bw/",
+            "Description": "S3 key prefix for the Quick Start assets. Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/). It cannot start or end with a hyphen (-). Leave this as the default value if you are running the quickstart as is.",
+            "Type": "String"
+        },
+        "StudioPassword": {
+            "ConstraintDescription": "This password needs to be set in order to access your TCI-BW studio instance. The max length of this password is 8 characters.",
+            "Description": "Password to access the TCI-BW studio via VNC",
+            "MaxLength": 8,
+            "MinLength": 1,
+            "NoEcho": "true",
+            "Type": "String"
+        },
+        "VolSize": {
+            "ConstraintDescription": "VolumeSize must be numeric and between 30 and 16384.",
+            "Default": 30,
+            "Description": "Volume Size (GB) for EC2 instances.",
+            "MaxValue": 16384,
+            "MinValue": 30,
+            "Type": "Number"
+        },
+        "VolSizeStudioImage": {
+            "ConstraintDescription": "VolSizeStudioImage must be numeric and between 40 and 100.",
+            "Default": 40,
+            "Description": "Volume Size  (GB) for EC2 instance running TIBCO Cloud Integrationg - BusinessWorks studio.",
+            "MaxValue": 100,
+            "MinValue": 40,
+            "Type": "Number"
+        }
+    },
+    "Conditions": {
+        "GovCloudCondition": {
+            "Fn::Equals": [
+                {
+                    "Ref": "AWS::Region"
+                },
+                "us-gov-west-1"
+            ]
+        },
+        "HasKeyName": {
+            "Fn::Not": [
+                {
+                    "Fn::Equals": [
+                        {
+                            "Ref": "KeyName"
+                        },
+                        ""
+                    ]
+                }
+            ]
+        },
+        "CreateS3Bucket": {
+            "Fn::Equals": [
+                {
+                    "Ref": "ExtBucket"
+                },
+                "Yes"
+            ]
+        },
+        "HasVolSize": {
+            "Fn::Not": [
+                {
+                    "Fn::Equals": [
+                        {
+                            "Ref": "VolSize"
+                        },
+                        ""
+                    ]
+                }
+            ]
+        },
+        "HasVolStudioSize": {
+            "Fn::Not": [
+                {
+                    "Fn::Equals": [
+                        {
+                            "Ref": "VolSizeStudioImage"
+                        },
+                        ""
+                    ]
+                }
+            ]
+        }
+    },
+    "Resources": {
+        "VPCStack": {
+            "Type": "AWS::CloudFormation::Stack",
+            "Properties": {
+                "TemplateURL": {
+                    "Fn::Sub": [
+                        "https://${QSS3BucketName}.${QSS3Region}.amazonaws.com/${QSS3KeyPrefix}submodules/quickstart-aws-vpc/templates/aws-vpc.template",
+                        {
+                            "QSS3Region": {
+                                "Fn::If": [
+                                    "GovCloudCondition",
+                                    "s3-us-gov-west-1",
+                                    "s3"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                "Parameters": {
+                    "KeyPairName": {
+                        "Ref": "KeyName"
+                    },
+                    "PrivateSubnet1ACIDR": {
+                        "Ref": "PrivateSubnet1CIDR"
+                    },
+                    "PrivateSubnet2ACIDR": {
+                        "Ref": "PrivateSubnet2CIDR"
+                    },
+                    "PublicSubnet1CIDR": {
+                        "Ref": "PublicSubnet1CIDR"
+                    },
+                    "PublicSubnet2CIDR": {
+                        "Ref": "PublicSubnet2CIDR"
+                    },
+                    "AvailabilityZones": {
+                        "Fn::Join": [
+                            ",",
+                            {
+                                "Ref": "AvailabilityZones"
+                            }
+                        ]
+                    },
+                    "NumberOfAZs": "2",
+                    "VPCCIDR": {
+                        "Ref": "CIDRBlockCluster"
+                    }
+                }
+            }
+        },
+        "BWCEStack": {
+            "Type": "AWS::CloudFormation::Stack",
+            "DependsOn": "VPCStack",
+            "Properties": {
+                "TemplateURL": {
+                    "Fn::Sub": [
+                        "https://${QSS3BucketName}.${QSS3Region}.amazonaws.com/${QSS3KeyPrefix}templates/tibco-tci-bw.template",
+                        {
+                            "QSS3Region": {
+                                "Fn::If": [
+                                    "GovCloudCondition",
+                                    "s3-us-gov-west-1",
+                                    "s3"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                "Parameters": {
+                    "KeyName": {
+                        "Ref": "KeyName"
+                    },
+                    "QSS3KeyPrefix": {
+                        "Ref": "QSS3KeyPrefix"
+                    },
+                    "QSS3BucketName": {
+                        "Ref": "QSS3BucketName"
+                    },
+                    "PrivateSubnet1ID": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.PrivateSubnet1AID"
+                        ]
+                    },
+                    "PrivateSubnet2ID": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.PrivateSubnet2AID"
+                        ]
+                    },
+                    "PublicSubnet1ID": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.PublicSubnet1ID"
+                        ]
+                    },
+                    "PublicSubnet2ID": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.PublicSubnet2ID"
+                        ]
+                    },
+                    "VPCID": {
+                        "Fn::GetAtt": [
+                            "VPCStack",
+                            "Outputs.VPCID"
+                        ]
+                    },
+                    "CIDRBlockCluster": {
+                        "Ref": "CIDRBlockCluster"
+                    },
+                    "AdminIngressLocation": {
+                        "Ref": "AdminIngressLocation"
+                    },
+                    "ClusterSize": {
+                        "Ref": "ClusterSize"
+                    },
+                    "InstanceType": {
+                        "Ref": "InstanceType"
+                    },
+                    "VolSize": {
+                        "Ref": "VolSize"
+                    },
+                    "InstanceTypeStudioImage": {
+                        "Ref": "InstanceTypeStudioImage"
+                    },
+                    "VolSizeStudioImage": {
+                        "Ref": "VolSizeStudioImage"
+                    },
+                    "StudioPassword": {
+                        "Ref": "StudioPassword"
+                    },
+                    "PluginList": {
+                        "Ref": "PluginList"
+                    },
+                    "ExtBucket": {
+                        "Ref": "ExtBucket"
+                    }
+                }
+            }
+        }
+    }
+}

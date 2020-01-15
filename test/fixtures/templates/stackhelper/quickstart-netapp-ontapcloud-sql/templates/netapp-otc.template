@@ -1,0 +1,756 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "ONTAP Cloud Single - Cloud Manager 3.5",
+    "Parameters": {
+        "CloudManagerPassword": {
+            "ConstraintDescription": "Password Min length is 4 and max length is 20",
+            "Description": "Password will be used to login to Cloud Manager and ONTAP Cloud",
+            "MaxLength": "20",
+            "MinLength": "4",
+            "NoEcho": "true",
+            "Type": "String"
+        },
+        "CloudManagerUserEmail": {
+            "Description": "Email address will be used to login to Cloud Manager",
+            "Type": "String"
+        },
+        "CompanyName": {
+            "AllowedPattern": "[a-zA-Z][a-zA-Z0-9_]*",
+            "ConstraintDescription": "Must start with alphabetic character and contains only numbers, letters or underscore (_) and up to 35 characters",
+            "Description": "Company name. Should start with alphabetic character and contains only numbers, letters or underscore (_) and up to 35 characters",
+            "MaxLength": "35",
+            "MinLength": "4",
+            "Type": "String"
+        },
+        "KeyPair": {
+            "Description": "CloudManager instance will be launched with this KeyPair",
+            "Type": "AWS::EC2::KeyPair::KeyName"
+        },
+        "QSS3BucketName": {
+            "AllowedPattern": "^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$",
+            "ConstraintDescription": "Quick Start bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-).",
+            "Default": "aws-quickstart",
+            "Description": "S3 bucket name for the Quick Start assets. This string can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-).",
+            "Type": "String"
+        },
+        "QSS3KeyPrefix": {
+            "AllowedPattern": "^[0-9a-zA-Z-]+(/[0-9a-zA-Z-]+)*$",
+            "ConstraintDescription": "Quick Start key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/). It cannot start or end with a forward slash (/), which is automatically appended.",
+            "Default": "quickstart-netapp-ontapcloud-sql",
+            "Description": "S3 key prefix for the Quick Start assets. This prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/). It cannot start or end with a forward slash (/), which is automatically appended.",
+            "Type": "String"
+        },
+        "RemoteAccessCIDR": {
+            "AllowedPattern": "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})",
+            "ConstraintDescription": "Must be a valid CIDR range of the form x.x.x.x/x.",
+            "Description": "CloudManager web access will be allowed from this CIDR range (example for full access: 0.0.0.0/0)",
+            "MaxLength": "18",
+            "MinLength": "9",
+            "Type": "String"
+        },
+        "SubnetId": {
+            "Description": "SubnetID for ONTAP Cloud",
+            "Type": "AWS::EC2::Subnet::Id"
+        },
+        "UniqueResourceId": {
+            "ConstraintDescription": "Must be of length betweeen 4 and 40 chars.",
+            "Default": "NetApp-ONTAP-Cloud",
+            "Description": "A unique name to be used to identify the AWS resources deployed as part of this template.",
+            "MaxLength": "40",
+            "MinLength": "4",
+            "Type": "String"
+        },
+        "VPCId": {
+            "Description": "Target VPC for CloudManager and ONTAP Cloud",
+            "Type": "AWS::EC2::VPC::Id"
+        }
+    },
+    "Mappings": {
+        "AWSAMIRegionMap": {
+            "AMI": {
+                "NETAPPOCCM": "OnCommand Cloud Manager 3.5.0 Marketplace- 06/04/2018"
+            },
+            "ap-northeast-1": {
+                "NETAPPOCCM": "ami-78c30607"
+            },
+            "ap-northeast-2": {
+                "NETAPPOCCM": "ami-977dd6f9"
+            },
+            "ap-south-1": {
+                "NETAPPOCCM": "ami-0c002e63"
+            },
+            "ap-southeast-1": {
+                "NETAPPOCCM": "ami-79201905"
+            },
+            "ap-southeast-2": {
+                "NETAPPOCCM": "ami-005c8e62"
+            },
+            "ca-central-1": {
+                "NETAPPOCCM": "ami-4c860528"
+            },
+            "eu-central-1": {
+                "NETAPPOCCM": "ami-d507333e"
+            },
+            "eu-west-1": {
+                "NETAPPOCCM": "ami-30585c49"
+            },
+            "eu-west-2": {
+                "NETAPPOCCM": "ami-ac56bacb"
+            },
+            "sa-east-1": {
+                "NETAPPOCCM": "ami-f66a339a"
+            },
+            "us-east-1": {
+                "NETAPPOCCM": "ami-14493c6b"
+            },
+            "us-east-2": {
+                "NETAPPOCCM": "ami-292b144c"
+            },
+            "us-west-1": {
+                "NETAPPOCCM": "ami-c2243ea2"
+            },
+            "us-west-2": {
+                "NETAPPOCCM": "ami-cd6722b5"
+            }
+        },
+        "AWSInfoRegionMap": {
+            "ap-northeast-1": {
+                "Partition": "aws",
+                "QuickStartS3URL": "https://s3.amazonaws.com"
+            },
+            "ap-northeast-2": {
+                "Partition": "aws",
+                "QuickStartS3URL": "https://s3.amazonaws.com"
+            },
+            "ap-south-1": {
+                "Partition": "aws",
+                "QuickStartS3URL": "https://s3.amazonaws.com"
+            },
+            "ap-southeast-1": {
+                "Partition": "aws",
+                "QuickStartS3URL": "https://s3.amazonaws.com"
+            },
+            "ap-southeast-2": {
+                "Partition": "aws",
+                "QuickStartS3URL": "https://s3.amazonaws.com"
+            },
+            "eu-central-1": {
+                "Partition": "aws",
+                "QuickStartS3URL": "https://s3.amazonaws.com"
+            },
+            "eu-west-1": {
+                "Partition": "aws",
+                "QuickStartS3URL": "https://s3.amazonaws.com"
+            },
+            "sa-east-1": {
+                "Partition": "aws",
+                "QuickStartS3URL": "https://s3.amazonaws.com"
+            },
+            "us-east-1": {
+                "Partition": "aws",
+                "QuickStartS3URL": "https://s3.amazonaws.com"
+            },
+            "us-east-2": {
+                "Partition": "aws",
+                "QuickStartS3URL": "https://s3.amazonaws.com"
+            },
+            "us-west-1": {
+                "Partition": "aws",
+                "QuickStartS3URL": "https://s3.amazonaws.com"
+            },
+            "us-west-2": {
+                "Partition": "aws",
+                "QuickStartS3URL": "https://s3.amazonaws.com"
+            }
+        }
+    },
+    "Resources": {
+        "OCCMInstanceIAMRole": {
+            "Properties": {
+                "AssumeRolePolicyDocument": {
+                    "Statement": [
+                        {
+                            "Action": [
+                                "sts:AssumeRole"
+                            ],
+                            "Effect": "Allow",
+                            "Principal": {
+                                "Service": [
+                                    "ec2.amazonaws.com"
+                                ]
+                            }
+                        }
+                    ],
+                    "Version": "2012-10-17"
+                },
+                "Path": "/",
+                "Policies": [
+                    {
+                        "PolicyDocument": {
+                            "Statement": [
+                                {
+                                    "Action":[
+                                        "s3:GetObject"
+                                    ],
+                                    "Effect":"Allow",
+                                    "Resource":{
+                                        "Fn::Join":[
+                                            "",
+                                            [
+                                                "arn:*:s3:::",
+                                                {
+                                                    "Ref":"QSS3BucketName"
+                                                },
+                                                "/",
+                                                {
+                                                    "Ref":"QSS3KeyPrefix"
+                                                },
+                                                "*"
+                                            ]
+                                        ]
+                                    }
+                                },
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "ec2:DescribeInstances",
+                                        "ec2:DescribeInstanceStatus",
+                                        "ec2:RunInstances",
+                                        "ec2:ModifyInstanceAttribute",
+                                        "ec2:DescribeRouteTables",
+                                        "ec2:DescribeImages",
+                                        "ec2:CreateTags",
+                                        "ec2:CreateVolume",
+                                        "ec2:DescribeVolumes",
+                                        "ec2:ModifyVolumeAttribute",
+                                        "ec2:DeleteVolume",
+                                        "ec2:CreateSecurityGroup",
+                                        "ec2:DeleteSecurityGroup",
+                                        "ec2:DescribeSecurityGroups",
+                                        "ec2:RevokeSecurityGroupEgress",
+                                        "ec2:AuthorizeSecurityGroupEgress",
+                                        "ec2:AuthorizeSecurityGroupIngress",
+                                        "ec2:CreateNetworkInterface",
+                                        "ec2:DescribeNetworkInterfaces",
+                                        "ec2:DeleteNetworkInterface",
+                                        "ec2:ModifyNetworkInterfaceAttribute",
+                                        "ec2:DescribeSubnets",
+                                        "ec2:DescribeVpcs",
+                                        "ec2:DescribeDhcpOptions",
+                                        "ec2:CreateSnapshot",
+                                        "ec2:DeleteSnapshot",
+                                        "ec2:DescribeSnapshots",
+                                        "ec2:GetConsoleOutput",
+                                        "ec2:DescribeKeyPairs",
+                                        "ec2:DescribeRegions",
+                                        "ec2:DeleteTags",
+                                        "ec2:DescribeTags",
+                                        "cloudformation:CreateStack",
+                                        "cloudformation:DeleteStack",
+                                        "cloudformation:DescribeStacks",
+                                        "cloudformation:DescribeStackEvents",
+                                        "cloudformation:ValidateTemplate",
+                                        "iam:PassRole",
+                                        "iam:CreateRole",
+                                        "iam:DeleteRole",
+                                        "iam:PutRolePolicy",
+                                        "iam:CreateInstanceProfile",
+                                        "iam:DeleteRolePolicy",
+                                        "iam:AddRoleToInstanceProfile",
+                                        "iam:RemoveRoleFromInstanceProfile",
+                                        "iam:DeleteInstanceProfile",
+                                        "kms:List*",
+                                        "kms:Describe*"
+                                    ],
+                                    "Resource": "*"
+                                },
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "ec2:StartInstances",
+                                        "ec2:StopInstances",
+                                        "ec2:TerminateInstances",
+                                        "ec2:AttachVolume",
+                                        "ec2:DetachVolume"
+                                    ],
+                                    "Condition": {
+                                        "StringLike": {
+                                            "ec2:ResourceTag/WorkingEnvironment": "*"
+                                        }
+                                    },
+                                    "Resource": [
+                                        "arn:aws:ec2:*:*:instance/*"
+                                    ]
+                                },
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "ec2:AttachVolume",
+                                        "ec2:DetachVolume"
+                                    ],
+                                    "Resource": [
+                                        "arn:aws:ec2:*:*:volume/*"
+                                    ]
+                                }
+                            ]
+                        },
+                        "PolicyName": {
+                            "Fn::Join": [
+                                "",
+                                [
+                                    {
+                                        "Ref": "UniqueResourceId"
+                                    },
+                                    "-OCCMPolicy"
+                                ]
+                            ]
+                        }
+                    }
+                ]
+            },
+            "Type": "AWS::IAM::Role"
+        },
+        "OCCMInstanceProfile": {
+            "Properties": {
+                "Path": "/",
+                "Roles": [
+                    {
+                        "Ref": "OCCMInstanceIAMRole"
+                    }
+                ]
+            },
+            "Type": "AWS::IAM::InstanceProfile"
+        },
+        "OCCMSecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "GroupDescription": "Default group for NetApp CloudManager",
+                "VpcId": {
+                    "Ref": "VPCId"
+                },
+                "SecurityGroupIngress": [
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": 80,
+                        "ToPort": 80,
+                        "CidrIp": {
+                            "Ref": "RemoteAccessCIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": 443,
+                        "ToPort": 443,
+                        "CidrIp": {
+                            "Ref": "RemoteAccessCIDR"
+                        }
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": 22,
+                        "ToPort": 22,
+                        "CidrIp": {
+                            "Ref": "RemoteAccessCIDR"
+                        }
+                    }
+                ],
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": {
+                            "Fn::Join": [
+                                "",
+                                [
+                                    {
+                                        "Ref": "UniqueResourceId"
+                                    },
+                                    "-SG"
+                                ]
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        "OTCCompleteHandle": {
+            "Type": "AWS::CloudFormation::WaitConditionHandle"
+        },
+        "OTCSetupCompleteCondition": {
+            "Type": "AWS::CloudFormation::WaitCondition",
+            "DependsOn": "OCCMInstance",
+            "Properties": {
+                "Handle": {
+                    "Ref": "OTCCompleteHandle"
+                },
+                "Timeout": "2400",
+                "Count": 1
+            }
+        },
+        "OTCCompleteHandle2": {
+            "Type": "AWS::CloudFormation::WaitConditionHandle"
+        },
+        "OTCSetupCompleteCondition2": {
+            "Type": "AWS::CloudFormation::WaitCondition",
+            "DependsOn": "OCCMInstance",
+            "Properties": {
+                "Handle": {
+                    "Ref": "OTCCompleteHandle2"
+                },
+                "Timeout": "2400",
+                "Count": 1
+            }
+        },
+        "OTCCompleteHandle3": {
+            "Type": "AWS::CloudFormation::WaitConditionHandle"
+        },
+        "OTCSetupCompleteCondition3": {
+            "Type": "AWS::CloudFormation::WaitCondition",
+            "DependsOn": "OCCMInstance",
+            "Properties": {
+                "Handle": {
+                    "Ref": "OTCCompleteHandle3"
+                },
+                "Timeout": "2400",
+                "Count": 1
+            }
+        },
+        "OCCMInstance": {
+            "DependsOn": [
+                "OCCMSecurityGroup",
+                "OCCMInstanceProfile"
+            ],
+            "Type": "AWS::EC2::Instance",
+            "Metadata": {
+                "AWS::CloudFormation::Authentication":{
+                    "s3AccessCreds":{
+                        "type":"S3",
+                        "buckets":[
+                            {
+                                "Ref":"QSS3BucketName"
+                            }
+                        ],
+                        "roleName":{
+                            "Ref":"OCCMInstanceIAMRole"
+                        }
+                    }
+                },
+                "AWS::CloudFormation::Init": {
+                    "config": {
+                        "files": {
+                            "/tmp/occm-params.txt": {
+                                "content": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "name|",
+                                            {
+                                                "Ref": "UniqueResourceId"
+                                            },
+                                            "\n",
+                                            "customer|",
+                                            {
+                                                "Ref": "CompanyName"
+                                            },
+                                            "\n",
+                                            "vpcID|",
+                                            {
+                                                "Ref": "VPCId"
+                                            },
+                                            "\n",
+                                            "subnetID|",
+                                            {
+                                                "Ref": "SubnetId"
+                                            },
+                                            "\n",
+                                            "region|",
+                                            {
+                                                "Ref": "AWS::Region"
+                                            },
+                                            "\n",
+                                            "adminEmail|",
+                                            {
+                                                "Ref": "CloudManagerUserEmail"
+                                            },
+                                            "\n",
+                                            "adminPassword|",
+                                            {
+                                                "Ref": "CloudManagerPassword"
+                                            },
+                                            "\n"
+                                        ]
+                                    ]
+                                },
+                                "mode": "000440",
+                                "owner": "root",
+                                "group": "root"
+                            },
+                            "/tmp/setup_otc.sh": {
+                                "source": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "https://",
+                                            {
+                                                "Ref": "QSS3BucketName"
+                                            },
+                                            ".s3.amazonaws.com/",
+                                            {
+                                                "Ref": "QSS3KeyPrefix"
+                                            },
+                                            "/scripts/setup_otc.sh"
+                                        ]
+                                    ]
+                                },
+                                "mode": "000774",
+                                "owner": "root",
+                                "group": "root",
+                                "authentication":"s3AccessCreds"
+                            }
+                        }
+                    }
+                }
+            },
+            "Properties": {
+                "DisableApiTermination": false,
+                "ImageId": {
+                    "Fn::FindInMap": [
+                        "AWSAMIRegionMap",
+                        {
+                            "Ref": "AWS::Region"
+                        },
+                        "NETAPPOCCM"
+                    ]
+                },
+                "NetworkInterfaces": [
+                    {
+                        "AssociatePublicIpAddress": true,
+                        "DeleteOnTermination": true,
+                        "SubnetId": {
+                            "Ref": "SubnetId"
+                        },
+                        "DeviceIndex": "0",
+                        "GroupSet": [
+                            {
+                                "Ref": "OCCMSecurityGroup"
+                            }
+                        ]
+                    }
+                ],
+                "InstanceType": "t2.medium",
+                "IamInstanceProfile": {
+                    "Ref": "OCCMInstanceProfile"
+                },
+                "KeyName": {
+                    "Ref": "KeyPair"
+                },
+                "Monitoring": false,
+                "UserData": {
+                    "Fn::Base64": {
+                        "Fn::Join": [
+                            "\n",
+                            [
+                                "#!/bin/bash -e",
+                                "export PATH=$PATH:/usr/local/aws/bin/",
+                                "easy_install https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-latest.tar.gz",
+                                {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "region=",
+                                            {
+                                                "Ref": "AWS::Region"
+                                            }
+                                        ]
+                                    ]
+                                },
+                                {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "otcTemplateHandle=",
+                                            {
+                                                "Fn::Base64": {
+                                                    "Ref": "OTCCompleteHandle"
+                                                }
+                                            }
+                                        ]
+                                    ]
+                                },
+                                {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "otcTemplateHandle2=",
+                                            {
+                                                "Fn::Base64": {
+                                                    "Ref": "OTCCompleteHandle2"
+                                                }
+                                            }
+                                        ]
+                                    ]
+                                },
+                                {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "otcTemplateHandle3=",
+                                            {
+                                                "Fn::Base64": {
+                                                    "Ref": "OTCCompleteHandle3"
+                                                }
+                                            }
+                                        ]
+                                    ]
+                                },
+                                {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "stackName=",
+                                            {
+                                                "Ref": "AWS::StackName"
+                                            }
+                                        ]
+                                    ]
+                                },
+                                {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "paramFile=",
+                                            "/tmp/occm-params.txt"
+                                        ]
+                                    ]
+                                },
+                                {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "errorFile=",
+                                            "/tmp/occmError.txt"
+                                        ]
+                                    ]
+                                },
+                                "cfn-init -v  --stack ${stackName} --resource OCCMInstance --region ${region}",
+                                "/tmp/setup_otc.sh ${paramFile} &>> /tmp/bootstrap.log",
+                                "result=$?",
+                                "echo \"Script result=${result}\" ",
+                                "if [ -f ${errorFile}  ] || [ ${result} -ne \"0\" ]; then",
+                                "cfn-signal -e 1 -r \"Error executing bootsrap script\" --region ${region} ${otcTemplateHandle}",
+                                "else",
+                                "cfn-signal -d \"`cat /tmp/clusterLif.txt`\" -i ClusterLif --region ${region} ${otcTemplateHandle2}",
+                                "cfn-signal -d \"`cat /tmp/iscsiLif.txt`\" -i IscsiLif --region ${region} ${otcTemplateHandle}",
+                                "cfn-signal -d \"`cat /tmp/nasLif.txt`\" -i NasLif --region ${region} ${otcTemplateHandle3}\n",
+                                "fi",
+                                "sed -i \"s/$(grep 'adminPassword' ${paramFile} | awk -F'|' '{print $2}')/xxxxx/g\" /tmp/bootstrap.log",
+                                "rm ${paramFile}"
+                            ]
+                        ]
+                    }
+                },
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": {
+                            "Fn::Join": [
+                                "",
+                                [
+                                    {
+                                        "Ref": "UniqueResourceId"
+                                    },
+                                    "_CloudManager"
+                                ]
+                            ]
+                        }
+                    },
+                    {
+                        "Key": "CloudFormation Stack",
+                        "Value": {
+                            "Ref": "AWS::StackName"
+                        }
+                    }
+                ]
+            }
+        }
+    },
+    "Outputs": {
+        "OCCMInstanceId": {
+            "Description": "InstanceId of the newly created EC2 instance",
+            "Value": {
+                "Ref": "OCCMInstance"
+            }
+        },
+        "OCCMInstanceProfile": {
+            "Description": "Instance profile used by CloudManager",
+            "Value": {
+                "Ref": "OCCMInstanceProfile"
+            }
+        },
+        "CloudManagerURL": {
+            "Value": {
+                "Fn::Join": [
+                    "",
+                    [
+                        "http://",
+                        {
+                            "Fn::GetAtt": [
+                                "OCCMInstance",
+                                "PublicIp"
+                            ]
+                        }
+                    ]
+                ]
+            },
+            "Description": "CloudManager URL"
+        },
+        "ONTAPCloudSvmName": {
+            "Value": {
+                "Fn::Join": [
+                    "",
+                    [
+                        "svm_",
+                        {
+                            "Fn::Join": [
+                                "",
+                                [
+                                    {
+                                        "Ref": "UniqueResourceId"
+                                    },
+                                    "_OTC"
+                                ]
+                            ]
+                        }
+                    ]
+                ]
+            },
+            "Description": "ONTAP Cloud SVM Name"
+        },
+        "IscsiDataLif": {
+            "Value": {
+                "Fn::GetAtt": [
+                    "OTCSetupCompleteCondition",
+                    "Data"
+                ]
+            },
+            "Description": "IP address of the iSCSI Data LIF"
+        },
+        "ClusterManagementLif": {
+            "Value": {
+                "Fn::GetAtt": [
+                    "OTCSetupCompleteCondition2",
+                    "Data"
+                ]
+            },
+            "Description": "IP address of the Cluster Management LIF"
+        },
+        "NasDataLif": {
+            "Value": {
+                "Fn::GetAtt": [
+                    "OTCSetupCompleteCondition3",
+                    "Data"
+                ]
+            },
+            "Description": "IP address of the NAS Data LIF"
+        }
+    }
+}
