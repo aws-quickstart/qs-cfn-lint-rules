@@ -105,7 +105,7 @@ class MissingParameter(CloudFormationLintRule):
             )
 
             if missing_parameters:
-                path = ['Resources', r_name]
+                path = ['Resources', r_name, 'Properties', 'Parameters']
                 message = 'Missing Child Stack parameters. {} {}'.format(
                         r_name,
                         missing_parameters

@@ -69,10 +69,7 @@ class ParameterNotInChild(CloudFormationLintRule):
             if parameter not in child_parameters.keys():
                 missing_parameters.append(parameter)
 
-        if not len(missing_parameters) == 0:
-            return str(missing_parameters)
-        else:
-            return None
+        return missing_parameters
 
     def match(self, cfn):
         """Basic Matching"""
@@ -97,12 +94,8 @@ class ParameterNotInChild(CloudFormationLintRule):
                 mappings=cfn.get_mappings()
             )
 
-            if not_passed_to_child:
-                path = ['Resources', r_name]
-                message = 'Parameter defined in Stack resource not present in' \
-                    ' child template {} {}'.format(
-                        r_name,
-                        not_passed_to_child
-                    )
+            for e in not_passed_to_child:
+                path = ['Resources', r_name, 'Properties', 'Parameters', e]
+                message = 'Parameter {} not present in child template {}'.format(e, r_name)
                 matches.append(RuleMatch(path, message))
         return matches

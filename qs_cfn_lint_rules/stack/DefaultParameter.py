@@ -99,7 +99,7 @@ class DefaultParameter(CloudFormationLintRule):
             )
 
             if default_parameters:
-                path = ['Resources', r_name]
+                path = ['Resources', r_name, 'Properties', 'Parameters']
                 message = 'Default parameters used,' \
                     ' please be explicit and pass the default value ' \
                     'if you wish to use that. {} {}'.format(

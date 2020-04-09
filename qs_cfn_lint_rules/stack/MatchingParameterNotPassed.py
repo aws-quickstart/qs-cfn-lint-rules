@@ -100,7 +100,7 @@ class MatchingParameterNotPassed(CloudFormationLintRule):
             )
 
             if not_passed_to_child:
-                path = ['Resources', r_name]
+                path = ['Resources', r_name, 'Properties', 'Parameters']
                 message = 'Parameter defined in Parent with same name as child,' \
                     ' however this value is never passed to child. {} {}'.format(
                         r_name,
