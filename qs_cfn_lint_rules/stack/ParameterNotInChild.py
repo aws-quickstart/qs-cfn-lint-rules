@@ -40,11 +40,15 @@ class ParameterNotInChild(CloudFormationLintRule):
         missing_parameters = []
 
         # Hack out the QS bits and get the file_name
-        template_file = str(template_url_to_path(
+        template_file = template_url_to_path(
             current_template_path=current_template_path,
             template_url=child_template_url,
             template_mappings=mappings
-        ))
+        )
+        if isinstance(template_file, list) and len(template_file) == 1:
+            template_file = template_file[0]
+        elif isinstance(template_file, list):
+            raise ValueError("expecting single template in a list %s" % template_file)
 
         # Load child stack
         # template_parser = MyTemplateParser()
