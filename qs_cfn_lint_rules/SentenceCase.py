@@ -84,7 +84,8 @@ class Base(CloudFormationLintRule):
         matches = []
         title_message = 'Parameter {0} Description is not sentence case: {1}'
         spell_message = 'Parameter {0} contains spelling error(s): {1}'
-
+        if self.id in cfn.template.get("Metadata", {}).get("QSLint", {}).get("Exclusions", []):
+            return matches
         if "Parameters" not in cfn.template.keys():
             return matches
         else:

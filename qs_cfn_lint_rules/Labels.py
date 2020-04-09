@@ -32,6 +32,8 @@ class Base(CloudFormationLintRule):
         message = 'Parameter {0} is missing ParameterLabel'
         labels = []
 
+        if self.id in cfn.template.get("Metadata", {}).get("QSLint", {}).get("Exclusions", []):
+            return matches
         if "Metadata" in cfn.template.keys():
             if "AWS::CloudFormation::Interface" in cfn.template["Metadata"].keys():
                 if "ParameterLabels" in cfn.template["Metadata"]["AWS::CloudFormation::Interface"].keys():
