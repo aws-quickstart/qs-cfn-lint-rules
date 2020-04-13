@@ -16,10 +16,11 @@
 """
 import re
 import six
-from cfnlint import CloudFormationLintRule
-from cfnlint import RuleMatch
+from cfnlint.rules import CloudFormationLintRule
+from cfnlint.rules import RuleMatch
 
 LINT_ERROR_MESSAGE = "ARNs must be partition-agnostic. Please leverage ${AWS::Partition}"
+
 
 def verify_agnostic_partition(cfn, resource_path, arndata):
    
