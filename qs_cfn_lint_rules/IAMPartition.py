@@ -25,7 +25,7 @@ LINT_ERROR_MESSAGE = "ARNs must be partition-agnostic. Please leverage ${AWS::Pa
 def verify_agnostic_partition(cfn, resource_path, arndata):
    
     def _not_partition_agnostic_str(arnstr):
-        if re.search('arn:(aws[a-zA-Z-]*)?', arnstr):
+        if re.search('^arn:aws(-*)?', arnstr):
             return True
 
     def _not_partition_agnostic_list(resource_path, arnlist):
@@ -53,7 +53,7 @@ def verify_agnostic_partition(cfn, resource_path, arndata):
                         matches.append(resource_path + [key, 0])
             elif isinstance(value, six.string_types):
                 if _not_partition_agnostic_str(value):
-                    matches.append(resource_path + [key])
+                    matches.append(resource_path)
         return matches
 
     matches = []
@@ -74,7 +74,7 @@ def verify_agnostic_partition(cfn, resource_path, arndata):
                 matches.append(RuleMatch(rp, LINT_ERROR_MESSAGE))
     return matches
 
-class Base(CloudFormationLintRule):
+class IAMPartition(CloudFormationLintRule):
     """Check ARN for partition agnostics."""
     id = 'E9007'
     shortdesc = 'ARNs should be partition argnostic'
