@@ -29,6 +29,6 @@ class Base(CloudFormationLintRule):
 
     def match(self, cfn):
         converted_matches = []
-        for m in U.match(self, cfn):
+        for m in Used.match(self, cfn):
             converted_matches.append(RuleMatch(m.path, self.shortdesc))
         return converted_matches
