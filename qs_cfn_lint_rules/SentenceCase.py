@@ -27,7 +27,6 @@ custom_dict_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cus
 def strip_urls(s):
     for w in s.split(" "):
         if "://" in w:
-            print(f"found url: {w}")
             s = s.replace(w, "")
     return s
 
