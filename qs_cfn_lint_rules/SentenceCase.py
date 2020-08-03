@@ -24,6 +24,14 @@ import os
 custom_dict_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "custom_dict.txt")
 
 
+def strip_urls(s):
+    for w in s.split(" "):
+        if "://" in w:
+            print(f"found url: {w}")
+            s = s.replace(w, "")
+    return s
+
+
 class Base(CloudFormationLintRule):
     """Check Parameter descriptions and labels are sentence case"""
     id = 'W9006'
@@ -99,6 +107,7 @@ class Base(CloudFormationLintRule):
                 if "Description" in cfn.template["Parameters"][x].keys():
                     location = ["Parameters", x, "Description"]
                     description = cfn.template["Parameters"][x]["Description"]
+                    description = strip_urls(description)
                     spell_errors, title_errors = self.get_errors(description, spell, custom_dict)
                     if title_errors:
                         matches.append(RuleMatch(location, title_message.format(x, title_errors)))
