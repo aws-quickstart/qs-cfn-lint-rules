@@ -107,7 +107,7 @@ class Base(CloudFormationLintRule):
                 if "Description" in cfn.template["Parameters"][x].keys():
                     location = ["Parameters", x, "Description"]
                     description = cfn.template["Parameters"][x]["Description"]
-                    stop_error = description.strip()[-1] != '.'
+                    stop_error = not (description.strip()[-1] == '.' or description.strip()[-2:] == '."')
                     description = strip_urls(description)
                     spell_errors, title_errors = self.get_errors(description, spell, custom_dict)
                     if stop_error:
