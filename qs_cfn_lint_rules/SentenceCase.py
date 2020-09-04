@@ -91,6 +91,7 @@ class Base(CloudFormationLintRule):
         matches = []
         title_message = 'Parameter {0} Description is not sentence case: {1}'
         spell_message = 'Parameter {0} contains spelling error(s): {1}'
+        stop_message = 'Parameter {0} must end in a full stop "."'
         if self.id in cfn.template.get("Metadata", {}).get("QSLint", {}).get("Exclusions", []):
             return matches
         if "Parameters" not in cfn.template.keys():
@@ -106,8 +107,11 @@ class Base(CloudFormationLintRule):
                 if "Description" in cfn.template["Parameters"][x].keys():
                     location = ["Parameters", x, "Description"]
                     description = cfn.template["Parameters"][x]["Description"]
+                    stop_error = description.strip()[-1] != '.'
                     description = strip_urls(description)
                     spell_errors, title_errors = self.get_errors(description, spell, custom_dict)
+                    if stop_error:
+                        matches.append(RuleMatch(location, stop_message.format(x)))
                     if title_errors:
                         matches.append(RuleMatch(location, title_message.format(x, title_errors)))
                     if spell_errors:
