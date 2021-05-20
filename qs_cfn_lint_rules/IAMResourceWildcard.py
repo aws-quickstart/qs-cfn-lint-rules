@@ -46,6 +46,8 @@ def determine_wildcard_resource_violations(cfn, policy_path):
     if not isinstance(actions, list):
         actions = [actions]
     for iam_method in actions:
+        if iam_method.endswith('*'):
+            continue
         if not resource_only.get(iam_method):
             violating_methods.append(iam_method)
     return violating_methods
