@@ -33,7 +33,7 @@ setup(
     keywords='aws, lint, aws-qs_cfn_lint_rules',
     author='AWS Quick Start team',
     author_email='qs_cfn_lint_rules-eng@amazon.com',
-    url='https://github.com/awslabs/qs-cfn-lint-rules',
+    url='https://github.com/aws-quickstart/qs-cfn-lint-rules',
     packages=find_packages(),
     zip_safe=False,
     install_requires=[
