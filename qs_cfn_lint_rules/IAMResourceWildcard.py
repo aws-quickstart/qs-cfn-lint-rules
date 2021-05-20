@@ -32,7 +32,7 @@ resource_only = json.loads(d)
 def deep_get(source_dict, list_of_keys, default_value=None):
     x = source_dict
     for k in list_of_keys:
-        if isinstance(1, int):
+        if isinstance(k, int):
             x = x[k]
         else:
             x = x.get(k, {})
@@ -50,8 +50,8 @@ def determine_wildcard_resource_violations(cfn, policy_path):
 class IAMResourceWildcard(CloudFormationLintRule):
     """Check ARN for partition agnostics."""
     id = 'E-CFN-NAG-W12'
-    shortdesc = 'ARNs should be partition argnostic'
-    description = 'Making sure all ARNs leverage ${AWS::Partition}'
+    shortdesc = '* on Resource property is a bad idea'
+    description = 'Making sure wildcard resources are only used where no other option exists'
     source_url = 'https://github.com/qs_cfn_lint_rules/qs-cfn-python-lint-rules'
     tags = ['iam']
     SEARCH_PROPS = ['Resource']
