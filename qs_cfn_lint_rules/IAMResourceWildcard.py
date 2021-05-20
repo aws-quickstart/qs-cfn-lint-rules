@@ -42,7 +42,10 @@ def deep_get(source_dict, list_of_keys, default_value=None):
 
 def determine_wildcard_resource_violations(cfn, policy_path):
     violating_methods = []
-    for iam_method in deep_get(cfn.template, policy_path+['Action'], []):
+    actions = deep_get(cfn.template, policy_path+['Action'], [])
+    if not isinstance(actions, list):
+        actions = [actions]
+    for iam_method in actions:
         if not resource_only.get(iam_method):
             violating_methods.append(iam_method)
     return violating_methods
