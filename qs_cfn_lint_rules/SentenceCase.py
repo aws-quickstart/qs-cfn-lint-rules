@@ -21,7 +21,7 @@ import re
 import os
 
 
-custom_dict_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "custom_dict.txt")
+custom_dict_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data/custom_dict.txt")
 
 
 def strip_urls(s):

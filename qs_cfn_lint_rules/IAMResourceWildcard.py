@@ -16,10 +16,18 @@
 """
 import re
 import six
+import json
+import os
 from cfnlint.rules import CloudFormationLintRule
 from cfnlint.rules import RuleMatch
 
 LINT_ERROR_MESSAGE = "IAM policy should not allow * resource; IAM Methods in this policy support granular permissions;"
+
+custom_dict_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data/iam_methods.json")
+with open(custom_dict_path) as f:
+    d = f.read()
+
+resource_only = json.loads(d)
 
 def deep_get(source_dict, list_of_keys, default_value=None):
     x = source_dict
@@ -34,7 +42,6 @@ def deep_get(source_dict, list_of_keys, default_value=None):
 
 def determine_wildcard_resource_violations(cfn, policy_path):
     violating_methods = []
-    resource_only = {}
     for iam_method in deep_get(cfn.template, policy_path+['Action'], []):
         if not resource_only.get(iam_method):
             violating_methods.append(iam_method)
@@ -55,7 +62,6 @@ class IAMResourceWildcard(CloudFormationLintRule):
         term_matches = []
         for prop in self.SEARCH_PROPS:
             term_matches += cfn.search_deep_keys(prop)
-
         for tm in term_matches:
             if tm[-1] not in ['*', ['*']]:
                 continue
