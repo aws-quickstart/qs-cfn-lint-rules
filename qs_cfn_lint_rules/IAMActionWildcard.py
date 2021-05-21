@@ -45,6 +45,13 @@ def is_wild(action):
     return wild_actions
 
 
+def get_effect(template, keys: list):
+    k = keys.copy()
+    while len(k) > 2:
+        template = template[k.pop(0)]
+    return template['Effect']
+
+
 class IAMActionWildcard(CloudFormationLintRule):
     """Check for wildcards in IAM Action statements."""
     id = 'E-IAM-POLICY-ACTION-WILDCARD'
@@ -61,6 +68,8 @@ class IAMActionWildcard(CloudFormationLintRule):
         for prop in self.SEARCH_PROPS:
             term_matches += cfn.search_deep_keys(prop)
         for tm in term_matches:
+            if get_effect(cfn.template, tm).lower() == 'deny':
+                continue
             if tm[-1] == "*" or ("*" in tm[-1] and isinstance(tm[-1], list)):
                 violation_matches.append(RuleMatch(tm, LINT_ERROR_MESSAGE))
             else:
