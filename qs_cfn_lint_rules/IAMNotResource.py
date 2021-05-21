@@ -21,15 +21,10 @@ import os
 from cfnlint.rules import CloudFormationLintRule
 from cfnlint.rules import RuleMatch
 
-LINT_ERROR_MESSAGE = "Combining Action and NotAction is a bad idea."
+LINT_ERROR_MESSAGE = "Combining Action and NotResource is a bad idea."
 CFN_NAG_RULES = [
-    'W14',
+    'W21',
     'W15',
-    'W16',
-    'W17',
-    'W18',
-    'W19',
-    'W20'
 ]
 
 
@@ -46,11 +41,11 @@ def deep_get(source_dict, list_of_keys, default_value=None):
 
 def determine_action_notaction_violation(cfn, policy_path):
     policy = deep_get(cfn.template, policy_path, [])
-    return all(x in policy.keys() for x in ['Action','NotAction'])
+    return all(x in policy.keys() for x in ['Action','NotResource'])
 
 class IAMResourceWildcard(CloudFormationLintRule):
     """Check ARN for partition agnostics."""
-    id = 'EIAMPolicyActionNotAction'
+    id = 'EIAMPolicyActionNotResource'
     shortdesc = 'Combining Action and NotAction is a bad idea.'
     description = 'Making sure Action and NotAction are not used in an IAM statement together'
     source_url = 'https://github.com/qs_cfn_lint_rules/qs-cfn-python-lint-rules'
@@ -66,5 +61,5 @@ class IAMResourceWildcard(CloudFormationLintRule):
         for tm in term_matches:
             violating_policy = determine_action_notaction_violation(cfn, tm[:-2])
             if violating_policy:
-                violation_matches.append(RuleMatch(tm[:-2] + ['NotAction'], LINT_ERROR_MESSAGE))
+                violation_matches.append(RuleMatch(tm[:-2] + ['NotResource'], LINT_ERROR_MESSAGE))
         return violation_matches
