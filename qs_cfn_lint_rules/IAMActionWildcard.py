@@ -54,7 +54,7 @@ def get_effect(template, keys: list):
 
 class IAMActionWildcard(CloudFormationLintRule):
     """Check for wildcards in IAM Action statements."""
-    id = 'E-IAM-POLICY-ACTION-WILDCARD'
+    id = 'EIAMPolicyActionWildcard'
     shortdesc = '* on Action property is a bad idea'
     description = 'wildcard should not be used for Action in IAM policies'
     source_url = 'https://github.com/qs_cfn_lint_rules/qs-cfn-python-lint-rules'
