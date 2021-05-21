@@ -21,7 +21,7 @@ import os
 from cfnlint.rules import CloudFormationLintRule
 from cfnlint.rules import RuleMatch
 
-LINT_ERROR_MESSAGE = "IAM policy should not allow * resource; IAM Methods in this policy support granular permissions;"
+LINT_ERROR_MESSAGE = "IAM policy should not allow * resource; This method in this in this policy support granular permissions"
 
 custom_dict_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data/iam_methods.json")
 with open(custom_dict_path) as f:
@@ -41,15 +41,26 @@ def deep_get(source_dict, list_of_keys, default_value=None):
     return x
 
 def determine_wildcard_resource_violations(cfn, policy_path):
-    violating_methods = []
-    actions = deep_get(cfn.template, policy_path+['Action'], [])
-    if not isinstance(actions, list):
-        actions = [actions]
-    for iam_method in actions:
+
+    def _determine_if_violating(iam_method):
         if iam_method.endswith('*'):
-            continue
-        if not resource_only.get(iam_method):
-            violating_methods.append(iam_method)
+            return False
+        return resource_only.get(iam_method, True)
+
+    violating_methods = []
+    policy = deep_get(cfn.template, policy_path, [])
+
+    if policy['Effect'] == 'Deny':
+        return violating_methods
+
+    if isinstance(policy['Action'], six.string_types):
+        if _determine_if_violating(policy['Action']):
+            violating_methods.append(policy_path + ['Action'])
+
+    if isinstance(policy['Action'], list):
+        for idx, iam_method in enumerate(policy['Action']):
+            if _determine_if_violating(iam_method):
+                violating_methods.append(policy_path + ['Action', idx])
     return violating_methods
 
 class IAMResourceWildcard(CloudFormationLintRule):
@@ -71,6 +82,6 @@ class IAMResourceWildcard(CloudFormationLintRule):
             if tm[-1] not in ['*', ['*']]:
                 continue
             violating_methods = determine_wildcard_resource_violations(cfn, tm[:-2])
-            if violating_methods:
-                violation_matches.append(RuleMatch(tm[:-2], f"{LINT_ERROR_MESSAGE} Methods: {str(violating_methods)}"))
+            for ln in violating_methods:
+                violation_matches.append(RuleMatch(ln, LINT_ERROR_MESSAGE))
         return violation_matches
