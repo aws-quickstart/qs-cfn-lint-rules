@@ -46,7 +46,7 @@ def is_wild(action):
 
 
 class IAMActionWildcard(CloudFormationLintRule):
-    """Check ARN for partition agnostics."""
+    """Check for wildcards in IAM Action statements."""
     id = 'E-IAM-POLICY-ACTION-WILDCARD'
     shortdesc = '* on Action property is a bad idea'
     description = 'wildcard should not be used for Action in IAM policies'
