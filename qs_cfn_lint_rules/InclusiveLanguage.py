@@ -56,7 +56,7 @@ class Base(CloudFormationLintRule):
                 for k, v in item.items():
                     p = path.copy()
                     p.append(k)
-                    recurse_template(k, p)
+#                    recurse_template(k, p)
                     recurse_template(v, p)
             if isinstance(item, list):
                 for i in range(len(item)-1):

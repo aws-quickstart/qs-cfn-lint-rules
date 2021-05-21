@@ -25,7 +25,7 @@ with open('README.md') as f:
     readme = f.read()
 
 setup(
-    name='qs-cfn-lint-rules',
+    name='qs_cfn_lint_rules',
     version=version,
     description='checks CloudFormation templates against AWS Quick Start contributors guide rules',
     long_description=readme,

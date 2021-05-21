@@ -24,10 +24,15 @@ import logging
 logger = logging.getLogger()
 orig_level = logger.level
 from policyuniverse.expander_minimizer import get_actions_from_statement
+from policyuniverse import service_data
 logger.setLevel(orig_level)
 
 LINT_ERROR_MESSAGE = "IAM policy should not allow * Actions; List each required action explicitly instead"
 
+CAMEL_CASE = {}
+for sd in service_data.values():
+    for k in sd['actions'].keys():
+        CAMEL_CASE[f"{sd['prefix']}:{k}".lower()] = f"{sd['prefix']}:{k}"
 
 def expanded(action):
     return action
@@ -75,6 +80,6 @@ class IAMActionWildcard(CloudFormationLintRule):
             else:
                 wild_actions = is_wild(tm[-1])
                 for wild_action in wild_actions:
-                    expanded_actions = get_actions_from_statement({"Action": [wild_action]})
+                    expanded_actions = {CAMEL_CASE.get(k) for k in get_actions_from_statement({"Action": [wild_action]})}
                     violation_matches.append(RuleMatch(tm, f"{LINT_ERROR_MESSAGE} matching actions for {wild_action} are: {json.dumps(list(expanded_actions))}"))
         return violation_matches
