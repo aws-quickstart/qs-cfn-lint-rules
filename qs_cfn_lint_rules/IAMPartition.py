@@ -21,9 +21,19 @@ from cfnlint.rules import RuleMatch
 
 LINT_ERROR_MESSAGE = "ARNs must be partition-agnostic. Please leverage ${AWS::Partition}"
 
+def deep_get(source_dict, list_of_keys, default_value=None):
+    x = source_dict
+    for k in list_of_keys:
+        if isinstance(k, int):
+            x = x[k]
+        else:
+            x = x.get(k, {})
+    if not x:
+        return default_value
+    return x
 
 def verify_agnostic_partition(cfn, resource_path, arndata):
-   
+
     def _not_partition_agnostic_str(arnstr):
         if re.search('^arn:aws(-*)?', arnstr):
             return True
@@ -85,6 +95,36 @@ class IAMPartition(CloudFormationLintRule):
         'Resource',
         'ManagedPolicyArns'
     ]
+
+    def determine_changes(self, cfn):
+        substitutions = {}
+        def _needs_sub(path, data):
+            if (isinstance(data, dict) or issubclass(type(data), dict)):
+                if 'Fn::Sub' in data.keys():
+                    return False
+            if isinstance(path[-1], six.string_types):
+                if path[-1] == 'Fn::Sub':
+                    return False
+                return True
+            if isinstance(path[-1], int):
+                if path[-2] == 'Fn::Sub':
+                    return False
+                return True
+
+        for match in self.match(cfn):
+            _v = deep_get(cfn.template, match.path)
+            if isinstance(_v, six.string_types):
+                _nv = re.sub('arn:aws(-*)?', 'arn:${AWS::Partition}', _v)
+            if isinstance(_v, dict):
+                _nv = {}
+                for k,v in _v.items():
+                    _nv[k] = re.sub('arn:aws(-*)?', 'arn:${AWS::Partition}', v)
+            if _needs_sub(match.path, _v):
+                value = {'Fn::Sub': _nv}
+            else:
+                value = _nv
+            substitutions[_v.start_mark.index] = (_v.end_mark.index, match.path, value)
+        return substitutions
 
     def match(self, cfn):
         """Basic Matching"""
