@@ -37,6 +37,16 @@ for sd in service_data.values():
 def expanded(action):
     return action
 
+def deep_get(source_dict, list_of_keys, default_value=None):
+    x = source_dict
+    for k in list_of_keys:
+        if isinstance(k, int):
+            x = x[k]
+        else:
+            x = x.get(k, {})
+    if not x:
+        return default_value
+    return x
 
 def is_wild(action):
     wild_actions = []
@@ -66,6 +76,18 @@ class IAMActionWildcard(CloudFormationLintRule):
     tags = ['iam']
     SEARCH_PROPS = ['Action']
 
+    def determine_changes(self, cfn):
+        substitutions = {}
+        for match in self.match(cfn):
+            _v = deep_get(cfn.template, match.path)
+            substitutions[_v.start_mark.index] = (
+                _v.end_mark.index,
+                match.path,
+                sorted(list(match.expanded_actions)),
+                _v.start_mark.line
+            )
+        return substitutions
+
     def match(self, cfn):
         """Basic Matching"""
         violation_matches = []
@@ -81,5 +103,5 @@ class IAMActionWildcard(CloudFormationLintRule):
                 wild_actions = is_wild(tm[-1])
                 for wild_action in wild_actions:
                     expanded_actions = {CAMEL_CASE.get(k) for k in get_actions_from_statement({"Action": [wild_action]})}
-                    violation_matches.append(RuleMatch(tm, f"{LINT_ERROR_MESSAGE} matching actions for {wild_action} are: {json.dumps(list(expanded_actions))}"))
+                    violation_matches.append(RuleMatch(tm[:-1]+[tm[-1].index(wild_action)], f"{LINT_ERROR_MESSAGE} matching actions for {wild_action} are: {json.dumps(list(expanded_actions))}", expanded_actions=expanded_actions))
         return violation_matches

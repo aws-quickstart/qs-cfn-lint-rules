@@ -123,7 +123,12 @@ class IAMPartition(CloudFormationLintRule):
                 value = {'Fn::Sub': _nv}
             else:
                 value = _nv
-            substitutions[_v.start_mark.index] = (_v.end_mark.index, match.path, value)
+            substitutions[_v.start_mark.index] = (
+                _v.end_mark.index,
+                match.path,
+                value,
+                _v.start_mark.line
+            )
         return substitutions
 
     def match(self, cfn):
