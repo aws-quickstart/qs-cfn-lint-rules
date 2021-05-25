@@ -40,12 +40,13 @@ def deep_get(source_dict, list_of_keys, default_value=None):
         return default_value
     return x
 
+
 def determine_wildcard_resource_violations(cfn, policy_path):
 
-    def _determine_if_violating(iam_method):
+    def _determine_if_safe(iam_method):
         if iam_method.endswith('*'):
-            return False
-        return resource_only.get(iam_method, True)
+            return True
+        return resource_only.get(iam_method, False)
 
     violating_methods = []
     policy = deep_get(cfn.template, policy_path, [])
@@ -54,12 +55,12 @@ def determine_wildcard_resource_violations(cfn, policy_path):
         return violating_methods
 
     if isinstance(policy['Action'], six.string_types):
-        if _determine_if_violating(policy['Action']):
+        if not _determine_if_safe(policy['Action']):
             violating_methods.append(policy_path + ['Action'])
 
     if isinstance(policy['Action'], list):
         for idx, iam_method in enumerate(policy['Action']):
-            if _determine_if_violating(iam_method):
+            if not _determine_if_safe(iam_method):
                 violating_methods.append(policy_path + ['Action', idx])
     return violating_methods
 
