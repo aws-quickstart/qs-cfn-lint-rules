@@ -79,6 +79,8 @@ class IAMActionWildcard(CloudFormationLintRule):
     def determine_changes(self, cfn):
         substitutions = {}
         for match in self.match(cfn):
+            if not hasattr(match, 'expanded_actions'):
+                return {}
             _v = deep_get(cfn.template, match.path)
             substitutions[_v.start_mark.index] = (
                 _v.end_mark.index,
@@ -98,7 +100,7 @@ class IAMActionWildcard(CloudFormationLintRule):
             if get_effect(cfn.template, tm).lower() == 'deny':
                 continue
             if tm[-1] == "*" or ("*" in tm[-1] and isinstance(tm[-1], list)):
-                violation_matches.append(RuleMatch(tm, LINT_ERROR_MESSAGE))
+                violation_matches.append(RuleMatch(tm[:-1], LINT_ERROR_MESSAGE))
             else:
                 wild_actions = is_wild(tm[-1])
                 for wild_action in wild_actions:
