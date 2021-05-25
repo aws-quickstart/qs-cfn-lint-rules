@@ -87,8 +87,7 @@ def fix_stuff(fn, on):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('-t','--template')
-    parser.add_argument('-o', '--output')
     args = parser.parse_args()
-    if (not args.template) or (not args.output):
-        raise Exception("Need: -t/--template, -o/--output")
-    fix_stuff(args.template, args.output if args.output else args.template)
+    if (not args.template):
+        raise Exception("Need: -t/--template")
+    fix_stuff(args.template, f"{args.template}.output")
