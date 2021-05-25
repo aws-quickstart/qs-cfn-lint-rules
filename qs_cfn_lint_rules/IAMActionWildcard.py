@@ -97,6 +97,8 @@ class IAMActionWildcard(CloudFormationLintRule):
         for prop in self.SEARCH_PROPS:
             term_matches += cfn.search_deep_keys(prop)
         for tm in term_matches:
+            if not isinstance(tm[-3], int):
+                continue
             if get_effect(cfn.template, tm).lower() == 'deny':
                 continue
             if tm[-1] == "*" or ("*" in tm[-1] and isinstance(tm[-1], list)):
