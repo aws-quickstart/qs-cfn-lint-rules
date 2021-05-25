@@ -21,7 +21,7 @@ deny_list = [
     ['abort', '"stop"'],
     ['blacklist', '"deny list"'],
     ['execute', '"start" or "run"'],
-    ['hang', '"stop responding"'],
+    ['^hang', '"stop responding"'],
     ['kill', '"end" or "stop"'],
     ['master', '"primary", "main", or "leader"'],
     ['slave', '"replica", "secondary", or "standby"'],
