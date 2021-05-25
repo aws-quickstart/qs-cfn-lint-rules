@@ -58,6 +58,8 @@ def new_sauce(path, format, new, indentation, line_number):
         nv = re.sub('\n', '', nv)
         nv = re.sub(' +', ' ', nv)
     if nv.endswith('\n'):
+        if nv[-5:] == '\n...\n':
+            return nv[:-5]
         return nv[:-1]
     return nv
 
