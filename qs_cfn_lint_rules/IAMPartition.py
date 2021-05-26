@@ -97,7 +97,7 @@ class IAMPartition(CloudFormationLintRule):
     ]
 
     def determine_changes(self, cfn):
-        substitutions = {}
+        substitutions = []
         def _needs_sub(path, data):
             if (isinstance(data, dict) or issubclass(type(data), dict)):
                 if 'Fn::Sub' in data.keys():
@@ -123,12 +123,7 @@ class IAMPartition(CloudFormationLintRule):
                 value = {'Fn::Sub': _nv}
             else:
                 value = _nv
-            substitutions[_v.start_mark.index] = (
-                _v.end_mark.index,
-                match.path,
-                value,
-                _v.start_mark.line
-            )
+            substitutions.append((match.path, _v, value))
         return substitutions
 
     def match(self, cfn):

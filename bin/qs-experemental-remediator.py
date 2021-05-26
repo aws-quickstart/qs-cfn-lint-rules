@@ -7,92 +7,223 @@ from cfn_flip import flip, to_yaml, to_json, load
 import json
 import argparse
 import re
+def deep_get(source_dict, list_of_keys, default_value=None):
+    x = source_dict
+    for k in list_of_keys:
+        if isinstance(k, int):
+            x = x[k]
+        else:
+            x = x.get(k, {})
+    if not x:
+        return default_value
+    return x
 
-changes = {}
+class Remediator:
+    def __init__(self, input_fn, output_fn):
+        self.filename = input_fn
+        self.output = output_fn
+        self._changes = {}
+        self._indentation_map = {}
+        self._per_rule_logic = {
+            'E3012': self._E3012_logic
+        }
+        self._rules = []
+        self._linenumber_map = {1:{'start':0}}
+        with open(input_fn) as f:
+            self.buffer = f.read()
+        _tt = cfnlint.decode.decode(self.filename)
+        self.cfn = cfnlint.template.Template(self.filename, _tt[0])
+        _, self._format = load(self.buffer)
+        self._generate_linenumber_and_indentation_map()
 
-def get_rules():
-    config = cfnlint.config.ConfigMixIn({})
-    rules = cfnlint.core.get_rules(
-        config.append_rules,
-        config.ignore_checks,
-        config.include_checks,
-        config.configure_rules,
-        config.mandatory_checks,
-    )
-    return rules
+    def _generate_linenumber_and_indentation_map(self):
+        for idx, line in enumerate(self.buffer.splitlines()):
+            indentation = re.search('\S', line)
+            if not indentation:
+                continue
+            self._indentation_map[idx+1] = indentation.start()
+        i=1
+        for match in re.finditer('\n', self.buffer):
+            loc = match.span()
+            self._linenumber_map[i+1] = {'start':loc[1]}
+            self._linenumber_map[i]['end'] = loc[0]
+            i=i+1
 
-def generate_template(fn):
-    indentation_map = {}
-    linenumber_map = {1:{'start':0}}
-    with open(fn) as f:
-        buffer = f.read()
-    for idx, line in enumerate(buffer.splitlines()):
-        indentation = re.search('\S', line)
-        if not indentation:
-            continue
-        indentation_map[idx+1] = indentation.start()
-    i=1
-    for match in re.finditer('\n', buffer):
-        loc = match.span()
-        linenumber_map[i+1] = {'start':loc[1]}
-        linenumber_map[i]['end'] = loc[0]
-        i=i+1
+    @property
+    def rules(self):
+        if self._rules:
+            return self._rules
 
-    tt = cfnlint.decode.decode(fn)
-    T = cfnlint.template.Template(fn, tt[0])
-    _, format = load(buffer)
-    return format, T, buffer, indentation_map, linenumber_map
+        config = cfnlint.config.ConfigMixIn({})
+        rules = cfnlint.core.get_rules(
+            config.append_rules,
+            config.ignore_checks,
+            config.include_checks,
+            config.configure_rules,
+            config.mandatory_checks,
+        )
+        self._rules = rules
+        return rules
 
-def new_sauce(path, format, new, indentation, line_number):
-    if (isinstance(path[-1], int) and isinstance(new, list)):
-        indent = indentation.get(line_number+1)
-        if indent:
-            xx = json.dumps(new)
-            if format == 'yaml':
-                nv = to_yaml(xx, clean_up=True)[2:-1]
-            if format == 'json':
-                nv = to_json(xx, clean_up=True)[1:-1]
-            xx1 = nv.splitlines()
-            if xx1[0] == '':
-                del xx1[0]
-            spaced_data = [xx1[0]]+["{0}{1}".format(" "*(indent), i) for i in xx1[1:]]
-            spaced_txt = "\n".join(spaced_data)
-            return spaced_txt
-    new = json.dumps(new)
-    if format == 'yaml':
-        nv = to_yaml(new, clean_up=True)
-    if format == 'json':
+    @property
+    def changes(self):
+        return self._changes
+
+    @property
+    def indentation(self):
+        return self._indentation_map
+
+    @property
+    def format(self):
+        return self._format
+
+    def _save_modbuffer_to_changes(self, changes):
+        for data in changes:
+            CONFLICT=False
+            for sm in self._changes.keys():
+                if data[1].start_mark.index < sm[0] < data[1].end_mark.index:
+                    CONFLICT=True
+                    continue
+            if not CONFLICT:
+                NL = None
+                try:
+                    NL=data[3]+1
+                except IndexError:
+                    pass
+                changed_value = self._new_sauce(
+                    data[0],
+                    data[2],
+                    data[1].start_mark.line,
+                    NL
+                )
+                _k = (
+                    data[1].start_mark.index,
+                    data[1].end_mark.index
+                )
+                if NL:
+                    _k = (
+                        self._linenumber_map[NL]['end']+1,
+                        self._linenumber_map[NL]['end']+1,
+                    )
+                    changed_value += '\n'
+                self._changes[_k] = changed_value
+
+    def _determine_changes(self):
+        for rule in self.rules:
+            if hasattr(rule, 'determine_changes'):
+                x = rule.determine_changes(self.cfn)
+                if x and type(x[0]) == cfnlint.rules.Match:
+                    try:
+                        func = self._per_rule_logic[rule.id]
+                        x = func(x)
+                    except KeyError:
+                        continue
+                self._save_modbuffer_to_changes(x)
+
+    def _write_changes(self):
+        for k in sorted(self._changes, reverse=True):
+            start, end = k
+            self.buffer = self.buffer[0:start] + self._changes[k] + self.buffer[end:]
+
+        with open(self.output, 'w') as f:
+            f.write(self.buffer)
+
+    def fix_stuff(self):
+        self._determine_changes()
+        self._write_changes()
+
+    def _new_sauce(self, path, new, line_number, append_after=None):
+        indent = self.indentation.get(line_number+1)
+        if (isinstance(path[-1], int) and isinstance(new, list)):
+            if indent:
+                xx = json.dumps(new)
+                if self.format == 'yaml':
+                    nv = self._to_yaml_list(xx)
+                if self.format == 'json':
+                    nv = self._to_json_list(xx)
+                xx1 = nv.splitlines()
+                if xx1[0] == '':
+                    del xx1[0]
+                spaced_data = [xx1[0]]+["{0}{1}".format(" "*(indent), i) for i in xx1[1:]]
+                spaced_txt = "\n".join(spaced_data)
+                return spaced_txt
+
+        new = json.dumps(new)
+        if self.format == 'yaml':
+            nv = to_yaml(new, clean_up=True)
+        if self.format == 'json':
+            nv = self._to_json_clean(new)
+
+        if append_after:
+            nv = "{0}{1}".format(" "*(indent), nv)
+
+        if nv.endswith('\n'):
+            if nv[-5:] == '\n...\n':
+                return nv[:-5]
+            return nv[:-1]
+        return nv
+
+    def _to_yaml_list(self, json_serialized):
+        nv = to_yaml(json_serialized, clean_up=True)[2:-1]
+        return nv
+
+    def _to_json_list(self, json_serialized):
+        nv = to_json(json_serialized, clean_up=True)[1:-1]
+        return nv
+
+    def _to_json_clean(self, new):
         nv = to_json(new, clean_up=True)
         nv = re.sub('\n', '', nv)
         nv = re.sub(' +', ' ', nv)
-    if nv.endswith('\n'):
-        if nv[-5:] == '\n...\n':
-            return nv[:-5]
-        return nv[:-1]
-    return nv
+        return nv
 
-def fix_stuff(fn, on):
-    format, T, tb, indentation, lnm = generate_template(fn)
-    rules = get_rules()
-    for rule in rules:
-        if hasattr(rule, 'determine_changes'):
-            x = rule.determine_changes(T)
-            for start_mark, data in x.items():
-                CONFLICT=False
-                for sm in changes.keys():
-                    if start_mark < sm < data[0]:
-                        CONFLICT=True
-                        continue
-                if not CONFLICT:
-                    changes[start_mark] = data
+    def _str_to_bool(self, line):
+        if re.search('"true"|"false"', line):
+            line = re.sub('"true"', 'true', line)
+            line = re.sub('"false"', 'false', line)
+            return line
+        if re.search("'true'|'false'", line):
+            line = re.sub("'true'", "true", line)
+            line = re.sub("'false'", "false", line)
+            return line
 
-    for k in sorted(changes, reverse=True):
-        end_index, path, nv, ln = changes[k]
-        final_value = new_sauce(path, format, nv, indentation, ln)
-        tb = tb[0:k] + final_value + tb[end_index:]
+    def _bool_to_str(self, line):
+        if re.search('true', line):
+            line = re.sub('true', '"true"', line)
+            return line
+        if re.search('false', line):
+            line = re.sub('false', '"false"', line)
+            return line
 
-    with open(on, 'w') as f:
-        f.write(tb)
+    def _str_to_int(self, line):
+        if re.search(f"{int(str_value)}", line):
+            line = re.sub(f'"{int(str_value)}"', f'{int(str_value)}', line)
+            return line
+        if re.search(f'{int(str_value)}', line):
+            line = re.sub(f"'{int(str_value)}'", "{int(str_value)}", line)
+            return line
+
+    def _E3012_logic(self, rules):
+        changes = []
+        _type_to_func = {
+            ('str_node', 'bool'): self._str_to_bool,
+            ('str_node', 'int'): self._str_to_int,
+            ('bool', 'str_node'): self._bool_to_str
+        }
+
+        for rule in rules:
+            try:
+                func = _type_to_func[(rule.actual_type, rule.expected_type)]
+            except KeyError:
+                continue
+
+            obj = deep_get(self.cfn.template, rule.path)
+            ov = self.buffer[obj.start_mark.index:obj.end_mark.index]
+            nv = func(ov)
+            changes.append(rule.path, obj, nv)
+
+        return changes
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -100,4 +231,5 @@ if __name__ == '__main__':
     args = parser.parse_args()
     if (not args.template):
         raise Exception("Need: -t/--template")
-    fix_stuff(args.template, f"{args.template}.output")
+    remediator = Remediator(args.template, f"{args.template}.output")
+    remediator.fix_stuff()
