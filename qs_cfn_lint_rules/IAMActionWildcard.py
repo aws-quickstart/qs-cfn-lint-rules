@@ -28,7 +28,11 @@ from policyuniverse import service_data
 logger.setLevel(orig_level)
 
 LINT_ERROR_MESSAGE = "IAM policy should not allow * Actions; List each required action explicitly instead"
-
+DONT_EXPAND=[
+    's3:Get*',
+    's3:Put*',
+    's3:List*'
+]
 CAMEL_CASE = {}
 for sd in service_data.values():
     for k in sd['actions'].keys():
@@ -55,7 +59,7 @@ def is_wild(action):
             if is_wild(a):
                 wild_actions.append(a)
     else:
-        if action.endswith("*"):
+        if action.endswith("*") and action in DONT_EXPAND:
             wild_actions.append(action)
     return wild_actions
 
