@@ -23,6 +23,7 @@ def get_rules():
 
 def generate_template(fn):
     indentation_map = {}
+    linenumber_map = {1:{'start':0}}
     with open(fn) as f:
         buffer = f.read()
     for idx, line in enumerate(buffer.splitlines()):
@@ -30,10 +31,17 @@ def generate_template(fn):
         if not indentation:
             continue
         indentation_map[idx+1] = indentation.start()
+    i=1
+    for match in re.finditer('\n', buffer):
+        loc = match.span()
+        linenumber_map[i+1] = {'start':loc[1]}
+        linenumber_map[i]['end'] = loc[0]
+        i=i+1
+
     tt = cfnlint.decode.decode(fn)
     T = cfnlint.template.Template(fn, tt[0])
     _, format = load(buffer)
-    return format, T, buffer, indentation_map
+    return format, T, buffer, indentation_map, linenumber_map
 
 def new_sauce(path, format, new, indentation, line_number):
     if (isinstance(path[-1], int) and isinstance(new, list)):
@@ -64,7 +72,7 @@ def new_sauce(path, format, new, indentation, line_number):
     return nv
 
 def fix_stuff(fn, on):
-    format, T, tb, indentation = generate_template(fn)
+    format, T, tb, indentation, lnm = generate_template(fn)
     rules = get_rules()
     for rule in rules:
         if hasattr(rule, 'determine_changes'):
