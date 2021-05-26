@@ -59,12 +59,13 @@ def is_wild(action):
             if is_wild(a):
                 wild_actions.append(a)
     else:
-        if action.endswith("*") and action in DONT_EXPAND:
+        if action.endswith("*") and (not action in DONT_EXPAND):
             wild_actions.append(action)
     return wild_actions
 
 
 def get_effect(template, keys: list):
+    # raise
     k = keys.copy()
     while len(k) > 2:
         template = template[k.pop(0)]
@@ -81,17 +82,12 @@ class IAMActionWildcard(CloudFormationLintRule):
     SEARCH_PROPS = ['Action']
 
     def determine_changes(self, cfn):
-        substitutions = {}
+        substitutions = []
         for match in self.match(cfn):
             if not hasattr(match, 'expanded_actions'):
-                return {}
+                continue
             _v = deep_get(cfn.template, match.path)
-            substitutions[_v.start_mark.index] = (
-                _v.end_mark.index,
-                match.path,
-                sorted(list(match.expanded_actions)),
-                _v.start_mark.line
-            )
+            substitutions.append((match.path, _v, sorted(list(match.expanded_actions))))
         return substitutions
 
     def match(self, cfn):
