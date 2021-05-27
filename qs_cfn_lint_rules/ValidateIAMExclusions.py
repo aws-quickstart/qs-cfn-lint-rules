@@ -14,20 +14,10 @@
   OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
   SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 """
-import re
-import six
-import json
-import os
 from cfnlint.rules import CloudFormationLintRule
 from cfnlint.rules import RuleMatch
 
-LINT_ERROR_MESSAGE = "IAM policy should not allow * resource; This method in this in this policy support granular permissions"
-
-custom_dict_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data/iam_methods.json")
-with open(custom_dict_path) as f:
-    d = f.read()
-
-resource_only = json.loads(d)
+LINT_ERROR_MESSAGE = "EIAM* rules must not be excluded globally. only at the resource level"
 
 def deep_get(source_dict, list_of_keys, default_value=None):
     x = source_dict
@@ -39,37 +29,10 @@ def deep_get(source_dict, list_of_keys, default_value=None):
     if not x:
         return default_value
     return x
-
-
-def determine_wildcard_resource_violations(cfn, policy_path):
-
-    def _determine_if_safe(iam_method):
-        if iam_method.endswith('*'):
-            return True
-        return resource_only.get(iam_method, False)
-
-    violating_methods = []
-    policy = deep_get(cfn.template, policy_path, [])
-
-    if policy['Effect'] == 'Deny':
-        return violating_methods
-
-    if policy.get('Condition'):
-        return violating_methods
-
-    if isinstance(policy['Action'], six.string_types):
-        if not _determine_if_safe(policy['Action']):
-            violating_methods.append(policy_path + ['Action'])
-
-    if isinstance(policy['Action'], list):
-        for idx, iam_method in enumerate(policy['Action']):
-            if not _determine_if_safe(iam_method):
-                violating_methods.append(policy_path + ['Action', idx])
-    return violating_methods
-
-class IAMResourceWildcard(CloudFormationLintRule):
+    
+class ValidateRuleExclusions(CloudFormationLintRule):
     """Check ARN for partition agnostics."""
-    id = 'EIAMPolicyWildcardResource'
+    id = 'EValidateIAMRuleExclusions'
     shortdesc = '* on Resource property is a bad idea'
     description = 'Making sure wildcard resources are only used where no other option exists'
     source_url = 'https://github.com/qs_cfn_lint_rules/qs-cfn-python-lint-rules'
@@ -79,13 +42,7 @@ class IAMResourceWildcard(CloudFormationLintRule):
     def match(self, cfn):
         """Basic Matching"""
         violation_matches = []
-        term_matches = []
-        for prop in self.SEARCH_PROPS:
-            term_matches += cfn.search_deep_keys(prop)
-        for tm in term_matches:
-            if tm[-1] not in ['*', ['*']]:
-                continue
-            violating_methods = determine_wildcard_resource_violations(cfn, tm[:-2])
-            for ln in violating_methods:
-                violation_matches.append(RuleMatch(ln, LINT_ERROR_MESSAGE))
+        for idx, exclude in enumerate(deep_get(cfn.template, ['Metadata', 'cfn-lint', 'config', 'ignore_checks'], [])):
+            if exclude.startswith('EIAM'):
+                violation_matches.append(RuleMatch(['Metadata', 'cfn-lint', 'config', 'ignore_checks', idx], LINT_ERROR_MESSAGE))
         return violation_matches
