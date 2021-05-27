@@ -7,6 +7,8 @@ from cfn_flip import flip, to_yaml, to_json, load
 import json
 import argparse
 import re
+import sys
+
 def deep_get(source_dict, list_of_keys, default_value=None):
     x = source_dict
     for k in list_of_keys:
@@ -120,6 +122,22 @@ class Remediator:
                         continue
                 self._save_modbuffer_to_changes(x)
 
+    def write_changes_to_json(self):
+        def _dl(start):
+            for ln, d in self._linenumber_map.items():
+                if d['start'] < start < d['end']:
+                    return (ln, d['start'], d['end'])
+
+        js_safe = {}
+        self._determine_changes()
+
+        for k,v in self._changes.items():
+            ln, line_start, line_end = _dl(k[0])
+            js_safe[ln] = self.buffer[line_start:k[0]] + v + self.buffer[k[1]:line_end]
+
+        with open(self.output, 'w') as f:
+            f.write(json.dumps(js_safe))
+
     def _write_changes(self):
         for k in sorted(self._changes, reverse=True):
             start, end = k
@@ -197,7 +215,6 @@ class Remediator:
             line = re.sub(f"'", "", line)
             return int(line)
 
-
     def _E3012_logic(self, rules):
         changes = []
         _type_to_func = {
@@ -209,6 +226,16 @@ class Remediator:
         for rule in rules:
             try:
                 func = _type_to_func[(rule.actual_type, rule.expected_type)]
+            except TypeError:
+                if isinstance(rule.expected_type, list):
+                    for o in rule.expected_type:
+                        try:
+                            func = _type_to_func[(rule.actual_type, o)]
+                            break
+                        except KeyError:
+                            continue
+                    if not func:
+                        continue
             except KeyError:
                 continue
 
@@ -223,8 +250,12 @@ class Remediator:
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('-t','--template')
+    parser.add_argument('-j', '--json-output', action='store_true')
     args = parser.parse_args()
     if (not args.template):
         raise Exception("Need: -t/--template")
     remediator = Remediator(args.template, f"{args.template}.output")
+    if args.json_output:
+        remediator.write_changes_to_json()
+        sys.exit(0)
     remediator.fix_stuff()
