@@ -178,30 +178,25 @@ class Remediator:
         return nv
 
     def _str_to_bool(self, line):
-        if re.search('"true"|"false"', line):
-            line = re.sub('"true"', 'true', line)
-            line = re.sub('"false"', 'false', line)
-            return line
-        if re.search("'true'|'false'", line):
-            line = re.sub("'true'", "true", line)
-            line = re.sub("'false'", "false", line)
-            return line
+        if 'false' in line:
+            return False
+        if 'true' in line:
+            return True
 
     def _bool_to_str(self, line):
         if re.search('true', line):
-            line = re.sub('true', '"true"', line)
-            return line
+            return str(True)
         if re.search('false', line):
-            line = re.sub('false', '"false"', line)
-            return line
+            return str(False)
 
     def _str_to_int(self, line):
-        if re.search(f"{int(str_value)}", line):
-            line = re.sub(f'"{int(str_value)}"', f'{int(str_value)}', line)
-            return line
-        if re.search(f'{int(str_value)}', line):
-            line = re.sub(f"'{int(str_value)}'", "{int(str_value)}", line)
-            return line
+        if re.search('"', line):
+            line = re.sub('"', '', line)
+            return int(line)
+        if re.search("'", line):
+            line = re.sub(f"'", "", line)
+            return int(line)
+
 
     def _E3012_logic(self, rules):
         changes = []
@@ -220,7 +215,7 @@ class Remediator:
             obj = deep_get(self.cfn.template, rule.path)
             ov = self.buffer[obj.start_mark.index:obj.end_mark.index]
             nv = func(ov)
-            changes.append(rule.path, obj, nv)
+            changes.append((rule.path, obj, nv))
 
         return changes
 
