@@ -24,6 +24,7 @@ class Remediator:
     def __init__(self, input_fn, output_fn):
         self.filename = input_fn
         self.output = output_fn
+        self._delete_paths = []
         self._changes = {}
         self._indentation_map = {}
         self._per_rule_logic = {
@@ -79,8 +80,33 @@ class Remediator:
     def format(self):
         return self._format
 
+    @property
+    def delete_paths(self):
+        return self._delete_paths
+
+    def delete_lines(self, linelist=None):
+        dp = linelist if linelist else self._delete_paths
+        new_buffer = []
+        x = {}
+        for idx, line in enumerate(self.buffer.splitlines()):
+            x[idx] = line
+        for path in dp:
+            g = deep_get(self.cfn.template, path)
+            for ln in range(g.start_mark.line-1, g.end_mark.line-1):
+                x[ln] = None
+        for k,v in x.items():
+            if v == None:
+                continue
+            new_buffer.append(v)
+        self.buffer = '\n'.join(new_buffer)
+
     def _save_modbuffer_to_changes(self, changes):
         for data in changes:
+            if isinstance(data, cfnlint.rules.RuleMatch):
+                if hasattr(data, 'delete_lines'):
+                    if data.delete_lines:
+                        self._delete_paths.append(data.path)
+                        continue
             CONFLICT=False
             for sm in self._changes.keys():
                 if data[1].start_mark.index < sm[0] < data[1].end_mark.index:
@@ -149,6 +175,9 @@ class Remediator:
             start, end = k
             self.buffer = self.buffer[0:start] + self._changes[k] + self.buffer[end:]
 
+        self.write()
+
+    def write(self):
         with open(self.output, 'w') as f:
             f.write(self.buffer)
 
@@ -268,6 +297,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('-t','--template')
     parser.add_argument('-j', '--json-output', action='store_true')
+    parser.add_argument('-d', '--delete', action='store_true')
     args = parser.parse_args()
     if (not args.template):
         raise Exception("Need: -t/--template")
@@ -276,3 +306,8 @@ if __name__ == '__main__':
         remediator.write_changes_to_json()
         sys.exit(0)
     remediator.fix_stuff()
+    if args.delete:
+        # raise
+        r = Remediator(remediator.output, remediator.output)
+        r.delete_lines(remediator.delete_paths)
+        r.write()

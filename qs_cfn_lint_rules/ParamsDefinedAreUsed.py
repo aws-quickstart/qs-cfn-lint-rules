@@ -27,6 +27,13 @@ class Base(CloudFormationLintRule):
     source_url = 'https://github.com/qs_cfn_lint_rules/qs-cfn-python-lint-rules'
     tags = ['params']
 
+    def determine_changes(self, cfn):
+        delete_lines = []
+        for match in self.match(cfn):
+            setattr(match, 'delete_lines', True)
+            delete_lines.append(match)
+        return delete_lines
+
     def match(self, cfn):
         converted_matches = []
         for m in Used.match(self, cfn):
