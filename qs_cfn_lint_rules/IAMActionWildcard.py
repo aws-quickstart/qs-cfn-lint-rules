@@ -87,7 +87,11 @@ class IAMActionWildcard(CloudFormationLintRule):
             if not hasattr(match, 'expanded_actions'):
                 continue
             _v = deep_get(cfn.template, match.path)
-            substitutions.append((match.path, _v, sorted(list(match.expanded_actions))))
+            if hasattr(match, 'expanded_on_newline') and match.expanded_on_newline:
+                subs = (match.path, _v, sorted(list(match.expanded_actions)), {'replace': True, 'newline': True})
+            else:
+                subs = (match.path, _v, sorted(list(match.expanded_actions)))
+            substitutions.append(subs)
         return substitutions
 
     def match(self, cfn):
@@ -107,5 +111,9 @@ class IAMActionWildcard(CloudFormationLintRule):
                 wild_actions = is_wild(tm[-1])
                 for wild_action in wild_actions:
                     expanded_actions = {CAMEL_CASE.get(k) for k in get_actions_from_statement({"Action": [wild_action]})}
-                    violation_matches.append(RuleMatch(tm[:-1]+[tm[-1].index(wild_action)], f"{LINT_ERROR_MESSAGE} matching actions for {wild_action} are: {json.dumps(list(expanded_actions))}", expanded_actions=expanded_actions))
+                    msg = f"{LINT_ERROR_MESSAGE} matching actions for {wild_action} are: {json.dumps(list(expanded_actions))}"
+                    if isinstance(tm[-1], list):
+                        violation_matches.append(RuleMatch(tm[:-1]+[tm[-1].index(wild_action)], msg, expanded_actions=expanded_actions, expanded_on_newline=True))
+                    else:
+                        violation_matches.append(RuleMatch(tm[:-1], msg, expanded_actions=expanded_actions, expanded_on_newline=True))
         return violation_matches

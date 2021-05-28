@@ -87,16 +87,21 @@ class Remediator:
                     CONFLICT=True
                     continue
             if not CONFLICT:
-                NL = None
+                NL = False
+                opts = {}
                 try:
-                    NL=data[3]+1
+                    opts = data[3]
                 except IndexError:
+                    pass
+                try:
+                    NL=opts['line']+1
+                except KeyError:
                     pass
                 changed_value = self._new_sauce(
                     data[0],
                     data[2],
                     data[1].start_mark.line,
-                    NL
+                    opts
                 )
                 _k = (
                     data[1].start_mark.index,
@@ -114,6 +119,7 @@ class Remediator:
         for rule in self.rules:
             if hasattr(rule, 'determine_changes'):
                 x = rule.determine_changes(self.cfn)
+                # raise
                 if x and type(x[0]) == cfnlint.rules.Match:
                     try:
                         func = self._per_rule_logic[rule.id]
@@ -150,8 +156,15 @@ class Remediator:
         self._determine_changes()
         self._write_changes()
 
-    def _new_sauce(self, path, new, line_number, append_after=None):
+    def __indent_list_elements(self, list_data, indent, to_nl_str=False):
+        l = ["{0}{1}".format(" "*(indent), i) for i in list_data]
+        if to_nl_str:
+            return '\n'.join(l)
+        return l
+
+    def _new_sauce(self, path, new, line_number, opts):
         indent = self.indentation.get(line_number+1)
+        # raise
         if (isinstance(path[-1], int) and isinstance(new, list)):
             if indent:
                 xx = json.dumps(new)
@@ -162,17 +175,21 @@ class Remediator:
                 xx1 = nv.splitlines()
                 if xx1[0] == '':
                     del xx1[0]
-                spaced_data = [xx1[0]]+["{0}{1}".format(" "*(indent), i) for i in xx1[1:]]
+                spaced_data = [xx1[0]] + self.__indent_list_elements(xx1[1:], indent)
                 spaced_txt = "\n".join(spaced_data)
                 return spaced_txt
 
-        new = json.dumps(new)
+        new1 = json.dumps(new)
         if self.format == 'yaml':
-            nv = to_yaml(new, clean_up=True)
+            nv = to_yaml(new1, clean_up=True)
         if self.format == 'json':
-            nv = self._to_json_clean(new)
+            nv = self._to_json_clean(new1)
 
-        if append_after:
+        if opts.get('newline'):
+            if isinstance(new, list):
+                ni = indent+2
+            nv = '\n'+self.__indent_list_elements(nv.splitlines(), ni if ni else indent, True)
+        if opts.get('append_after'):
             nv = "{0}{1}".format(" "*(indent), nv)
 
         if nv.endswith('\n'):
