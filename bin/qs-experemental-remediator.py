@@ -34,9 +34,8 @@ class Remediator:
         self._linenumber_map = {1:{'start':0}}
         with open(input_fn) as f:
             self.buffer = f.read()
-        _tt = cfnlint.decode.decode(self.filename)
-        self.cfn = cfnlint.template.Template(self.filename, _tt[0])
-        _, self._format = load(self.buffer)
+        self._format = load(self.buffer)[1]
+        self._reload_buffer_to_template()
         self._generate_linenumber_and_indentation_map()
 
     def _generate_linenumber_and_indentation_map(self):
@@ -51,6 +50,10 @@ class Remediator:
             self._linenumber_map[i+1] = {'start':loc[1]}
             self._linenumber_map[i]['end'] = loc[0]
             i=i+1
+
+    def _reload_buffer_to_template(self):
+        _x = cfnlint.decode.cfn_yaml.loads(self.buffer)
+        self.cfn = cfnlint.template.Template(self.filename, _x)
 
     @property
     def rules(self):
@@ -84,13 +87,13 @@ class Remediator:
     def delete_paths(self):
         return self._delete_paths
 
-    def delete_lines(self, linelist=None):
-        dp = linelist if linelist else self._delete_paths
+    def delete_lines(self):
+        self._reload_buffer_to_template()
         new_buffer = []
         x = {}
         for idx, line in enumerate(self.buffer.splitlines()):
             x[idx] = line
-        for path in dp:
+        for path in self._delete_paths:
             g = deep_get(self.cfn.template, path)
             for ln in range(g.start_mark.line-1, g.end_mark.line-1):
                 x[ln] = None
@@ -307,7 +310,5 @@ if __name__ == '__main__':
         sys.exit(0)
     remediator.fix_stuff()
     if args.delete:
-        # raise
-        r = Remediator(remediator.output, remediator.output)
-        r.delete_lines(remediator.delete_paths)
-        r.write()
+        remediator.delete_lines()
+        remediator.write()
