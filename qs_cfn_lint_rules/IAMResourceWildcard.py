@@ -20,6 +20,7 @@ import json
 import os
 from cfnlint.rules import CloudFormationLintRule
 from cfnlint.rules import RuleMatch
+from qs_cfn_lint_rules.common import deep_get
 
 LINT_ERROR_MESSAGE = "IAM policy should not allow * resource; This method in this in this policy support granular permissions"
 
@@ -28,18 +29,6 @@ with open(custom_dict_path) as f:
     d = f.read()
 
 resource_only = json.loads(d)
-
-def deep_get(source_dict, list_of_keys, default_value=None):
-    x = source_dict
-    for k in list_of_keys:
-        if isinstance(k, int):
-            x = x[k]
-        else:
-            x = x.get(k, {})
-    if not x:
-        return default_value
-    return x
-
 
 def determine_wildcard_resource_violations(cfn, policy_path):
 

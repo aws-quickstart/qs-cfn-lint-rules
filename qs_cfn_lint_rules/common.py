@@ -15,3 +15,14 @@ def search_resources_for_property_value_violations(cfn, resource_type, prop_name
         if properties[prop_name] is not expected_prop_value:
             results.append(path + [prop_name])
     return results
+
+def deep_get(source_dict, list_of_keys, default_value=None):
+    x = source_dict
+    for k in list_of_keys:
+        if isinstance(k, int):
+            x = x[k]
+        else:
+            x = x.get(k, {})
+    if not x:
+        return default_value
+    return x

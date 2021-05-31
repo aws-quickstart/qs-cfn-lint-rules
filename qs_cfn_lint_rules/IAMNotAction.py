@@ -20,6 +20,7 @@ import json
 import os
 from cfnlint.rules import CloudFormationLintRule
 from cfnlint.rules import RuleMatch
+from qs_cfn_lint_rules.common import deep_get
 
 LINT_ERROR_MESSAGE = "Combining Action and NotAction is a bad idea."
 CFN_NAG_RULES = [
@@ -31,18 +32,6 @@ CFN_NAG_RULES = [
     'W19',
     'W20'
 ]
-
-
-def deep_get(source_dict, list_of_keys, default_value=None):
-    x = source_dict
-    for k in list_of_keys:
-        if isinstance(k, int):
-            x = x[k]
-        else:
-            x = x.get(k, {})
-    if not x:
-        return default_value
-    return x
 
 def determine_action_notaction_violation(cfn, policy_path):
     policy = deep_get(cfn.template, policy_path, [])

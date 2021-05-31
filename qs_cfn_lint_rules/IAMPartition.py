@@ -18,19 +18,10 @@ import re
 import six
 from cfnlint.rules import CloudFormationLintRule
 from cfnlint.rules import RuleMatch
+from qs_cfn_lint_rules.common import deep_get
 
 LINT_ERROR_MESSAGE = "ARNs must be partition-agnostic. Please leverage ${AWS::Partition}"
 
-def deep_get(source_dict, list_of_keys, default_value=None):
-    x = source_dict
-    for k in list_of_keys:
-        if isinstance(k, int):
-            x = x[k]
-        else:
-            x = x.get(k, {})
-    if not x:
-        return default_value
-    return x
 
 def verify_agnostic_partition(cfn, resource_path, arndata):
 

@@ -16,20 +16,10 @@
 """
 from cfnlint.rules import CloudFormationLintRule
 from cfnlint.rules import RuleMatch
+from qs_cfn_lint_rules.common import deep_get
 
 LINT_ERROR_MESSAGE = "EIAM* rules must not be excluded globally. only at the resource level"
 
-def deep_get(source_dict, list_of_keys, default_value=None):
-    x = source_dict
-    for k in list_of_keys:
-        if isinstance(k, int):
-            x = x[k]
-        else:
-            x = x.get(k, {})
-    if not x:
-        return default_value
-    return x
-    
 class ValidateRuleExclusions(CloudFormationLintRule):
     """Check ARN for partition agnostics."""
     id = 'EValidateIAMRuleExclusions'
