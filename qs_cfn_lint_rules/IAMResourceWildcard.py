@@ -27,8 +27,19 @@ LINT_ERROR_MESSAGE = "IAM policy should not allow * resource; This method in thi
 custom_dict_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data/iam_methods.json")
 with open(custom_dict_path) as f:
     d = f.read()
-
 resource_only = json.loads(d)
+
+def determine_perms():
+    custom_dict_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data/granular_permissions.json")
+    with open(custom_dict_path) as f:
+        _gp = json.load(f)
+    perms = {}
+    for method_name, method_data in _gp.items():
+        _r = set([f"{method_name.split(':')[0]}/{k}" for k in method_data['resource_types'].keys() if k != ''])
+        if not _r:
+            continue
+        perms[method_name] = _r
+    return perms
 
 def determine_wildcard_resource_violations(cfn, policy_path):
 
@@ -65,6 +76,39 @@ class IAMResourceWildcard(CloudFormationLintRule):
     tags = ['iam']
     SEARCH_PROPS = ['Resource']
 
+    def determine_changes(self, cfn):
+        PERMS = determine_perms()
+        subs = []
+        # raise
+        _policy_paths = []
+        for match in self.match(cfn):
+            if match.policy_path in _policy_paths:
+                continue
+            _policy_paths.append(match.policy_path)
+        for _ppath in _policy_paths:
+            m2a= {}
+            _new_policies = []
+            policy = deep_get(cfn.template, _ppath, [])
+            # raise
+            for a in policy['Action']:
+                if PERMS.get(a):
+                    for m in PERMS[a]:
+                        if m2a.get(m):
+                            m2a[m].add(a)
+                        else:
+                            m2a[m] = {a}
+            ignore = []
+            for rn in sorted(m2a, key=lambda k:len(m2a[k])):
+                _al = [k for k in m2a[rn] if k not in ignore]
+                if _al:
+                    _new_policies.append({'Effect':'Allow','Action':_al,'Resource':{'Fn::Ref':rn}})
+                ignore += _al
+            subs.append((_ppath, policy, _new_policies, {'append_after':True}))
+            for a in ignore:
+                subs.append(RuleMatch(_ppath + ['Action', policy['Action'].index(a)], "WHATEVER", delete_lines=True))
+        # raise
+        return subs
+
     def match(self, cfn):
         """Basic Matching"""
         violation_matches = []
@@ -76,5 +120,5 @@ class IAMResourceWildcard(CloudFormationLintRule):
                 continue
             violating_methods = determine_wildcard_resource_violations(cfn, tm[:-2])
             for ln in violating_methods:
-                violation_matches.append(RuleMatch(ln, LINT_ERROR_MESSAGE))
+                violation_matches.append(RuleMatch(ln, LINT_ERROR_MESSAGE, policy_path=tm[:-2]))
         return violation_matches

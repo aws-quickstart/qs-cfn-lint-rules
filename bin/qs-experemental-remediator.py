@@ -32,11 +32,12 @@ class Remediator:
         }
         self._rules = []
         self._linenumber_map = {1:{'start':0}}
+        self._conflicting_rules = False
         with open(input_fn) as f:
             self.buffer = f.read()
         self._format = load(self.buffer)[1]
         self._reload_buffer_to_template()
-        self._generate_linenumber_and_indentation_map()
+
 
     def _generate_linenumber_and_indentation_map(self):
         for idx, line in enumerate(self.buffer.splitlines()):
@@ -47,13 +48,15 @@ class Remediator:
         i=1
         for match in re.finditer('\n', self.buffer):
             loc = match.span()
-            self._linenumber_map[i+1] = {'start':loc[1]}
+            self._linenumber_map[i+1] = {'start':loc[1], 'end':len(self.buffer)}
             self._linenumber_map[i]['end'] = loc[0]
             i=i+1
 
     def _reload_buffer_to_template(self):
+        self._changes = {}
         _x = cfnlint.decode.cfn_yaml.loads(self.buffer)
         self.cfn = cfnlint.template.Template(self.filename, _x)
+        self._generate_linenumber_and_indentation_map()
 
     @property
     def rules(self):
@@ -114,6 +117,7 @@ class Remediator:
             for sm in self._changes.keys():
                 if data[1].start_mark.index < sm[0] < data[1].end_mark.index:
                     CONFLICT=True
+                    self._conflicting_rules = True
                     continue
             if not CONFLICT:
                 NL = False
@@ -140,6 +144,13 @@ class Remediator:
                     _k = (
                         self._linenumber_map[NL]['end']+1,
                         self._linenumber_map[NL]['end']+1,
+                    )
+                    changed_value += '\n'
+                if opts.get('append_after'):
+                    _cl = data[1].end_mark.line
+                    _k = (
+                        self._linenumber_map[_cl]['end']+1,
+                        self._linenumber_map[_cl]['end']+1,
                     )
                     changed_value += '\n'
                 self._changes[_k] = changed_value
@@ -173,20 +184,27 @@ class Remediator:
         with open(self.output, 'w') as f:
             f.write(json.dumps(js_safe))
 
-    def _write_changes(self):
+    def _changes_to_buffer(self):
         for k in sorted(self._changes, reverse=True):
             start, end = k
             self.buffer = self.buffer[0:start] + self._changes[k] + self.buffer[end:]
-
-        self.write()
 
     def write(self):
         with open(self.output, 'w') as f:
             f.write(self.buffer)
 
     def fix_stuff(self):
+        _nb = False
         self._determine_changes()
-        self._write_changes()
+        while self._conflicting_rules:
+            self._conflicting_rules = False
+            self._reload_buffer_to_template()
+            self._determine_changes()
+            self._changes_to_buffer()
+            _nb = True
+        if not _nb:
+            self._changes_to_buffer()
+        self.write()
 
     def __indent_list_elements(self, list_data, indent, to_nl_str=False):
         l = ["{0}{1}".format(" "*(indent), i) for i in list_data]

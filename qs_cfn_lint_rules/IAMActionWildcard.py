@@ -20,6 +20,7 @@ from cfnlint.rules import CloudFormationLintRule
 from cfnlint.rules import RuleMatch
 from qs_cfn_lint_rules.common import deep_get
 import logging
+import os
 
 # policyuniverse messes with the global logger, so need to reset loglevel after it's done.
 logger = logging.getLogger()
@@ -35,9 +36,25 @@ DONT_EXPAND=[
     's3:List*'
 ]
 CAMEL_CASE = {}
+
 for sd in service_data.values():
     for k in sd['actions'].keys():
         CAMEL_CASE[f"{sd['prefix']}:{k}".lower()] = f"{sd['prefix']}:{k}"
+
+def determine_perms(service_data):
+    perms = {}
+    for method_name, method_data in service_data.items():
+        _r = set([k for k in method_data['resource_types'].keys() if k != ''])
+        if not _r:
+            continue
+        perms[method_name] = _r
+    return perms
+
+custom_dict_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data/granular_permissions.json")
+with open(custom_dict_path) as f:
+    d = f.read()
+_gp = json.loads(d)
+GRANULAR_PERMS = determine_perms(_gp)
 
 def expanded(action):
     return action
@@ -101,7 +118,7 @@ class IAMActionWildcard(CloudFormationLintRule):
             else:
                 wild_actions = is_wild(tm[-1])
                 for wild_action in wild_actions:
-                    expanded_actions = {CAMEL_CASE.get(k) for k in get_actions_from_statement({"Action": [wild_action]})}
+                    expanded_actions = {CAMEL_CASE.get(k,k) for k in get_actions_from_statement({"Action": [wild_action]})}
                     msg = f"{LINT_ERROR_MESSAGE} matching actions for {wild_action} are: {json.dumps(list(expanded_actions))}"
                     if isinstance(tm[-1], list):
                         violation_matches.append(RuleMatch(tm[:-1]+[tm[-1].index(wild_action)], msg, expanded_actions=expanded_actions, expanded_on_newline=True))
