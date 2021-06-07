@@ -77,7 +77,10 @@ def get_effect(template, keys: list):
     k = keys.copy()
     while len(k) > 2:
         template = template[k.pop(0)]
-    return template['Effect']
+    try:
+        return template['Effect']
+    except KeyError:
+        return 'deny'
 
 
 class IAMActionWildcard(CloudFormationLintRule):

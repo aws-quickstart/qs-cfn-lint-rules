@@ -48,7 +48,7 @@ class Remediator:
         i=1
         for match in re.finditer('\n', self.buffer):
             loc = match.span()
-            self._linenumber_map[i+1] = {'start':loc[1], 'end':len(self.buffer)}
+            self._linenumber_map[i+1] = {'start':loc[1], 'end':len(self.buffer)-1}
             self._linenumber_map[i]['end'] = loc[0]
             i=i+1
 
@@ -153,6 +153,11 @@ class Remediator:
                         self._linenumber_map[_cl]['end']+1,
                     )
                     changed_value += '\n'
+                if changed_value[0] == self.buffer[_k[0]-2]:
+                    _k = (_k[0]-2, _k[1])
+                if _k[0] == _k[1]:
+                    if self.buffer[_k[0]-1] != '\n':
+                        changed_value = '\n' + changed_value
                 self._changes[_k] = changed_value
 
     def _determine_changes(self):
@@ -206,7 +211,7 @@ class Remediator:
             self._changes_to_buffer()
         self.write()
 
-    def __indent_list_elements(self, list_data, indent, to_nl_str=False):
+    def _indent_list_elements(self, list_data, indent, to_nl_str=False):
         l = ["{0}{1}".format(" "*(indent), i) for i in list_data]
         if to_nl_str:
             return '\n'.join(l)
@@ -225,8 +230,13 @@ class Remediator:
                 xx1 = nv.splitlines()
                 if xx1[0] == '':
                     del xx1[0]
-                spaced_data = [xx1[0]] + self.__indent_list_elements(xx1[1:], indent)
+                if opts.get('append_after'):
+                    # raise
+                    spaced_data = self._indent_list_elements(xx1, indent)
+                else:
+                    spaced_data = [xx1[0]] + self._indent_list_elements(xx1[1:], indent)
                 spaced_txt = "\n".join(spaced_data)
+                # raise
                 return spaced_txt
 
         new1 = json.dumps(new)
@@ -238,7 +248,7 @@ class Remediator:
         if opts.get('newline'):
             if isinstance(new, list):
                 ni = indent+2
-            nv = '\n'+self.__indent_list_elements(nv.splitlines(), ni if ni else indent, True)
+            nv = '\n'+self._indent_list_elements(nv.splitlines(), ni if ni else indent, True)
         if opts.get('append_after'):
             nv = "{0}{1}".format(" "*(indent), nv)
 
@@ -249,11 +259,11 @@ class Remediator:
         return nv
 
     def _to_yaml_list(self, json_serialized):
-        nv = to_yaml(json_serialized, clean_up=True)[2:-1]
+        nv = to_yaml(json_serialized, clean_up=True)[:-1]
         return nv
 
     def _to_json_list(self, json_serialized):
-        nv = to_json(json_serialized, clean_up=True)[1:-1]
+        nv = to_json(json_serialized, clean_up=True)[:-1]
         return nv
 
     def _to_json_clean(self, new):

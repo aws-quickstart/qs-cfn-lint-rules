@@ -63,7 +63,11 @@ def determine_wildcard_resource_violations(cfn, policy_path):
 
     if isinstance(policy['Action'], list):
         for idx, iam_method in enumerate(policy['Action']):
-            if not _determine_if_safe(iam_method):
+            if isinstance(iam_method, list):
+                for idxx, ia in enumerate(iam_method):
+                    if not _determine_if_safe(ia):
+                        violating_methods.append(policy_path + ['Action', idxx])
+            elif not _determine_if_safe(iam_method):
                 violating_methods.append(policy_path + ['Action', idx])
     return violating_methods
 
@@ -91,6 +95,8 @@ class IAMResourceWildcard(CloudFormationLintRule):
             policy = deep_get(cfn.template, _ppath, [])
             # raise
             for a in policy['Action']:
+                if isinstance(a, list) and (len(a) == 1):
+                    a = a[0]
                 if PERMS.get(a):
                     for m in PERMS[a]:
                         if m2a.get(m):
@@ -98,6 +104,13 @@ class IAMResourceWildcard(CloudFormationLintRule):
                         else:
                             m2a[m] = {a}
             ignore = []
+            mod_policy = []
+            for _p1 in policy['Action']:
+                if isinstance(_p1, list):
+                    for _p2 in _p1:
+                        mod_policy.append(_p2)
+                else:
+                    mod_policy.append(_p1)
             for rn in sorted(m2a, key=lambda k:len(m2a[k])):
                 _al = [k for k in m2a[rn] if k not in ignore]
                 if _al:
@@ -105,7 +118,7 @@ class IAMResourceWildcard(CloudFormationLintRule):
                 ignore += _al
             subs.append((_ppath, policy, _new_policies, {'append_after':True}))
             for a in ignore:
-                subs.append(RuleMatch(_ppath + ['Action', policy['Action'].index(a)], "WHATEVER", delete_lines=True))
+                subs.append(RuleMatch(_ppath + ['Action', mod_policy.index(a)], "WHATEVER", delete_lines=True))
         # raise
         return subs
 
