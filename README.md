@@ -1,7 +1,7 @@
 # AWS Quick Start cfn-lint rules
 
 This repo provides CloudFormation linting rules specific to [AWS Quick Start](https://aws.amazon.com/quickstart/) 
-guidelines, for more information see the [Contributors Guide](https://aws-quickstart.github.io).
+guidelines, for more information see the [Contributors Guide](https://aws-quickstart.github.io)..
 
 ## Installation and Usage
 
