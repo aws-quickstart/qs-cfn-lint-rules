@@ -24,7 +24,20 @@ class DeprecatedRuntimeEolWarning(DeprecatedRuntime):
             eol = datetime.strptime(runtime['eol'], '%Y-%m-%d')
             if eol < self.current_date:
                 return matches
-            if self.current_date > (eol+timedelta(days=-365)):
+            if self.current_date > (eol+timedelta(days=-90)):
+                self.
+                new_id = self.id.replace('W','E')
+                old_id = self.id
+                self.id = new_id
+                message = 'Runtime ({0}) will be EOL on {1}. Please consider updating to {2}'
+                matches.append(
+                    RuleMatch(
+                        path,
+                        message.format(
+                            runtime_value,
+                            runtime['eol'],
+                            runtime['successor'])))
+            elif self.current_date > (eol+timedelta(days=-365)):
                 message = 'Runtime ({0}) will be EOL on {1}. Please consider updating to {2}'
                 matches.append(
                     RuleMatch(
