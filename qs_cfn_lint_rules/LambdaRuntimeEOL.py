@@ -25,7 +25,6 @@ class DeprecatedRuntimeEolWarning(DeprecatedRuntime):
             if eol < self.current_date:
                 return matches
             if self.current_date > (eol+timedelta(days=-90)):
-                self.
                 new_id = self.id.replace('W','E')
                 old_id = self.id
                 self.id = new_id
