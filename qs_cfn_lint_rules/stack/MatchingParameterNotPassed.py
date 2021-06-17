@@ -25,6 +25,7 @@ import traceback
 class MatchingParameterNotPassed(CloudFormationLintRule):
     """Check Nested Stack Parameters"""
     id = 'E9902'
+    experimental = True
     shortdesc = 'Parameters in master not passed to child'
     description = 'A parameter with the same name exists in master ' \
                   'and child. It is not passed to the child'
