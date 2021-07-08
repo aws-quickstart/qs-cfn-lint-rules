@@ -92,6 +92,12 @@ class Base(CloudFormationLintRule):
         title_message = 'Parameter {0} Description is not sentence case: {1}'
         spell_message = 'Parameter {0} contains spelling error(s): {1}'
         stop_message = 'Parameter {0} must end in a full stop "."'
+
+        # Ignore templates that are not entry points
+        if "Metadata" in cfn.template.keys():
+            if "QuickStartDocumentation" not in cfn.template.get("Metadata").keys():
+                return matches
+
         if self.id in cfn.template.get("Metadata", {}).get("QSLint", {}).get("Exclusions", []):
             return matches
         if "Parameters" not in cfn.template.keys():
