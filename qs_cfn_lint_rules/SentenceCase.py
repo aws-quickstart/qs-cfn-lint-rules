@@ -94,9 +94,8 @@ class Base(CloudFormationLintRule):
         stop_message = 'Parameter {0} must end in a full stop "."'
 
         # Ignore templates that are not entry points
-        if "Metadata" in cfn.template.keys():
-            if "QuickStartDocumentation" not in cfn.template.get("Metadata").keys():
-                return matches
+        if not cfn.template.get("Metadata", {}).get("QuickStartDocumentation"):
+            return matches
 
         if self.id in cfn.template.get("Metadata", {}).get("QSLint", {}).get("Exclusions", []):
             return matches
