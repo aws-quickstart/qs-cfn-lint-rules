@@ -238,10 +238,10 @@ class ParameterNoEchoDefault(StubRuleCommon):
     def match(self, cfn):
         """Basic Matching"""
         results = []
-        if not type(self.property_name) == list:
-            property_list = [self.property_name]
+        if not type(self.property_names) == list:
+            property_list = [self.property_names]
         else:
-            property_list = self.property_name
+            property_list = self.property_names
         parameters = cfn.get_parameters()
         for resource_name, resource_data in cfn.get_resources([self.resource_type]).items():
             results += self._iterate_properties(
