@@ -53,7 +53,7 @@ class TestStackHelper(unittest.TestCase):
 
     def test_flatten_template_url_maxdepth(self):
         with self.assertRaises(Exception) as context:
-            StackHelper.flatten_template_url("{ one { two } { two { three { four { five { six { seven }}}}} }}")
+            StackHelper.flatten_template_url("{ one { two } { two { three { four { five { six { seven { eight { nine {ten {11 {12 {13 {14 {15 {16 {17 {18 {19 {20 {21}}}}}}}}}}}}} }}}}} }}")
 
         self.assertTrue('Template URL contains more than' in str(context.exception))
 
