@@ -181,7 +181,7 @@ class ProhibitedResourceProperty(StubRuleCommon):
 class ParameterNoEchoDefault(StubRuleCommon):
     @property
     def _lint_error_message(self):
-        if type(self.property_name) == list:
+        if type(self.property_names) == list:
             return f"{self.resource_type} properties cannot be a plaintext string, or reference a parameter with NoEcho false and a default value"
         else:
             return f"{self.resource_type}/{self.property_name} cannot be a plaintext string, or reference a parameter with NoEcho false and a default value"
@@ -192,48 +192,47 @@ class ParameterNoEchoDefault(StubRuleCommon):
 
     @property
     def id(self):
-        if type(self.property_name) == list:
+        if type(self.property_names) == list:
             return f"E{self._r_suffix}DefaultNoEcho"
         else:
-            return f"E{self._r_suffix}{self.property_name}DefaultNoEcho"
+            return f"E{self._r_suffix}{self.property_names}DefaultNoEcho"
 
 
     @property
-    def shortdesc(self):
-        if type(self.property_name) == list:
+    def _condensed_doc(self):
+        if type(self.property_names) == list:
             return f"{self.resource_type} properties should not be easily exposed"
         else:
-            return f"{self.resource_type}/{self.property_name} should not be easily exposed"
+            return f"{self.resource_type}/{self.property_names} should not be easily exposed"
+
+    @property
+    def shortdesc(self):
+        return self._condensed_doc
 
 
     @property
     def description(self):
-        if type(self.property_name) == list:
-            return f"{self.resource_type} properties should not be easily exposed"
-        else:
-            return f"{self.resource_type}/{self.property_name} should not be easily exposed"
+        return self._condensed_doc
 
     @property
     def __doc__(self):
-        return f"""{self.resource_type}/{self.property_name} should not be easily exposed"""
+        return self._condensed_doc
 
     @property
     def tags(self):
         return [self.resource_type.split('::')[1].lower()]
 
     def _iterate_properties(self, resource_name, resource_data, parameters, property_list):
-        results = []
         for property_name in property_list:
             path = ['Resources', resource_name]
-            prop_value = resource_data['Properties'].get(property_name,{})
+            prop_value = deep_get(resource_data['Properties'], property_name.split('.'))
             if type(prop_value) == str:
-                results.append(path + ['Properties', property_name])
+                yield RuleMatch(path + ['Properties', property_name], self._lint_error_message)
             if issubclass(type(prop_value), dict):
                 if prop_value.get('Ref'):
                     pn = prop_value['Ref']
                     if parameter_violating_default_noecho(parameters.get(pn)):
-                        results.append(RuleMatch(path + ['Properties', property_name], self._lint_error_message))
-        return results
+                        yield RuleMatch(path + ['Properties'] + property_name.split('.'), self._lint_error_message)
 
     def match(self, cfn):
         """Basic Matching"""
@@ -244,10 +243,11 @@ class ParameterNoEchoDefault(StubRuleCommon):
             property_list = self.property_names
         parameters = cfn.get_parameters()
         for resource_name, resource_data in cfn.get_resources([self.resource_type]).items():
-            results += self._iterate_properties(
+            for match in self._iterate_properties(
                 resource_name,
                 resource_data,
                 parameters,
                 property_list
-            )
+            ):
+                results.append(match)
         return results
