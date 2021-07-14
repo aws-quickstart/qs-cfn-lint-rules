@@ -6,10 +6,10 @@ from cfnlint.rules import CloudFormationLintRule
 class RDSDBInstanceNoEcho(ParameterNoEchoDefault, CloudFormationLintRule):
     resource_type = 'AWS::RDS::DBInstance'
     property_names = [
-        # 'MasterUsername',
+        # 'MasterUsername', F24
         'MasterUserPassword'
     ]
-    CFN_NAG_RULES = ['F23', 'F24']
+    CFN_NAG_RULES = ['F23']
 
 
 @inherit_doc_string
@@ -23,10 +23,18 @@ class SimpleADPasswordNoEcho(ParameterNoEchoDefault, CloudFormationLintRule):
 class RDSDBInstanceNoEcho(ParameterNoEchoDefault, CloudFormationLintRule):
     resource_type = 'AWS::RDS::DBCluster'
     property_names = [
-        # 'MasterUsername',
         'MasterUserPassword'
     ]
-    CFN_NAG_RULES = ['F34', 'F35']
+    CFN_NAG_RULES = ['F34']
+
+
+@inherit_doc_string
+class RedshiftClusterNoEcho(ParameterNoEchoDefault, CloudFormationLintRule):
+    resource_type = 'AWS::Redshift::DBCluster'
+    property_names = [
+        'MasterUserPassword'
+    ]
+    CFN_NAG_RULES = ['F35']
 
 
 @inherit_doc_string
