@@ -65,4 +65,4 @@ class CFNNAGF78(RequiredPropertyEnabledBase, CloudFormationLintRule):
     property_value = ["OPTIONAL","ON"]
     CFN_NAG_RULES = ['F78']
 
-'AWS::RDS::DBCluster', 'StorageEncryptionEnabled', True
+# 'AWS::RDS::DBCluster', 'StorageEncryptionEnabled', True

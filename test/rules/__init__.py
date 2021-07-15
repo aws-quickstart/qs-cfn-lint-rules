@@ -12,6 +12,8 @@
   OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
   SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 """
+import inspect
+import sys
 import cfnlint.config
 from cfnlint import Runner
 from cfnlint.rules import RulesCollection
@@ -62,3 +64,60 @@ class BaseRuleTestCase(BaseTestCase):
         bad_runner.transform()
         errs = bad_runner.run()
         self.assertEqual(err_count, len(errs))
+
+class DynamicRuleTesting:
+
+    def test_file_positive(self):
+        for cn, to in self.testobjs.items():
+            with self.subTest(f"Testing {cn} file positive"):
+                to.test_file_positive()
+
+    def test_file_negative(self):
+        for cn, to in self.testobjs.items():
+            with self.subTest(f"Testing {cn} file negative"):
+                to.test_file_negative(len(to.parent.property_names))
+
+    def setUp(self):
+        self.subobjs = {}
+        self.testobjs = {}
+        for name, obj in inspect.getmembers(sys.modules[self.imported_module]):
+            if inspect.isclass(obj):
+                if hasattr(obj, self.module_attr):
+                    self.subobjs[name] = obj
+        for n, o in self.subobjs.items():
+            _single_rule_test = SingleRuleTest()
+            _single_rule_test.configure(o)
+            self.testobjs[n] = _single_rule_test
+
+class SingleRuleTest:
+
+    def configure(self, parent_cls):
+        # Dynamically creating these to ensure MRO inheritence is how we want it.
+        def dynamic_init(self):
+            super(BaseRuleTestCase, self).__init__()
+            super(parent_cls, self).__init__()
+        def is_enabled(self, *args, **kwargs):
+            return True
+        dynamic_class = type(
+            f"Dynamic_{parent_cls.__name__}",
+            (parent_cls, BaseRuleTestCase, object),{
+                '__init__': dynamic_init,
+                'is_enabled': is_enabled
+            })
+        dc = dynamic_class()
+        dc.setUp()
+        dc.collection.register(dc)
+        self._parent_instance = dc
+
+    def test_file_positive(self):
+        """Test Positive"""
+        self._parent_instance.helper_file_positive()  # By default, a set of "correct" templates are checked
+
+    def test_file_negative(self, expected_errors):
+        """Test failure"""
+        prefix = 'fixtures/templates/bad/resources/cfnnag/'
+        self._parent_instance.helper_file_negative(f"{prefix}{self._parent_instance.id}.json", expected_errors)
+
+    @property
+    def parent(self):
+        return self._parent_instance
