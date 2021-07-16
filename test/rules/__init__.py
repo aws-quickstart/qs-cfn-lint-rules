@@ -69,12 +69,12 @@ class DynamicRuleTesting:
 
     def test_file_positive(self):
         for cn, to in self.testobjs.items():
-            with self.subTest(f"Testing {cn} file positive"):
+            with self.subTest(f"Testing {cn} file positive", file=cn, rule=to.parent.id):
                 to.test_file_positive()
 
     def test_file_negative(self):
         for cn, to in self.testobjs.items():
-            with self.subTest(f"Testing {cn} file negative"):
+            with self.subTest(f"Testing {cn} file negative", file=cn, rule=to.parent.id):
                 to.test_file_negative(len(to.parent.property_names))
 
     def setUp(self):
@@ -115,7 +115,7 @@ class SingleRuleTest:
 
     def test_file_negative(self, expected_errors):
         """Test failure"""
-        prefix = 'fixtures/templates/bad/resources/cfnnag/'
+        prefix = 'test/fixtures/templates/bad/resources/cfnnag/'
         self._parent_instance.helper_file_negative(f"{prefix}{self._parent_instance.id}.json", expected_errors)
 
     @property
