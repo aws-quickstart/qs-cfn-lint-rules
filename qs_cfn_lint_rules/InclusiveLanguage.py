@@ -20,7 +20,7 @@ from cfnlint.rules import RuleMatch
 deny_list = [
     ['abort', '"stop"'],
     ['blacklist', '"deny list"'],
-    ['execute', '"start" or "run"'],
+    ['^execute', '"start" or "run"'],
     ['^hang', '"stop responding"'],
     ['kill', '"end" or "stop"'],
     ['master', '"primary", "main", or "leader"'],
