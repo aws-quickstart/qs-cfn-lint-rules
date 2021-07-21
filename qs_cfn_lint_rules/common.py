@@ -27,8 +27,9 @@ def parameter_violating_default_noecho(parameter):
         return False
     if parameter['Type'] == 'String':
         if not parameter.get('NoEcho'):
-            if parameter.get('Default'):
-                return True
+            return True
+#            if parameter.get('Default'):
+#                return True
     return False
 
 
