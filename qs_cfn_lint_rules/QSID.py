@@ -21,7 +21,7 @@ from cfnlint.rules import RuleMatch
 
 class Base(CloudFormationLintRule):
     """Check QSID in description"""
-    id = 'E9007'
+    id = 'E9008'
     shortdesc = 'QSIDs should be in template description'
     description = 'Making sure a QSID exists within the template'
     source_url = 'https://github.com/qs_cfn_lint_rules/qs-cfn-python-lint-rules'
