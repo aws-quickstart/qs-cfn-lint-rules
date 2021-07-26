@@ -42,7 +42,7 @@ def search_resources_for_disallowed_property_values(cfn, resource_type, prop_nam
     results = []
     for resource_name, resource_values in cfn.get_resources([resource_type]).items():
         path = ['Resources', resource_name, 'Properties']
-        properties = resource_values.get('Properties')
+        properties = resource_values.get('Properties', {})
         prop_value = deep_get(properties, prop_name.split('.'))
         if not prop_value:
             return results
@@ -58,7 +58,7 @@ def search_resources_for_property_value_violations(cfn, resource_type, prop_name
     results = []
     for resource_name, resource_values in cfn.get_resources([resource_type]).items():
         path = ['Resources', resource_name, 'Properties']
-        properties = resource_values.get('Properties')
+        properties = resource_values.get('Properties',{})
 
         if prop_name not in properties.keys():
             results.append(path)
