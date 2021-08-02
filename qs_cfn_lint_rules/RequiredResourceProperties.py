@@ -54,7 +54,7 @@ class CFNNAGF103(RequiredPropertyEnabledBase, CloudFormationLintRule):
 @inherit_doc_string
 class CFNNAGF22(RequiredPropertyEnabledBase, CloudFormationLintRule):
     resource_type = 'AWS::RDS::DBInstance'
-    property_name = 'PubliclyAccessable'
+    property_name = 'PubliclyAccessible'
     property_value = False
     CFN_NAG_RULES = ['F22']
 
