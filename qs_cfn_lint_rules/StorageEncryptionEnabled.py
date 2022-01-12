@@ -33,6 +33,6 @@ class StorageEncryptionEnabled(CloudFormationLintRule):
     def match(self, cfn):
         """Basic Matching"""
         matches = []
-        for ln in srfpvv(cfn, 'AWS::RDS::DBCluster', 'StorageEncryptionEnabled', True):
+        for ln in srfpvv(cfn, 'AWS::RDS::DBCluster', 'StorageEncrypted', True):
             matches.append(RuleMatch(ln, LINT_ERROR_MESSAGE))
         return matches
