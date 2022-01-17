@@ -1,7 +1,7 @@
 # AWS Quick Start cfn-lint rules
 
-This repo provides CloudFormation linting rules specific to [AWS Quick Start](https://aws.amazon.com/quickstart/) 
-guidelines, for more information see the [Contributors Guide](https://aws-quickstart.github.io)..
+This repo provides CloudFormation linting rules specific to [AWS Quick Start](https://aws.amazon.com/quickstart/)
+guidelines, for more information see the [Contributors Guide](https://aws-quickstart.github.io).
 
 ## Installation and Usage
 
@@ -18,8 +18,8 @@ To add the rules when running on the command line use the `-a` flag to add the a
 cfn-lint my-cfn-template.yaml -a ~/qs-cfn-lint-rules/qs_cfn_lint_rules/
 ```
 
-To use in your IDE install the relevant 
-[cfn-lint plugin](https://github.com/aws-cloudformation/cfn-python-lint#editor-plugins) and add the rules to your 
+To use in your IDE install the relevant
+[cfn-lint plugin](https://github.com/aws-cloudformation/cfn-python-lint#editor-plugins) and add the rules to your
 cfn-lint config file (`~/.cfnlintrc`) as follows:
 
 ```yaml
@@ -28,26 +28,32 @@ append_rules:
 ```
 
 ## Vim Specfic Instructions (using vundle and syntastic)
+
 ![image](https://user-images.githubusercontent.com/5912128/55508631-22366880-560f-11e9-867f-baa516712f63.png)
-### Install the plugins:
+
+### Install the plugins
+
 **Add to `syntastic` and `vim-cfn` your `~/.vimrc`:**
 
 __Add to vundle plugin section:__
 
-```
-"---------------------------=== Cloudfromation  ===------------------------------
+```vim
+"---------------------------=== CloudFormation  ===------------------------------
 Plugin 'scrooloose/syntastic'        " Syntax checking plugin for Vim
 Plugin 'speshak/vim-cfn'             "CloudFormation syntax checking/highlighting
 ```
 
-**Install plugins**
+#### Install plugins
 
-`vim +PluginInstall +qall`
-
-### Set statusline and triggers:
-
-**Append to the bottom of your `~/.vimrc`:**
+```bash
+vim +PluginInstall +qall
 ```
+
+### Set statusline and triggers
+
+**Append to the bottom of your `~/.vimrc`**
+
+```vim
 "cfn-lint
 set statusline+=%#warningmsg#
 set statusline+=%{SyntasticStatuslineFlag()}
@@ -60,14 +66,19 @@ let g:syntastic_check_on_wq = 0
 let g:syntastic_cloudformation_checkers = ['cfn_lint']
 ```
 
-### Set FileTypes for vim-cfn:
+### Set FileTypes for vim-cfn
 
-**Add to  `~/.vim/bundle/vim-cfn/ftdetect/cloudformation.vim`**
-``` 
+**Add to `~/.vim/bundle/vim-cfn/ftdetect/cloudformation.vim`**
+
+```vim
 autocmd BufNewFile,BufRead *.template setfiletype yaml.cloudformation
 autocmd BufNewFile,BufRead *.template.yaml setfiletype yaml.cloudformation
 ```
-### Update syntastic pluging
+
+### Update syntastic plugin
+
 Add the following to ~/.vim/after/plugin/syntastic.vim:
 
-`let g:syntastic_cloudformation_checkers = ['cfn_lint']`
+```vim
+let g:syntastic_cloudformation_checkers = ['cfn_lint']
+```
