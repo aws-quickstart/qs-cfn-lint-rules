@@ -82,3 +82,14 @@ Add the following to ~/.vim/after/plugin/syntastic.vim:
 ```vim
 let g:syntastic_cloudformation_checkers = ['cfn_lint']
 ```
+
+## Troubleshooting
+
+### Custom dictionary
+
+If you receive spelling error warnings [9006] for words that are spelled correctly, such as the example below, AWS service names, or words that should be excluded from all future linting, please add these words to `./qs_cfn_lint_rules/data/custom_dict.txt`.
+
+```text
+line 93 [9006] Parameter QSS3BucketName contains spelling error(s):
+{'customizing'}
+```
