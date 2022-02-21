@@ -19,18 +19,22 @@ from cfnlint.rules import CloudFormationLintRule
 from cfnlint.rules import RuleMatch
 from cfnlint.rules.parameters.Used import Used
 
+
 class Base(CloudFormationLintRule):
     """Wrapper for W2001 - we need it as an error."""
-    id = 'E9010'
-    shortdesc = 'Parameters defined in the template must be used.'
-    description = 'Making sure parameters are used.'
-    source_url = 'https://github.com/qs_cfn_lint_rules/qs-cfn-python-lint-rules'
-    tags = ['params']
+
+    id = "E9010"
+    shortdesc = "Parameters defined in the template must be used."
+    description = "Making sure parameters are used."
+    source_url = (
+        "https://github.com/qs_cfn_lint_rules/qs-cfn-python-lint-rules"
+    )
+    tags = ["params"]
 
     def determine_changes(self, cfn):
         delete_lines = []
         for match in self.match(cfn):
-            setattr(match, 'delete_lines', True)
+            setattr(match, "delete_lines", True)
             delete_lines.append(match)
         return delete_lines
 

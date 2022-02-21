@@ -21,16 +21,25 @@ from cfnlint.rules import RuleMatch
 
 class Base(CloudFormationLintRule):
     """Check QSID in description"""
-    id = 'E9008'
-    shortdesc = 'QSIDs should be in template description'
-    description = 'Making sure a QSID exists within the template'
-    source_url = 'https://github.com/qs_cfn_lint_rules/qs-cfn-python-lint-rules'
-    tags = ['desc']
+
+    id = "E9008"
+    shortdesc = "QSIDs should be in template description"
+    description = "Making sure a QSID exists within the template"
+    source_url = (
+        "https://github.com/qs_cfn_lint_rules/qs-cfn-python-lint-rules"
+    )
+    tags = ["desc"]
 
     def match(self, cfn):
         """Basic Matching"""
         matches = []
-        desc = cfn.template.get('Description', '')
-        if not re.search('([a-zA-Z0-9_,:]*)(\()(qs-[a-z0-9]*)(\))([a-zA-Z0-9,_:]*)', desc):
-            matches.append(RuleMatch(['Description'], "Template description must include QSIDs"))
+        desc = cfn.template.get("Description", "")
+        if not re.search(
+            "([a-zA-Z0-9_,:]*)(\()(qs-[a-z0-9]*)(\))([a-zA-Z0-9,_:]*)", desc
+        ):
+            matches.append(
+                RuleMatch(
+                    ["Description"], "Template description must include QSIDs"
+                )
+            )
         return matches

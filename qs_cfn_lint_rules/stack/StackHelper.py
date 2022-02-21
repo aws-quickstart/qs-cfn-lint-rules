@@ -26,7 +26,7 @@ SUBSTITUTION = {
     "QSS3KeyPrefix": "QSS3KeyPrefix/",
     "qss3KeyPrefix": "qss3KeyPrefix/",
     "AWS::Region": "us-east-1",
-    "AWS::AccountId": "888877779999"
+    "AWS::AccountId": "888877779999",
 }
 
 mappings = {}
@@ -43,7 +43,7 @@ def rewrite_vars(string, depth=1):
     result = string.replace(rep_text, rep_with)
 
     if len(result.split("${")) > 1:
-        result = rewrite_vars(result, depth=(depth+1))
+        result = rewrite_vars(result, depth=(depth + 1))
 
     return result
 
@@ -62,7 +62,7 @@ def rewrite_sub_vars(string, depth=1):
     result = string.replace(rep_text, rep_with)
 
     if "##" in result:  # Recurse if we have more variables
-        result = rewrite_sub_vars(result, depth=(depth+1))
+        result = rewrite_sub_vars(result, depth=(depth + 1))
 
     return result
 
@@ -95,7 +95,7 @@ def values_to_dict(values):
 
 
 def evaluate_fn_sub(expression):
-    """ Return expression with values replaced """
+    """Return expression with values replaced"""
     results = []
 
     # print("Fn::Sub: '{}'".format(expression))
@@ -125,7 +125,7 @@ def evaluate_fn_sub(expression):
 
 
 def evaluate_fn_join(expression):
-    """ Return the joined stuff """
+    """Return the joined stuff"""
     results = []
     new_values_list = []
 
@@ -146,7 +146,7 @@ def evaluate_fn_join(expression):
 
 
 def evaluate_fn_if(expression):
-    """ Return both possible parts of the expression """
+    """Return both possible parts of the expression"""
     results = []
 
     value_true = expression.split(",")[1].strip()
@@ -191,7 +191,9 @@ def evaluate_fn_findinmap(expression):
     first_key = expression.split("[")[1].split("]")[0].split(",")[1].strip()
     final_key = expression.split("[")[1].split("]")[0].split(",")[2].strip()
 
-    result.append("'" + find_in_map_lookup(mappings_map, first_key, final_key) + "'")
+    result.append(
+        "'" + find_in_map_lookup(mappings_map, first_key, final_key) + "'"
+    )
 
     return result
 
@@ -240,7 +242,11 @@ def evaluate_string(template_url, depth=0):
     """Recursively find expressions in the URL and send them to be evaluated"""
     # Recursion bail out
     if depth > MAX_DEPTH:
-        raise Exception("Template URL contains more than {} levels or nesting".format(MAX_DEPTH))
+        raise Exception(
+            "Template URL contains more than {} levels or nesting".format(
+                MAX_DEPTH
+            )
+        )
 
     template_urls = []
     # Evaluate expressions
@@ -249,17 +255,23 @@ def evaluate_string(template_url, depth=0):
         parts = parts[-1].split("}")  # Last open bracket
 
         # This function will handle Fn::Sub Fn::If etc.
-        replacements = evaluate_expression_controller(parts[0])  # First closed bracket after
+        replacements = evaluate_expression_controller(
+            parts[0]
+        )  # First closed bracket after
 
         for replacement in replacements:
             template_url_temp = template_url
             # print("evaluate_string: (before) {}".format(template_url))
             # print("expression: {}".format(parts[0]))
             # print("replacement: {}".format(replacement))
-            template_url_temp = template_url_temp.replace("{" + parts[0] + "}", replacement)
+            template_url_temp = template_url_temp.replace(
+                "{" + parts[0] + "}", replacement
+            )
             # print("evaluate_string: (after) {}".format(template_url_temp))
 
-            evaluated_strings = evaluate_string(template_url_temp, depth=(depth+1))
+            evaluated_strings = evaluate_string(
+                template_url_temp, depth=(depth + 1)
+            )
             for evaluated_string in evaluated_strings:
                 template_urls.append(evaluated_string)
     else:
@@ -269,7 +281,7 @@ def evaluate_string(template_url, depth=0):
 
 
 def _flatten_template_controller(template_url):
-    """ Recursively evaluate subs/ifs"""
+    """Recursively evaluate subs/ifs"""
     url_list = []
 
     # Replace ${SOMEVAR} with ##SOMEVAR## so finding actual "expressions" is easier
@@ -281,7 +293,9 @@ def _flatten_template_controller(template_url):
 
     # Evaluate expressions recursively
     if "{" in template_url_string:
-        replacements = evaluate_string(template_url_string)  # first closed bracket
+        replacements = evaluate_string(
+            template_url_string
+        )  # first closed bracket
         for replacement in replacements:
             url_list.append(replacement)
 
@@ -311,7 +325,7 @@ def remove_one_level(path_string):
     result = path_string
 
     result = result.find("/", 0)
-    result = path_string[result+1:len(path_string)]
+    result = path_string[result + 1 : len(path_string)]
 
     return result
 
@@ -320,9 +334,7 @@ def find_local_child_template(parent_template_path, child_template_path):
     final_template_path = ""
 
     # Start where the Parent template is
-    project_root = Path(
-        os.path.dirname(parent_template_path)
-    )
+    project_root = Path(os.path.dirname(parent_template_path))
 
     # Get rid of any "//"
     child_template_path_tmp = os.path.normpath(child_template_path)
@@ -331,18 +343,14 @@ def find_local_child_template(parent_template_path, child_template_path):
     while "/" in str(child_template_path_tmp):
         child_template_path_tmp = remove_one_level(child_template_path_tmp)
         final_template_path = Path(
-            "/".join(
-                [str(project_root), str(child_template_path_tmp)]
-            )
+            "/".join([str(project_root), str(child_template_path_tmp)])
         )
         if final_template_path.exists() and final_template_path.is_file():
             return str(final_template_path)
 
     # Take the path piece by piece and try in one folder up folder
     project_root = Path(
-        os.path.normpath(
-            os.path.dirname(parent_template_path) + "/../"
-        )
+        os.path.normpath(os.path.dirname(parent_template_path) + "/../")
     )
     # Get rid of any "//"
     child_template_path_tmp = os.path.normpath(child_template_path)
@@ -350,9 +358,7 @@ def find_local_child_template(parent_template_path, child_template_path):
     while "/" in str(child_template_path_tmp):
         child_template_path_tmp = remove_one_level(child_template_path_tmp)
         final_template_path = Path(
-            "/".join(
-                [str(project_root), str(child_template_path_tmp)]
-            )
+            "/".join([str(project_root), str(child_template_path_tmp)])
         )
         if final_template_path.exists() and final_template_path.is_file():
             return str(final_template_path)
@@ -361,7 +367,9 @@ def find_local_child_template(parent_template_path, child_template_path):
     raise Exception(message % child_template_path)
 
 
-def template_url_to_path(current_template_path, template_url, template_mappings=None):
+def template_url_to_path(
+    current_template_path, template_url, template_mappings=None
+):
     global mappings
     if template_mappings:
         mappings = template_mappings
@@ -369,6 +377,10 @@ def template_url_to_path(current_template_path, template_url, template_mappings=
     child_template_paths = flatten_template_url(template_url)
 
     for child_template_path in child_template_paths:
-        child_local_paths.append(find_local_child_template(current_template_path, child_template_path))
+        child_local_paths.append(
+            find_local_child_template(
+                current_template_path, child_template_path
+            )
+        )
 
     return child_local_paths

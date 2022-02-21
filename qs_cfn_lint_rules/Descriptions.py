@@ -20,22 +20,27 @@ from cfnlint.rules import RuleMatch
 
 class Base(CloudFormationLintRule):
     """Check Parameters have descriptions"""
-    id = 'W9004'
-    shortdesc = 'Each parameter should have a description'
-    description = 'Each parameter should have a Description entry'
-    source_url = 'https://github.com/qs_cfn_lint_rules/qs_cfn_lint_rules'
-    tags = ['parameters']
+
+    id = "W9004"
+    shortdesc = "Each parameter should have a description"
+    description = "Each parameter should have a Description entry"
+    source_url = "https://github.com/qs_cfn_lint_rules/qs_cfn_lint_rules"
+    tags = ["parameters"]
 
     def match(self, cfn):
         """Basic Matching"""
         matches = []
-        message = 'Parameter {0} does not have a Description'
-        if self.id in cfn.template.get("Metadata", {}).get("QSLint", {}).get("Exclusions", []):
+        message = "Parameter {0} does not have a Description"
+        if self.id in cfn.template.get("Metadata", {}).get("QSLint", {}).get(
+            "Exclusions", []
+        ):
             return matches
         if "Parameters" not in cfn.template.keys():
             return matches
         else:
             for x in cfn.template["Parameters"]:
                 if "Description" not in cfn.template["Parameters"][x].keys():
-                    matches.append(RuleMatch(["Parameters", x], message.format(x)))
+                    matches.append(
+                        RuleMatch(["Parameters", x], message.format(x))
+                    )
         return matches

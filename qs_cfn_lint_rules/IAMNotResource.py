@@ -24,22 +24,27 @@ from qs_cfn_lint_rules.common import deep_get
 
 LINT_ERROR_MESSAGE = "Combining Action and NotResource is a bad idea."
 CFN_NAG_RULES = [
-    'W21',
-    'W15',
+    "W21",
+    "W15",
 ]
+
 
 def determine_action_notaction_violation(cfn, policy_path):
     policy = deep_get(cfn.template, policy_path, [])
-    return all(x in policy.keys() for x in ['Action','NotResource'])
+    return all(x in policy.keys() for x in ["Action", "NotResource"])
+
 
 class IAMResourceWildcard(CloudFormationLintRule):
     """Check ARN for partition agnostics."""
-    id = 'EIAMPolicyActionNotResource'
-    shortdesc = 'Combining Action and NotAction is a bad idea.'
-    description = 'Making sure Action and NotAction are not used in an IAM statement together'
-    source_url = 'https://github.com/qs_cfn_lint_rules/qs-cfn-python-lint-rules'
-    tags = ['iam']
-    SEARCH_PROPS = ['Resource']
+
+    id = "EIAMPolicyActionNotResource"
+    shortdesc = "Combining Action and NotAction is a bad idea."
+    description = "Making sure Action and NotAction are not used in an IAM statement together"
+    source_url = (
+        "https://github.com/qs_cfn_lint_rules/qs-cfn-python-lint-rules"
+    )
+    tags = ["iam"]
+    SEARCH_PROPS = ["Resource"]
 
     def match(self, cfn):
         """Basic Matching"""
@@ -48,7 +53,11 @@ class IAMResourceWildcard(CloudFormationLintRule):
         for prop in self.SEARCH_PROPS:
             term_matches += cfn.search_deep_keys(prop)
         for tm in term_matches:
-            violating_policy = determine_action_notaction_violation(cfn, tm[:-2])
+            violating_policy = determine_action_notaction_violation(
+                cfn, tm[:-2]
+            )
             if violating_policy:
-                violation_matches.append(RuleMatch(tm[:-2] + ['NotResource'], LINT_ERROR_MESSAGE))
+                violation_matches.append(
+                    RuleMatch(tm[:-2] + ["NotResource"], LINT_ERROR_MESSAGE)
+                )
         return violation_matches

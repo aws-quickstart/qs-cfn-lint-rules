@@ -18,21 +18,44 @@ from cfnlint.rules import CloudFormationLintRule
 from cfnlint.rules import RuleMatch
 from qs_cfn_lint_rules.common import deep_get
 
-LINT_ERROR_MESSAGE = "EIAM* rules must not be excluded globally. only at the resource level"
+LINT_ERROR_MESSAGE = (
+    "EIAM* rules must not be excluded globally. only at the resource level"
+)
+
 
 class ValidateRuleExclusions(CloudFormationLintRule):
     """Check ARN for partition agnostics."""
-    id = 'EValidateIAMRuleExclusions'
-    shortdesc = '* on Resource property is a bad idea'
-    description = 'Making sure wildcard resources are only used where no other option exists'
-    source_url = 'https://github.com/qs_cfn_lint_rules/qs-cfn-python-lint-rules'
-    tags = ['iam']
-    SEARCH_PROPS = ['Resource']
+
+    id = "EValidateIAMRuleExclusions"
+    shortdesc = "* on Resource property is a bad idea"
+    description = "Making sure wildcard resources are only used where no other option exists"
+    source_url = (
+        "https://github.com/qs_cfn_lint_rules/qs-cfn-python-lint-rules"
+    )
+    tags = ["iam"]
+    SEARCH_PROPS = ["Resource"]
 
     def match(self, cfn):
         """Basic Matching"""
         violation_matches = []
-        for idx, exclude in enumerate(deep_get(cfn.template, ['Metadata', 'cfn-lint', 'config', 'ignore_checks'], [])):
-            if exclude.startswith('EIAM'):
-                violation_matches.append(RuleMatch(['Metadata', 'cfn-lint', 'config', 'ignore_checks', idx], LINT_ERROR_MESSAGE))
+        for idx, exclude in enumerate(
+            deep_get(
+                cfn.template,
+                ["Metadata", "cfn-lint", "config", "ignore_checks"],
+                [],
+            )
+        ):
+            if exclude.startswith("EIAM"):
+                violation_matches.append(
+                    RuleMatch(
+                        [
+                            "Metadata",
+                            "cfn-lint",
+                            "config",
+                            "ignore_checks",
+                            idx,
+                        ],
+                        LINT_ERROR_MESSAGE,
+                    )
+                )
         return violation_matches

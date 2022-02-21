@@ -20,13 +20,14 @@ from cfnlint.rules import CloudFormationLintRule
 from cfnlint.rules import RuleMatch
 from qs_cfn_lint_rules.common import deep_get
 
-LINT_ERROR_MESSAGE = "ARNs must be partition-agnostic. Please leverage ${AWS::Partition}"
+LINT_ERROR_MESSAGE = (
+    "ARNs must be partition-agnostic. Please leverage ${AWS::Partition}"
+)
 
 
 def verify_agnostic_partition(cfn, resource_path, arndata):
-
     def _not_partition_agnostic_str(arnstr):
-        if re.search('^arn:aws(-*)?', arnstr):
+        if re.search("^arn:aws(-*)?", arnstr):
             return True
 
     def _not_partition_agnostic_list(resource_path, arnlist):
@@ -36,15 +37,19 @@ def verify_agnostic_partition(cfn, resource_path, arndata):
                 if _not_partition_agnostic_str(subitem):
                     matches.append(resource_path + [idx])
             elif isinstance(subitem, dict):
-                matches += _not_partition_agnostic_dict(resource_path + [idx], subitem)
+                matches += _not_partition_agnostic_dict(
+                    resource_path + [idx], subitem
+                )
             elif isinstance(subitem, list):
-                matches += _not_partition_agnostic_list(resource_path + [idx], subitem)
+                matches += _not_partition_agnostic_list(
+                    resource_path + [idx], subitem
+                )
         return matches
 
     def _not_partition_agnostic_dict(resource_path, subitem):
         matches = []
         for key, value in subitem.items():
-            if not key == 'Fn::Sub':
+            if not key == "Fn::Sub":
                 return []
             if isinstance(value, list):
                 if len(value) == 2:
@@ -61,13 +66,13 @@ def verify_agnostic_partition(cfn, resource_path, arndata):
     if isinstance(arndata, six.string_types):
         if _not_partition_agnostic_str(arndata):
             matches.append(RuleMatch(resource_path, LINT_ERROR_MESSAGE))
-    elif hasattr(arndata, 'update'):
+    elif hasattr(arndata, "update"):
         _t = arndata.copy()
         if isinstance(_t, dict):
             lm = _not_partition_agnostic_dict(resource_path, arndata)
             for rp in lm:
                 matches.append(RuleMatch(rp, LINT_ERROR_MESSAGE))
-    elif hasattr(arndata, 'copy'):
+    elif hasattr(arndata, "copy"):
         _t = arndata.copy()
         if isinstance(arndata, list):
             lm = _not_partition_agnostic_list(resource_path, _t)
@@ -75,43 +80,45 @@ def verify_agnostic_partition(cfn, resource_path, arndata):
                 matches.append(RuleMatch(rp, LINT_ERROR_MESSAGE))
     return matches
 
+
 class IAMPartition(CloudFormationLintRule):
     """Check ARN for partition agnostics."""
-    id = 'E9007'
-    shortdesc = 'ARNs should be partition argnostic'
-    description = 'Making sure all ARNs leverage ${AWS::Partition}'
-    source_url = 'https://github.com/qs_cfn_lint_rules/qs-cfn-python-lint-rules'
-    tags = ['iam']
-    SEARCH_PROPS = [
-        'Resource',
-        'ManagedPolicyArns'
-    ]
+
+    id = "E9007"
+    shortdesc = "ARNs should be partition argnostic"
+    description = "Making sure all ARNs leverage ${AWS::Partition}"
+    source_url = (
+        "https://github.com/qs_cfn_lint_rules/qs-cfn-python-lint-rules"
+    )
+    tags = ["iam"]
+    SEARCH_PROPS = ["Resource", "ManagedPolicyArns"]
 
     def determine_changes(self, cfn):
         substitutions = []
+
         def _needs_sub(path, data):
-            if (isinstance(data, dict) or issubclass(type(data), dict)):
-                if 'Fn::Sub' in data.keys():
+            if isinstance(data, dict) or issubclass(type(data), dict):
+                if "Fn::Sub" in data.keys():
                     return False
             if isinstance(path[-1], six.string_types):
-                if path[-1] == 'Fn::Sub':
+                if path[-1] == "Fn::Sub":
                     return False
                 return True
             if isinstance(path[-1], int):
-                if path[-2] == 'Fn::Sub':
+                if path[-2] == "Fn::Sub":
                     return False
                 return True
 
         for match in self.match(cfn):
             _v = deep_get(cfn.template, match.path)
             if isinstance(_v, six.string_types):
-                _nv = re.sub('arn:aws(-*)?', 'arn:${AWS::Partition}', _v)
+                _nv = re.sub("arn:aws(-*)?", "arn:${AWS::Partition}", _v)
             if isinstance(_v, dict):
                 _nv = {}
-                for k,v in _v.items():
-                    _nv[k] = re.sub('arn:aws(-*)?', 'arn:${AWS::Partition}', v)
+                for k, v in _v.items():
+                    _nv[k] = re.sub("arn:aws(-*)?", "arn:${AWS::Partition}", v)
             if _needs_sub(match.path, _v):
-                value = {'Fn::Sub': _nv}
+                value = {"Fn::Sub": _nv}
             else:
                 value = _nv
             substitutions.append((match.path, _v, value))

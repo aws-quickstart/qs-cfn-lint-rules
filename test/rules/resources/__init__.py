@@ -18,4 +18,3 @@
 # 6.4 TODO: Other funcs
 
 # 6.5 Other complex forms which may be possible to calculate at run time of the test.
-

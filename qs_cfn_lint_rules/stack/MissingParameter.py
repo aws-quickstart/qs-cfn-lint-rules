@@ -23,19 +23,17 @@ from qs_cfn_lint_rules.stack.StackHelper import template_url_to_path
 
 class MissingParameter(CloudFormationLintRule):
     """Check Nested Stack Parameters"""
-    id = 'E9903'
+
+    id = "E9903"
     experimental = True
-    shortdesc = 'Parameters missing for nested stack'
-    description = 'Check to make sure parameters for nested stack are correct'
-    source_url = 'https://github.com/qs-cfn-lint-rules/qs_cfn_lint_rules'
-    tags = ['case']
+    shortdesc = "Parameters missing for nested stack"
+    description = "Check to make sure parameters for nested stack are correct"
+    source_url = "https://github.com/qs-cfn-lint-rules/qs_cfn_lint_rules"
+    tags = ["case"]
 
     @staticmethod
     def parameter_mismatch(
-        current_template_path,
-        parameters,
-        child_template_url,
-        mappings
+        current_template_path, parameters, child_template_url, mappings
     ):
         missing_parameters = []
 
@@ -43,12 +41,14 @@ class MissingParameter(CloudFormationLintRule):
         template_file = template_url_to_path(
             current_template_path=current_template_path,
             template_url=child_template_url,
-            template_mappings=mappings
+            template_mappings=mappings,
         )
         if isinstance(template_file, list) and len(template_file) == 1:
             template_file = template_file[0]
         elif isinstance(template_file, list):
-            raise ValueError("expecting single template in a list %s" % template_file)
+            raise ValueError(
+                "expecting single template in a list %s" % template_file
+            )
         # Load child stack
         # template_parser = MYTemplateParser()
         # template_parsed = template_parser.my_load_yaml_function(
@@ -69,7 +69,7 @@ class MissingParameter(CloudFormationLintRule):
             if properties is None:
                 properties = {}
 
-            if 'Default' in properties.keys():
+            if "Default" in properties.keys():
                 continue
 
             if parameter not in parameters.keys():
@@ -87,14 +87,14 @@ class MissingParameter(CloudFormationLintRule):
         matches = []
         # try:
         resources = cfn.get_resources(
-            resource_type=['AWS::CloudFormation::Stack']
+            resource_type=["AWS::CloudFormation::Stack"]
         )
 
         for r_name, r_values in resources.items():
-            properties = r_values.get('Properties')
-            child_template_url = properties.get('TemplateURL')
+            properties = r_values.get("Properties")
+            child_template_url = properties.get("TemplateURL")
 
-            child_template_parameters = properties.get('Parameters')
+            child_template_parameters = properties.get("Parameters")
             if child_template_parameters is None:
                 child_template_parameters = {}
 
@@ -102,14 +102,13 @@ class MissingParameter(CloudFormationLintRule):
                 current_template_path=os.path.abspath(cfn.filename),
                 parameters=child_template_parameters,
                 child_template_url=child_template_url,
-                mappings=cfn.get_mappings()
+                mappings=cfn.get_mappings(),
             )
 
             if missing_parameters:
-                path = ['Resources', r_name, 'Properties', 'Parameters']
-                message = 'Missing Child Stack parameters. {} {}'.format(
-                        r_name,
-                        missing_parameters
-                    )
+                path = ["Resources", r_name, "Properties", "Parameters"]
+                message = "Missing Child Stack parameters. {} {}".format(
+                    r_name, missing_parameters
+                )
                 matches.append(RuleMatch(path, message))
         return matches

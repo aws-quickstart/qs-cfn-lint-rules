@@ -21,42 +21,42 @@ from setuptools import setup
 version = "0.0.2"
 
 
-with open('README.md') as f:
+with open("README.md") as f:
     readme = f.read()
 
 setup(
-    name='qs_cfn_lint_rules',
+    name="qs_cfn_lint_rules",
     version=version,
-    description='checks CloudFormation templates against AWS Quick Start contributors guide rules',
+    description="checks CloudFormation templates against AWS Quick Start contributors guide rules",
     long_description=readme,
     long_description_content_type="text/markdown",
-    keywords='aws, lint, aws-qs_cfn_lint_rules',
-    author='AWS Quick Start team',
-    author_email='qs_cfn_lint_rules-eng@amazon.com',
-    url='https://github.com/aws-quickstart/qs-cfn-lint-rules',
+    keywords="aws, lint, aws-qs_cfn_lint_rules",
+    author="AWS Quick Start team",
+    author_email="qs_cfn_lint_rules-eng@amazon.com",
+    url="https://github.com/aws-quickstart/qs-cfn-lint-rules",
     packages=find_packages(),
     zip_safe=False,
     install_requires=[
-        'cfn-lint>=0.16.0,<1.0.0',
-        'pyspellchecker>=0.4.0,<0.5.0',
-        'policyuniverse>=1.3.5,<2'
+        "cfn-lint>=0.16.0,<1.0.0",
+        "pyspellchecker>=0.4.0,<0.5.0",
+        "policyuniverse>=1.3.5,<2",
     ],
-    python_requires='>=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*',
-    license='Apache License 2.0',
+    python_requires=">=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*",
+    license="Apache License 2.0",
     test_suite="unittest",
-    scripts=['bin/qs-experemental-remediator.py'],
+    scripts=["bin/qs-experemental-remediator.py"],
     classifiers=[
-        'Development Status :: 3 - Alpha',
-        'Intended Audience :: Developers',
-        'License :: OSI Approved :: Apache Software License',
-        'Natural Language :: English',
-        'Operating System :: OS Independent',
-        'Programming Language :: Python :: 2',
-        'Programming Language :: Python :: 2.7',
-        'Programming Language :: Python :: 3',
-        'Programming Language :: Python :: 3.4',
-        'Programming Language :: Python :: 3.5',
-        'Programming Language :: Python :: 3.6',
-        'Programming Language :: Python :: 3.7',
+        "Development Status :: 3 - Alpha",
+        "Intended Audience :: Developers",
+        "License :: OSI Approved :: Apache Software License",
+        "Natural Language :: English",
+        "Operating System :: OS Independent",
+        "Programming Language :: Python :: 2",
+        "Programming Language :: Python :: 2.7",
+        "Programming Language :: Python :: 3",
+        "Programming Language :: Python :: 3.4",
+        "Programming Language :: Python :: 3.5",
+        "Programming Language :: Python :: 3.6",
+        "Programming Language :: Python :: 3.7",
     ],
 )

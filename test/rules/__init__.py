@@ -22,59 +22,78 @@ from testlib.testcase import BaseTestCase
 
 class BaseRuleTestCase(BaseTestCase):
     """Used for Testing Rules"""
-    success_templates = [
-    ]
+
+    success_templates = []
 
     def setUp(self):
         """Setup"""
-        self.collection = RulesCollection(include_rules=['I'], include_experimental=True)
+        self.collection = RulesCollection(
+            include_rules=["I"], include_experimental=True
+        )
 
     def helper_file_positive(self):
         """Success test"""
         for filename in self.success_templates:
             template = self.load_template(filename)
-            good_runner = Runner(self.collection, filename, template, ['us-east-1'], [])
+            good_runner = Runner(
+                self.collection, filename, template, ["us-east-1"], []
+            )
             good_runner.transform()
             failures = good_runner.run()
-            assert [] == failures, 'Got failures {} on {}'.format(failures, filename)
+            assert [] == failures, "Got failures {} on {}".format(
+                failures, filename
+            )
 
     def helper_file_rule_config(self, filename, config, err_count):
         """Success test with rule config included"""
         template = self.load_template(filename)
         self.collection.rules[0].configure(config)
-        good_runner = Runner(self.collection, filename, template, ['us-east-1'], [])
+        good_runner = Runner(
+            self.collection, filename, template, ["us-east-1"], []
+        )
         good_runner.transform()
         failures = good_runner.run()
-        self.assertEqual(err_count, len(failures), 'Expected {} failures but got {} on {}'.format(
-            err_count, failures, filename))
+        self.assertEqual(
+            err_count,
+            len(failures),
+            "Expected {} failures but got {} on {}".format(
+                err_count, failures, filename
+            ),
+        )
         self.collection.rules[0].configure(config)
 
     def helper_file_positive_template(self, filename):
         """Success test with template parameter"""
         template = self.load_template(filename)
-        good_runner = Runner(self.collection, filename, template, ['us-east-1'], [])
+        good_runner = Runner(
+            self.collection, filename, template, ["us-east-1"], []
+        )
         good_runner.transform()
         self.assertEqual([], good_runner.run())
 
     def helper_file_negative(self, filename, err_count, regions=None):
         """Failure test"""
-        regions = regions or ['us-east-1']
+        regions = regions or ["us-east-1"]
         template = self.load_template(filename)
         bad_runner = Runner(self.collection, filename, template, regions, [])
         bad_runner.transform()
         errs = bad_runner.run()
         self.assertEqual(err_count, len(errs))
 
-class DynamicRuleTesting:
 
+class DynamicRuleTesting:
     def test_file_positive(self):
         for cn, to in self.testobjs.items():
-            with self.subTest(f"Testing {cn} file positive", file=cn, rule=to.parent.id):
+            with self.subTest(
+                f"Testing {cn} file positive", file=cn, rule=to.parent.id
+            ):
                 to.test_file_positive()
 
     def test_file_negative(self):
         for cn, to in self.testobjs.items():
-            with self.subTest(f"Testing {cn} file negative", file=cn, rule=to.parent.id):
+            with self.subTest(
+                f"Testing {cn} file negative", file=cn, rule=to.parent.id
+            ):
                 to.test_file_negative(len(to.parent.property_names))
 
     def setUp(self):
@@ -89,21 +108,22 @@ class DynamicRuleTesting:
             _single_rule_test.configure(o)
             self.testobjs[n] = _single_rule_test
 
-class SingleRuleTest:
 
+class SingleRuleTest:
     def configure(self, parent_cls):
         # Dynamically creating these to ensure MRO inheritence is how we want it.
         def dynamic_init(self):
             super(BaseRuleTestCase, self).__init__()
             super(parent_cls, self).__init__()
+
         def is_enabled(self, *args, **kwargs):
             return True
+
         dynamic_class = type(
             f"Dynamic_{parent_cls.__name__}",
-            (parent_cls, BaseRuleTestCase, object),{
-                '__init__': dynamic_init,
-                'is_enabled': is_enabled
-            })
+            (parent_cls, BaseRuleTestCase, object),
+            {"__init__": dynamic_init, "is_enabled": is_enabled},
+        )
         dc = dynamic_class()
         dc.setUp()
         dc.collection.register(dc)
@@ -115,8 +135,10 @@ class SingleRuleTest:
 
     def test_file_negative(self, expected_errors):
         """Test failure"""
-        prefix = 'test/fixtures/templates/bad/resources/cfnnag/'
-        self._parent_instance.helper_file_negative(f"{prefix}{self._parent_instance.id}.json", expected_errors)
+        prefix = "test/fixtures/templates/bad/resources/cfnnag/"
+        self._parent_instance.helper_file_negative(
+            f"{prefix}{self._parent_instance.id}.json", expected_errors
+        )
 
     @property
     def parent(self):

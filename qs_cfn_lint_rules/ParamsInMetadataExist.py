@@ -17,15 +17,21 @@
 import re
 from cfnlint.rules import CloudFormationLintRule
 from cfnlint.rules import RuleMatch
-from cfnlint.rules.metadata.InterfaceParameterExists import InterfaceParameterExists as I
+from cfnlint.rules.metadata.InterfaceParameterExists import (
+    InterfaceParameterExists as I,
+)
+
 
 class Base(CloudFormationLintRule):
     """Wrapper for W4001 - we need it as an error."""
-    id = 'E9009'
-    shortdesc = 'Parameters referenced in metadata must exist in the template.'
-    description = 'Making sure parameters in metadataexist within the template'
-    source_url = 'https://github.com/qs_cfn_lint_rules/qs-cfn-python-lint-rules'
-    tags = ['label']
+
+    id = "E9009"
+    shortdesc = "Parameters referenced in metadata must exist in the template."
+    description = "Making sure parameters in metadataexist within the template"
+    source_url = (
+        "https://github.com/qs_cfn_lint_rules/qs-cfn-python-lint-rules"
+    )
+    tags = ["label"]
 
     def match(self, cfn):
         """Basic Matching"""
