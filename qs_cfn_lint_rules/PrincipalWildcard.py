@@ -24,29 +24,27 @@ from qs_cfn_lint_rules.common import deep_get
 
 LINT_ERROR_MESSAGE = "Policy should not allow * Principal"
 
-CFN_NAG_RULES = [
-    'F16',
-    'F18',
-    'F20',
-    'F21'
-]
+CFN_NAG_RULES = ["F16", "F18", "F20", "F21"]
+
 
 def determine_wildcard_Principal_violations(cfn, policy_path):
     violating_methods = []
     policy = deep_get(cfn.template, policy_path, [])
 
-    if policy['Effect'] == 'Deny':
+    if policy["Effect"] == "Deny":
         return violating_methods
-    violating_methods.append(policy_path + ['Principal'])
+    violating_methods.append(policy_path + ["Principal"])
     return violating_methods
+
 
 class IAMPrincipalWildcard(CloudFormationLintRule):
     """Check ARN for partition agnostics."""
-    id = 'EPolicyWildcardPrincipal'
-    shortdesc = '* on Principal property is a bad idea'
-    source_url = 'https://github.com/qs_cfn_lint_rules/qs-cfn-python-lint-rules'
-    tags = ['iam']
-    SEARCH_PROPS = ['Principal']
+
+    id = "EPolicyWildcardPrincipal"
+    shortdesc = "* on Principal property is a bad idea"
+    source_url = "https://github.com/qs_cfn_lint_rules/qs-cfn-python-lint-rules"
+    tags = ["iam"]
+    SEARCH_PROPS = ["Principal"]
 
     def match(self, cfn):
         """Basic Matching"""
@@ -55,7 +53,7 @@ class IAMPrincipalWildcard(CloudFormationLintRule):
         for prop in self.SEARCH_PROPS:
             term_matches += cfn.search_deep_keys(prop)
         for tm in term_matches:
-            if tm[-1] not in ['*', ['*']]:
+            if tm[-1] not in ["*", ["*"]]:
                 continue
             violating_methods = determine_wildcard_Principal_violations(cfn, tm[:-2])
             for ln in violating_methods:

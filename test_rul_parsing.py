@@ -16,10 +16,10 @@ except Exception as e:
 
 def get_resources(template, resource_type=[]):
     """
-        Get Resources
-        Filter on type when specified
+    Get Resources
+    Filter on type when specified
     """
-    resources = template.get('Resources', {})
+    resources = template.get("Resources", {})
     if not isinstance(resources, dict):
         return {}
     if isinstance(resource_type, six.string_types):
@@ -28,13 +28,16 @@ def get_resources(template, resource_type=[]):
     results = {}
     for k, v in resources.items():
         if isinstance(v, dict):
-            if (v.get('Type', None) in resource_type) or (not resource_type and v.get('Type') is not None):
+            if (v.get("Type", None) in resource_type) or (
+                not resource_type and v.get("Type") is not None
+            ):
                 results[k] = v
 
     return results
 
+
 try:
-    cfn_resources = get_resources(cfn, resource_type=['AWS::CloudFormation::Stack'])
+    cfn_resources = get_resources(cfn, resource_type=["AWS::CloudFormation::Stack"])
 except Exception as a:
     print("Exception parsing: '{}'".format(master_template_path))
     # print(str(e))
@@ -43,8 +46,8 @@ except Exception as a:
 
 printed = False
 for r_name, r_values in cfn_resources.items():
-    properties = r_values.get('Properties')
-    child_template_url = properties.get('TemplateURL')
+    properties = r_values.get("Properties")
+    child_template_url = properties.get("TemplateURL")
     if not printed:
         printed = True
         print(master_template_path)

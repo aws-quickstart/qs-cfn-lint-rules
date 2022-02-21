@@ -2,6 +2,7 @@ import re
 import inspect
 from cfnlint.rules import RuleMatch
 
+
 def inherit_doc_string(cls):
     for base in inspect.getmro(cls):
         if base.__doc__ is not None:
@@ -25,15 +26,17 @@ def deep_get(source_dict, list_of_keys, default_value=None):
 def parameter_violating_default_noecho(parameter):
     if not parameter:
         return False
-    if parameter['Type'] == 'String':
-        if not parameter.get('NoEcho'):
+    if parameter["Type"] == "String":
+        if not parameter.get("NoEcho"):
             return True
-#            if parameter.get('Default'):
-#                return True
+    #            if parameter.get('Default'):
+    #                return True
     return False
 
 
-def search_resources_for_disallowed_property_values(cfn, resource_type, prop_name) -> []:
+def search_resources_for_disallowed_property_values(
+    cfn, resource_type, prop_name
+) -> []:
     """
     Searches all resources of resource type, to ensure property value (or nested value) is not present
     returns a list of paths to violating lines.
@@ -41,24 +44,26 @@ def search_resources_for_disallowed_property_values(cfn, resource_type, prop_nam
     """
     results = []
     for resource_name, resource_values in cfn.get_resources([resource_type]).items():
-        path = ['Resources', resource_name, 'Properties']
-        properties = resource_values.get('Properties', {})
-        prop_value = deep_get(properties, prop_name.split('.'))
+        path = ["Resources", resource_name, "Properties"]
+        properties = resource_values.get("Properties", {})
+        prop_value = deep_get(properties, prop_name.split("."))
         if not prop_value:
             return results
-        results.append(path + prop_name.split('.'))
+        results.append(path + prop_name.split("."))
     return results
 
 
-def search_resources_for_property_value_violations(cfn, resource_type, prop_name, expected_prop_value) -> []:
+def search_resources_for_property_value_violations(
+    cfn, resource_type, prop_name, expected_prop_value
+) -> []:
     """
     Searches all resources of resource type, to ensure property is expected value
     returns a list of paths to violating lines.
     """
     results = []
     for resource_name, resource_values in cfn.get_resources([resource_type]).items():
-        path = ['Resources', resource_name, 'Properties']
-        properties = resource_values.get('Properties',{})
+        path = ["Resources", resource_name, "Properties"]
+        properties = resource_values.get("Properties", {})
 
         if prop_name not in properties.keys():
             results.append(path)
@@ -83,7 +88,7 @@ class StubRuleCommon:
 
     @property
     def _r_suffix(self):
-        return ''.join(self.resource_type.split(':')[1:])
+        return "".join(self.resource_type.split(":")[1:])
 
     @property
     def id(self):
@@ -99,33 +104,38 @@ class StubRuleCommon:
 
     @property
     def __doc__(self):
-        return f"""Verify {self.resource_type} resource types have {self.property_name}"""
+        return (
+            f"""Verify {self.resource_type} resource types have {self.property_name}"""
+        )
 
     @property
     def tags(self):
-        return [self.resource_type.split('::')[1].lower()]
+        return [self.resource_type.split("::")[1].lower()]
 
 
 class RequiredPropertyEnabledBase(StubRuleCommon):
-    source_url = 'https://github.com/qs_cfn_lint_rules/qs-cfn-python-lint-rules'
+    source_url = "https://github.com/qs_cfn_lint_rules/qs-cfn-python-lint-rules"
 
     def match(self, cfn):
         """Basic Matching"""
         matches = []
-        for ln in search_resources_for_property_value_violations(cfn, self.resource_type, self.property_name, self.property_value):
+        for ln in search_resources_for_property_value_violations(
+            cfn, self.resource_type, self.property_name, self.property_value
+        ):
             matches.append(RuleMatch(ln, self._lint_error_message))
         return matches
 
     @property
     def __doc__(self):
-        if hasattr(self, 'property_value'):
+        if hasattr(self, "property_value"):
             if not self.property_value:
                 return f"""Verify {self.resource_type} resource types do not have property {self.property_name} enabled"""
         return f"""Verify {self.resource_type} resource types have property {self.property_name} enabled"""
 
 
 class ProhibitedResource(StubRuleCommon):
-    source_url = 'https://github.com/qs_cfn_lint_rules/qs-cfn-python-lint-rules'
+    source_url = "https://github.com/qs_cfn_lint_rules/qs-cfn-python-lint-rules"
+
     def __init__(self, *args, **kwargs):
         super(StubRuleCommon, self).__init__(*args, **kwargs)
 
@@ -149,16 +159,17 @@ class ProhibitedResource(StubRuleCommon):
         """Basic Matching"""
         results = []
         for resource_name in cfn.get_resources([self.resource_type]).keys():
-            path = ['Resources', resource_name]
+            path = ["Resources", resource_name]
             results.append(RuleMatch(path, self._lint_error_message))
         return results
 
 
 class ProhibitedResourceProperty(StubRuleCommon):
-
     @property
     def _lint_error_message(self):
-        return f"{self.resource_type} must have not have {self.property_name} configured"
+        return (
+            f"{self.resource_type} must have not have {self.property_name} configured"
+        )
 
     @property
     def id(self):
@@ -175,9 +186,12 @@ class ProhibitedResourceProperty(StubRuleCommon):
     def match(self, cfn):
         """Basic Matching"""
         matches = []
-        for ln in search_resources_for_disallowed_property_values(cfn, self.resource_type, self.property_name):
+        for ln in search_resources_for_disallowed_property_values(
+            cfn, self.resource_type, self.property_name
+        ):
             matches.append(RuleMatch(ln, self._lint_error_message))
         return matches
+
 
 class ParameterNoEchoDefault(StubRuleCommon):
     @property
@@ -189,7 +203,7 @@ class ParameterNoEchoDefault(StubRuleCommon):
 
     @property
     def _r_suffix(self):
-        return ''.join(self.resource_type.split(':')[1:])
+        return "".join(self.resource_type.split(":")[1:])
 
     @property
     def id(self):
@@ -197,7 +211,6 @@ class ParameterNoEchoDefault(StubRuleCommon):
             return f"E{self._r_suffix}DefaultNoEcho"
         else:
             return f"E{self._r_suffix}{self.property_names}DefaultNoEcho"
-
 
     @property
     def _condensed_doc(self):
@@ -210,7 +223,6 @@ class ParameterNoEchoDefault(StubRuleCommon):
     def shortdesc(self):
         return self._condensed_doc
 
-
     @property
     def description(self):
         return self._condensed_doc
@@ -221,19 +233,28 @@ class ParameterNoEchoDefault(StubRuleCommon):
 
     @property
     def tags(self):
-        return [self.resource_type.split('::')[1].lower()]
+        return [self.resource_type.split("::")[1].lower()]
 
-    def _iterate_properties(self, resource_name, resource_data, parameters, property_list):
+    def _iterate_properties(
+        self, resource_name, resource_data, parameters, property_list
+    ):
         for property_name in property_list:
-            path = ['Resources', resource_name]
-            prop_value = deep_get(resource_data.get('Properties',{}), property_name.split('.'))
+            path = ["Resources", resource_name]
+            prop_value = deep_get(
+                resource_data.get("Properties", {}), property_name.split(".")
+            )
             if type(prop_value) == str:
-                yield RuleMatch(path + ['Properties', property_name], self._lint_error_message)
+                yield RuleMatch(
+                    path + ["Properties", property_name], self._lint_error_message
+                )
             if issubclass(type(prop_value), dict):
-                if prop_value.get('Ref'):
-                    pn = prop_value['Ref']
+                if prop_value.get("Ref"):
+                    pn = prop_value["Ref"]
                     if parameter_violating_default_noecho(parameters.get(pn)):
-                        yield RuleMatch(path + ['Properties'] + property_name.split('.'), self._lint_error_message)
+                        yield RuleMatch(
+                            path + ["Properties"] + property_name.split("."),
+                            self._lint_error_message,
+                        )
 
     def match(self, cfn):
         """Basic Matching"""
@@ -243,12 +264,11 @@ class ParameterNoEchoDefault(StubRuleCommon):
         else:
             property_list = self.property_names
         parameters = cfn.get_parameters()
-        for resource_name, resource_data in cfn.get_resources([self.resource_type]).items():
+        for resource_name, resource_data in cfn.get_resources(
+            [self.resource_type]
+        ).items():
             for match in self._iterate_properties(
-                resource_name,
-                resource_data,
-                parameters,
-                property_list
+                resource_name, resource_data, parameters, property_list
             ):
                 results.append(match)
         return results

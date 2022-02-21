@@ -1,4 +1,3 @@
-
 """
   Copyright 2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
   Permission is hereby granted, free of charge, to any person obtaining a copy of this
@@ -35,8 +34,8 @@ class BaseTestCase(TestCase):
         assert isinstance(b, list)
 
         def key_func(d):
-            """ sort dict based on keys """
-            items = ((k, v if v is not None else '') for k, v in d.items())
+            """sort dict based on keys"""
+            items = ((k, v if v is not None else "") for k, v in d.items())
             return sorted(items)
 
         self.assertEqual(sorted(a, key=key_func), sorted(b, key=key_func))

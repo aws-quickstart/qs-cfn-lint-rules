@@ -18,21 +18,25 @@ import re
 import six
 from cfnlint.rules import CloudFormationLintRule
 from cfnlint.rules import RuleMatch
-from qs_cfn_lint_rules.common import search_resources_for_property_value_violations as srfpvv
+from qs_cfn_lint_rules.common import (
+    search_resources_for_property_value_violations as srfpvv,
+)
 
 LINT_ERROR_MESSAGE = "AWS::RDS::DBCluster must have StorageEncryption enabled"
 
+
 class StorageEncryptionEnabled(CloudFormationLintRule):
     """Verify RDS Clusters have StorageEncryptionEnabled"""
-    id = 'ERDSStorageEncryptionEnabled'
-    shortdesc = 'AWS::RDS::DBCluster should have StorageEncryption enabled'
-    description = 'AWS::RDS::DBCluster should have StorageEncryption enabled'
-    source_url = 'https://github.com/qs_cfn_lint_rules/qs-cfn-python-lint-rules'
-    tags = ['rds']
+
+    id = "ERDSStorageEncryptionEnabled"
+    shortdesc = "AWS::RDS::DBCluster should have StorageEncryption enabled"
+    description = "AWS::RDS::DBCluster should have StorageEncryption enabled"
+    source_url = "https://github.com/qs_cfn_lint_rules/qs-cfn-python-lint-rules"
+    tags = ["rds"]
 
     def match(self, cfn):
         """Basic Matching"""
         matches = []
-        for ln in srfpvv(cfn, 'AWS::RDS::DBCluster', 'StorageEncrypted', True):
+        for ln in srfpvv(cfn, "AWS::RDS::DBCluster", "StorageEncrypted", True):
             matches.append(RuleMatch(ln, LINT_ERROR_MESSAGE))
         return matches

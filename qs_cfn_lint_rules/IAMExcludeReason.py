@@ -25,12 +25,13 @@ LINT_ERROR_MESSAGE = "IAM policy exclusions must provide exclusion reason eg.: {
 
 class IAMExcludeReason(CloudFormationLintRule):
     """Check that IAM exclusions have a reason specified."""
-    id = 'E-IAM-IGNORE-JUSTIFICATION'
-    shortdesc = 'excluding IAM best practices requires justification'
-    description = 'when excluding an IAM policy rule, you must provide a justification'
-    source_url = 'https://github.com/qs_cfn_lint_rules/qs-cfn-python-lint-rules'
-    tags = ['iam']
-    SEARCH_PROPS = ['cfn-lint']
+
+    id = "E-IAM-IGNORE-JUSTIFICATION"
+    shortdesc = "excluding IAM best practices requires justification"
+    description = "when excluding an IAM policy rule, you must provide a justification"
+    source_url = "https://github.com/qs_cfn_lint_rules/qs-cfn-python-lint-rules"
+    tags = ["iam"]
+    SEARCH_PROPS = ["cfn-lint"]
 
     def match(self, cfn):
         """Basic Matching"""
@@ -42,14 +43,14 @@ class IAMExcludeReason(CloudFormationLintRule):
             config = tm[-1]
             if "ignore_checks" not in config:
                 continue
-            if "EIAMPolicyResourceWildcard" in config['ignore_checks']:
+            if "EIAMPolicyResourceWildcard" in config["ignore_checks"]:
                 if "ignore_reasons" not in config:
                     violation_matches.append(RuleMatch(tm, LINT_ERROR_MESSAGE))
                 elif "EIAMPolicyResourceWildcard" not in config["ignore_reasons"]:
                     violation_matches.append(RuleMatch(tm, LINT_ERROR_MESSAGE))
                 elif len(config["ignore_reasons"]["EIAMPolicyResourceWildcard"]) < 1:
                     violation_matches.append(RuleMatch(tm, LINT_ERROR_MESSAGE))
-            if "EIAMPolicyActionWildcard" in config['ignore_checks']:
+            if "EIAMPolicyActionWildcard" in config["ignore_checks"]:
                 if "ignore_reasons" not in config:
                     violation_matches.append(RuleMatch(tm, LINT_ERROR_MESSAGE))
                 elif "EIAMPolicyActionWildcard" not in config["ignore_reasons"]:

@@ -18,14 +18,14 @@ from cfnlint.rules import CloudFormationLintRule
 from cfnlint.rules import RuleMatch
 
 deny_list = [
-    ['abort', '"stop"'],
-    ['blacklist', '"deny list"'],
-    ['^execute', '"start" or "run"'],
-    ['^hang', '"stop responding"'],
-    ['kill', '"end" or "stop"'],
-    ['master', '"primary", "main", or "leader"'],
-    ['slave', '"replica", "secondary", or "standby"'],
-    ['whitelist', '"allow list"']
+    ["abort", '"stop"'],
+    ["blacklist", '"deny list"'],
+    ["^execute", '"start" or "run"'],
+    ["^hang", '"stop responding"'],
+    ["kill", '"end" or "stop"'],
+    ["master", '"primary", "main", or "leader"'],
+    ["slave", '"replica", "secondary", or "standby"'],
+    ["whitelist", '"allow list"'],
 ]
 
 
@@ -38,11 +38,12 @@ def match(s):
 
 class Base(CloudFormationLintRule):
     """Check for non-inclusive terms"""
-    id = 'E9101'
-    shortdesc = 'Use welcoming and inclusive language'
-    description = 'Checks that text is welcoming and inclusive as per Amazon Open Source Code of Conduct https://aws.github.io/code-of-conduct'
-    source_url = 'https://github.com/qs_cfn_lint_rules/qs_cfn_lint_rules'
-    tags = ['language']
+
+    id = "E9101"
+    shortdesc = "Use welcoming and inclusive language"
+    description = "Checks that text is welcoming and inclusive as per Amazon Open Source Code of Conduct https://aws.github.io/code-of-conduct"
+    source_url = "https://github.com/qs_cfn_lint_rules/qs_cfn_lint_rules"
+    tags = ["language"]
 
     def match(self, cfn):
         """Find all strings and match a deny list of sub strings"""
@@ -56,10 +57,10 @@ class Base(CloudFormationLintRule):
                 for k, v in item.items():
                     p = path.copy()
                     p.append(k)
-#                    recurse_template(k, p)
+                    # recurse_template(k, p)
                     recurse_template(v, p)
             if isinstance(item, list):
-                for i in range(len(item)-1):
+                for i in range(len(item) - 1):
                     p = path.copy()
                     p.append(i)
                     recurse_template(item[i], p)
@@ -72,13 +73,20 @@ class Base(CloudFormationLintRule):
         recurse_template(cfn.template)
         return matches
 
-        if self.id in cfn.template.get("Metadata", {}).get("QSLint", {}).get("Exclusions", []):
+        if self.id in cfn.template.get("Metadata", {}).get("QSLint", {}).get(
+            "Exclusions", []
+        ):
             return matches
         if "Metadata" in cfn.template.keys():
             if "AWS::CloudFormation::Interface" in cfn.template["Metadata"].keys():
-                if "ParameterGroups" in cfn.template["Metadata"]["AWS::CloudFormation::Interface"].keys():
-                    for x in cfn.template["Metadata"]["AWS::CloudFormation::Interface"]["ParameterGroups"]:
-                        labels += x['Parameters']
+                if (
+                    "ParameterGroups"
+                    in cfn.template["Metadata"]["AWS::CloudFormation::Interface"].keys()
+                ):
+                    for x in cfn.template["Metadata"]["AWS::CloudFormation::Interface"][
+                        "ParameterGroups"
+                    ]:
+                        labels += x["Parameters"]
 
         if "Parameters" not in cfn.template.keys():
             return matches

@@ -20,11 +20,12 @@ from cfnlint.rules import RuleMatch
 
 class Base(CloudFormationLintRule):
     """Check Name Casing"""
-    id = 'W9001'
-    shortdesc = 'Name casing should be PascalCase'
-    description = 'Making sure all names are PascalCase'
-    source_url = 'https://github.com/qs_cfn_lint_rules/qs-cfn-python-lint-rules'
-    tags = ['case']
+
+    id = "W9001"
+    shortdesc = "Name casing should be PascalCase"
+    description = "Making sure all names are PascalCase"
+    source_url = "https://github.com/qs_cfn_lint_rules/qs-cfn-python-lint-rules"
+    tags = ["case"]
 
     def match(self, cfn):
         """Basic Matching"""
@@ -34,6 +35,6 @@ class Base(CloudFormationLintRule):
             if x in ["Parameters", "Outputs", "Resources"]:
                 for i in cfn.template[x]:
                     if i[0] != i[0].upper():
-                        message = '{0} names should be PascalCase'
-                        matches.append(RuleMatch([x, i], message.format(x.rstrip('s'))))
+                        message = "{0} names should be PascalCase"
+                        matches.append(RuleMatch([x, i], message.format(x.rstrip("s"))))
         return matches

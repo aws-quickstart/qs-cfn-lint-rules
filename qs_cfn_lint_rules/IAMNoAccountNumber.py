@@ -24,21 +24,24 @@ from qs_cfn_lint_rules.common import deep_get
 
 LINT_ERROR_MESSAGE = "Hard-coded account IDs are unacceptable."
 CFN_NAG_RULES = [
-    'W21',
-    'W15',
+    "W21",
+    "W15",
 ]
+
 
 def determine_account_id_in_principal(resource_path, resource):
     return re.search(r"[0-9]{12}", str(resource))
 
+
 class IAMResourceWildcard(CloudFormationLintRule):
     """Check ARN for partition agnostics."""
-    id = 'EIAMAccountIDInPrincipal'
+
+    id = "EIAMAccountIDInPrincipal"
     shortdesc = "Hard-coded account IDs are unacceptable."
     description = "Hard-coded account IDs are unacceptable."
-    source_url = 'https://github.com/qs_cfn_lint_rules/qs-cfn-python-lint-rules'
-    tags = ['iam']
-    SEARCH_PROPS = ['Principal']
+    source_url = "https://github.com/qs_cfn_lint_rules/qs-cfn-python-lint-rules"
+    tags = ["iam"]
+    SEARCH_PROPS = ["Principal"]
 
     def match(self, cfn):
         """Basic Matching"""

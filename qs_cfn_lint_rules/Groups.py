@@ -20,24 +20,32 @@ from cfnlint.rules import RuleMatch
 
 class Base(CloudFormationLintRule):
     """Check Parameter Group Entries Exist"""
-    id = 'W9003'
-    shortdesc = 'Each parameter should be in a group'
-    description = 'Each parameter should be in one AWS::CloudFormation::Interface ParameterGroups entry'
-    source_url = 'https://github.com/qs_cfn_lint_rules/qs_cfn_lint_rules'
-    tags = ['parameters']
+
+    id = "W9003"
+    shortdesc = "Each parameter should be in a group"
+    description = "Each parameter should be in one AWS::CloudFormation::Interface ParameterGroups entry"
+    source_url = "https://github.com/qs_cfn_lint_rules/qs_cfn_lint_rules"
+    tags = ["parameters"]
 
     def match(self, cfn):
         """Basic Matching"""
         matches = []
-        message = 'Parameter {0} is not in a ParameterGroup'
+        message = "Parameter {0} is not in a ParameterGroup"
         labels = []
-        if self.id in cfn.template.get("Metadata", {}).get("QSLint", {}).get("Exclusions", []):
+        if self.id in cfn.template.get("Metadata", {}).get("QSLint", {}).get(
+            "Exclusions", []
+        ):
             return matches
         if "Metadata" in cfn.template.keys():
             if "AWS::CloudFormation::Interface" in cfn.template["Metadata"].keys():
-                if "ParameterGroups" in cfn.template["Metadata"]["AWS::CloudFormation::Interface"].keys():
-                    for x in cfn.template["Metadata"]["AWS::CloudFormation::Interface"]["ParameterGroups"]:
-                        labels += x['Parameters']
+                if (
+                    "ParameterGroups"
+                    in cfn.template["Metadata"]["AWS::CloudFormation::Interface"].keys()
+                ):
+                    for x in cfn.template["Metadata"]["AWS::CloudFormation::Interface"][
+                        "ParameterGroups"
+                    ]:
+                        labels += x["Parameters"]
 
         if "Parameters" not in cfn.template.keys():
             return matches

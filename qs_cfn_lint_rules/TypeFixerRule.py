@@ -18,9 +18,9 @@ from cfnlint.rules import CloudFormationLintRule
 from cfnlint.rules import RuleMatch, RulesCollection
 from cfnlint.rules.resources.properties.ValuePrimitiveType import ValuePrimitiveType
 
-class FixTypeCrap(ValuePrimitiveType):
 
-    def is_enabled(self,*args, **kwargs):
+class FixTypeCrap(ValuePrimitiveType):
+    def is_enabled(self, *args, **kwargs):
         return True
 
     def determine_changes(self, cfn):
