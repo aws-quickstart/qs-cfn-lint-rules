@@ -54,7 +54,9 @@ class MatchingParameterNotPassed(CloudFormationLintRule):
         if isinstance(template_file, list) and len(template_file) == 1:
             template_file = template_file[0]
         elif isinstance(template_file, list):
-            raise ValueError("expecting single template in a list %s" % template_file)
+            raise ValueError(
+                "expecting single template in a list %s" % template_file
+            )
         template_parsed = cfnlint.decode.cfn_yaml.load(template_file)
 
         child_parameters = template_parsed.get("Parameters")
@@ -66,11 +68,14 @@ class MatchingParameterNotPassed(CloudFormationLintRule):
             if parameter in parent_parameters.keys():
                 if parameter in resource_parameters.keys():
                     # The Parents value not being passed to the child
-                    if parameter not in str(resource_parameters.get(parameter)):
+                    if parameter not in str(
+                        resource_parameters.get(parameter)
+                    ):
                         # TODO: test for !Ref or the name of the Parameter in the value
                         missing_parameters.append(
                             "{} ({})".format(
-                                parameter, str(resource_parameters.get(parameter))
+                                parameter,
+                                str(resource_parameters.get(parameter)),
                             )
                         )
 
@@ -83,7 +88,9 @@ class MatchingParameterNotPassed(CloudFormationLintRule):
         """Basic Matching"""
         matches = []
         # try:
-        resources = cfn.get_resources(resource_type=["AWS::CloudFormation::Stack"])
+        resources = cfn.get_resources(
+            resource_type=["AWS::CloudFormation::Stack"]
+        )
 
         parent_parameters = cfn.get_parameters()
         if type(parent_parameters) is None:

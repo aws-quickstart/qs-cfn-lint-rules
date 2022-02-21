@@ -49,7 +49,9 @@ def get_mappings(template):
 
 
 try:
-    cfn_resources = get_resources(cfn, resource_type=["AWS::CloudFormation::Stack"])
+    cfn_resources = get_resources(
+        cfn, resource_type=["AWS::CloudFormation::Stack"]
+    )
 except Exception as a:
     sys.stderr.write("Exception parsing: '{}'".format(master_template_path))
     sys.stderr.write(str(e))
@@ -83,7 +85,9 @@ try:
         print("{")
         print('\t"input": {')
         print(
-            '\t\t"master_template": "' + "{}".format(master_template_path_print) + '",'
+            '\t\t"master_template": "'
+            + "{}".format(master_template_path_print)
+            + '",'
         )
         print('\t\t"child_template": "{}'.format(child_template_url) + '"')
         print("\t},")
@@ -95,7 +99,9 @@ try:
         )
         print('\t"output":{')
         print(
-            '\t\t"url_paths": {}'.format(resolved_template_url_list).replace("'", '"')
+            '\t\t"url_paths": {}'.format(resolved_template_url_list).replace(
+                "'", '"'
+            )
             + ","
         )
         filepath_list = []

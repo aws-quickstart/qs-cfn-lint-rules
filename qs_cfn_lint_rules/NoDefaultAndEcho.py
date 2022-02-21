@@ -69,7 +69,9 @@ class PinpointAPNSanboxNoEcho(ParameterNoEchoDefault, CloudFormationLintRule):
 
 
 @inherit_doc_string
-class ElastiCacheReplicationGroupNoEcho(ParameterNoEchoDefault, CloudFormationLintRule):
+class ElastiCacheReplicationGroupNoEcho(
+    ParameterNoEchoDefault, CloudFormationLintRule
+):
     resource_type = "AWS::ElastiCache::ReplicationGroup"
     property_names = ["AuthToken"]
     CFN_NAG_RULES = ["F44"]
@@ -92,21 +94,27 @@ class PinpointAPNSVoipSandboxChannelNoEcho(
 
 
 @inherit_doc_string
-class PinpointAPNSChannelNoEcho(ParameterNoEchoDefault, CloudFormationLintRule):
+class PinpointAPNSChannelNoEcho(
+    ParameterNoEchoDefault, CloudFormationLintRule
+):
     resource_type = "AWS::Pinpoint::APNSChannel"
     property_names = ["PrivateKey", "TokenKey"]
     CFN_NAG_RULES = ["F56", "F57"]
 
 
 @inherit_doc_string
-class PinpointAPNSVoipChannelNoEcho(ParameterNoEchoDefault, CloudFormationLintRule):
+class PinpointAPNSVoipChannelNoEcho(
+    ParameterNoEchoDefault, CloudFormationLintRule
+):
     resource_type = "AWS::Pinpoint::APNSVoipChannel"
     property_names = ["PrivateKey", "TokenKey"]
     CFN_NAG_RULES = ["F48", "F49"]
 
 
 @inherit_doc_string
-class IAMUserLoginProfileNoEcho(ParameterNoEchoDefault, CloudFormationLintRule):
+class IAMUserLoginProfileNoEcho(
+    ParameterNoEchoDefault, CloudFormationLintRule
+):
     resource_type = "AWS::IAM::User"
     property_names = ["LoginProfile.Password"]
     CFN_NAG_RULES = ["F51"]
@@ -120,7 +128,9 @@ class IAMUserLoginProfileNoEcho(ParameterNoEchoDefault, CloudFormationLintRule):
 
 
 @inherit_doc_string
-class AppStreamDirectoryConfigNoEcho(ParameterNoEchoDefault, CloudFormationLintRule):
+class AppStreamDirectoryConfigNoEcho(
+    ParameterNoEchoDefault, CloudFormationLintRule
+):
     resource_type = "AWS::AppStream::DirectoryConfig"
     property_names = ["ServiceAccountCredentials.AccountPassword"]
     CFN_NAG_RULES = ["F53"]
@@ -129,7 +139,10 @@ class AppStreamDirectoryConfigNoEcho(ParameterNoEchoDefault, CloudFormationLintR
 @inherit_doc_string
 class OpsWorksStackNoEcho(ParameterNoEchoDefault, CloudFormationLintRule):
     resource_type = "AWS::OpsWorks::Stack"
-    property_names = ["RDSDbInstance.DbPassword", "CustomCookbooksSource.Password"]
+    property_names = [
+        "RDSDbInstance.DbPassword",
+        "CustomCookbooksSource.Password",
+    ]
     CFN_NAG_RULES = ["F54", "F62"]
 
 

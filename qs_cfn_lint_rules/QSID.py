@@ -25,7 +25,9 @@ class Base(CloudFormationLintRule):
     id = "E9008"
     shortdesc = "QSIDs should be in template description"
     description = "Making sure a QSID exists within the template"
-    source_url = "https://github.com/qs_cfn_lint_rules/qs-cfn-python-lint-rules"
+    source_url = (
+        "https://github.com/qs_cfn_lint_rules/qs-cfn-python-lint-rules"
+    )
     tags = ["desc"]
 
     def match(self, cfn):
@@ -36,6 +38,8 @@ class Base(CloudFormationLintRule):
             "([a-zA-Z0-9_,:]*)(\()(qs-[a-z0-9]*)(\))([a-zA-Z0-9,_:]*)", desc
         ):
             matches.append(
-                RuleMatch(["Description"], "Template description must include QSIDs")
+                RuleMatch(
+                    ["Description"], "Template description must include QSIDs"
+                )
             )
         return matches

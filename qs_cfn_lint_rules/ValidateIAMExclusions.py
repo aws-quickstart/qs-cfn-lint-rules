@@ -28,10 +28,10 @@ class ValidateRuleExclusions(CloudFormationLintRule):
 
     id = "EValidateIAMRuleExclusions"
     shortdesc = "* on Resource property is a bad idea"
-    description = (
-        "Making sure wildcard resources are only used where no other option exists"
+    description = "Making sure wildcard resources are only used where no other option exists"
+    source_url = (
+        "https://github.com/qs_cfn_lint_rules/qs-cfn-python-lint-rules"
     )
-    source_url = "https://github.com/qs_cfn_lint_rules/qs-cfn-python-lint-rules"
     tags = ["iam"]
     SEARCH_PROPS = ["Resource"]
 
@@ -40,13 +40,21 @@ class ValidateRuleExclusions(CloudFormationLintRule):
         violation_matches = []
         for idx, exclude in enumerate(
             deep_get(
-                cfn.template, ["Metadata", "cfn-lint", "config", "ignore_checks"], []
+                cfn.template,
+                ["Metadata", "cfn-lint", "config", "ignore_checks"],
+                [],
             )
         ):
             if exclude.startswith("EIAM"):
                 violation_matches.append(
                     RuleMatch(
-                        ["Metadata", "cfn-lint", "config", "ignore_checks", idx],
+                        [
+                            "Metadata",
+                            "cfn-lint",
+                            "config",
+                            "ignore_checks",
+                            idx,
+                        ],
                         LINT_ERROR_MESSAGE,
                     )
                 )

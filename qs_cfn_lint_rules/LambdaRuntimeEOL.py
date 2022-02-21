@@ -12,12 +12,8 @@ class DeprecatedRuntimeEolWarning(DeprecatedRuntime):
 
     id = "W9932"
     shortdesc = "Check if EOL Lambda Function Runtimes are used"
-    description = (
-        "Check if an EOL Lambda Runtime is specified and give a warning if used. "
-    )
-    source_url = (
-        "https://docs.aws.amazon.com/lambda/latest/dg/runtime-support-policy.html"
-    )
+    description = "Check if an EOL Lambda Runtime is specified and give a warning if used. "
+    source_url = "https://docs.aws.amazon.com/lambda/latest/dg/runtime-support-policy.html"
     tags = ["resources", "lambda", "runtime"]
 
     def check_runtime(self, runtime_value, path):
@@ -33,9 +29,7 @@ class DeprecatedRuntimeEolWarning(DeprecatedRuntime):
                 new_id = self.id.replace("W", "E")
                 old_id = self.id
                 self.id = new_id
-                message = (
-                    "Runtime ({0}) will be EOL on {1}. Please consider updating to {2}"
-                )
+                message = "Runtime ({0}) will be EOL on {1}. Please consider updating to {2}"
                 matches.append(
                     RuleMatch(
                         path,
@@ -45,9 +39,7 @@ class DeprecatedRuntimeEolWarning(DeprecatedRuntime):
                     )
                 )
             elif self.current_date > (eol + timedelta(days=-365)):
-                message = (
-                    "Runtime ({0}) will be EOL on {1}. Please consider updating to {2}"
-                )
+                message = "Runtime ({0}) will be EOL on {1}. Please consider updating to {2}"
                 matches.append(
                     RuleMatch(
                         path,

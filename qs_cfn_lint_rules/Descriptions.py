@@ -40,5 +40,7 @@ class Base(CloudFormationLintRule):
         else:
             for x in cfn.template["Parameters"]:
                 if "Description" not in cfn.template["Parameters"][x].keys():
-                    matches.append(RuleMatch(["Parameters", x], message.format(x)))
+                    matches.append(
+                        RuleMatch(["Parameters", x], message.format(x))
+                    )
         return matches

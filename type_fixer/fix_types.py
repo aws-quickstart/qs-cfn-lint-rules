@@ -91,7 +91,9 @@ def find_rule_matches(tc_template):
 
 if __name__ == "__main__":
 
-    parser = argparse.ArgumentParser(description="Fix type-errors from cfnlint")
+    parser = argparse.ArgumentParser(
+        description="Fix type-errors from cfnlint"
+    )
     parser.add_argument("--file", type=str)
     args = parser.parse_args()
     tc_template = Template(template_path=args.file)

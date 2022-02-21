@@ -42,7 +42,9 @@ class IAMPrincipalWildcard(CloudFormationLintRule):
 
     id = "EPolicyWildcardPrincipal"
     shortdesc = "* on Principal property is a bad idea"
-    source_url = "https://github.com/qs_cfn_lint_rules/qs-cfn-python-lint-rules"
+    source_url = (
+        "https://github.com/qs_cfn_lint_rules/qs-cfn-python-lint-rules"
+    )
     tags = ["iam"]
     SEARCH_PROPS = ["Principal"]
 
@@ -55,7 +57,9 @@ class IAMPrincipalWildcard(CloudFormationLintRule):
         for tm in term_matches:
             if tm[-1] not in ["*", ["*"]]:
                 continue
-            violating_methods = determine_wildcard_Principal_violations(cfn, tm[:-2])
+            violating_methods = determine_wildcard_Principal_violations(
+                cfn, tm[:-2]
+            )
             for ln in violating_methods:
                 violation_matches.append(RuleMatch(ln, LINT_ERROR_MESSAGE))
         return violation_matches

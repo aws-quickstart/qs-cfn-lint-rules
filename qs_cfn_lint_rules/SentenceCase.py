@@ -128,14 +128,20 @@ class Base(CloudFormationLintRule):
                         description, spell, custom_dict
                     )
                     if stop_error:
-                        matches.append(RuleMatch(location, stop_message.format(x)))
+                        matches.append(
+                            RuleMatch(location, stop_message.format(x))
+                        )
                     if title_errors:
                         matches.append(
-                            RuleMatch(location, title_message.format(x, title_errors))
+                            RuleMatch(
+                                location, title_message.format(x, title_errors)
+                            )
                         )
                     if spell_errors:
                         matches.append(
-                            RuleMatch(location, spell_message.format(x, spell_errors))
+                            RuleMatch(
+                                location, spell_message.format(x, spell_errors)
+                            )
                         )
             if "Metadata" not in cfn.template.keys():
                 matches.append(
@@ -145,16 +151,20 @@ class Base(CloudFormationLintRule):
                     )
                 )
             elif (
-                "AWS::CloudFormation::Interface" not in cfn.template["Metadata"].keys()
+                "AWS::CloudFormation::Interface"
+                not in cfn.template["Metadata"].keys()
             ):
                 matches.append(
                     RuleMatch(
-                        ["Metadata"], "Template is missing Parameter labels and groups"
+                        ["Metadata"],
+                        "Template is missing Parameter labels and groups",
                     )
                 )
             elif (
                 "ParameterGroups"
-                not in cfn.template["Metadata"]["AWS::CloudFormation::Interface"].keys()
+                not in cfn.template["Metadata"][
+                    "AWS::CloudFormation::Interface"
+                ].keys()
             ):
                 matches.append(
                     RuleMatch(
@@ -164,7 +174,9 @@ class Base(CloudFormationLintRule):
                 )
             elif (
                 "ParameterLabels"
-                not in cfn.template["Metadata"]["AWS::CloudFormation::Interface"].keys()
+                not in cfn.template["Metadata"][
+                    "AWS::CloudFormation::Interface"
+                ].keys()
             ):
                 matches.append(
                     RuleMatch(
@@ -174,15 +186,13 @@ class Base(CloudFormationLintRule):
                 )
             else:
                 count = 0
-                for x in cfn.template["Metadata"]["AWS::CloudFormation::Interface"][
-                    "ParameterGroups"
-                ]:
+                for x in cfn.template["Metadata"][
+                    "AWS::CloudFormation::Interface"
+                ]["ParameterGroups"]:
                     title_message = (
                         'Parameter Group name "{0}" is not sentence case: {1}'
                     )
-                    spell_message = (
-                        'Parameter Group name "{0}" contains spelling error(s): {1}'
-                    )
+                    spell_message = 'Parameter Group name "{0}" contains spelling error(s): {1}'
                     if "Label" not in x.keys():
                         matches.append(
                             RuleMatch(
@@ -239,11 +249,13 @@ class Base(CloudFormationLintRule):
                                 )
                             )
                     count += 1
-                for x in cfn.template["Metadata"]["AWS::CloudFormation::Interface"][
-                    "ParameterLabels"
-                ]:
+                for x in cfn.template["Metadata"][
+                    "AWS::CloudFormation::Interface"
+                ]["ParameterLabels"]:
                     title_message = "Parameter Label is not sentence case: {0}"
-                    spell_message = "Parameter Label contains spelling error(s): {0}"
+                    spell_message = (
+                        "Parameter Label contains spelling error(s): {0}"
+                    )
                     if (
                         "default"
                         not in cfn.template["Metadata"][
@@ -277,11 +289,17 @@ class Base(CloudFormationLintRule):
                         )
                         if title_errors:
                             matches.append(
-                                RuleMatch(location, title_message.format(title_errors))
+                                RuleMatch(
+                                    location,
+                                    title_message.format(title_errors),
+                                )
                             )
                         if spell_errors:
                             matches.append(
-                                RuleMatch(location, spell_message.format(spell_errors))
+                                RuleMatch(
+                                    location,
+                                    spell_message.format(spell_errors),
+                                )
                             )
                     count += 1
         return matches

@@ -191,7 +191,9 @@ def evaluate_fn_findinmap(expression):
     first_key = expression.split("[")[1].split("]")[0].split(",")[1].strip()
     final_key = expression.split("[")[1].split("]")[0].split(",")[2].strip()
 
-    result.append("'" + find_in_map_lookup(mappings_map, first_key, final_key) + "'")
+    result.append(
+        "'" + find_in_map_lookup(mappings_map, first_key, final_key) + "'"
+    )
 
     return result
 
@@ -241,7 +243,9 @@ def evaluate_string(template_url, depth=0):
     # Recursion bail out
     if depth > MAX_DEPTH:
         raise Exception(
-            "Template URL contains more than {} levels or nesting".format(MAX_DEPTH)
+            "Template URL contains more than {} levels or nesting".format(
+                MAX_DEPTH
+            )
         )
 
     template_urls = []
@@ -265,7 +269,9 @@ def evaluate_string(template_url, depth=0):
             )
             # print("evaluate_string: (after) {}".format(template_url_temp))
 
-            evaluated_strings = evaluate_string(template_url_temp, depth=(depth + 1))
+            evaluated_strings = evaluate_string(
+                template_url_temp, depth=(depth + 1)
+            )
             for evaluated_string in evaluated_strings:
                 template_urls.append(evaluated_string)
     else:
@@ -287,7 +293,9 @@ def _flatten_template_controller(template_url):
 
     # Evaluate expressions recursively
     if "{" in template_url_string:
-        replacements = evaluate_string(template_url_string)  # first closed bracket
+        replacements = evaluate_string(
+            template_url_string
+        )  # first closed bracket
         for replacement in replacements:
             url_list.append(replacement)
 
@@ -359,7 +367,9 @@ def find_local_child_template(parent_template_path, child_template_path):
     raise Exception(message % child_template_path)
 
 
-def template_url_to_path(current_template_path, template_url, template_mappings=None):
+def template_url_to_path(
+    current_template_path, template_url, template_mappings=None
+):
     global mappings
     if template_mappings:
         mappings = template_mappings
@@ -368,7 +378,9 @@ def template_url_to_path(current_template_path, template_url, template_mappings=
 
     for child_template_path in child_template_paths:
         child_local_paths.append(
-            find_local_child_template(current_template_path, child_template_path)
+            find_local_child_template(
+                current_template_path, child_template_path
+            )
         )
 
     return child_local_paths

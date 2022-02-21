@@ -1,4 +1,7 @@
-from qs_cfn_lint_rules.common import RequiredPropertyEnabledBase, inherit_doc_string
+from qs_cfn_lint_rules.common import (
+    RequiredPropertyEnabledBase,
+    inherit_doc_string,
+)
 from cfnlint.rules import CloudFormationLintRule
 
 

@@ -47,7 +47,10 @@ class Remediator:
         i = 1
         for match in re.finditer("\n", self.buffer):
             loc = match.span()
-            self._linenumber_map[i + 1] = {"start": loc[1], "end": len(self.buffer) - 1}
+            self._linenumber_map[i + 1] = {
+                "start": loc[1],
+                "end": len(self.buffer) - 1,
+            }
             self._linenumber_map[i]["end"] = loc[0]
             i = i + 1
 
@@ -178,7 +181,9 @@ class Remediator:
         for k, v in self._changes.items():
             ln, line_start, line_end = _dl(k[0])
             js_safe[ln] = (
-                self.buffer[line_start : k[0]] + v + self.buffer[k[1] : line_end]
+                self.buffer[line_start : k[0]]
+                + v
+                + self.buffer[k[1] : line_end]
             )
 
         with open(self.output, "w") as f:
@@ -187,7 +192,9 @@ class Remediator:
     def _changes_to_buffer(self):
         for k in sorted(self._changes, reverse=True):
             start, end = k
-            self.buffer = self.buffer[0:start] + self._changes[k] + self.buffer[end:]
+            self.buffer = (
+                self.buffer[0:start] + self._changes[k] + self.buffer[end:]
+            )
 
     def write(self):
         with open(self.output, "w") as f:
@@ -229,7 +236,9 @@ class Remediator:
                     # raise
                     spaced_data = self._indent_list_elements(xx1, indent)
                 else:
-                    spaced_data = [xx1[0]] + self._indent_list_elements(xx1[1:], indent)
+                    spaced_data = [xx1[0]] + self._indent_list_elements(
+                        xx1[1:], indent
+                    )
                 spaced_txt = "\n".join(spaced_data)
                 # raise
                 return spaced_txt

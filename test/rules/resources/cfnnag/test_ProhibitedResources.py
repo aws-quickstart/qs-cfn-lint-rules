@@ -2,7 +2,9 @@ from qs_cfn_lint_rules.ProhibitedResources import *
 from ... import BaseRuleTestCase, DynamicRuleTesting
 
 
-class DynamicProhibitedResourceProperties(DynamicRuleTesting, BaseRuleTestCase):
+class DynamicProhibitedResourceProperties(
+    DynamicRuleTesting, BaseRuleTestCase
+):
     imported_module = "qs_cfn_lint_rules.ProhibitedResources"
     module_attr = "resource_type"
 

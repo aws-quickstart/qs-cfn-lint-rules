@@ -36,10 +36,10 @@ class IAMResourceWildcard(CloudFormationLintRule):
 
     id = "EIAMPolicyActionNotAction"
     shortdesc = "Combining Action and NotAction is a bad idea."
-    description = (
-        "Making sure Action and NotAction are not used in an IAM statement together"
+    description = "Making sure Action and NotAction are not used in an IAM statement together"
+    source_url = (
+        "https://github.com/qs_cfn_lint_rules/qs-cfn-python-lint-rules"
     )
-    source_url = "https://github.com/qs_cfn_lint_rules/qs-cfn-python-lint-rules"
     tags = ["iam"]
     SEARCH_PROPS = ["Resource"]
 
@@ -50,7 +50,9 @@ class IAMResourceWildcard(CloudFormationLintRule):
         for prop in self.SEARCH_PROPS:
             term_matches += cfn.search_deep_keys(prop)
         for tm in term_matches:
-            violating_policy = determine_action_notaction_violation(cfn, tm[:-2])
+            violating_policy = determine_action_notaction_violation(
+                cfn, tm[:-2]
+            )
             if violating_policy:
                 violation_matches.append(
                     RuleMatch(tm[:-2] + ["NotAction"], LINT_ERROR_MESSAGE)

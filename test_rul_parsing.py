@@ -37,7 +37,9 @@ def get_resources(template, resource_type=[]):
 
 
 try:
-    cfn_resources = get_resources(cfn, resource_type=["AWS::CloudFormation::Stack"])
+    cfn_resources = get_resources(
+        cfn, resource_type=["AWS::CloudFormation::Stack"]
+    )
 except Exception as a:
     print("Exception parsing: '{}'".format(master_template_path))
     # print(str(e))

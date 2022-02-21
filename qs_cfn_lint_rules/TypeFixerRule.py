@@ -16,7 +16,9 @@
 """
 from cfnlint.rules import CloudFormationLintRule
 from cfnlint.rules import RuleMatch, RulesCollection
-from cfnlint.rules.resources.properties.ValuePrimitiveType import ValuePrimitiveType
+from cfnlint.rules.resources.properties.ValuePrimitiveType import (
+    ValuePrimitiveType,
+)
 
 
 class FixTypeCrap(ValuePrimitiveType):

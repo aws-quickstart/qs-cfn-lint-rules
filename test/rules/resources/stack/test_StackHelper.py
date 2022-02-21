@@ -23,7 +23,9 @@ class TestStackHelper(unittest.TestCase):
 
     # Test TemplateURL to path extraction
     def test_flatten_template_url(self):
-        with open("test/fixtures/templates/stackhelper/test.json") as test_file:
+        with open(
+            "test/fixtures/templates/stackhelper/test.json"
+        ) as test_file:
             self.tests = json.load(test_file)
             self.tests = self.tests["tests"]
 
@@ -58,14 +60,18 @@ class TestStackHelper(unittest.TestCase):
                 "{ one { two } { two { three { four { five { six { seven }}}}} }}"
             )
 
-        self.assertTrue("Template URL contains more than" in str(context.exception))
+        self.assertTrue(
+            "Template URL contains more than" in str(context.exception)
+        )
 
     def test_find_local_child_template(self):
         self.assertEqual(True, False)
 
     # Test TemplateURL to path extraction
     def test_find_local_child_template(self):
-        with open("test/fixtures/templates/stackhelper/test.json") as test_file:
+        with open(
+            "test/fixtures/templates/stackhelper/test.json"
+        ) as test_file:
             self.tests = json.load(test_file)
             self.tests = self.tests["tests"]
 
@@ -106,7 +112,9 @@ class TestStackHelper(unittest.TestCase):
         first_key = "us-west-1"
         final_key = "ami2"
 
-        result = StackHelper.find_in_map_lookup(mappings_map, first_key, final_key)
+        result = StackHelper.find_in_map_lookup(
+            mappings_map, first_key, final_key
+        )
 
         self.assertEqual(result, "not_that_one")
 

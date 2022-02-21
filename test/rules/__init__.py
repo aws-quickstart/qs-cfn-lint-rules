@@ -35,16 +35,22 @@ class BaseRuleTestCase(BaseTestCase):
         """Success test"""
         for filename in self.success_templates:
             template = self.load_template(filename)
-            good_runner = Runner(self.collection, filename, template, ["us-east-1"], [])
+            good_runner = Runner(
+                self.collection, filename, template, ["us-east-1"], []
+            )
             good_runner.transform()
             failures = good_runner.run()
-            assert [] == failures, "Got failures {} on {}".format(failures, filename)
+            assert [] == failures, "Got failures {} on {}".format(
+                failures, filename
+            )
 
     def helper_file_rule_config(self, filename, config, err_count):
         """Success test with rule config included"""
         template = self.load_template(filename)
         self.collection.rules[0].configure(config)
-        good_runner = Runner(self.collection, filename, template, ["us-east-1"], [])
+        good_runner = Runner(
+            self.collection, filename, template, ["us-east-1"], []
+        )
         good_runner.transform()
         failures = good_runner.run()
         self.assertEqual(
@@ -59,7 +65,9 @@ class BaseRuleTestCase(BaseTestCase):
     def helper_file_positive_template(self, filename):
         """Success test with template parameter"""
         template = self.load_template(filename)
-        good_runner = Runner(self.collection, filename, template, ["us-east-1"], [])
+        good_runner = Runner(
+            self.collection, filename, template, ["us-east-1"], []
+        )
         good_runner.transform()
         self.assertEqual([], good_runner.run())
 

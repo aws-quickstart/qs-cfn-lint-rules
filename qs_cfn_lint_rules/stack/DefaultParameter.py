@@ -46,7 +46,9 @@ class DefaultParameter(CloudFormationLintRule):
         if isinstance(template_file, list) and len(template_file) == 1:
             template_file = template_file[0]
         elif isinstance(template_file, list):
-            raise ValueError("expecting single template in a list %s" % template_file)
+            raise ValueError(
+                "expecting single template in a list %s" % template_file
+            )
 
         # Load child stack
         # template_parser = MyTemplateParser()
@@ -80,7 +82,9 @@ class DefaultParameter(CloudFormationLintRule):
         """Basic Matching"""
         matches = []
         # try:
-        resources = cfn.get_resources(resource_type=["AWS::CloudFormation::Stack"])
+        resources = cfn.get_resources(
+            resource_type=["AWS::CloudFormation::Stack"]
+        )
 
         for r_name, r_values in resources.items():
             properties = r_values.get("Properties")
@@ -102,7 +106,9 @@ class DefaultParameter(CloudFormationLintRule):
                 message = (
                     "Default parameters used,"
                     " please be explicit and pass the default value "
-                    "if you wish to use that. {} {}".format(r_name, default_parameters)
+                    "if you wish to use that. {} {}".format(
+                        r_name, default_parameters
+                    )
                 )
                 matches.append(RuleMatch(path, message))
         return matches

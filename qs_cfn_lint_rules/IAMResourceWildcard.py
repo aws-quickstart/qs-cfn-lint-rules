@@ -34,7 +34,8 @@ resource_only = json.loads(d)
 
 def determine_perms():
     custom_dict_path = os.path.join(
-        os.path.dirname(os.path.abspath(__file__)), "data/granular_permissions.json"
+        os.path.dirname(os.path.abspath(__file__)),
+        "data/granular_permissions.json",
     )
     with open(custom_dict_path) as f:
         _gp = json.load(f)
@@ -77,7 +78,9 @@ def determine_wildcard_resource_violations(cfn, policy_path):
             if isinstance(iam_method, list):
                 for idxx, ia in enumerate(iam_method):
                     if not _determine_if_safe(ia):
-                        violating_methods.append(policy_path + ["Action", idxx])
+                        violating_methods.append(
+                            policy_path + ["Action", idxx]
+                        )
             elif not _determine_if_safe(iam_method):
                 violating_methods.append(policy_path + ["Action", idx])
     return violating_methods
@@ -88,10 +91,10 @@ class IAMResourceWildcard(CloudFormationLintRule):
 
     id = "EIAMPolicyWildcardResource"
     shortdesc = "* on Resource property is a bad idea"
-    description = (
-        "Making sure wildcard resources are only used where no other option exists"
+    description = "Making sure wildcard resources are only used where no other option exists"
+    source_url = (
+        "https://github.com/qs_cfn_lint_rules/qs-cfn-python-lint-rules"
     )
-    source_url = "https://github.com/qs_cfn_lint_rules/qs-cfn-python-lint-rules"
     tags = ["iam"]
     SEARCH_PROPS = ["Resource"]
 
@@ -130,10 +133,16 @@ class IAMResourceWildcard(CloudFormationLintRule):
                 _al = [k for k in m2a[rn] if k not in ignore]
                 if _al:
                     _new_policies.append(
-                        {"Effect": "Allow", "Action": _al, "Resource": {"Fn::Ref": rn}}
+                        {
+                            "Effect": "Allow",
+                            "Action": _al,
+                            "Resource": {"Fn::Ref": rn},
+                        }
                     )
                 ignore += _al
-            subs.append((_ppath, policy, _new_policies, {"append_after": True}))
+            subs.append(
+                (_ppath, policy, _new_policies, {"append_after": True})
+            )
             for a in ignore:
                 subs.append(
                     RuleMatch(
@@ -154,7 +163,9 @@ class IAMResourceWildcard(CloudFormationLintRule):
         for tm in term_matches:
             if tm[-1] not in ["*", ["*"]]:
                 continue
-            violating_methods = determine_wildcard_resource_violations(cfn, tm[:-2])
+            violating_methods = determine_wildcard_resource_violations(
+                cfn, tm[:-2]
+            )
             for ln in violating_methods:
                 violation_matches.append(
                     RuleMatch(ln, LINT_ERROR_MESSAGE, policy_path=tm[:-2])

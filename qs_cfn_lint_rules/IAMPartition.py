@@ -37,9 +37,13 @@ def verify_agnostic_partition(cfn, resource_path, arndata):
                 if _not_partition_agnostic_str(subitem):
                     matches.append(resource_path + [idx])
             elif isinstance(subitem, dict):
-                matches += _not_partition_agnostic_dict(resource_path + [idx], subitem)
+                matches += _not_partition_agnostic_dict(
+                    resource_path + [idx], subitem
+                )
             elif isinstance(subitem, list):
-                matches += _not_partition_agnostic_list(resource_path + [idx], subitem)
+                matches += _not_partition_agnostic_list(
+                    resource_path + [idx], subitem
+                )
         return matches
 
     def _not_partition_agnostic_dict(resource_path, subitem):
@@ -83,7 +87,9 @@ class IAMPartition(CloudFormationLintRule):
     id = "E9007"
     shortdesc = "ARNs should be partition argnostic"
     description = "Making sure all ARNs leverage ${AWS::Partition}"
-    source_url = "https://github.com/qs_cfn_lint_rules/qs-cfn-python-lint-rules"
+    source_url = (
+        "https://github.com/qs_cfn_lint_rules/qs-cfn-python-lint-rules"
+    )
     tags = ["iam"]
     SEARCH_PROPS = ["Resource", "ManagedPolicyArns"]
 
