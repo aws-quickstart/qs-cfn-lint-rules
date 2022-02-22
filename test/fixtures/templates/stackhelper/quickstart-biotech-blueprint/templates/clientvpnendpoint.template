@@ -1,13 +1,13 @@
 AWSTemplateFormatVersion: 2010-09-09
 Description: CloudFormation template to automate deploying AWS Client VPN Endpoints into the Biotech Blueprint.
-Parameters: 
+Parameters:
   pDMZSubnetA:
     Description: Subnet to associate the VPN Endpoint to. Typically a public/DMZ subnet.
     Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Subnet::Id>'
-    Default: /BB/Networking/VPC/Research/Subnet/DMZ/A    
+    Default: /BB/Networking/VPC/Research/Subnet/DMZ/A
   pLogGroup:
     Description: CloudWatch Log Group for Client VPN Connections
-    Type: String    
+    Type: String
     Default: "/biotechblueprint/vpn"
   pLogStream:
     Description: CloudWatch Log Stream for Client VPN Connection logging
@@ -18,7 +18,7 @@ Parameters:
     Type: Number
     Default: 365
   pClientCidr:
-    Description: CIDR Range to use for your VPN Clients. 
+    Description: CIDR Range to use for your VPN Clients.
     Type: String
     Default: "11.0.0.0/16"
   pParamStorePath:
@@ -38,10 +38,10 @@ Parameters:
     Type: 'AWS::SSM::Parameter::Value<AWS::EC2::VPC::Id>'
     Default: /BB/Networking/VPC/Research
   pVpcAandBClassProvidingDns:
-    Description: The A and B class octet values for the VPC that will provide DNS to VPN clients. 
+    Description: The A and B class octet values for the VPC that will provide DNS to VPN clients.
     Type: 'AWS::SSM::Parameter::Value<String>'
     Default: /BB/Networking/VPC/Research/AandBblock
-  pVpcAandBClassToRoutableNetworks:  
+  pVpcAandBClassToRoutableNetworks:
     Description: List of A and B class octets that will be NATed to the Client VPN endpoint. These become route entries in the router config that your clients will connect to.
     Type: AWS::SSM::Parameter::Value<CommaDelimitedList>
     Default: /BB/Networking/VPN/RoutableOctets
@@ -50,15 +50,15 @@ Parameters:
     Description: S3 bucket name for the Quick Start assets. Quick Start bucket name
       can include numbers, lowercase letters, uppercase letters, and hyphens (-).
       It cannot start or end with a hyphen (-).
-    Type: 'AWS::SSM::Parameter::Value<String>'  
+    Type: 'AWS::SSM::Parameter::Value<String>'
   QSS3KeyPrefix:
     Default: /BB/QuickStart/QSS3KeyPrefix
     Description: S3 key prefix for the Quick Start assets. Quick Start key prefix
       can include numbers, lowercase letters, uppercase letters, hyphens (-), and
       forward slash (/).
-    Type: 'AWS::SSM::Parameter::Value<String>'     
-    
-Resources: 
+    Type: 'AWS::SSM::Parameter::Value<String>'
+
+Resources:
   rCreateClientVPNEndpointLambda:
     Type: AWS::Lambda::Function
     DependsOn:
@@ -76,25 +76,25 @@ Resources:
           import urllib.request
           import sys
           import json
-          
+
           def handlerShim(event, context):
-            
-              try: 
+
+              try:
                 targetScriptUrl = event['ResourceProperties']['HandlerShimUrl']
                 tmpFileName = "/tmp/handlermeat.py"
                 urllib.request.urlretrieve(targetScriptUrl, tmpFileName)
                 sys.path.insert(0, '/tmp/')
-                import handlermeat 
-                handlermeat.lambda_handler(event, context)     
+                import handlermeat
+                handlermeat.lambda_handler(event, context)
               except:
                 sendSignal(event, context, FAILED, { 'error': 'Failed to reach target script.'})
 
           SUCCESS = "SUCCESS"
           FAILED = "FAILED"
-          
+
           def sendSignal(event, context, responseStatus, responseData, physicalResourceId=None, noEcho=False):
               responseUrl = event['ResponseURL']
-          
+
               responseBody = {}
               responseBody['Status'] = responseStatus
               responseBody['Reason'] = 'See the details in CloudWatch Log Stream: ' + context.log_stream_name
@@ -104,14 +104,14 @@ Resources:
               responseBody['LogicalResourceId'] = event['LogicalResourceId']
               responseBody['NoEcho'] = noEcho
               responseBody['Data'] = responseData
-          
+
               json_responseBody = json.dumps(responseBody)
-          
+
               headers = {
                   'content-type' : '',
                   'content-length' : str(len(json_responseBody))
               }
-          
+
               try:
                   response = requests.put(responseUrl,
                                           data=json_responseBody,
@@ -125,14 +125,14 @@ Resources:
         ServerSideEncryptionConfiguration:
           - ServerSideEncryptionByDefault:
               SSEAlgorithm: AES256
-                                    
+
   rCustomLambdaResourceTrigger:
     Type: Custom::rCustomLambdaResourceTrigger
     Properties:
       ServiceToken: !GetAtt rCreateClientVPNEndpointLambda.Arn
       LogGroup: !Ref pLogGroup
-      LogStream: !Ref pLogStream  
-      ClientCidr: !Ref pClientCidr 
+      LogStream: !Ref pLogStream
+      ClientCidr: !Ref pClientCidr
       ParamStorePath: !Ref pParamStorePath
       SubnetToAssociate: !Ref pDMZSubnetA
       TargetNetworkCidr: !Ref pTargetNetworkCidr
@@ -143,16 +143,16 @@ Resources:
       VpcAandBClassToRoutableNetworks: !Ref pVpcAandBClassToRoutableNetworks
       HandlerShimUrl: !Sub "https://s3.amazonaws.com/${QSS3BucketName}/${QSS3KeyPrefix}scripts/clientvpnendpoint-customlambdaresource.py"
 
-  rClientVPNLogGroup: 
+  rClientVPNLogGroup:
     Type: AWS::Logs::LogGroup
-    Properties: 
+    Properties:
       LogGroupName: !Ref pLogGroup
       RetentionInDays: !Ref pLogRetentionInDays
-  rClientVpnLogStream: 
+  rClientVpnLogStream:
     DependsOn:
     - rClientVPNLogGroup
     Type: AWS::Logs::LogStream
-    Properties: 
+    Properties:
       LogGroupName: !Ref pLogGroup
       LogStreamName: !Ref pLogStream
 
@@ -182,7 +182,7 @@ Resources:
             - ssm:PutParameter
             Resource: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${pParamStorePath}*"
           - Effect: Allow
-            Action: 
+            Action:
             - acm:ImportCertificate
             Resource: "*"
           - Effect: Allow

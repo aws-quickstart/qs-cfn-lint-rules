@@ -15,7 +15,7 @@ Parameters:
     Type: Number
   ClusterName:
     Description: Desired name for your cluster.
-    Default: JFrog  
+    Default: JFrog
     Type: String
   CreateNewECSCluster:
     Description: Whether to create the ECS Cluster with given name or not.
@@ -36,7 +36,7 @@ Parameters:
   ArtifactoryServerName:
     Type: String
   CertificateDomain:
-    Type: String    
+    Type: String
   ArtifactoryIAMAcessKey:
     Type: String
     NoEcho: 'true'
@@ -75,14 +75,14 @@ Parameters:
   ArtifactoryVersion:
     Type: String
   KeyPairName:
-    Type: AWS::EC2::KeyPair::KeyName    
+    Type: AWS::EC2::KeyPair::KeyName
   ArtifactoryTargetGroupArn:
     Type: String
   SecurityGroups:
     Type: String
   AnsibleVaultPass:
     Description: Ansiblevault Password to secure the artifactory.yml
-    NoEcho: 'true'  
+    NoEcho: 'true'
     Type: String
   QSS3BucketName:
     Type: String
@@ -126,9 +126,9 @@ Mappings:
        AMI: ami-084b1eee100c102ee
 Conditions:
   CreateECSCluster: !Equals [!Ref 'CreateNewECSCluster', 'Enabled']
-  GovCloudCondition: !Equals 
+  GovCloudCondition: !Equals
     - !Ref 'AWS::Region'
-    - us-gov-west-1       
+    - us-gov-west-1
 Resources:
   ECSRole:
     Type: AWS::IAM::Role
@@ -153,7 +153,7 @@ Resources:
         - arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role
       Policies:
         - PolicyName: ecs-service
-          PolicyDocument: 
+          PolicyDocument:
             Statement:
               - Effect: Allow
                 Action:
@@ -175,14 +175,14 @@ Resources:
                 Resource: "*"
   ECSInstanceProfile:
     Type: AWS::IAM::InstanceProfile
-    Properties: 
+    Properties:
       Path: /
-      Roles: 
+      Roles:
         - !Ref ECSRole
-  ECSCluster: 
+  ECSCluster:
     Condition: CreateECSCluster
     Type: AWS::ECS::Cluster
-    Properties: 
+    Properties:
       ClusterName: !Ref ClusterName
   ArtifactoryScalingGroup:
     Type: 'AWS::AutoScaling::AutoScalingGroup'
@@ -205,14 +205,14 @@ Resources:
     CreationPolicy:
       ResourceSignal:
         Count: 1
-        Timeout: PT30M                
+        Timeout: PT30M
   ArtifactoryLaunchConfiguration:
     Type: 'AWS::AutoScaling::LaunchConfiguration'
     Metadata:
       'AWS::CloudFormation::Authentication':
         S3AccessCreds:
           type: S3
-          roleName: 
+          roleName:
             - !Ref ECSRole
           buckets:
             - !Ref QSS3BucketName
@@ -253,7 +253,7 @@ Resources:
                       url: https://s3.amazonaws.com/rds-downloads/rds-combined-ca-bundle.pem
                       dest: /data/jfrog/artifactory/java_certs/rds-combined-ca-bundle.pem
                       owner: root
-                      group: root                    
+                      group: root
               mode: "0400"
             /root/.vault_pass.txt:
               content: !Sub |
@@ -271,7 +271,7 @@ Resources:
       AssociatePublicIpAddress: false
       KeyName: !Ref KeyPairName
       IamInstanceProfile: !Ref ECSInstanceProfile
-      ImageId: !FindInMap 
+      ImageId: !FindInMap
         - AWSAMIRegionMap
         - !Ref 'AWS::Region'
         - AMI
@@ -285,7 +285,7 @@ Resources:
             VolumeSize: !Ref VolumeSize
             VolumeType: gp2
             DeleteOnTermination: true
-      UserData: !Base64 
+      UserData: !Base64
         'Fn::Sub':
           - >
             #!/bin/bash -x
@@ -343,12 +343,12 @@ Resources:
             qs_aws-cfn-bootstrap || qs_err
 
             pip install awscli &> /var/log/userdata.awscli_install.log || qs_err " awscli install failed "
-            
+
             pip install ansible &> /var/log/userdata.ansible_install.log || qs_err " ansible install failed "
 
             mkdir ~/.artifactory_ansible
 
-            aws s3 sync s3://${QSS3BucketName}/${QSS3KeyPrefix}scripts/ ~/.artifactory_ansible/ 
+            aws s3 sync s3://${QSS3BucketName}/${QSS3KeyPrefix}scripts/ ~/.artifactory_ansible/
 
             cfn-init -v --stack ${AWS::StackName} --resource
             ArtifactoryLaunchConfiguration --configsets artifactory_install
@@ -361,7 +361,7 @@ Resources:
             rm -rf /root/.secureit.sh
 
             [ $(qs_status) == 0 ] && cfn_success || cfn_fail
-          - S3Region: !If 
+          - S3Region: !If
             - GovCloudCondition
             - s3-us-gov-west-1
             - s3
@@ -390,7 +390,7 @@ Resources:
         DatabasePassword: !Ref DatabasePassword
         ArtifactoryDBEndpointAddress: !Ref ArtifactoryDBEndpointAddress
         ECSLogGroup: !Ref ECSLogGroup
-        ECSRoleArn: 
+        ECSRoleArn:
           Fn::GetAtt: ECSRole.Arn
   SecondaryStack:
     DependsOn: PrimaryStack
@@ -406,12 +406,12 @@ Resources:
         MasterKey: !Ref MasterKey
         ExtraJavaOptions: !Ref ExtraJavaOptions
         NumberNodes: !Ref NumberOfSecondary
-        ArtifactoryPrimary: "true" # If this is false then the entrypoint-artifactory script will get stuck in a forever waiting loop 
+        ArtifactoryPrimary: "true" # If this is false then the entrypoint-artifactory script will get stuck in a forever waiting loop
         DBType: !Ref DBType
         DatabaseUser: !Ref DatabaseUser
         DatabaseName: !Ref DatabaseName
         DatabasePassword: !Ref DatabasePassword
         ArtifactoryDBEndpointAddress: !Ref ArtifactoryDBEndpointAddress
         ECSLogGroup: !Ref ECSLogGroup
-        ECSRoleArn: 
+        ECSRoleArn:
           Fn::GetAtt: ECSRole.Arn

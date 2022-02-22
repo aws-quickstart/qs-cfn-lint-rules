@@ -41,12 +41,12 @@ Parameters:
     Description: >-
       S3 Bucket used to store input and output data for the workflow.
       This should bucket should already exist.
-    
+
   S3NextflowBucketName:
     Type: String
     Description: >-
       S3 Bucket used to store Nextflow metadata (session cache, logs, and intermediate results)
-    
+
   ExistingBucket:
     Type: String
     Description: >-
@@ -55,7 +55,7 @@ Parameters:
       - Yes
       - No
     Default: No
-  
+
   S3NextflowPrefix:
     Type: String
     Description: >-
@@ -69,21 +69,21 @@ Parameters:
       (Optional) Folder in the Nextflow metadata bucket (under the {Nextflow Prefix} if needed)
       for session cache and logs.
     Default: logs
-  
+
   S3WorkDirPrefix:
     Type: String
     Description: >-
       (Optional) Folder in the Nextflow metadata bucket (under the {Nextflow Prefix} if needed)
       that contains workflow intermediate results
     Default: runs
-  
+
   NextflowContainerImage:
     Type: String
     Description: >-
       (Optional) Container image for nextflow with custom entrypoint for config and workflow
-      script staging. (Example, "<dockerhub-user>/nextflow:latest").  
-      Provide this if you have a specific version of nextflow you want to use, otherwise a 
-      container will be built using the latest version. 
+      script staging. (Example, "<dockerhub-user>/nextflow:latest").
+      Provide this if you have a specific version of nextflow you want to use, otherwise a
+      container will be built using the latest version.
 
   BatchDefaultJobQueue:
     Type: String
@@ -95,7 +95,7 @@ Conditions:
     Fn::Equals:
       - !Ref S3NextflowBucketName
       - !Ref S3DataBucketName
-  
+
   BuildNextflowContainer:
     Fn::Equals:
       - !Ref NextflowContainerImage
@@ -119,7 +119,7 @@ Resources:
           - ServerSideEncryptionByDefault:
              SSEAlgorithm: AES256
       Tags: !FindInMap ["TagMap", "default", "tags"]
-  
+
   IAMCodeBuildRole:
     Type: AWS::IAM::Role
     Condition: BuildNextflowContainer
@@ -131,7 +131,7 @@ Resources:
           Principal:
             Service: codebuild.amazonaws.com
           Action: sts:AssumeRole
-      
+
       Policies:
         - PolicyName: !Sub codebuild-ecr-access-${AWS::Region}
           PolicyDocument:
@@ -183,7 +183,7 @@ Resources:
                   - "codebuild:StartBuild"
                   - "codebuild:BatchGetBuilds"
                 Resource: "*"
-  
+
   IAMNextflowJobRole:
     Type: AWS::IAM::Role
     Properties:
@@ -273,14 +273,14 @@ Resources:
           - REGISTRY: !Sub ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com
 
       Tags: !FindInMap ["TagMap", "default", "tags"]
-  
+
   CodeBuildInvocation:
     Type: Custom::CodeBuildInvocation
     Condition: BuildNextflowContainer
     Properties:
       ServiceToken: !GetAtt CodeBuildInvocationFunction.Arn
       BuildProject: !Ref CodeBuildProject
-  
+
   CodeBuildInvocationFunction:
     Type: AWS::Lambda::Function
     Condition: BuildNextflowContainer
@@ -302,32 +302,32 @@ Resources:
                   build = codebuild.start_build(
                       projectName=event["ResourceProperties"]["BuildProject"]
                   )['build']
-                          
+
                   id = build['id']
                   status = build['buildStatus']
                   while status == 'IN_PROGRESS':
                       sleep(10)
                       build = codebuild.batch_get_builds(ids=[id])['builds'][0]
                       status = build['buildStatus']
-                  
+
                   if status != "SUCCEEDED":
                       cfnresponse.send(event, context, cfnresponse.FAILED, None)
-              
+
               cfnresponse.send(event, context, cfnresponse.SUCCESS, None)
 
   BatchNextflowJobDefinition:
     Type: AWS::Batch::JobDefinition
     Properties:
       Type: container
-      ContainerProperties: 
-        MountPoints: 
+      ContainerProperties:
+        MountPoints:
           - ContainerPath: /opt/work
             SourceVolume: scratch
-        Volumes: 
+        Volumes:
           - Host:
               SourcePath: /scratch
             Name: scratch
-        Command: 
+        Command:
           - Ref::NextflowScript
         Memory: 1024
         JobRoleArn: !GetAtt IAMNextflowJobRole.Arn
@@ -341,8 +341,8 @@ Resources:
           - Name: "NF_JOB_QUEUE"
             Value: !Ref BatchDefaultJobQueue
           - Name: "NF_LOGSDIR"
-            Value: 
-              Fn::Join: 
+            Value:
+              Fn::Join:
                 - "/"
                 - - Fn::If:
                       - DataBucketIsNextflowBucket
@@ -350,15 +350,15 @@ Resources:
                       - !Sub "s3://${S3NextflowBucketName}"
                   - !Ref S3LogsDirPrefix
           - Name: "NF_WORKDIR"
-            Value: 
-              Fn::Join: 
+            Value:
+              Fn::Join:
                 - "/"
                 - - Fn::If:
                       - DataBucketIsNextflowBucket
                       - !Join ["/", [!Sub "s3://${S3NextflowBucketName}", !Ref S3NextflowPrefix]]
                       - !Sub "s3://${S3NextflowBucketName}"
                   - !Ref S3WorkDirPrefix
-              
+
       JobDefinitionName: nextflow
 
 
@@ -371,7 +371,7 @@ Outputs:
         - NextflowBucketDoesNotExist
         - !Ref S3NextflowBucket
         - !Ref S3NextflowBucketName
-  
+
   LogsDir:
     Description: >-
       S3 URI where nextflow session cache and logs are stored.
@@ -388,7 +388,7 @@ Outputs:
     Description: >-
       S3 URI where workflow intermediate results are stored.
     Value:
-      Fn::Join: 
+      Fn::Join:
         - "/"
         - - Fn::If:
               - DataBucketIsNextflowBucket
@@ -409,7 +409,7 @@ Outputs:
     Description: >-
       Batch Job Definition that creates a nextflow head node for running workflows
     Value: !Ref BatchNextflowJobDefinition
-  
+
   NextflowJobRole:
     Description: >-
       IAM Role that allows the nextflow head node job access to S3 and Batch

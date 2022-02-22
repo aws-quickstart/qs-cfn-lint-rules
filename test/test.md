@@ -11,7 +11,7 @@
 # 4. Parameter of same name in template not being passed to child which has the same name (ERROR)
 # (check string Parameter Name in the value of the parameter with the same names value - Covers hard coded QSS3BucketName)
 
-# 6. TemplateURL parsing 
+# 6. TemplateURL parsing
 # 6.1 !Sub
 # 6.2 TODO: Template and child template in same local path
 # 6.3 TODO: If:: {}

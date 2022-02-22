@@ -6,13 +6,13 @@ echo "$HOSTNAME"
 
 sudo -u root bash << EOF
 if ! grep -q "@sas" /etc/security/limits.conf; then
-    echo "@sas             hard    nofile         20480" >> /etc/security/limits.conf 
-    echo "@sas             soft    nofile         20480" >> /etc/security/limits.conf 
-    echo "@sas             hard    nproc          20480" >> /etc/security/limits.conf 
-    echo "@sas             soft    nproc          20480" >> /etc/security/limits.conf 
+    echo "@sas             hard    nofile         20480" >> /etc/security/limits.conf
+    echo "@sas             soft    nofile         20480" >> /etc/security/limits.conf
+    echo "@sas             hard    nproc          20480" >> /etc/security/limits.conf
+    echo "@sas             soft    nproc          20480" >> /etc/security/limits.conf
 fi
 
-if ! grep -q "SASFoundation" /etc/profile; then  
+if ! grep -q "SASFoundation" /etc/profile; then
     echo ". /sas/lsf/conf/profile.lsf" >> /etc/profile
     echo 'export PATH=$PATH:/usr/local/SASHome/SASFoundation/9.4' >> /etc/profile
 fi
@@ -32,7 +32,7 @@ exit
 EOF
 
 sudo -u sasinst bash << EOF
-cd /sas/$1                        
+cd /sas/$1
 ./setup.sh -deploy -quiet -responsefile /sas/quickstart/playbooks/templates/metadata_install.txt
 exit
 EOF
@@ -43,7 +43,7 @@ exit
 EOF
 
 sudo -u sasinst bash << EOF
-cd /sas/$1                        
+cd /sas/$1
 ./setup.sh -deploy -quiet -responsefile /sas/quickstart/playbooks/templates/metadata_config.txt
 exit
 EOF
