@@ -47,4 +47,3 @@ cd /sas/$1
 ./setup.sh -deploy -quiet -responsefile /sas/quickstart/playbooks/templates/metadata_config.txt
 exit
 EOF
-
