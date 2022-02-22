@@ -44,7 +44,7 @@ Parameters:
         Description: Select the Load Balancer Security Group to use for the cluster hosts
         Type: AWS::EC2::SecurityGroup::Id
 
-    Path: 
+    Path:
         Description: The path to register with the Application Load Balancer
         Type: String
         Default: /
@@ -130,14 +130,14 @@ Resources:
 
     ECSHostSecurityGroup:
         Type: AWS::EC2::SecurityGroup
-        Properties: 
+        Properties:
             VpcId: !Ref VPC
             GroupDescription: Access to the ECS hosts and the tasks/containers that run on them
             SecurityGroupIngress:
                 - IpProtocol: tcp
                   FromPort: 0
                   ToPort: 65535
-                  SourceSecurityGroupId: !Ref LoadBalancerSecurityGroup 
+                  SourceSecurityGroupId: !Ref LoadBalancerSecurityGroup
                 - IpProtocol: tcp
                   FromPort: 80
                   ToPort: 80
@@ -146,13 +146,13 @@ Resources:
                   FromPort: 443
                   ToPort: 443
                   CidrIp: "0.0.0.0/0"
-            Tags: 
+            Tags:
                 - Key: Name
                   Value: !Sub ${EnvironmentName}-ECS-Hosts
 
     ECSRole:
         Type: AWS::IAM::Role
-        Properties: 
+        Properties:
             Path: /
             RoleName: !Sub ${EnvironmentName}-ECSRole-${AWS::Region}
             AssumeRolePolicyDocument: |
@@ -160,12 +160,12 @@ Resources:
                     "Statement": [{
                         "Action": "sts:AssumeRole",
                         "Effect": "Allow",
-                        "Principal": { 
-                            "Service": "ec2.amazonaws.com" 
+                        "Principal": {
+                            "Service": "ec2.amazonaws.com"
                         }
                     }]
                 }
-            Policies: 
+            Policies:
                 - PolicyName: ecs-service
                   PolicyDocument: |
                     {
@@ -195,11 +195,11 @@ Resources:
                         ]
                     }
 
-    ECSInstanceProfile: 
+    ECSInstanceProfile:
         Type: AWS::IAM::InstanceProfile
         Properties:
             Path: /
-            Roles: 
+            Roles:
                 - !Ref ECSRole
 
     ECSLaunchConfiguration:
@@ -207,7 +207,7 @@ Resources:
         Properties:
             ImageId:  !Ref AMI
             InstanceType: !Ref InstanceType
-            SecurityGroups: 
+            SecurityGroups:
                 - !Ref ECSHostSecurityGroup
                 - !Ref LoadBalancerSecurityGroup
             IamInstanceProfile: !Ref ECSInstanceProfile
@@ -222,7 +222,7 @@ Resources:
               Ebs:
                 VolumeSize: !Ref BlockVolumeSize
                 DeleteOnTermination: 'true'
-            UserData: 
+            UserData:
                 "Fn::Base64": !Sub |
                     #!/bin/bash
                     yum install -y aws-cfn-bootstrap
@@ -236,7 +236,7 @@ Resources:
                     standard:
                     - "standard"
                     efs:
-                    - "efs"  
+                    - "efs"
                     - "standard"
                 standard:
                     files:
@@ -248,19 +248,19 @@ Resources:
                                 [main]
                                 stack=${AWS::StackId}
                                 region=${AWS::Region}
-                        
+
                         "/etc/cfn/hooks.d/cfn-auto-reloader.conf":
                             content: !Sub |
                                 [cfn-auto-reloader-hook]
                                 triggers=post.update
                                 path=Resources.ECSLaunchConfiguration.Metadata.AWS::CloudFormation::Init
                                 action=/opt/aws/bin/cfn-init -v -c ${DeploymentType} --region ${AWS::Region} --stack ${AWS::StackName} --resource ECSLaunchConfiguration
-                    services: 
+                    services:
                         sysvinit:
-                            cfn-hup: 
+                            cfn-hup:
                                 enabled: true
                                 ensureRunning: true
-                                files: 
+                                files:
                                     - /etc/cfn/cfn-hup.conf
                                     - /etc/cfn/hooks.d/cfn-auto-reloader.conf
                     commands:
@@ -296,7 +296,7 @@ Resources:
 
     ECSAutoScalingGroup:
         Type: AWS::AutoScaling::AutoScalingGroup
-        Properties: 
+        Properties:
             VPCZoneIdentifier: !Ref Subnets
             LaunchConfigurationName: !Ref ECSLaunchConfiguration
             MinSize: !Ref MinClusterSize
@@ -304,13 +304,13 @@ Resources:
             DesiredCapacity: !Ref ClusterSize
             Tags:
                 - Key: Name
-                  Value: !Join 
+                  Value: !Join
                     - '-'
                     - - !Ref 'EnvironmentName'
                       - 'ECS-Instance'
                   PropagateAtLaunch: true
         CreationPolicy:
-            ResourceSignal: 
+            ResourceSignal:
                 Timeout: PT15M
         UpdatePolicy:
             AutoScalingRollingUpdate:

@@ -1,7 +1,7 @@
 Description: >
     This template deploys Solodev CMS for Docker ECS
 
-Parameters: 
+Parameters:
 
     EnvironmentName:
         Description: An environment name that will be prefixed to resource names
@@ -10,7 +10,7 @@ Parameters:
     VPC:
         Description: The VPC that the ECS cluster is deployed to
         Type: AWS::EC2::VPC::Id
-        
+
     Cluster:
         Description: Please provide the ECS Cluster ID that this service should run on
         Type: String
@@ -31,7 +31,7 @@ Parameters:
         Description: Choose which subnets this cluster should be deployed to
         Type: List<AWS::EC2::Subnet::Id>
 
-    DesiredCount: 
+    DesiredCount:
         Description: How many instances of this task should we run across our cluster?
         Type: Number
         Default: 2
@@ -41,7 +41,7 @@ Parameters:
         Type: Number
         Default: 3
 
-    Path: 
+    Path:
         Description: The path to register with the Application Load Balancer
         Type: String
         Default: /
@@ -71,7 +71,7 @@ Parameters:
     DatabasePassword:
       Type: String
       Description: The database user password
-        
+
     DatabasePort:
         Default: '3306'
         Description: Database Port
@@ -161,37 +161,37 @@ Resources:
         Properties:
             Path: /
             Policies:
-                - 
+                -
                     PolicyName: root
                     PolicyDocument:
                         Statement:
-                            - 
+                            -
                                 Effect: Allow
                                 Action:
                                     - 'cloudformation:DescribeStackResource'
                                 Resource: '*'
-                - 
+                -
                     PolicyName: backupdef
                     PolicyDocument:
-                        Statement: 
-                            - 
-                                Action: 
+                        Statement:
+                            -
+                                Action:
                                     - 's3:*'
                                 Effect: "Allow"
-                                Resource: 
-                                    Fn::Join: 
+                                Resource:
+                                    Fn::Join:
                                     - ""
-                                    - 
+                                    -
                                         - "arn:aws:s3:::"
                                         - !Join ['-', [!Ref 'EnvironmentName', 'solodev']]
-                            - 
-                                Action: 
+                            -
+                                Action:
                                     - 's3:*'
                                 Effect: "Allow"
-                                Resource: 
-                                    Fn::Join: 
+                                Resource:
+                                    Fn::Join:
                                     - ""
-                                    - 
+                                    -
                                         - "arn:aws:s3:::"
                                         - !Join ['-', [!Ref 'EnvironmentName', 'solodev']]
                                         - "/*"
@@ -201,15 +201,15 @@ Resources:
         Properties:
             UserName: !Ref BackupUser
 
-    Service: 
+    Service:
         Type: AWS::ECS::Service
-        Properties: 
+        Properties:
             Cluster: !Ref Cluster
             TaskDefinition: !Ref TaskDefinition
             SchedulingStrategy: DAEMON
             HealthCheckGracePeriodSeconds: 300
             ServiceName: solodev
-            LoadBalancers: 
+            LoadBalancers:
                 - ContainerName: "apache2"
                   ContainerPort: 80
                   TargetGroupArn: !Ref TargetGroup
@@ -242,17 +242,17 @@ Resources:
                 Statement:
                 - {Action: "sts:AssumeRole", Effect: Allow, Principal: {Service: ecs-tasks.amazonaws.com}}
             Path: "/"
-            Policies: 
-                - 
+            Policies:
+                -
                     PolicyName: "solodev-inline"
-                    PolicyDocument: 
+                    PolicyDocument:
                         Version: "2012-10-17"
-                        Statement: 
-                            - 
+                        Statement:
+                            -
                                 Effect: "Allow"
                                 Action: [ "aws-marketplace:RegisterUsage" ]
                                 Resource: "*"
-                            -   
+                            -
                                 Effect: Allow
                                 Action:
                                   - 's3:*'
@@ -266,13 +266,13 @@ Resources:
             TaskRoleArn: !GetAtt TaskRole.Arn
             NetworkMode: "host"
             ContainerDefinitions:
-                - 
+                -
                     Name: backup
-                    MountPoints: 
-                        - 
+                    MountPoints:
+                        -
                             SourceVolume: "solodev-client"
                             ContainerPath: "/var/www/solodev/clients/solodev"
-                        - 
+                        -
                             SourceVolume: "solodev-backup"
                             ContainerPath: "/root/.duply"
                     Image: !Ref DuplicityContainer
@@ -300,7 +300,7 @@ Resources:
                         - Name: IAM_ACCESS_KEY
                           Value: !Ref BackupUserKeys
                         - Name: IAM_SECRET_KEY
-                          Value: !GetAtt 
+                          Value: !GetAtt
                             - BackupUserKeys
                             - SecretAccessKey
                         - Name: GPGPW
@@ -311,13 +311,13 @@ Resources:
                             awslogs-group: !Ref AWS::StackName
                             awslogs-region: !Ref AWS::Region
                             awslogs-stream-prefix: solodev-backup
-            Volumes: 
-                - 
-                    Host: 
+            Volumes:
+                -
+                    Host:
                         SourcePath: !Join ['', ['/efs/', !Ref 'EnvironmentName', '/solodev']]
                     Name: "solodev-client"
-                - 
-                    Host: 
+                -
+                    Host:
                         SourcePath: !Join ['', ['/efs/', !Ref 'EnvironmentName', '/backup']]
                     Name: "solodev-backup"
 
@@ -329,13 +329,13 @@ Resources:
             TaskRoleArn: !GetAtt TaskRole.Arn
             NetworkMode: "host"
             ContainerDefinitions:
-                - 
+                -
                     Name: restore
-                    MountPoints: 
-                        - 
+                    MountPoints:
+                        -
                             SourceVolume: "solodev-client"
                             ContainerPath: "/var/www/solodev/clients/solodev"
-                        - 
+                        -
                             SourceVolume: "solodev-backup"
                             ContainerPath: "/root/.duply"
                     Image: !Ref DuplicityContainer
@@ -353,7 +353,7 @@ Resources:
                         - Name: IAM_ACCESS_KEY
                           Value: !Ref BackupUserKeys
                         - Name: IAM_SECRET_KEY
-                          Value: !GetAtt 
+                          Value: !GetAtt
                             - BackupUserKeys
                             - SecretAccessKey
                         - Name: GPGPW
@@ -364,13 +364,13 @@ Resources:
                             awslogs-group: !Ref AWS::StackName
                             awslogs-region: !Ref AWS::Region
                             awslogs-stream-prefix: solodev-restore
-            Volumes: 
-                - 
-                    Host: 
+            Volumes:
+                -
+                    Host:
                         SourcePath: !Join ['', ['/efs/', !Ref 'EnvironmentName', '/solodev']]
                     Name: "solodev-client"
-                - 
-                    Host: 
+                -
+                    Host:
                         SourcePath: !Join ['', ['/efs/', !Ref 'EnvironmentName', '/backup']]
                     Name: "solodev-backup"
 
@@ -385,12 +385,12 @@ Resources:
                 -
                     Name: solodev
                     PortMappings:
-                        - 
+                        -
                             ContainerPort: 9000
                             Protocol: "tcp"
                     Essential: true
-                    MountPoints: 
-                        - 
+                    MountPoints:
+                        -
                             SourceVolume: "solodev-client"
                             ContainerPath: "/var/www/solodev/clients/solodev"
                     Essential: true
@@ -431,17 +431,17 @@ Resources:
                             awslogs-group: !Ref AWS::StackName
                             awslogs-region: !Ref AWS::Region
                             awslogs-stream-prefix: solodev-cms
-                - 
+                -
                     Name: apache2
                     PortMappings:
-                        - 
+                        -
                             ContainerPort: 80
                             Protocol: "tcp"
-                        - 
+                        -
                             ContainerPort: 443
                             Protocol: "tcp"
-                    MountPoints: 
-                        - 
+                    MountPoints:
+                        -
                             SourceVolume: "solodev-client"
                             ContainerPath: "/var/www/solodev/clients/solodev"
                     Essential: true
@@ -456,15 +456,15 @@ Resources:
                             awslogs-group: !Ref AWS::StackName
                             awslogs-region: !Ref AWS::Region
                             awslogs-stream-prefix: solodev-apache2
-                - 
+                -
                     Name: mongodb
                     PortMappings:
-                        - 
+                        -
                             HostPort: 27017
                             ContainerPort: 27017
                             Protocol: "tcp"
-                    MountPoints: 
-                        - 
+                    MountPoints:
+                        -
                             SourceVolume: "solodev-mongo"
                             ContainerPath: "/data"
                     Essential: true
@@ -483,18 +483,18 @@ Resources:
                             awslogs-group: !Ref AWS::StackName
                             awslogs-region: !Ref AWS::Region
                             awslogs-stream-prefix: solodev-mongo
-                - 
+                -
                     Name: redis
                     PortMappings:
-                        - 
+                        -
                             HostPort: 6379
                             ContainerPort: 6379
                             Protocol: "tcp"
                     Essential: true
                     Image: !Ref RedisContainer
                     MemoryReservation: 256
-                    MountPoints: 
-                        - 
+                    MountPoints:
+                        -
                             SourceVolume: "solodev-redis"
                             ContainerPath: "/data"
                     LogConfiguration:
@@ -503,21 +503,21 @@ Resources:
                             awslogs-group: !Ref AWS::StackName
                             awslogs-region: !Ref AWS::Region
                             awslogs-stream-prefix: solodev-redis
-            Volumes: 
-                - 
-                    Host: 
+            Volumes:
+                -
+                    Host:
                         SourcePath: !Join ['', ['/efs/', !Ref 'EnvironmentName', '/solodev']]
                     Name: "solodev-client"
-                - 
-                    Host: 
+                -
+                    Host:
                         SourcePath: !Join ['', ['/efs/', !Ref 'EnvironmentName', '/mongo']]
                     Name: "solodev-mongo"
-                - 
-                    Host: 
+                -
+                    Host:
                         SourcePath: !Join ['', ['/efs/', !Ref 'EnvironmentName', '/backup']]
                     Name: "solodev-backup"
-                - 
-                    Host: 
+                -
+                    Host:
                         SourcePath: !Join ['', ['/efs/', !Ref 'EnvironmentName', '/redis']]
                     Name: "solodev-redis"
 
@@ -553,10 +553,10 @@ Resources:
             ScheduleExpression: !Ref CronSchedule
             State: ENABLED
             Targets:
-              - 
+              -
                 Arn: !Ref ClusterArn
                 Id: Target1
-                RoleArn: !GetAtt 
+                RoleArn: !GetAtt
                     - ECSEventRole
                     - Arn
                 EcsParameters:
@@ -565,9 +565,9 @@ Resources:
 
     CloudWatchLogsGroup:
         Type: AWS::Logs::LogGroup
-        Properties: 
+        Properties:
             LogGroupName: !Ref AWS::StackName
-            RetentionInDays: 30  
+            RetentionInDays: 30
 
     TargetGroup:
         Type: AWS::ElasticLoadBalancingV2::TargetGroup
@@ -575,7 +575,7 @@ Resources:
             VpcId: !Ref VPC
             Port: 80
             Protocol: HTTP
-            Matcher: 
+            Matcher:
                 HttpCode: 200
             HealthCheckIntervalSeconds: 45
             HealthCheckPath: /healthcheck
@@ -592,7 +592,7 @@ Resources:
                   Value: 'true'
                 - Key: stickiness.lb_cookie.duration_seconds
                   Value: '2000'
-            Name: !Join 
+            Name: !Join
                 - '-'
                 - - !Ref 'EnvironmentName'
                   - solodev
@@ -611,7 +611,7 @@ Resources:
         Type: 'AWS::ElasticLoadBalancingV2::Listener'
         Condition: UseHTTPS
         Properties:
-            Certificates: 
+            Certificates:
                 - CertificateArn: !Ref CertificateArn
             DefaultActions:
                 - Type: forward
@@ -619,7 +619,7 @@ Resources:
             LoadBalancerArn: !Ref LoadBalancer
             Port: 443
             Protocol: HTTPS
-    
+
     ListenerRule:
         Type: AWS::ElasticLoadBalancingV2::ListenerRule
         Properties:
@@ -627,7 +627,7 @@ Resources:
             Priority: 1
             Conditions:
                 - Field: path-pattern
-                  Values: 
+                  Values:
                     - !Ref Path
             Actions:
                 - TargetGroupArn: !Ref TargetGroup
@@ -641,7 +641,7 @@ Resources:
             Priority: 2
             Conditions:
                 - Field: path-pattern
-                  Values: 
+                  Values:
                     - !Ref Path
             Actions:
                 - TargetGroupArn: !Ref TargetGroup

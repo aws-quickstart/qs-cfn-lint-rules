@@ -2,14 +2,14 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: Cloud9 + QuickStart VPC (qs-1pb4pod81) (Please do not remove) May,29,2019
 Metadata:
-  LICENSE: Apache License, Version 2.0 
+  LICENSE: Apache License, Version 2.0
   AWS::CloudFormation::Interface:
     ParameterGroups:
     - Label:
         default: VPC network configuration
       Parameters:
       - AvailabilityZones
-      - NumberOfAZs    
+      - NumberOfAZs
       - PrivateSubnet1CIDR
       - PrivateSubnet2CIDR
       - PublicSubnet1CIDR
@@ -24,17 +24,17 @@ Metadata:
       Parameters:
       - C9InstanceType
       - C9StopTime
-      - EBSVolumeSize    
+      - EBSVolumeSize
     - Label:
         default: AWS Quick Start configuration
-      Parameters:     
+      Parameters:
       - QSS3BucketName
-      - QSS3KeyPrefix          
+      - QSS3KeyPrefix
     ParameterLabels:
       QSS3BucketName:
         default: Quick Start S3 bucket name
       QSS3KeyPrefix:
-        default: Quick Start S3 key prefix    
+        default: Quick Start S3 key prefix
       AvailabilityZones:
         default: Availability Zones
       EBSVolumeSize:
@@ -44,7 +44,7 @@ Metadata:
       C9StopTime:
         default: Stop time
       NumberOfAZs:
-        default: Number of Availability Zones          
+        default: Number of Availability Zones
       PrivateSubnet1CIDR:
         default: Private subnet 1 CIDR
       PrivateSubnet2CIDR:
@@ -54,7 +54,7 @@ Metadata:
       PublicSubnet2CIDR:
         default: Public subnet 2 CIDR
       EnableBastionStack:
-        default: Bastion entry point 
+        default: Bastion entry point
       RemoteAccessCIDR:
         default: Allowed external access CIDR (bastion access)
 Parameters:
@@ -83,7 +83,7 @@ Parameters:
     Description: The CIDR IP range that is permitted to access the AWS Cloud9 desktop and the bastion host. We recommend that you set this value to a trusted
       IP range. Alternatively, keep the default "Auto" setting to provide access to only the IP address launching the stack.
     Type: String
-    Default: Auto 
+    Default: Auto
   AvailabilityZones:
     Description: >-
       List of Availability Zones to use for the subnets in the VPC. Only two
@@ -174,7 +174,7 @@ Parameters:
     Description: The desired size (in GB) of the Amazon EBS volume for your Cloud9 IDE.
     Type: Number
     Default: 100
-  EnableBastionStack: 
+  EnableBastionStack:
     AllowedValues: [ "true", "false" ]
     Default: 'false'
     Description: (Optional) Choose true to create a Linux bastion.
@@ -186,15 +186,15 @@ Parameters:
     AllowedValues:
     - 2
     - 3
-    - 4    
+    - 4
 Conditions:
   EnableBastion: !Equals
     - !Ref EnableBastionStack
     - 'true'
   AutoCIDR: !Equals
     - !Ref RemoteAccessCIDR
-    - 'Auto'   
-Resources: 
+    - 'Auto'
+Resources:
   GetAzs:
     Type: Custom::GetAzs
     Properties:
@@ -247,7 +247,7 @@ Resources:
               except Exception:
                   traceback.print_exc()
                   status = cfnresponse.FAILED
-              cfnresponse.send(event, context, status, data, None) 
+              cfnresponse.send(event, context, status, data, None)
   CreateKeypair:
     Type: Custom::CreateKeypair
     Properties:
@@ -405,13 +405,13 @@ Resources:
   SshPrivateKeySecret:
     Type: AWS::SecretsManager::Secret
     Properties:
-      SecretString: !GetAtt 'CreateKeypair.PrivateKey'              
+      SecretString: !GetAtt 'CreateKeypair.PrivateKey'
   VPCStack:
     Type: AWS::CloudFormation::Stack
     Properties:
       TemplateURL: !Sub 'https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}submodules/quickstart-aws-vpc/templates/aws-vpc.template'
       Parameters:
-        AvailabilityZones: !Join 
+        AvailabilityZones: !Join
           - ','
           - !Ref AvailabilityZones
         CreatePrivateSubnets: 'true'
@@ -420,11 +420,11 @@ Resources:
         PrivateSubnet2ACIDR: !Ref PrivateSubnet2CIDR
         PublicSubnet1CIDR: !Ref PublicSubnet1CIDR
         PublicSubnet2CIDR: !Ref PublicSubnet2CIDR
-        NumberOfAZs: !Ref NumberOfAZs       
+        NumberOfAZs: !Ref NumberOfAZs
   IDEStack:
     Type: AWS::CloudFormation::Stack
     Properties:
-      TemplateURL: !Sub 'https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}templates/cloud9-ide-instance.yaml'    
+      TemplateURL: !Sub 'https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}templates/cloud9-ide-instance.yaml'
       Parameters:
         EBSVolumeSize: !Ref EBSVolumeSize
         C9InstanceType: !Ref C9InstanceType
@@ -436,12 +436,12 @@ Resources:
     Condition: EnableBastion
     Type: AWS::CloudFormation::Stack
     Properties:
-      TemplateURL: !Sub 'https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}submodules/quickstart-linux-bastion/templates/linux-bastion.template'        
+      TemplateURL: !Sub 'https://${QSS3BucketName}.s3.amazonaws.com/${QSS3KeyPrefix}submodules/quickstart-linux-bastion/templates/linux-bastion.template'
       Parameters:
         BastionAMIOS: 'Amazon-Linux-HVM'
         BastionInstanceType: 't2.micro'
         KeyPairName: !Ref CreateKeypair
         PublicSubnet1ID: !GetAtt 'VPCStack.Outputs.PublicSubnet1ID'
-        PublicSubnet2ID: !GetAtt 'VPCStack.Outputs.PublicSubnet2ID'          
+        PublicSubnet2ID: !GetAtt 'VPCStack.Outputs.PublicSubnet2ID'
         RemoteAccessCIDR: !If [ AutoCIDR, !Ref GetIp, !Ref RemoteAccessCIDR ]
         VPCID: !GetAtt 'VPCStack.Outputs.VPCID'
