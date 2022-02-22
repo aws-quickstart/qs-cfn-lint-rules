@@ -57,10 +57,10 @@ class TestStackHelper(unittest.TestCase):
     def test_flatten_template_url_maxdepth(self):
         with self.assertRaises(Exception) as context:
             StackHelper.flatten_template_url(
-                "{ one { two } { two { three { four { five { six { seven " +
-                "{ eight { nine { ten { eleven { twelve { thirteen { fourteen " +
-                "{ fifteen { sixteen { seventeen { eighteen { nineteen " +
-                "{ twenty }}}}}}}}}}}}}}}}}} }}"
+                "{ one { two } { two { three { four { five { six { seven "
+                + "{ eight { nine { ten { eleven { twelve { thirteen { fourteen "
+                + "{ fifteen { sixteen { seventeen { eighteen { nineteen "
+                + "{ twenty }}}}}}}}}}}}}}}}}} }}"
             )
 
         self.assertTrue(
