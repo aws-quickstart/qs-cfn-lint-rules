@@ -108,7 +108,7 @@ class Base(CloudFormationLintRule):
             return matches
         else:
             custom_dict = self.get_custom_dict()
-            sentence_case_exclude = cfn.template["Metadata"]["SentenceCaseExclude"]
+            sentence_case_exclude = cfn.template.get("Metadata", {}).get("SentenceCaseExclude", [])
             spell = SpellChecker()
             if "Metadata" in cfn.template.keys():
                 if "LintSpellExclude" in cfn.template["Metadata"].keys():
