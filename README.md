@@ -93,3 +93,21 @@ If you receive spelling error warnings [9006] for words that are spelled correct
 line 93 [9006] Parameter QSS3BucketName contains spelling error(s):
 {'customizing'}
 ```
+
+For spelling exclusions for a specific CloudFormation template, such as partner brand names, please add these words to a `LintSpellExclude` list to the `Metadata` section.
+
+```yaml
+Metadata:
+  LintSpellExclude:
+    - PartnerName
+```
+
+### Sentence case
+
+If you receive sentence case warnings [9006] for words that should be capitalized, such as partner product names, please add a `SentenceCaseExclude` list to the `Metadata` section.
+
+```yaml
+Metadata:
+  SentenceCaseExclude:
+    - Pro
+```

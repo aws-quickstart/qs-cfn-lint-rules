@@ -49,12 +49,12 @@ class Base(CloudFormationLintRule):
         return set(wordlist)
 
     @staticmethod
-    def get_errors(description, spell, custom_dict):
+    def get_errors(description, spell, custom_dict, sentence_case_exclude):
         dict_words = set([])
         title_errors = set([])
-        # Remove items from the custom dict from the string
-        for pn in custom_dict:
-            description = description.replace(pn, "")
+        # Remove items from the custom dictionary or the sentence case exclusions from the string
+        for pn in custom_dict.union(sentence_case_exclude):
+            description = re.sub(r"\b" + re.escape(pn) + r"\b", "", description)
         for sentence in description.split("."):
             word_no = 0
             # [OPTIONAL] prefix should not be considered as part of the string, as it is stripped from
@@ -65,7 +65,7 @@ class Base(CloudFormationLintRule):
                 # if sentence starts with a proper noun then we don't need to check for sentence case
                 if sentence.startswith(pn):
                     word_no += 1
-                sentence = sentence.replace(pn, "")
+                sentence = re.sub(r"\b" + re.escape(pn) + r"\b", "", sentence)
             if len(sentence.strip()) > 1:
                 # Check that first letter of first word is UPPER
                 if sentence[0].upper() != sentence[0]:
@@ -108,6 +108,7 @@ class Base(CloudFormationLintRule):
             return matches
         else:
             custom_dict = self.get_custom_dict()
+            sentence_case_exclude = cfn.template.get("Metadata", {}).get("SentenceCaseExclude", [])
             spell = SpellChecker()
             if "Metadata" in cfn.template.keys():
                 if "LintSpellExclude" in cfn.template["Metadata"].keys():
@@ -125,7 +126,7 @@ class Base(CloudFormationLintRule):
                     )
                     description = strip_urls(description)
                     spell_errors, title_errors = self.get_errors(
-                        description, spell, custom_dict
+                        description, spell, custom_dict, sentence_case_exclude,
                     )
                     if stop_error:
                         matches.append(
@@ -228,7 +229,7 @@ class Base(CloudFormationLintRule):
                         ]
                         description = x["Label"]["default"]
                         spell_errors, title_errors = self.get_errors(
-                            description, spell, custom_dict
+                            description, spell, custom_dict, sentence_case_exclude,
                         )
                         if title_errors:
                             matches.append(
@@ -285,7 +286,7 @@ class Base(CloudFormationLintRule):
                             "AWS::CloudFormation::Interface"
                         ]["ParameterLabels"][x]["default"]
                         spell_errors, title_errors = self.get_errors(
-                            description, spell, custom_dict
+                            description, spell, custom_dict, sentence_case_exclude,
                         )
                         if title_errors:
                             matches.append(
