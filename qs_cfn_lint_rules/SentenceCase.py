@@ -65,7 +65,7 @@ class Base(CloudFormationLintRule):
                 # if sentence starts with a proper noun then we don't need to check for sentence case
                 if sentence.startswith(pn):
                     word_no += 1
-                sentence = re.sub(r"\b" + re.escape(pn) + r"\b", "", sentence)
+                sentence = re.sub(r"\b" + re.escape(pn) + r"\b", "", sentence, flags=re.IGNORECASE)
             if len(sentence.strip()) > 1:
                 # Check that first letter of first word is UPPER
                 if sentence[0].upper() != sentence[0]:
