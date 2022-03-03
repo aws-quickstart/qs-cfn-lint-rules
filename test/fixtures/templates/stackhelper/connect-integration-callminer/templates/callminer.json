@@ -1,311 +1,311 @@
 {
-    "AWSTemplateFormatVersion": "2010-09-09",
-    "Description": "CallMiner Eureka integration for Amazon Connect (qs-1oh3nqkht)",
-    "Metadata": {
-        "AWS::CloudFormation::Interface": {
-            "ParameterGroups": [
-                {
-                    "Label": {
-                        "default": "Amazon Connect Configuration"
-                    },
-                    "Parameters": [
-                        "S3BucketName",
-                        "S3BucketKMSKeyARN",
-                        "KinesisStreamARN",
-                        "KinesisStreamKMSKeyARN"
-                    ]
-                },
-                {
-                    "Label": {
-                        "default": "CallMiner Configuration ***DO NOT MODIFY***"
-                    },
-                    "Parameters": [
-                        "TrustedAccount",
-                        "ExternalId"
-                    ]
-                }
-            ],
-            "ParameterLabels": {
-                "S3BucketName": {
-                    "default": "Call recordings S3 bucket"
-                },
-                "S3BucketKMSKeyARN": {
-                    "default": "Call recordings S3 KMS Encryption key ARN"
-                },
-                "KinesisStreamARN": {
-                    "default": "Data streaming CTR Kinesis Stream ARN"
-                },
-                "KinesisStreamKMSKeyARN": {
-                    "default": "Data streaming CTR KMS encryption key ARN"
-                },
-                "TrustedAccount": {
-                    "default": "Account Id to Grant Permission"
-                },
-                "ExternalId": {
-                    "default": "External Id"
-                }
-            }
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "CallMiner Eureka integration for Amazon Connect (qs-1oh3nqkht)",
+  "Metadata": {
+    "AWS::CloudFormation::Interface": {
+      "ParameterGroups": [
+        {
+          "Label": {
+            "default": "Amazon Connect Configuration"
+          },
+          "Parameters": [
+            "S3BucketName",
+            "S3BucketKMSKeyARN",
+            "KinesisStreamARN",
+            "KinesisStreamKMSKeyARN"
+          ]
+        },
+        {
+          "Label": {
+            "default": "CallMiner Configuration ***DO NOT MODIFY***"
+          },
+          "Parameters": [
+            "TrustedAccount",
+            "ExternalId"
+          ]
         }
-    },
-    "Parameters": {
+      ],
+      "ParameterLabels": {
         "S3BucketName": {
-            "Description": "Enter the name of the S3 bucket where your Amazon Connect recordings are stored. Please refer to https://docs.aws.amazon.com/connect/latest/adminguide/amazon-connect-instance.html#datastorage for instructions on how to obtain this information.",
-            "Type": "String",
-            "AllowedPattern": "(?i)\\S+"
+          "default": "Call recordings S3 bucket"
         },
         "S3BucketKMSKeyARN": {
-            "Description": "Enter the ARN of the KMS key used for encryption of your Amazon Connect recordings. Please refer to https://docs.aws.amazon.com/connect/latest/adminguide/amazon-connect-instance.html#datastorage for instructions on how to obtain this information.",
-            "Type": "String",
-            "AllowedPattern": "(^$|(?i)arn:aws:kms:\\S+)"
+          "default": "Call recordings S3 KMS Encryption key ARN"
         },
         "KinesisStreamARN": {
-            "Description": "Enter the ARN of the Kinesis stream where Amazon Connect Contact Trace Records (CTRs) are written. Please refer to https://docs.aws.amazon.com/connect/latest/adminguide/amazon-connect-instance.html#dataexporting for instructions on how to obtain this information.",
-            "Type": "String",
-            "AllowedPattern": "(?i)arn:aws:kinesis:\\S+",
-            "MinLength": 17
+          "default": "Data streaming CTR Kinesis Stream ARN"
         },
         "KinesisStreamKMSKeyARN": {
-            "Description": "(Optional) If you've enabled encryption for your Amazon Connect Kinesis stream, enter the KMS encryption key ARN, otherwise DO NOT MODIFY this field.",
-            "Type": "String",
-            "AllowedPattern": "(^$|(?i)arn:aws:kms:\\S+)",
-            "Default": "arn:aws:kms:us-east-1:555555555555:key/1f70885x-953d-4f1f-8c8a-5902ef2cd21e"
+          "default": "Data streaming CTR KMS encryption key ARN"
         },
         "TrustedAccount": {
-            "Description": "Account Id for Cross-Account Role",
-            "Type": "String"
+          "default": "Account Id to Grant Permission"
         },
         "ExternalId": {
-            "Description": "External Id for Cross-Account Role",
-            "Type": "String"
+          "default": "External Id"
         }
-    },
-    "Conditions": {
-        "KinesisKMSKeyIsValid": {
-            "Fn::Not": [
-                {
-                    "Fn::Equals": [
-                        {
-                            "Ref": "KinesisStreamKMSKeyARN"
-                        },
-                        ""
-                    ]
-                }
-            ]
-        },
-        "TrustedAccountIsValid": {
-            "Fn::Not": [
-                {
-                    "Fn::Equals": [
-                        {
-                            "Ref": "TrustedAccount"
-                        },
-                        ""
-                    ]
-                }
-            ]
-        }
-    },
-    "Resources": {
-        "CrossAccountRole": {
-            "Type": "AWS::IAM::Role",
-            "Properties": {
-                "AssumeRolePolicyDocument": {
-                    "Version": "2012-10-17",
-                    "Statement": [
-                        {
-                            "Action": "sts:AssumeRole",
-                            "Effect": "Allow",
-                            "Principal": {
-                                "AWS": {
-                                    "Fn::Sub": "arn:aws:iam::${TrustedAccount}:root"
-                                }
-                            }
-                        }
-                    ]
-                },
-                "Policies": [
-                    {
-                        "PolicyDocument": {
-                            "Version": "2012-10-17",
-                            "Statement": [
-                                {
-                                    "Effect": "Allow",
-                                    "Action": [
-                                        "s3:GetObject",
-                                        "s3:GetObjectAcl"
-                                    ],
-                                    "Resource": [
-                                        {
-                                            "Fn::Sub": "arn:aws:s3:::${S3BucketName}/*"
-                                        }
-                                    ]
-                                },
-                                {
-                                    "Effect": "Allow",
-                                    "Action": [
-                                        "s3:GetBucketLocation",
-                                        "s3:GetBucketAcl"
-                                    ],
-                                    "Resource": [
-                                        {
-                                            "Fn::Sub": "arn:aws:s3:::${S3BucketName}"
-                                        }
-                                    ]
-                                },
-                                {
-                                    "Effect": "Allow",
-                                    "Action": [
-                                        "kms:Encrypt",
-                                        "kms:Decrypt"
-                                    ],
-                                    "Resource": [
-                                        {
-                                            "Ref": "S3BucketKMSKeyARN"
-                                        }
-                                    ]
-                                },
-                                {
-                                    "Effect": "Allow",
-                                    "Action": [
-                                        "kinesis:Get*",
-                                        "kinesis:List*",
-                                        "kinesis:Describe*"
-                                    ],
-                                    "Resource": [
-                                        {
-                                            "Ref": "KinesisStreamARN"
-                                        }
-                                    ]
-                                },
-                                {
-                                    "Effect": "Allow",
-                                    "Action": [
-                                        "kms:Encrypt",
-                                        "kms:Decrypt"
-                                    ],
-                                    "Resource": [
-                                        {
-                                            "Ref": "KinesisStreamKMSKeyARN"
-                                        }
-                                    ]
-                                }
-                            ]
-                        },
-                        "PolicyName": {
-                            "Fn::Join": [
-                                "_",
-                                [
-                                    "CallMinerAccessPolicy",
-                                    {
-                                        "Ref": "ExternalId"
-                                    }
-                                ]
-                            ]
-                        }
-                    }
-                ]
-            }
-        },
-        "LambdaExecutionRole": {
-            "Type": "AWS::IAM::Role",
-            "Properties": {
-                "AssumeRolePolicyDocument": {
-                    "Version": "2012-10-17",
-                    "Statement": [
-                        {
-                            "Effect": "Allow",
-                            "Principal": {
-                                "Service": [
-                                    "lambda.amazonaws.com"
-                                ]
-                            },
-                            "Action": [
-                                "sts:AssumeRole"
-                            ]
-                        }
-                    ]
-                },
-                "Policies": [
-                    {
-                        "PolicyName": "lambdalogtocloudwatch",
-                        "PolicyDocument": {
-                            "Version": "2012-10-17",
-                            "Statement": [
-                                {
-                                    "Effect": "Allow",
-                                    "Action": [
-                                        "logs:CreateLogGroup",
-                                        "logs:CreateLogStream",
-                                        "logs:PutLogEvents"
-                                    ],
-                                    "Resource": "arn:aws:logs:*:*:*"
-                                }
-                            ]
-                        }
-                    }
-                ]
-            }
-        },
-        "ArnUpdateFunction": {
-            "Type": "AWS::Lambda::Function",
-            "Properties": {
-                "Handler": "index.handler",
-                "Role": {
-                    "Fn::GetAtt": [
-                        "LambdaExecutionRole",
-                        "Arn"
-                    ]
-                },
-                "Code": {
-                    "S3Bucket": "aws-quickstart",
-                    "S3Key": "connect-integration-callminer/functions/packages/integration/lambda.zip"
-                },
-                "Runtime": "nodejs6.10",
-                "Timeout": "30"
-            }
-        },
-        "InvokeArnUpdate": {
-            "Type": "Custom::LambdaCallout",
-            "Properties": {
-                "ServiceToken": {
-                    "Fn::GetAtt": [
-                        "ArnUpdateFunction",
-                        "Arn"
-                    ]
-                },
-                "VAR_S3BucketName": {
-                    "Ref": "S3BucketName"
-                },
-                "VAR_S3BucketKMSKeyARN": {
-                    "Ref": "S3BucketKMSKeyARN"
-                },
-                "VAR_KinesisStreamARN": {
-                    "Ref": "KinesisStreamARN"
-                },
-                "VAR_KinesisStreamKMSKeyARN": {
-                    "Ref": "KinesisStreamKMSKeyARN"
-                },
-                "VAR_IAMRoleARN": {
-                    "Fn::GetAtt": [
-                        "CrossAccountRole",
-                        "Arn"
-                    ]
-                },
-                "VAR_ExternalId": {
-                    "Ref": "ExternalId"
-                }
-            }
-        }
-    },
-    "Outputs": {
-        "Results": {
-            "Description": "Value indicating if the CallMiner role setup has completed successfully.",
-            "Value": {
-                "Fn::GetAtt": [
-                    "InvokeArnUpdate",
-                    "setupstatus"
-                ]
-            }
-        }
+      }
     }
+  },
+  "Parameters": {
+    "S3BucketName": {
+      "Description": "Enter the name of the S3 bucket where your Amazon Connect recordings are stored. Please refer to https://docs.aws.amazon.com/connect/latest/adminguide/amazon-connect-instance.html#datastorage for instructions on how to obtain this information.",
+      "Type": "String",
+      "AllowedPattern": "(?i)\\S+"
+    },
+    "S3BucketKMSKeyARN": {
+      "Description": "Enter the ARN of the KMS key used for encryption of your Amazon Connect recordings. Please refer to https://docs.aws.amazon.com/connect/latest/adminguide/amazon-connect-instance.html#datastorage for instructions on how to obtain this information.",
+      "Type": "String",
+      "AllowedPattern": "(^$|(?i)arn:aws:kms:\\S+)"
+    },
+    "KinesisStreamARN": {
+      "Description": "Enter the ARN of the Kinesis stream where Amazon Connect Contact Trace Records (CTRs) are written. Please refer to https://docs.aws.amazon.com/connect/latest/adminguide/amazon-connect-instance.html#dataexporting for instructions on how to obtain this information.",
+      "Type": "String",
+      "AllowedPattern": "(?i)arn:aws:kinesis:\\S+",
+      "MinLength": 17
+    },
+    "KinesisStreamKMSKeyARN": {
+      "Description": "(Optional) If you've enabled encryption for your Amazon Connect Kinesis stream, enter the KMS encryption key ARN, otherwise DO NOT MODIFY this field.",
+      "Type": "String",
+      "AllowedPattern": "(^$|(?i)arn:aws:kms:\\S+)",
+      "Default": "arn:aws:kms:us-east-1:555555555555:key/1f70885x-953d-4f1f-8c8a-5902ef2cd21e"
+    },
+    "TrustedAccount": {
+      "Description": "Account Id for Cross-Account Role",
+      "Type": "String"
+    },
+    "ExternalId": {
+      "Description": "External Id for Cross-Account Role",
+      "Type": "String"
+    }
+  },
+  "Conditions": {
+    "KinesisKMSKeyIsValid": {
+      "Fn::Not": [
+        {
+          "Fn::Equals": [
+            {
+              "Ref": "KinesisStreamKMSKeyARN"
+            },
+            ""
+          ]
+        }
+      ]
+    },
+    "TrustedAccountIsValid": {
+      "Fn::Not": [
+        {
+          "Fn::Equals": [
+            {
+              "Ref": "TrustedAccount"
+            },
+            ""
+          ]
+        }
+      ]
+    }
+  },
+  "Resources": {
+    "CrossAccountRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "AWS": {
+                  "Fn::Sub": "arn:aws:iam::${TrustedAccount}:root"
+                }
+              }
+            }
+          ]
+        },
+        "Policies": [
+          {
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "s3:GetObject",
+                    "s3:GetObjectAcl"
+                  ],
+                  "Resource": [
+                    {
+                      "Fn::Sub": "arn:aws:s3:::${S3BucketName}/*"
+                    }
+                  ]
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "s3:GetBucketLocation",
+                    "s3:GetBucketAcl"
+                  ],
+                  "Resource": [
+                    {
+                      "Fn::Sub": "arn:aws:s3:::${S3BucketName}"
+                    }
+                  ]
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "kms:Encrypt",
+                    "kms:Decrypt"
+                  ],
+                  "Resource": [
+                    {
+                      "Ref": "S3BucketKMSKeyARN"
+                    }
+                  ]
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "kinesis:Get*",
+                    "kinesis:List*",
+                    "kinesis:Describe*"
+                  ],
+                  "Resource": [
+                    {
+                      "Ref": "KinesisStreamARN"
+                    }
+                  ]
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "kms:Encrypt",
+                    "kms:Decrypt"
+                  ],
+                  "Resource": [
+                    {
+                      "Ref": "KinesisStreamKMSKeyARN"
+                    }
+                  ]
+                }
+              ]
+            },
+            "PolicyName": {
+              "Fn::Join": [
+                "_",
+                [
+                  "CallMinerAccessPolicy",
+                  {
+                    "Ref": "ExternalId"
+                  }
+                ]
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "LambdaExecutionRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": [
+                  "lambda.amazonaws.com"
+                ]
+              },
+              "Action": [
+                "sts:AssumeRole"
+              ]
+            }
+          ]
+        },
+        "Policies": [
+          {
+            "PolicyName": "lambdalogtocloudwatch",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "logs:CreateLogGroup",
+                    "logs:CreateLogStream",
+                    "logs:PutLogEvents"
+                  ],
+                  "Resource": "arn:aws:logs:*:*:*"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "ArnUpdateFunction": {
+      "Type": "AWS::Lambda::Function",
+      "Properties": {
+        "Handler": "index.handler",
+        "Role": {
+          "Fn::GetAtt": [
+            "LambdaExecutionRole",
+            "Arn"
+          ]
+        },
+        "Code": {
+          "S3Bucket": "aws-quickstart",
+          "S3Key": "connect-integration-callminer/functions/packages/integration/lambda.zip"
+        },
+        "Runtime": "nodejs6.10",
+        "Timeout": "30"
+      }
+    },
+    "InvokeArnUpdate": {
+      "Type": "Custom::LambdaCallout",
+      "Properties": {
+        "ServiceToken": {
+          "Fn::GetAtt": [
+            "ArnUpdateFunction",
+            "Arn"
+          ]
+        },
+        "VAR_S3BucketName": {
+          "Ref": "S3BucketName"
+        },
+        "VAR_S3BucketKMSKeyARN": {
+          "Ref": "S3BucketKMSKeyARN"
+        },
+        "VAR_KinesisStreamARN": {
+          "Ref": "KinesisStreamARN"
+        },
+        "VAR_KinesisStreamKMSKeyARN": {
+          "Ref": "KinesisStreamKMSKeyARN"
+        },
+        "VAR_IAMRoleARN": {
+          "Fn::GetAtt": [
+            "CrossAccountRole",
+            "Arn"
+          ]
+        },
+        "VAR_ExternalId": {
+          "Ref": "ExternalId"
+        }
+      }
+    }
+  },
+  "Outputs": {
+    "Results": {
+      "Description": "Value indicating if the CallMiner role setup has completed successfully.",
+      "Value": {
+        "Fn::GetAtt": [
+          "InvokeArnUpdate",
+          "setupstatus"
+        ]
+      }
+    }
+  }
 }
