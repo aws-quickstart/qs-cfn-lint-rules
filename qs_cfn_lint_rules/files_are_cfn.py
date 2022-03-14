@@ -42,14 +42,20 @@ def main():
         else:
             not_cfn.append(file)
 
-
     if args.inverse_exit_code:
         ec = int(len(cfn) > 0)
     else:
         ec = int(not len(cfn) > 0)
 
     if ec != 0:
-        print("The following files were detected as CloudFormation, outside of the `templates/` directory")
-        for i in not_cfn:
-            print(i)
+        if args.inverse_exit_code:
+            print(
+                "The following files were detected as CloudFormation"
+            )
+            for i in cfn:
+                print(i)
+        else:
+            print("The following files are NOT Cloudformation")
+            for i in not_cfn:
+                print(i)
     return ec
