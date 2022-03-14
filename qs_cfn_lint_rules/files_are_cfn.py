@@ -50,12 +50,12 @@ def main():
     if ec != 0:
         if args.inverse_exit_code:
             print(
-                "The following files were detected as CloudFormation"
+                "The following files were detected as CloudFormation\n"
             )
             for i in cfn:
                 print(i)
         else:
-            print("The following files are NOT Cloudformation")
+            print("The following files are NOT Cloudformation\n")
             for i in not_cfn:
                 print(i)
     return ec
