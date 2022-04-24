@@ -55,6 +55,8 @@ class Base(CloudFormationLintRule):
         # [OPTIONAL] prefix should not be considered as part of the string, as it is stripped from
         # the deployment guide
         description = re.sub(r"^[\[\(]OPTIONAL[\]\)] ", "", description, flags=re.IGNORECASE)
+        # Remove example resource IDs
+        description = re.sub(r"\b[a-z]+-(?:[0-9a-f]{8}|[0-9a-f]{17})\b", "", description)
         # Remove items from the custom dictionary or the sentence case exclusions from the string
         for pn in custom_dict.union(sentence_case_exclude):
             description = re.sub(r"\b" + re.escape(pn) + r"\b", "", description)
