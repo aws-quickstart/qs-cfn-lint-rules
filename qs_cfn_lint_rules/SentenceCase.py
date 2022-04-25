@@ -52,15 +52,18 @@ class Base(CloudFormationLintRule):
     def get_errors(description, spell, custom_dict, sentence_case_exclude):
         dict_words = set([])
         title_errors = set([])
+        # [OPTIONAL] prefix should not be considered as part of the string, as it is stripped from
+        # the deployment guide
+        description = re.sub(r"^[\[\(]OPTIONAL[\]\)] ", "", description, flags=re.IGNORECASE)
+        # Remove example resource IDs
+        description = re.sub(r"\b[a-z]+-(?:[0-9a-f]{8}|[0-9a-f]{17})\b", "", description)
+        # Remove example ARNs
+        description = re.sub(r"\barn:\S+\b", "", description)
         # Remove items from the custom dictionary or the sentence case exclusions from the string
         for pn in custom_dict.union(sentence_case_exclude):
             description = re.sub(r"\b" + re.escape(pn) + r"\b", "", description)
         for sentence in description.split("."):
             word_no = 0
-            # [OPTIONAL] prefix should not be considered as part of the string, as it is stripped from
-            # the deployment guide
-            if sentence.startswith("[OPTIONAL] "):
-                sentence = sentence.replace("[OPTIONAL] ", "")
             for pn in custom_dict:
                 # if sentence starts with a proper noun then we don't need to check for sentence case
                 if sentence.startswith(pn):
