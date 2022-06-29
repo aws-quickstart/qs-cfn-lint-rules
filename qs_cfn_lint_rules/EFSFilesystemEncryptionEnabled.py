@@ -24,24 +24,24 @@ from qs_cfn_lint_rules.common import (
     search_resources_for_property_value_violations as srfpvv,
 )
 
-LINT_ERROR_MESSAGE = "AWS::EC2::Volume must have EBS Volume Encryption enabled"
+LINT_ERROR_MESSAGE = "AWS::AWS::EFS::FileSystem must have Encryption enabled"
 
 
-class EBSVolumeEncryption(CloudFormationLintRule):
+class EFSFilesystemEncryptionEnabled(CloudFormationLintRule):
 
-    id = 'EBSVolumeEncryption'
-    shortdesc = 'EBS volume missing enryption'
-    description = 'EBS volume should have server-side encryption enabled'
+    id = 'EFSFilesystemEncryptionEnabled'
+    shortdesc = 'EFS volume missing encryption'
+    description = 'EFS volume should have server-side encryption enabled'
     source_url = 'https://github.com/qs-cfn-lint-rules/qs_cfn_lint_rules'
-    tags = ['EBS', 'encryption']
+    tags = ['EFS', 'encryption']
 
     CFN_NAG_RULES = [
-        'F1'
+        'F32'
     ]
     def match(self, cfn):
         """Basic Matching"""
         matches = []
-        for ln in srfpvv(cfn, "AWS::EC2::Volume", "StorageEncrypted", True):
+        for ln in srfpvv(cfn, "AWS::EFS::FileSystem", "Encrypted", True):
             matches.append(RuleMatch(ln, LINT_ERROR_MESSAGE))
         return matches
 
