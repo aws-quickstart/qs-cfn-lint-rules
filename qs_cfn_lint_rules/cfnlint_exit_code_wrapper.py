@@ -2,7 +2,7 @@ import pkg_resources
 import sys
 import logging
 logger = logging.getLogger()
-logger.setLeve(logging.INFO)
+logger.setLevel(logging.INFO)
 EXIT_CODES = {
     4:0,
     8:0,
