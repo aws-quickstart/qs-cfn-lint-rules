@@ -38,7 +38,7 @@ setup(
     zip_safe=False,
     install_requires=[
         "cfn-lint>=0.16.0,<1.0.0",
-        "pyspellchecker>=0.4.0,<0.5.0",
+        "pyspellchecker>=0.6.2,<1.0.0",
         "policyuniverse>=1.3.5,<2",
     ],
     python_requires=">=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*",
