@@ -4,7 +4,7 @@ import argparse
 import sys
 from pathlib import Path
 
-TYPE_REGEX = r"([A-Za-z0-9]+::){2}([A-Za-z0-9]+)"
+TYPE_REGEX = r"([A-Za-z0-9]+::){1,2}([A-Za-z0-9]+)"
 
 
 def is_cfn(inputs):
