@@ -20,7 +20,7 @@ def is_cfn(inputs):
     if not "Resources" in inputs.keys():
         return False
 
-    for k, v in input["Resources"].items():
+    for k, v in inputs["Resources"].items():
         if not v.get("Type"):
             return False
         if re.match(v["Type"], TYPE_REGEX):
