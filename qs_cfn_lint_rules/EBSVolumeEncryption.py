@@ -41,7 +41,7 @@ class EBSVolumeEncryption(CloudFormationLintRule):
     def match(self, cfn):
         """Basic Matching"""
         matches = []
-        for ln in srfpvv(cfn, "AWS::EC2::Volume", "StorageEncrypted", True):
+        for ln in srfpvv(cfn, "AWS::EC2::Volume", "Encrypted", True):
             matches.append(RuleMatch(ln, LINT_ERROR_MESSAGE))
         return matches
 
