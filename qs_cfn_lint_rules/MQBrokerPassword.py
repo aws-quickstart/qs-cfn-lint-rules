@@ -50,7 +50,6 @@ class MQBrokerPassword(CloudFormationLintRule):
 
             properties = resource.get('Properties')
             if properties:
-                #print(properties.get('Users'))
                 matches.extend(
                     cfn.check_value(
                         properties, 'Users', path,
