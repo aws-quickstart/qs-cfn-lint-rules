@@ -16,29 +16,23 @@ class KMSKeyWildcardPrincipal(CloudFormationLintRule):
     def check_value(self, value, path):
         """Check for * Principal"""
         matches = []
-
-        principal = value.get('Principal')
-        
-        for item in principal:
-            check  = principal.get(item)
-            if ('*' in check):
-                print("found")
-
-        # if value == "PublicReadWrite":
-        #     message = 'S3 Bucket cannot have PublicReadWrite on the ACL'
-        #     full_path = '/'.join(str(x) for x in path)
-        #     matches.append(RuleMatch(path, message.format(value, full_path)))
+        #print(value)
+        principal = value.get('Principal').get('AWS')
+        if ('*' in principal):
+            message = 'Cannot use * principal on a KMS Key Policy'
+            full_path = '/'.join(str(x) for x in path)
+            matches.append(RuleMatch(path, message.format(value, full_path)))
 
         return matches
 
     def match(self, cfn):
-
+        
         """Grab Key Policy results"""
 
         resources = cfn.get_resources(['AWS::KMS::Key'])
         matches = []
         for resource_name, resource in resources.items():
-            path = ['Resources', resource_name, 'Properties']
+            path = ['Resources', resource_name, 'Properties', 'KeyPolicy']
 
             policy = resource.get('Properties').get('KeyPolicy')
             if policy:
@@ -48,5 +42,5 @@ class KMSKeyWildcardPrincipal(CloudFormationLintRule):
                         check_value=self.check_value
                     )
                 )
-
+        print (matches)
         return matches
