@@ -28,9 +28,9 @@ class AppStreamPlaintextCreds(CloudFormationLintRule):
             else:
                 acct_name = value.get('AccountName')
                 acct_password = value.get('AccountPassword')
-                check_name = (str(type(acct_name) == '<class \'cfnlint.decode.node.create_str_node_class.<locals>.node_class\'>'))
- 
+                check_name = ((str(type(acct_name)) == '<class \'cfnlint.decode.node.create_str_node_class.<locals>.node_class\'>'))
                 if (check_name == True):
+                    print('here')
                     message = 'ServiceAccountCredentials AccountName cannot be a plaintext string'
                     full_path = '/'.join(str(x) for x in path)
                     matches.append(RuleMatch(path, message.format(value, full_path)))
@@ -42,7 +42,7 @@ class AppStreamPlaintextCreds(CloudFormationLintRule):
                             full_path = '/'.join(str(x) for x in path)
                             matches.append(RuleMatch(path, message.format(value, full_path)))
                 
-                check_pass = (str(type(acct_password) == '<class \'cfnlint.decode.node.create_str_node_class.<locals>.node_class\'>'))
+                check_pass = ((str(type(acct_password)) == '<class \'cfnlint.decode.node.create_str_node_class.<locals>.node_class\'>'))
                 if (check_pass == True):
                     message = 'ServiceAccountCredentials AccountPassword cannot be a plaintext string'
                     full_path = '/'.join(str(x) for x in path)
