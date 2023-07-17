@@ -16,7 +16,6 @@ class KMSKeyWildcardPrincipal(CloudFormationLintRule):
     def check_value(self, value, path):
         """Check for * Principal"""
         matches = []
-        #print(value)
         principal = value.get('Principal').get('AWS')
         if ('*' in principal):
             message = 'Cannot use * principal on a KMS Key Policy'

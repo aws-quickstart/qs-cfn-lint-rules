@@ -21,7 +21,6 @@ class IAMManagedPolicyOnlyGroup(CloudFormationLintRule):
         matches = []
         for resource_name, resource in resources.items():
             path = ['Resources', resource_name, 'Properties']
-
             properties = resource.get('Properties')
             if properties:
                 if (len(properties.get('Users')) >= 1):

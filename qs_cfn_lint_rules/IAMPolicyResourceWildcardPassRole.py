@@ -23,23 +23,19 @@ class IAMPolicyResourceWildcardPassRole(CloudFormationLintRule):
             path = ['Resources', resource_name, 'Properties']
             properties = resource.get('Properties')
             if properties:
-                policy = properties.get('PolicyDocument')
-                if (policy):
-                    statement = policy.get('Statement')
-                    if (statement):
-                        actions = statement[0].get('Action')
-                        resources_wild = statement[0].get('Resource')
-                        is_wildcard = ''
-                        if '*' in resources_wild:
-                            is_wildcard = '*'
-                        if ((actions == 'iam:PassRole') and (is_wildcard == '*')):
+                actions = properties.get('PolicyDocument').get('Statement')[0].get('Action')
+                resources_wild = properties.get('PolicyDocument').get('Statement')[0].get('Resource')
+                is_wildcard = ''
+                if '*' in resources_wild:
+                    is_wildcard = '*'
+                if ((actions == 'iam:PassRole') and (is_wildcard == '*')):
+                    path = ['Resources', resource_name, 'Properties', 'PolicyDocument', 'Statement', 'Action']
+                    message = 'Do not use a resource wildcard (*) with the PassRole Action'
+                    matches.append(RuleMatch(path, message.format(resource_name)))
+                else:
+                    for action in actions:
+                        if ((action == 'iam:PassRole') and (is_wildcard == "*")):
                             path = ['Resources', resource_name, 'Properties', 'PolicyDocument', 'Statement', 'Action']
                             message = 'Do not use a resource wildcard (*) with the PassRole Action'
                             matches.append(RuleMatch(path, message.format(resource_name)))
-                        else:
-                            for action in actions:
-                                if ((action == 'iam:PassRole') and (is_wildcard == "*")):
-                                    path = ['Resources', resource_name, 'Properties', 'PolicyDocument', 'Statement', 'Action']
-                                    message = 'Do not use a resource wildcard (*) with the PassRole Action'
-                                    matches.append(RuleMatch(path, message.format(resource_name)))
         return matches
