@@ -18,10 +18,9 @@ class MQBrokerPassword(CloudFormationLintRule):
         """Check to make sure there is no plaintext password or ref to default parameter"""
         matches = []
 
-        # Probably a better way of doing this but this is a placeholder
         # Checking for dynamic ref is sloppy need to check if there is a better method
         if ("resolve" not in value.get('Password')):
-            if((str(type(value.get('Password'))) == '<class \'cfnlint.decode.node.create_str_node_class.<locals>.node_class\'>')):
+            if(issubclass(type(value.get('Password')), str)):
                 message = 'MQBroker User cannot have plaintext password'
                 full_path = '/'.join(str(x) for x in path)
                 matches.append(RuleMatch(path, message.format(value, full_path)))

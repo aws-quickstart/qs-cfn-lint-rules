@@ -17,17 +17,16 @@ class AppStreamPlaintextCreds(CloudFormationLintRule):
     def check_value(self, value, path):
         """Check to make sure there is no plaintext password or ref to default parameter"""
         matches = []
-        # Probably a better way of doing this but this is a placeholder
         # Checking for dynamic ref is sloppy need to check if there is a better method
         if ("resolve" not in value):
-            check = (str(type(value) == '<class \'cfnlint.decode.node.create_str_node_class.<locals>.node_class\'>'))
+            check = issubclass(type(value), str)
             if(check == True):
                 message = 'ServiceAccountCredentials cannot have a plaintext password'
                 full_path = '/'.join(str(x) for x in path)
                 matches.append(RuleMatch(path, message.format(value, full_path)))
             else:
                 acct_password = value.get('AccountPassword')
-                check_pass = ((str(type(acct_password)) == '<class \'cfnlint.decode.node.create_str_node_class.<locals>.node_class\'>'))
+                check_pass = issubclass(type(acct_password), str)
                 if (check_pass == True):
                     message = 'ServiceAccountCredentials AccountPassword cannot be a plaintext string'
                     full_path = '/'.join(str(x) for x in path)

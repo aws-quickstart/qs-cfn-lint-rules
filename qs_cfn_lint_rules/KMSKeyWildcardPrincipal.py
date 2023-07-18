@@ -41,5 +41,4 @@ class KMSKeyWildcardPrincipal(CloudFormationLintRule):
                         check_value=self.check_value
                     )
                 )
-        print (matches)
         return matches
