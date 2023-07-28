@@ -22,7 +22,8 @@ class IAMManagedPolicyOnlyGroup(CloudFormationLintRule):
         for resource_name, resource in resources.items():
             path = ['Resources', resource_name, 'Properties']
             properties = resource.get('Properties')
-            if properties:
+            users = properties.get('Users')
+            if properties and users:
                 if (len(properties.get('Users')) >= 1):
                     path = ['Resources', resource_name, 'Properties', 'Users']
                     message = 'Do not assign Managed IAM policies directly to Users'

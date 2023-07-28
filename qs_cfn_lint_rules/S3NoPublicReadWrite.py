@@ -16,8 +16,7 @@ class S3NoPublicReadWrite(CloudFormationLintRule):
     def check_value(self, value, path):
         """Check ACL for S3 Bucket"""
         matches = []
-
-        # Check max length
+        
         if value == "PublicReadWrite":
             message = 'S3 Bucket cannot have PublicReadWrite on the ACL'
             full_path = '/'.join(str(x) for x in path)

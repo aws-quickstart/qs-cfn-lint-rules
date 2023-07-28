@@ -28,7 +28,7 @@ class MQBrokerPassword(CloudFormationLintRule):
                 passw = value.get('Password')
                 ref = passw.get('Ref')
                 if (ref):
-                    print (ref in all_params)
+                    #print (ref in all_params)
                     if ((ref in all_params) and (all_params.get(ref).get('Default'))):
                         message = 'MQBroker User cannot have password with a reference to a default value'
                         full_path = '/'.join(str(x) for x in path)
